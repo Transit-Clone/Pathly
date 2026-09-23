@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "Pathly",
+    "slug": "pathly",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "pathly",
+    "userInterfaceStyle": "light",
+    "platforms": ["ios", "android", "web"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.pathly.prototype"
+    },
+    "android": {
+      "package": "com.pathly.prototype",
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    }
+  }
+}

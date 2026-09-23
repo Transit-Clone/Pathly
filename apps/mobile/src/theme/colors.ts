@@ -1,0 +1,18 @@
+export const colors = {
+  ink: '#17212B',
+  mutedInk: '#68717B',
+  surface: '#FFFEFB',
+  canvas: '#EDE9E1',
+  road: '#D2CDC3',
+  roadHighlight: '#F9F6EF',
+  border: '#E7E2D9',
+  blue: '#1368CE',
+  blueSoft: '#E5F0FC',
+  green: '#0B6B4A',
+  greenSoft: '#E2F3EB',
+  red: '#B73535',
+  redSoft: '#FBE8E6',
+  amber: '#A86413',
+  shadow: '#182431',
+  white: '#FFFFFF',
+} as const;
