@@ -19,6 +19,7 @@ import {
   type MockSearchPlace,
 } from '../data/mockSearch';
 import { colors } from '../theme/colors';
+import { fontFamilies, typography } from '../theme/typography';
 import { MapBackdrop } from './MapBackdrop';
 
 export type SearchViewProps = {
@@ -175,12 +176,9 @@ export function SearchView({ initialQuery = '', onCancel }: SearchViewProps) {
         <SafeAreaView edges={['bottom']} style={[styles.sheet, { height: sheetHeight }]}>
           <View style={styles.handle} />
           <View style={styles.sheetHeading}>
-            <View>
-              <Text style={styles.eyebrow}>DESTINATIONS</Text>
-              <Text accessibilityLiveRegion="polite" style={styles.heading}>
-                {isSearching ? `${searchResults.length} matches` : 'Recent'}
-              </Text>
-            </View>
+            <Text accessibilityLiveRegion="polite" style={styles.heading}>
+              {isSearching ? `${searchResults.length} matches` : 'Recent'}
+            </Text>
           </View>
 
           {isSearching && searchResults.length === 0 ? (
@@ -219,7 +217,7 @@ const styles = StyleSheet.create({
   viewport: {
     flex: 1,
     alignItems: 'center',
-    backgroundColor: '#D8D4CC',
+    backgroundColor: colors.background,
   },
   screen: {
     width: '100%',
@@ -240,14 +238,16 @@ const styles = StyleSheet.create({
   },
   searchField: {
     minHeight: 54,
+    minWidth: 0,
     flex: 1,
+    flexShrink: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     paddingLeft: 17,
     paddingRight: 8,
     borderWidth: 2,
-    borderColor: colors.blue,
+    borderColor: colors.primary,
     borderRadius: 28,
     backgroundColor: colors.surface,
     shadowColor: colors.shadow,
@@ -261,8 +261,8 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 13,
     color: colors.ink,
+    ...typography.bodyStrong,
     fontSize: 16,
-    fontWeight: '700',
   },
   searchIcon: {
     width: 20,
@@ -286,28 +286,30 @@ const styles = StyleSheet.create({
     transform: [{ rotate: '45deg' }],
   },
   clearButton: {
-    width: 34,
-    height: 34,
+    minWidth: 44,
+    minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 17,
-    backgroundColor: colors.border,
+    borderRadius: 22,
+    backgroundColor: colors.blueSoft,
   },
   clearButtonText: {
     marginTop: -2,
     color: colors.mutedInk,
+    fontFamily: fontFamilies.semibold,
     fontSize: 23,
-    fontWeight: '600',
   },
   cancelButton: {
+    minWidth: 54,
     minHeight: 48,
+    flexShrink: 0,
+    alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 2,
   },
   cancelText: {
-    color: colors.blue,
+    color: colors.primary,
+    ...typography.bodyStrong,
     fontSize: 15,
-    fontWeight: '800',
   },
   pressedControl: {
     opacity: 0.55,
@@ -324,7 +326,7 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: colors.white,
     borderRadius: 19,
-    backgroundColor: colors.red,
+    backgroundColor: colors.primary,
     shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.22,
@@ -334,8 +336,8 @@ const styles = StyleSheet.create({
   mapPinText: {
     zIndex: 2,
     color: colors.white,
+    fontFamily: fontFamilies.extraBold,
     fontSize: 14,
-    fontWeight: '900',
   },
   mapPinTip: {
     position: 'absolute',
@@ -345,7 +347,7 @@ const styles = StyleSheet.create({
     borderRightWidth: 3,
     borderBottomWidth: 3,
     borderColor: colors.white,
-    backgroundColor: colors.red,
+    backgroundColor: colors.primary,
     transform: [{ rotate: '45deg' }],
   },
   sheet: {
@@ -371,7 +373,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginBottom: 15,
     borderRadius: 3,
-    backgroundColor: '#D5D1CA',
+    backgroundColor: colors.border,
   },
   sheetHeading: {
     flexDirection: 'row',
@@ -380,18 +382,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 12,
   },
-  eyebrow: {
-    marginBottom: 3,
-    color: colors.blue,
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 1.35,
-  },
   heading: {
     color: colors.ink,
-    fontSize: 23,
-    fontWeight: '900',
-    letterSpacing: -0.6,
+    ...typography.screenHeading,
   },
   resultList: {
     paddingHorizontal: 16,
@@ -414,18 +407,18 @@ const styles = StyleSheet.create({
     borderRadius: 19,
   },
   recentIcon: {
-    backgroundColor: colors.blueSoft,
+    backgroundColor: colors.accent,
   },
   numberIcon: {
-    backgroundColor: colors.red,
+    backgroundColor: colors.primary,
   },
   resultIconText: {
     color: colors.white,
+    fontFamily: fontFamilies.extraBold,
     fontSize: 13,
-    fontWeight: '900',
   },
   recentIconText: {
-    color: colors.blue,
+    color: colors.primary,
     fontSize: 20,
   },
   resultCopy: {
@@ -434,19 +427,19 @@ const styles = StyleSheet.create({
   },
   resultTitle: {
     color: colors.ink,
+    ...typography.bodyStrong,
     fontSize: 15,
-    fontWeight: '800',
   },
   resultSubtitle: {
     marginTop: 3,
     color: colors.mutedInk,
-    fontSize: 12,
+    ...typography.metadata,
   },
   chevron: {
     paddingHorizontal: 4,
     color: colors.mutedInk,
+    fontFamily: fontFamilies.regular,
     fontSize: 27,
-    fontWeight: '400',
   },
   emptyState: {
     flex: 1,
@@ -464,18 +457,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 14,
     borderRadius: 27,
-    backgroundColor: colors.blueSoft,
+    backgroundColor: colors.accent,
   },
   emptyTitle: {
     color: colors.ink,
+    ...typography.sectionHeading,
     fontSize: 16,
-    fontWeight: '800',
   },
   emptyBody: {
     maxWidth: 280,
     marginTop: 7,
     color: colors.mutedInk,
-    fontSize: 12,
+    ...typography.metadata,
     lineHeight: 18,
     textAlign: 'center',
   },

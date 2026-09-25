@@ -7,6 +7,12 @@ export type RonkonkomaStop = {
   times: Record<DepartureOption, string>;
 };
 
+export const routePredictions = [
+  { minutes: 4, live: true },
+  { minutes: 18, live: false },
+  { minutes: 34, live: true },
+] as const;
+
 export const ronkonkomaRoute = {
   agency: 'LIRR',
   direction: 'Westbound',

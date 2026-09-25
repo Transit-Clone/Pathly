@@ -16,6 +16,7 @@
     "build": "expo export --platform all --output-dir dist"
   },
   "dependencies": {
+    "@expo-google-fonts/nunito": "^0.4.2",
     "@expo/metro-runtime": "~57.0.15",
     "expo": "~57.0.24",
     "expo-status-bar": "~57.0.1",

@@ -11,11 +11,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
-  departureOptions,
-  type DepartureOption,
   ronkonkomaRoute,
+  routePredictions,
 } from '../data/ronkonkomaRoute';
 import { colors } from '../theme/colors';
+import { fontFamilies, typography } from '../theme/typography';
+import { LiveSignal } from './LiveSignal';
 
 type RonkonkomaRouteViewProps = {
   onBack: () => void;
@@ -29,10 +30,29 @@ const mapStationLabels = [
   'Northport',
 ];
 
+const timelineDeparture = '10:00 AM' as const;
+
+function LocationIcon() {
+  return (
+    <View accessibilityElementsHidden={true} style={styles.locationIconRing}>
+      <View style={styles.locationIconDot} />
+    </View>
+  );
+}
+
+function PinIcon({ pinned }: { pinned: boolean }) {
+  return (
+    <View accessibilityElementsHidden={true} style={styles.pinIcon}>
+      <View style={[styles.pinHead, pinned && styles.pinnedHead]} />
+      <View style={[styles.pinStem, pinned && styles.pinnedStem]} />
+    </View>
+  );
+}
+
 export function RonkonkomaRouteView({ onBack }: RonkonkomaRouteViewProps) {
   const { height } = useWindowDimensions();
-  const [selectedDeparture, setSelectedDeparture] =
-    useState<DepartureOption>('10:00 AM');
+  const [alertsOpen, setAlertsOpen] = useState(false);
+  const [isPinned, setIsPinned] = useState(false);
   const mapHeight = Math.min(390, Math.max(290, height * 0.39));
 
   return (
@@ -89,6 +109,34 @@ export function RonkonkomaRouteView({ onBack }: RonkonkomaRouteViewProps) {
             <Text style={styles.backIcon}>‹</Text>
             <Text style={styles.backText}>Back</Text>
           </Pressable>
+
+          <View style={styles.routeControls}>
+            <Pressable
+              accessibilityHint="Shows your current location on the route"
+              accessibilityLabel="Show current location"
+              accessibilityRole="button"
+              onPress={() => undefined}
+              style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
+              testID="route-location"
+            >
+              <LocationIcon />
+            </Pressable>
+            <Pressable
+              accessibilityHint="Pins or unpins this route"
+              accessibilityLabel={isPinned ? 'Unpin route' : 'Pin route'}
+              accessibilityRole="button"
+              accessibilityState={{ selected: isPinned }}
+              onPress={() => setIsPinned((value) => !value)}
+              style={({ pressed }) => [
+                styles.iconButton,
+                isPinned && styles.pinnedButton,
+                pressed && styles.pressed,
+              ]}
+              testID="route-pin"
+            >
+              <PinIcon pinned={isPinned} />
+            </Pressable>
+          </View>
         </SafeAreaView>
 
         <SafeAreaView edges={['bottom']} style={[styles.sheet, { top: mapHeight - 30 }]}>
@@ -110,44 +158,47 @@ export function RonkonkomaRouteView({ onBack }: RonkonkomaRouteViewProps) {
               </View>
             </View>
 
-            <Text style={styles.departureLabel}>CHOOSE A DEPARTURE</Text>
-            <View style={styles.departureOptions}>
-              {departureOptions.map((departure) => {
-                const selected = departure === selectedDeparture;
-
-                return (
-                  <Pressable
-                    key={departure}
-                    accessibilityLabel={`${departure} departure`}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected }}
-                    onPress={() => setSelectedDeparture(departure)}
-                    style={({ pressed }) => [
-                      styles.departureButton,
-                      selected && styles.selectedDepartureButton,
-                      pressed && styles.pressed,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.departureTime,
-                        selected && styles.selectedDepartureTime,
-                      ]}
-                    >
-                      {departure}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.departureCaption,
-                        selected && styles.selectedDepartureCaption,
-                      ]}
-                    >
-                      {selected ? 'Selected' : 'Next train'}
-                    </Text>
-                  </Pressable>
-                );
-              })}
+            <Text style={styles.departureLabel}>UPCOMING</Text>
+            <View style={styles.predictionOptions}>
+              {routePredictions.map((prediction) => (
+                <View
+                  key={`${prediction.minutes}-${prediction.live}`}
+                  accessibilityLabel={`${prediction.minutes} minutes, ${prediction.live ? 'live GPS prediction' : 'scheduled time'}`}
+                  accessible={true}
+                  style={[
+                    styles.predictionTile,
+                    !prediction.live && styles.scheduledPredictionTile,
+                  ]}
+                  testID={`route-prediction-${prediction.minutes}`}
+                >
+                  <View style={styles.predictionTimeRow}>
+                    <Text style={styles.predictionTime}>{prediction.minutes}</Text>
+                    {prediction.live ? <LiveSignal color={colors.primary} /> : null}
+                  </View>
+                  <Text style={styles.predictionUnit}>minutes</Text>
+                  <Text style={styles.predictionSource}>
+                    {prediction.live ? 'Live' : 'Scheduled'}
+                  </Text>
+                </View>
+              ))}
             </View>
+
+            <Pressable
+              accessibilityLabel="Service alerts"
+              accessibilityRole="button"
+              accessibilityState={{ expanded: alertsOpen }}
+              onPress={() => setAlertsOpen((value) => !value)}
+              style={({ pressed }) => [styles.alertButton, pressed && styles.pressed]}
+              testID="service-alerts"
+            >
+              <View style={styles.alertDot} />
+              <Text style={styles.alertText}>Service alerts</Text>
+              <Text style={styles.alertStatus}>No delays</Text>
+              <Text style={styles.alertChevron}>{alertsOpen ? '⌃' : '⌄'}</Text>
+            </Pressable>
+            {alertsOpen ? (
+              <Text style={styles.alertBody}>No delays reported on this route.</Text>
+            ) : null}
 
             <View style={styles.timelineHeading}>
               <Text style={styles.timelineTitle}>Route stops</Text>
@@ -158,7 +209,7 @@ export function RonkonkomaRouteView({ onBack }: RonkonkomaRouteViewProps) {
             </View>
 
             <View
-              accessibilityLabel={`Stops for the ${selectedDeparture} departure`}
+              accessibilityLabel="Stops for the next departure"
               style={styles.stopList}
             >
               {ronkonkomaRoute.stops.map((stop, index) => {
@@ -170,7 +221,7 @@ export function RonkonkomaRouteView({ onBack }: RonkonkomaRouteViewProps) {
                     key={stop.name}
                     accessibilityLabel={`${stop.name}, ${
                       isFirst ? 'departs' : 'arrives'
-                    } ${stop.times[selectedDeparture]}`}
+                    } ${stop.times[timelineDeparture]}`}
                     accessible={true}
                     style={styles.stopRow}
                   >
@@ -189,7 +240,7 @@ export function RonkonkomaRouteView({ onBack }: RonkonkomaRouteViewProps) {
                         {isFirst ? 'Departs' : isLast ? 'Arrives' : 'Scheduled stop'}
                       </Text>
                     </View>
-                    <Text style={styles.stopTime}>{stop.times[selectedDeparture]}</Text>
+                    <Text style={styles.stopTime}>{stop.times[timelineDeparture]}</Text>
                   </View>
                 );
               })}
@@ -205,7 +256,7 @@ const styles = StyleSheet.create({
   viewport: {
     flex: 1,
     alignItems: 'center',
-    backgroundColor: '#D8D4CC',
+    backgroundColor: colors.background,
   },
   screen: {
     width: '100%',
@@ -220,7 +271,7 @@ const styles = StyleSheet.create({
     right: 0,
     left: 0,
     overflow: 'hidden',
-    backgroundColor: '#EDE9E1',
+    backgroundColor: colors.background,
   },
   road: {
     position: 'absolute',
@@ -251,7 +302,7 @@ const styles = StyleSheet.create({
   water: {
     position: 'absolute',
     borderRadius: 100,
-    backgroundColor: '#DCE9E9',
+    backgroundColor: '#DDEFF8',
   },
   waterOne: {
     top: 42,
@@ -269,9 +320,9 @@ const styles = StyleSheet.create({
   },
   placeLabel: {
     position: 'absolute',
-    color: '#96978F',
+    color: colors.mutedInk,
+    fontFamily: fontFamilies.extraBold,
     fontSize: 8,
-    fontWeight: '800',
     letterSpacing: 1.3,
   },
   placeLabelOne: {
@@ -293,7 +344,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     height: 6,
     borderRadius: 3,
-    backgroundColor: colors.red,
+    backgroundColor: colors.primary,
   },
   routeSegmentOne: {
     top: 31,
@@ -350,7 +401,7 @@ const styles = StyleSheet.create({
     borderWidth: 4,
     borderColor: colors.white,
     borderRadius: 8,
-    backgroundColor: colors.red,
+    backgroundColor: colors.primary,
     shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.16,
@@ -363,14 +414,17 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     overflow: 'hidden',
     color: colors.ink,
-    backgroundColor: 'rgba(255, 254, 251, 0.91)',
+    backgroundColor: 'rgba(255, 255, 255, 0.94)',
+    fontFamily: fontFamilies.extraBold,
     fontSize: 8,
-    fontWeight: '800',
   },
   topSafeArea: {
     zIndex: 3,
-    alignItems: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingTop: 8,
+    paddingRight: 16,
     paddingLeft: 16,
   },
   backButton: {
@@ -380,7 +434,7 @@ const styles = StyleSheet.create({
     paddingRight: 16,
     paddingLeft: 10,
     borderRadius: 23,
-    backgroundColor: 'rgba(255, 254, 251, 0.96)',
+    backgroundColor: 'rgba(255, 255, 255, 0.96)',
     shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.12,
@@ -390,15 +444,77 @@ const styles = StyleSheet.create({
   backIcon: {
     marginTop: -2,
     color: colors.ink,
+    fontFamily: fontFamilies.regular,
     fontSize: 32,
-    fontWeight: '500',
     lineHeight: 34,
   },
   backText: {
     marginLeft: 3,
     color: colors.ink,
-    fontSize: 14,
-    fontWeight: '800',
+    ...typography.bodyStrong,
+  },
+  routeControls: {
+    flexDirection: 'row',
+    gap: 9,
+  },
+  iconButton: {
+    width: 46,
+    height: 46,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 23,
+    backgroundColor: 'rgba(255, 255, 255, 0.96)',
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  pinnedButton: {
+    borderColor: colors.primary,
+    backgroundColor: colors.accent,
+  },
+  locationIconRing: {
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: colors.primary,
+    borderRadius: 10,
+  },
+  locationIconDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: colors.primary,
+  },
+  pinIcon: {
+    width: 18,
+    height: 24,
+    alignItems: 'center',
+  },
+  pinHead: {
+    width: 15,
+    height: 15,
+    borderWidth: 3,
+    borderColor: colors.primary,
+    borderRadius: 8,
+    backgroundColor: colors.white,
+  },
+  pinnedHead: {
+    backgroundColor: colors.primary,
+  },
+  pinStem: {
+    width: 3,
+    height: 9,
+    marginTop: -1,
+    backgroundColor: colors.primary,
+  },
+  pinnedStem: {
+    height: 10,
   },
   pressed: {
     opacity: 0.65,
@@ -425,7 +541,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginBottom: 4,
     borderRadius: 3,
-    backgroundColor: '#D5D1CA',
+    backgroundColor: colors.border,
   },
   scrollContent: {
     paddingHorizontal: 20,
@@ -447,8 +563,8 @@ const styles = StyleSheet.create({
   },
   routeBadgeText: {
     color: colors.white,
+    fontFamily: fontFamilies.extraBold,
     fontSize: 18,
-    fontWeight: '900',
   },
   titleCopy: {
     minWidth: 0,
@@ -456,65 +572,116 @@ const styles = StyleSheet.create({
   },
   agency: {
     marginBottom: 3,
-    color: colors.blue,
-    fontSize: 9,
-    fontWeight: '900',
+    color: colors.primary,
+    ...typography.label,
+    fontSize: 10,
     letterSpacing: 1.1,
   },
   title: {
     color: colors.ink,
-    fontSize: 23,
-    fontWeight: '900',
-    letterSpacing: -0.55,
+    ...typography.screenHeading,
+    fontSize: 28,
+    lineHeight: 33,
   },
   direction: {
     marginTop: 4,
     color: colors.mutedInk,
-    fontSize: 12,
-    fontWeight: '600',
+    ...typography.metadata,
   },
   departureLabel: {
     marginTop: 24,
     marginBottom: 9,
     color: colors.mutedInk,
-    fontSize: 9,
-    fontWeight: '900',
+    ...typography.label,
+    fontSize: 10,
     letterSpacing: 1.2,
   },
-  departureOptions: {
+  predictionOptions: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
   },
-  departureButton: {
-    minHeight: 61,
+  predictionTile: {
+    minHeight: 104,
     flex: 1,
+    alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 8,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    borderRadius: 18,
+    backgroundColor: colors.blueSoft,
+  },
+  scheduledPredictionTile: {
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+    opacity: 0.68,
+  },
+  predictionTimeRow: {
+    minHeight: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  predictionTime: {
+    color: colors.primary,
+    fontFamily: fontFamilies.extraBold,
+    fontSize: 28,
+    lineHeight: 34,
+  },
+  predictionUnit: {
+    marginTop: -2,
+    color: colors.primary,
+    fontFamily: fontFamilies.bold,
+    fontSize: 10,
+    lineHeight: 12,
+    textAlign: 'center',
+  },
+  predictionSource: {
+    marginTop: 7,
+    color: colors.mutedInk,
+    ...typography.label,
+    fontSize: 9,
+    lineHeight: 11,
+    textTransform: 'uppercase',
+  },
+  alertButton: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
     paddingHorizontal: 14,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 15,
-    backgroundColor: '#F6F3ED',
+    borderRadius: 14,
+    backgroundColor: colors.background,
   },
-  selectedDepartureButton: {
-    borderColor: colors.blue,
-    backgroundColor: colors.blue,
+  alertDot: {
+    width: 9,
+    height: 9,
+    marginRight: 9,
+    borderRadius: 5,
+    backgroundColor: colors.warning,
   },
-  departureTime: {
+  alertText: {
+    flex: 1,
     color: colors.ink,
-    fontSize: 15,
-    fontWeight: '900',
+    ...typography.bodyStrong,
   },
-  selectedDepartureTime: {
-    color: colors.white,
+  alertStatus: {
+    color: colors.success,
+    ...typography.metadata,
   },
-  departureCaption: {
-    marginTop: 3,
+  alertChevron: {
+    marginLeft: 8,
     color: colors.mutedInk,
-    fontSize: 9,
-    fontWeight: '700',
+    fontFamily: fontFamilies.extraBold,
+    fontSize: 16,
   },
-  selectedDepartureCaption: {
-    color: '#DDEBFA',
+  alertBody: {
+    paddingHorizontal: 14,
+    paddingTop: 8,
+    color: colors.mutedInk,
+    ...typography.metadata,
   },
   timelineHeading: {
     flexDirection: 'row',
@@ -525,8 +692,7 @@ const styles = StyleSheet.create({
   },
   timelineTitle: {
     color: colors.ink,
-    fontSize: 17,
-    fontWeight: '900',
+    ...typography.sectionHeading,
   },
   onTimeChip: {
     flexDirection: 'row',
@@ -541,15 +707,15 @@ const styles = StyleSheet.create({
     height: 6,
     marginRight: 5,
     borderRadius: 3,
-    backgroundColor: colors.green,
+    backgroundColor: colors.success,
   },
   onTimeText: {
-    color: colors.green,
-    fontSize: 9,
-    fontWeight: '900',
+    color: colors.success,
+    fontFamily: fontFamilies.extraBold,
+    fontSize: 10,
   },
   stopRow: {
-    height: 67,
+    minHeight: 76,
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -568,27 +734,27 @@ const styles = StyleSheet.create({
     top: 0,
     width: 3,
     height: '50%',
-    backgroundColor: colors.red,
+    backgroundColor: colors.primary,
   },
   railBelow: {
     position: 'absolute',
     bottom: 0,
     width: 3,
     height: '50%',
-    backgroundColor: colors.red,
+    backgroundColor: colors.primary,
   },
   stopDot: {
     zIndex: 1,
     width: 13,
     height: 13,
     borderWidth: 3,
-    borderColor: colors.red,
+    borderColor: colors.primary,
     borderRadius: 7,
     backgroundColor: colors.surface,
   },
   firstStopDot: {
-    borderColor: colors.blue,
-    backgroundColor: colors.blue,
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
   },
   stopCopy: {
     minWidth: 0,
@@ -599,19 +765,21 @@ const styles = StyleSheet.create({
   },
   stopName: {
     color: colors.ink,
-    fontSize: 14,
-    fontWeight: '800',
+    fontFamily: fontFamilies.bold,
+    fontSize: 16,
+    lineHeight: 21,
   },
   stopMeta: {
     marginTop: 3,
     color: colors.mutedInk,
-    fontSize: 10,
-    fontWeight: '600',
+    ...typography.metadata,
+    fontSize: 11,
   },
   stopTime: {
     paddingLeft: 10,
     color: colors.ink,
-    fontSize: 13,
-    fontWeight: '900',
+    fontFamily: fontFamilies.extraBold,
+    fontSize: 17,
+    lineHeight: 22,
   },
 });

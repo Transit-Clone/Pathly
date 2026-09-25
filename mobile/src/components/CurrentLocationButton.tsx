@@ -42,7 +42,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 18,
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
-    borderBottomColor: colors.blue,
+    borderBottomColor: colors.primary,
     transform: [{ rotate: '36deg' }, { scale: 0.8 }],
   },
 });

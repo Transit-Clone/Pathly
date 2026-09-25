@@ -2,36 +2,36 @@ import type { TransitCardProps } from '../components/TransitCard';
 
 export const pinnedTransit: TransitCardProps[] = [
   {
-    mode: 'LIRR',
+    agency: 'LIRR',
     route: 'R',
-    title: 'Ronkonkoma Branch',
-    subtitle: 'toward Penn Station',
-    arrival: '18 min',
-    detail: 'Track 2',
-    status: 'On time',
-    accent: 'blue',
+    routeName: 'Ronkonkoma Branch',
+    routeAccent: 'blue',
+    directions: [
+      { direction: 'Westbound to Penn Station', stopName: 'Stony Brook Station', minutes: 18, live: true },
+      { direction: 'Eastbound to Ronkonkoma', stopName: 'Stony Brook Station', minutes: 26, live: false },
+    ],
   },
 ];
 
 export const nearbyTransit: TransitCardProps[] = [
   {
-    mode: 'SUFFOLK TRANSIT',
+    agency: 'Suffolk Transit',
     route: 'S1',
-    title: 'Amityville → Halesite',
-    subtitle: 'Deer Park Ave at Main St',
-    arrival: '6 min',
-    detail: '0.2 mi',
-    status: 'On time',
-    accent: 'green',
+    routeName: 'S1',
+    routeAccent: 'green',
+    directions: [
+      { direction: 'Northbound to Halesite', stopName: 'Deer Park Ave at Main St', minutes: 6, live: true },
+      { direction: 'Southbound to Amityville', stopName: 'Deer Park Ave at Main St', minutes: 14, live: false },
+    ],
   },
   {
-    mode: 'SUBWAY',
+    agency: 'MTA Subway',
     route: 'E',
-    title: 'World Trade Center',
-    subtitle: 'via 8 Av local',
-    arrival: '4 min',
-    detail: 'Platform 1',
-    status: 'Planned work',
-    accent: 'red',
+    routeName: 'E Train',
+    routeAccent: 'red',
+    directions: [
+      { direction: 'Downtown to World Trade Center', stopName: 'Sutphin Blvd–Archer Av', minutes: 4, live: true },
+      { direction: 'Uptown to Jamaica Center', stopName: 'Sutphin Blvd–Archer Av', minutes: 11, live: false },
+    ],
   },
 ];

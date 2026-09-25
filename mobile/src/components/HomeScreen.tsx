@@ -23,7 +23,8 @@ type ActiveView = 'home' | 'search' | 'ronkonkoma-route';
 export function HomeScreen() {
   const [activeView, setActiveView] = useState<ActiveView>('home');
   const { height } = useWindowDimensions();
-  const sheetHeight = Math.min(540, Math.max(430, height * 0.57));
+  const compactSheetHeight = Math.min(520, Math.max(400, height * 0.5));
+  const expandedSheetHeight = Math.min(height - 138, Math.max(620, height * 0.78));
 
   const showHome = useCallback(() => setActiveView('home'), []);
   const showSearch = useCallback(() => setActiveView('search'), []);
@@ -67,11 +68,15 @@ export function HomeScreen() {
           <CurrentLocationMarker />
         </View>
 
-        <View style={[styles.locationButton, { bottom: sheetHeight + 16 }]}>
+        <View style={[styles.locationButton, { bottom: compactSheetHeight + 16 }]}>
           <CurrentLocationButton />
         </View>
 
-        <TransitSheet height={sheetHeight} onOpenRonkonkoma={showRonkonkoma} />
+        <TransitSheet
+          compactHeight={compactSheetHeight}
+          expandedHeight={expandedSheetHeight}
+          onOpenRonkonkoma={showRonkonkoma}
+        />
       </View>
     </View>
   );
@@ -81,7 +86,7 @@ const styles = StyleSheet.create({
   viewport: {
     flex: 1,
     alignItems: 'center',
-    backgroundColor: '#D8D4CC',
+    backgroundColor: colors.background,
   },
   screen: {
     width: '100%',
@@ -91,7 +96,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.canvas,
   },
   safeArea: {
-    zIndex: 2,
+    zIndex: 4,
   },
   header: {
     paddingTop: 10,

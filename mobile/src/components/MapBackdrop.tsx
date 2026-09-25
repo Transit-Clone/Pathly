@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View, type ViewStyle } from 'react-native';
 
 import { colors } from '../theme/colors';
+import { fontFamilies } from '../theme/typography';
 
 const localRoads: ViewStyle[] = [
   { left: '-18%', top: '16%', width: '82%', transform: [{ rotate: '-16deg' }] },
@@ -13,7 +14,7 @@ const localRoads: ViewStyle[] = [
 
 const routeLines: (ViewStyle & { backgroundColor: string })[] = [
   {
-    backgroundColor: colors.blue,
+    backgroundColor: colors.primary,
     left: '-14%',
     opacity: 0.65,
     top: '31%',
@@ -86,7 +87,7 @@ const styles = StyleSheet.create({
   },
   park: {
     position: 'absolute',
-    backgroundColor: '#DCE7D2',
+    backgroundColor: '#DFF2E5',
     borderRadius: 28,
     opacity: 0.7,
   },
@@ -106,7 +107,7 @@ const styles = StyleSheet.create({
   },
   water: {
     position: 'absolute',
-    backgroundColor: '#D5E9ED',
+    backgroundColor: '#DDEFF8',
     opacity: 0.8,
   },
   waterRight: {
@@ -119,9 +120,9 @@ const styles = StyleSheet.create({
   },
   mapLabel: {
     position: 'absolute',
-    color: '#85847D',
+    color: colors.mutedInk,
+    fontFamily: fontFamilies.semibold,
     fontSize: 11,
-    fontWeight: '600',
     letterSpacing: 0.2,
   },
   labelNorth: {
@@ -138,9 +139,9 @@ const styles = StyleSheet.create({
   },
   roadLabel: {
     position: 'absolute',
-    color: '#A2A098',
+    color: '#7F91A5',
+    fontFamily: fontFamilies.bold,
     fontSize: 8,
-    fontWeight: '700',
     letterSpacing: 1.5,
   },
   mainStreetLabel: {

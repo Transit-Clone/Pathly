@@ -1,16 +1,26 @@
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useMemo, useState } from 'react';
+import {
+  Animated,
+  PanResponder,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { nearbyTransit, pinnedTransit } from '../data/transit';
 import { useApiHeartbeat } from '../hooks/useApiHeartbeat';
 import { colors } from '../theme/colors';
+import { fontFamilies, typography } from '../theme/typography';
 import { TransitCard } from './TransitCard';
 
 type TabId = 'nearby' | 'recents' | 'favorites';
 
 type TransitSheetProps = {
-  height: number;
+  compactHeight: number;
+  expandedHeight: number;
   onOpenRonkonkoma: () => void;
 };
 
@@ -20,19 +30,88 @@ const tabs: { id: TabId; label: string }[] = [
   { id: 'favorites', label: 'Favorites' },
 ];
 
-export function TransitSheet({ height, onOpenRonkonkoma }: TransitSheetProps) {
+export function TransitSheet({
+  compactHeight,
+  expandedHeight,
+  onOpenRonkonkoma,
+}: TransitSheetProps) {
   const [activeTab, setActiveTab] = useState<TabId>('nearby');
+  const [expanded, setExpanded] = useState(false);
+  const [animatedHeight] = useState(() => new Animated.Value(compactHeight));
   useApiHeartbeat();
 
+  const settleSheet = useCallback(
+    (nextExpanded: boolean) => {
+      setExpanded(nextExpanded);
+      Animated.spring(animatedHeight, {
+        toValue: nextExpanded ? expandedHeight : compactHeight,
+        useNativeDriver: false,
+        damping: 22,
+        stiffness: 230,
+        mass: 0.8,
+      }).start();
+    },
+    [animatedHeight, compactHeight, expandedHeight],
+  );
+
+  const panResponder = useMemo(
+    () => {
+      let dragStartHeight = compactHeight;
+
+      return PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gesture) =>
+          Math.abs(gesture.dy) > 4 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
+        onPanResponderGrant: () => {
+          animatedHeight.stopAnimation((value) => {
+            dragStartHeight = value;
+          });
+        },
+        onPanResponderMove: (_, gesture) => {
+          const nextHeight = Math.max(
+            compactHeight,
+            Math.min(expandedHeight, dragStartHeight - gesture.dy),
+          );
+          animatedHeight.setValue(nextHeight);
+        },
+        onPanResponderRelease: (_, gesture) => {
+          const projectedHeight = dragStartHeight - gesture.dy - gesture.vy * 45;
+          settleSheet(projectedHeight > (compactHeight + expandedHeight) / 2);
+        },
+        onPanResponderTerminate: () => settleSheet(expanded),
+      });
+    },
+    [animatedHeight, compactHeight, expanded, expandedHeight, settleSheet],
+  );
+
   return (
-    <SafeAreaView edges={['bottom']} style={[styles.sheet, { height }]}>
-      <View style={styles.handle} />
+    <Animated.View style={[styles.sheet, { height: animatedHeight }]} testID="transit-sheet">
+      <SafeAreaView edges={['bottom']} style={styles.safeContent}>
+        <View {...panResponder.panHandlers} style={styles.handleGestureArea}>
+          <Pressable
+            accessibilityActions={[{ name: 'activate' }, { name: 'increment' }, { name: 'decrement' }]}
+            accessibilityHint="Drag up or down to resize nearby transit"
+            accessibilityLabel="Resize nearby transit"
+            accessibilityRole="button"
+            accessibilityState={{ expanded }}
+            onAccessibilityAction={(event) =>
+              settleSheet(
+                event.nativeEvent.actionName === 'increment'
+                  ? true
+                  : event.nativeEvent.actionName === 'decrement'
+                    ? false
+                    : !expanded,
+              )
+            }
+            onPress={() => settleSheet(!expanded)}
+            style={styles.handleTarget}
+            testID="transit-sheet-handle"
+          >
+            <View style={styles.handle} />
+          </Pressable>
+        </View>
 
       <View style={styles.headingRow}>
-        <View>
-          <Text style={styles.eyebrow}>AROUND YOU</Text>
-          <Text style={styles.heading}>Nearby transit</Text>
-        </View>
+        <Text style={styles.heading}>Nearby transit</Text>
       </View>
 
       <View accessibilityRole="tablist" style={styles.tabs}>
@@ -68,7 +147,7 @@ export function TransitSheet({ height, onOpenRonkonkoma }: TransitSheetProps) {
           <Text style={styles.sectionLabel}>PINNED</Text>
           {pinnedTransit.map((transit) => (
             <TransitCard
-              key={`${transit.mode}-${transit.route}`}
+              key={`${transit.agency}-${transit.route}`}
               {...transit}
               onPress={onOpenRonkonkoma}
               testID="ronkonkoma-card"
@@ -78,7 +157,7 @@ export function TransitSheet({ height, onOpenRonkonkoma }: TransitSheetProps) {
           <Text style={[styles.sectionLabel, styles.nearbyLabel]}>NEAR YOU</Text>
           <View style={styles.cardStack}>
             {nearbyTransit.map((transit) => (
-              <TransitCard key={`${transit.mode}-${transit.route}`} {...transit} />
+              <TransitCard key={`${transit.agency}-${transit.route}`} {...transit} />
             ))}
           </View>
         </ScrollView>
@@ -101,7 +180,8 @@ export function TransitSheet({ height, onOpenRonkonkoma }: TransitSheetProps) {
           </Text>
         </View>
       )}
-    </SafeAreaView>
+      </SafeAreaView>
+    </Animated.View>
   );
 }
 
@@ -112,7 +192,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     overflow: 'hidden',
-    paddingTop: 10,
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
     backgroundColor: colors.surface,
@@ -122,13 +201,23 @@ const styles = StyleSheet.create({
     shadowRadius: 18,
     elevation: 14,
   },
+  safeContent: {
+    flex: 1,
+  },
+  handleGestureArea: {
+    minHeight: 44,
+  },
+  handleTarget: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   handle: {
     width: 42,
     height: 5,
     alignSelf: 'center',
-    marginBottom: 14,
     borderRadius: 3,
-    backgroundColor: '#D5D1CA',
+    backgroundColor: colors.border,
   },
   headingRow: {
     flexDirection: 'row',
@@ -137,18 +226,9 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingHorizontal: 20,
   },
-  eyebrow: {
-    marginBottom: 3,
-    color: colors.blue,
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 1.35,
-  },
   heading: {
     color: colors.ink,
-    fontSize: 23,
-    fontWeight: '900',
-    letterSpacing: -0.6,
+    ...typography.screenHeading,
   },
   tabs: {
     flexDirection: 'row',
@@ -167,19 +247,19 @@ const styles = StyleSheet.create({
     borderBottomColor: 'transparent',
   },
   selectedTab: {
-    borderBottomColor: colors.blue,
+    borderBottomColor: colors.primary,
   },
   pressedTab: {
     opacity: 0.62,
   },
   tabLabel: {
     color: colors.mutedInk,
+    ...typography.bodyStrong,
     fontSize: 13,
-    fontWeight: '700',
   },
   selectedTabLabel: {
-    color: colors.blue,
-    fontWeight: '900',
+    color: colors.primary,
+    fontFamily: fontFamilies.extraBold,
   },
   content: {
     paddingHorizontal: 16,
@@ -192,9 +272,8 @@ const styles = StyleSheet.create({
   sectionLabel: {
     marginBottom: 8,
     color: colors.mutedInk,
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 1.2,
+    ...typography.label,
+    fontSize: 10,
   },
   nearbyLabel: {
     marginTop: 17,
@@ -216,23 +295,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 14,
     borderRadius: 27,
-    backgroundColor: colors.blueSoft,
+    backgroundColor: colors.accent,
   },
   emptyIconText: {
-    color: colors.blue,
+    color: colors.primary,
+    fontFamily: fontFamilies.bold,
     fontSize: 26,
-    fontWeight: '700',
   },
   emptyTitle: {
     color: colors.ink,
+    ...typography.sectionHeading,
     fontSize: 16,
-    fontWeight: '800',
     textAlign: 'center',
   },
   emptyBody: {
     marginTop: 7,
     color: colors.mutedInk,
-    fontSize: 12,
+    ...typography.metadata,
     lineHeight: 18,
     textAlign: 'center',
   },
