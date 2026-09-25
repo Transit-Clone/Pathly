@@ -5,7 +5,8 @@
   "description": "A runnable heartbeat for the Pathly mobile app and API.",
   "license": "MIT",
   "workspaces": [
-    "apps/*"
+    "mobile",
+    "server"
   ],
   "engines": {
     "node": ">=24.9.0 <25",

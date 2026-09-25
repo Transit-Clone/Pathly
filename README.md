@@ -6,8 +6,8 @@ This is intentionally not the Pathly product yet. Transit feeds, routing, maps, 
 
 ## What runs
 
-- `apps/mobile` — Expo + React Native + TypeScript, targeting iOS, Android, and web
-- `apps/api` — Express + TypeScript with a `GET /health` endpoint
+- `mobile` — Expo + React Native + TypeScript, targeting iOS, Android, and web
+- `server` — Express + TypeScript with a `GET /health` endpoint
 - `.github/workflows/ci.yml` — installs, lints, tests, type-checks, and builds on pushes and pull requests
 
 The mobile heartbeat presents the visual direction from the proposal: a map-style surface, a prominent destination search control, and nearby transit. It checks the API connection in the background without exposing developer status in the interface.
@@ -70,35 +70,42 @@ Install Expo Go from Google Play, put the phone and development computer on the 
 Install Android Studio, create and start an Android Virtual Device, then run:
 
 ```sh
-EXPO_PUBLIC_API_URL=http://10.0.2.2:3000 npm run dev:android
+npm run dev:android
 ```
 
-Android emulators use `10.0.2.2` to reach the development computer's `localhost`.
+The app automatically uses `http://10.0.2.2:3000` on Android so the emulator can reach the development computer's `localhost`. No environment file is required.
 
 ## Run on a physical iPhone or Android phone
 
-The phone cannot use `localhost` to reach the API running on the Mac. It needs the Mac's private LAN address.
+The phone cannot use `localhost` to reach the API running on the development computer. It needs the computer's private LAN address.
 
 1. Install Expo Go on the phone.
 2. On iPhone, create a free Expo account and sign into the same account in Expo Go and the Expo CLI (`npx expo login`).
-3. Connect the phone and Mac to the same Wi-Fi network.
-4. Find the Mac's Wi-Fi address:
+3. Connect the phone and development computer to the same Wi-Fi network.
+4. Find the computer's private IPv4 address. On Windows, run `ipconfig`; on macOS, run:
 
 ```sh
 ipconfig getifaddr en0
 ```
 
-5. Substitute that address below and start the heartbeat:
+5. Set `EXPO_PUBLIC_API_URL` to that address and start Pathly. In Windows PowerShell:
+
+```powershell
+$env:EXPO_PUBLIC_API_URL = "http://192.168.1.42:3000"
+npm run dev
+```
+
+On macOS or Linux:
 
 ```sh
 EXPO_PUBLIC_API_URL=http://192.168.1.42:3000 npm run dev
 ```
 
-6. Scan the Expo QR code with the iPhone Camera app or from Expo Go on Android.
+6. When the QR code appears, scan it with the iPhone Camera app or with **Scan QR code** in Expo Go on Android.
 
-The API listens on `0.0.0.0` so another device on the local network can reach it. If the app renders but reports that the API is offline, confirm the IP address, allow incoming Node connections in the macOS firewall, and verify that the network does not isolate wireless clients. Restart Expo after changing `EXPO_PUBLIC_API_URL`.
+The API listens on `0.0.0.0` so another device on the local network can reach it. Keep the command running while using the app. If the app cannot connect, confirm the IP address, allow incoming Node connections through the computer's firewall, and verify that the network does not isolate wireless clients. Restart the command after changing `EXPO_PUBLIC_API_URL`.
 
-`.env.example` documents shell settings; it is not loaded automatically. For a persistent mobile override, copy `apps/mobile/.env.example` to the ignored `apps/mobile/.env.local` and set the appropriate `EXPO_PUBLIC_API_URL` value.
+The committed `.env.example` files document optional settings and safe example values; they are not loaded automatically.
 
 ## Commands
 
@@ -141,4 +148,4 @@ The map and transit content are visual placeholders used to exercise the cross-p
 
 ## Repository notes
 
-The preliminary proposal and design artifacts remain in the repository for product context. Application code lives under `apps/`, while root-level scripts coordinate both workspaces so contributors and CI use the same commands.
+The preliminary proposal and design artifacts remain in the repository for product context. The independently runnable mobile client and API server live in the top-level `mobile/` and `server/` directories, while root-level scripts coordinate both workspaces so contributors and CI use the same commands.
