@@ -4,10 +4,11 @@ import { colors } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
 
 type SearchHeaderProps = {
+  onProfilePress: () => void;
   onSearchPress: () => void;
 };
 
-export function SearchHeader({ onSearchPress }: SearchHeaderProps) {
+export function SearchHeader({ onProfilePress, onSearchPress }: SearchHeaderProps) {
   return (
     <View style={styles.row}>
       <Pressable
@@ -28,8 +29,9 @@ export function SearchHeader({ onSearchPress }: SearchHeaderProps) {
       <Pressable
         accessibilityLabel="Profile"
         accessibilityRole="button"
-        onPress={() => undefined}
+        onPress={onProfilePress}
         style={({ pressed }) => [styles.profile, pressed && styles.pressed]}
+        testID="profile-trigger"
       >
         <Text style={styles.profileText}>P</Text>
       </Pressable>

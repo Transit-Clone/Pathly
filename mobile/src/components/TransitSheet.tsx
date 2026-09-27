@@ -10,18 +10,26 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { nearbyTransit, pinnedTransit } from '../data/transit';
-import { useApiHeartbeat } from '../hooks/useApiHeartbeat';
+import {
+  nearbyRoutes,
+  pinnedRoutes,
+  recentTrips,
+  type RouteId,
+} from '../data/transit';
 import { colors } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
 import { TransitCard } from './TransitCard';
 
 type TabId = 'nearby' | 'recents' | 'favorites';
+export type SheetState = 'minimized' | 'compact' | 'expanded';
 
 type TransitSheetProps = {
   compactHeight: number;
   expandedHeight: number;
-  onOpenRonkonkoma: () => void;
+  minimizedHeight: number;
+  onOpenRoute: (routeId: RouteId) => void;
+  onOpenTrip: (destination: string) => void;
+  onStateChange: (state: SheetState) => void;
 };
 
 const tabs: { id: TabId; label: string }[] = [
@@ -33,76 +41,120 @@ const tabs: { id: TabId; label: string }[] = [
 export function TransitSheet({
   compactHeight,
   expandedHeight,
-  onOpenRonkonkoma,
+  minimizedHeight,
+  onOpenRoute,
+  onOpenTrip,
+  onStateChange,
 }: TransitSheetProps) {
   const [activeTab, setActiveTab] = useState<TabId>('nearby');
-  const [expanded, setExpanded] = useState(false);
+  const [sheetState, setSheetState] = useState<SheetState>('compact');
   const [animatedHeight] = useState(() => new Animated.Value(compactHeight));
-  useApiHeartbeat();
+
+  const heights = useMemo(
+    () => ({ minimized: minimizedHeight, compact: compactHeight, expanded: expandedHeight }),
+    [compactHeight, expandedHeight, minimizedHeight],
+  );
 
   const settleSheet = useCallback(
-    (nextExpanded: boolean) => {
-      setExpanded(nextExpanded);
+    (nextState: SheetState) => {
+      setSheetState(nextState);
+      onStateChange(nextState);
       Animated.spring(animatedHeight, {
-        toValue: nextExpanded ? expandedHeight : compactHeight,
+        toValue: heights[nextState],
         useNativeDriver: false,
         damping: 22,
         stiffness: 230,
         mass: 0.8,
       }).start();
     },
-    [animatedHeight, compactHeight, expandedHeight],
+    [animatedHeight, heights, onStateChange],
   );
 
-  const panResponder = useMemo(
-    () => {
-      let dragStartHeight = compactHeight;
-
-      return PanResponder.create({
-        onMoveShouldSetPanResponder: (_, gesture) =>
-          Math.abs(gesture.dy) > 4 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
-        onPanResponderGrant: () => {
-          animatedHeight.stopAnimation((value) => {
-            dragStartHeight = value;
-          });
-        },
-        onPanResponderMove: (_, gesture) => {
-          const nextHeight = Math.max(
-            compactHeight,
-            Math.min(expandedHeight, dragStartHeight - gesture.dy),
-          );
-          animatedHeight.setValue(nextHeight);
-        },
-        onPanResponderRelease: (_, gesture) => {
-          const projectedHeight = dragStartHeight - gesture.dy - gesture.vy * 45;
-          settleSheet(projectedHeight > (compactHeight + expandedHeight) / 2);
-        },
-        onPanResponderTerminate: () => settleSheet(expanded),
-      });
-    },
-    [animatedHeight, compactHeight, expanded, expandedHeight, settleSheet],
+  const nearestState = useCallback(
+    (height: number): SheetState =>
+      (Object.keys(heights) as SheetState[]).reduce((closest, candidate) =>
+        Math.abs(heights[candidate] - height) < Math.abs(heights[closest] - height)
+          ? candidate
+          : closest,
+      ),
+    [heights],
   );
+
+  const panResponder = useMemo(() => {
+    let dragStartHeight = compactHeight;
+
+    return PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gesture) =>
+        Math.abs(gesture.dy) > 4 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
+      onPanResponderGrant: () => {
+        animatedHeight.stopAnimation((value) => {
+          dragStartHeight = value;
+        });
+      },
+      onPanResponderMove: (_, gesture) => {
+        const nextHeight = Math.max(
+          minimizedHeight,
+          Math.min(expandedHeight, dragStartHeight - gesture.dy),
+        );
+        animatedHeight.setValue(nextHeight);
+      },
+      onPanResponderRelease: (_, gesture) => {
+        settleSheet(nearestState(dragStartHeight - gesture.dy - gesture.vy * 45));
+      },
+      onPanResponderTerminate: () => settleSheet(sheetState),
+    });
+  }, [
+    animatedHeight,
+    compactHeight,
+    expandedHeight,
+    minimizedHeight,
+    nearestState,
+    settleSheet,
+    sheetState,
+  ]);
+
+  const cycleState = () => {
+    settleSheet(
+      sheetState === 'compact'
+        ? 'expanded'
+        : sheetState === 'expanded'
+          ? 'minimized'
+          : 'compact',
+    );
+  };
+
+  const adjustState = (direction: 'increment' | 'decrement') => {
+    const ordered: SheetState[] = ['minimized', 'compact', 'expanded'];
+    const index = ordered.indexOf(sheetState);
+    const nextIndex = direction === 'increment'
+      ? Math.min(index + 1, ordered.length - 1)
+      : Math.max(index - 1, 0);
+    settleSheet(ordered[nextIndex] ?? sheetState);
+  };
 
   return (
-    <Animated.View style={[styles.sheet, { height: animatedHeight }]} testID="transit-sheet">
+    <Animated.View
+      style={[styles.sheet, { height: animatedHeight }]}
+      testID="transit-sheet"
+    >
       <SafeAreaView edges={['bottom']} style={styles.safeContent}>
         <View {...panResponder.panHandlers} style={styles.handleGestureArea}>
           <Pressable
             accessibilityActions={[{ name: 'activate' }, { name: 'increment' }, { name: 'decrement' }]}
-            accessibilityHint="Drag up or down to resize nearby transit"
-            accessibilityLabel="Resize nearby transit"
+            accessibilityHint="Drag up or down to resize transit options"
+            accessibilityLabel="Resize transit options"
             accessibilityRole="button"
-            accessibilityState={{ expanded }}
-            onAccessibilityAction={(event) =>
-              settleSheet(
-                event.nativeEvent.actionName === 'increment'
-                  ? true
-                  : event.nativeEvent.actionName === 'decrement'
-                    ? false
-                    : !expanded,
-              )
-            }
-            onPress={() => settleSheet(!expanded)}
+            accessibilityState={{ expanded: sheetState === 'expanded' }}
+            accessibilityValue={{ text: sheetState }}
+            onAccessibilityAction={(event) => {
+              const action = event.nativeEvent.actionName;
+              if (action === 'increment' || action === 'decrement') {
+                adjustState(action);
+              } else {
+                cycleState();
+              }
+            }}
+            onPress={cycleState}
             style={styles.handleTarget}
             testID="transit-sheet-handle"
           >
@@ -110,76 +162,92 @@ export function TransitSheet({
           </Pressable>
         </View>
 
-      <View style={styles.headingRow}>
-        <Text style={styles.heading}>Nearby transit</Text>
-      </View>
-
-      <View accessibilityRole="tablist" style={styles.tabs}>
-        {tabs.map((tab) => {
-          const selected = tab.id === activeTab;
-
-          return (
-            <Pressable
-              key={tab.id}
-              accessibilityRole="tab"
-              accessibilityState={{ selected }}
-              onPress={() => setActiveTab(tab.id)}
-              style={({ pressed }) => [
-                styles.tab,
-                selected && styles.selectedTab,
-                pressed && styles.pressedTab,
-              ]}
-            >
-              <Text style={[styles.tabLabel, selected && styles.selectedTabLabel]}>
-                {tab.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      {activeTab === 'nearby' ? (
-        <ScrollView
-          contentContainerStyle={styles.content}
-          showsVerticalScrollIndicator={false}
-          style={styles.scroll}
-        >
-          <Text style={styles.sectionLabel}>PINNED</Text>
-          {pinnedTransit.map((transit) => (
-            <TransitCard
-              key={`${transit.agency}-${transit.route}`}
-              {...transit}
-              onPress={onOpenRonkonkoma}
-              testID="ronkonkoma-card"
-            />
-          ))}
-
-          <Text style={[styles.sectionLabel, styles.nearbyLabel]}>NEAR YOU</Text>
-          <View style={styles.cardStack}>
-            {nearbyTransit.map((transit) => (
-              <TransitCard key={`${transit.agency}-${transit.route}`} {...transit} />
-            ))}
-          </View>
-        </ScrollView>
-      ) : (
-        <View style={styles.emptyState}>
-          <View
-            accessibilityElementsHidden={true}
-            importantForAccessibility="no-hide-descendants"
-            style={styles.emptyIcon}
-          >
-            <Text style={styles.emptyIconText}>{activeTab === 'recents' ? '↻' : '☆'}</Text>
-          </View>
-          <Text style={styles.emptyTitle}>
-            {activeTab === 'recents' ? 'No recent trips yet' : 'No favorite stops yet'}
-          </Text>
-          <Text style={styles.emptyBody}>
-            {activeTab === 'recents'
-              ? 'Trips you view will appear here.'
-              : 'Stops and routes you save will appear here.'}
-          </Text>
+        <View accessibilityRole="tablist" style={styles.tabs}>
+          {tabs.map((tab) => {
+            const selected = tab.id === activeTab;
+            return (
+              <Pressable
+                key={tab.id}
+                accessibilityRole="tab"
+                accessibilityState={{ selected }}
+                onPress={() => setActiveTab(tab.id)}
+                style={({ pressed }) => [
+                  styles.tab,
+                  selected && styles.selectedTab,
+                  pressed && styles.pressed,
+                ]}
+                testID={`tab-${tab.id}`}
+              >
+                <Text style={[styles.tabLabel, selected && styles.selectedTabLabel]}>
+                  {tab.label}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
-      )}
+
+        {activeTab === 'nearby' ? (
+          <ScrollView
+            contentContainerStyle={styles.content}
+            showsVerticalScrollIndicator={false}
+            style={styles.scroll}
+          >
+            <Text style={styles.sectionLabel}>PINNED</Text>
+            {pinnedRoutes.map((route) => (
+              <TransitCard
+                key={route.id}
+                onPress={() => onOpenRoute(route.id)}
+                route={route}
+              />
+            ))}
+
+            <Text style={[styles.sectionLabel, styles.nearbyLabel]}>NEAR YOU</Text>
+            <View style={styles.cardStack}>
+              {nearbyRoutes.map((route) => (
+                <TransitCard
+                  key={route.id}
+                  onPress={() => onOpenRoute(route.id)}
+                  route={route}
+                />
+              ))}
+            </View>
+          </ScrollView>
+        ) : activeTab === 'recents' ? (
+          <ScrollView contentContainerStyle={styles.recentList}>
+            {recentTrips.map((trip) => (
+              <Pressable
+                key={trip.id}
+                accessibilityLabel={`Recent trip to ${trip.destination} from ${trip.origin}`}
+                accessibilityRole="button"
+                onPress={() => onOpenTrip(trip.destination)}
+                style={({ pressed }) => [styles.recentRow, pressed && styles.pressed]}
+                testID={`recent-trip-${trip.id}`}
+              >
+                <View style={styles.segmentRow}>
+                  {trip.segments.map((segment) => (
+                    <View
+                      key={segment.shortName}
+                      style={[styles.segmentBadge, { backgroundColor: segment.color }]}
+                    >
+                      <Text style={styles.segmentText}>{segment.shortName}</Text>
+                    </View>
+                  ))}
+                </View>
+                <View style={styles.recentCopy}>
+                  <Text style={styles.recentDestination}>{trip.destination}</Text>
+                  <Text style={styles.recentOrigin}>From {trip.origin}</Text>
+                </View>
+                <Text style={styles.recency}>{trip.recency}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        ) : (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyIcon}>☆</Text>
+            <Text style={styles.emptyTitle}>No favorite stops yet</Text>
+            <Text style={styles.emptyBody}>Stops and routes you save will appear here.</Text>
+          </View>
+        )}
       </SafeAreaView>
     </Animated.View>
   );
@@ -201,39 +269,18 @@ const styles = StyleSheet.create({
     shadowRadius: 18,
     elevation: 14,
   },
-  safeContent: {
-    flex: 1,
-  },
-  handleGestureArea: {
-    minHeight: 44,
-  },
-  handleTarget: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  safeContent: { flex: 1 },
+  handleGestureArea: { minHeight: 44 },
+  handleTarget: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   handle: {
     width: 42,
     height: 5,
-    alignSelf: 'center',
     borderRadius: 3,
     backgroundColor: colors.border,
-  },
-  headingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-    paddingHorizontal: 20,
-  },
-  heading: {
-    color: colors.ink,
-    ...typography.screenHeading,
   },
   tabs: {
     flexDirection: 'row',
     gap: 4,
-    marginTop: 15,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
@@ -246,41 +293,41 @@ const styles = StyleSheet.create({
     borderBottomWidth: 3,
     borderBottomColor: 'transparent',
   },
-  selectedTab: {
-    borderBottomColor: colors.primary,
+  selectedTab: { borderBottomColor: colors.primary },
+  pressed: { opacity: 0.62 },
+  tabLabel: { color: colors.mutedInk, ...typography.bodyStrong, fontSize: 13 },
+  selectedTabLabel: { color: colors.primary, fontFamily: fontFamilies.extraBold },
+  scroll: { flex: 1 },
+  content: { paddingHorizontal: 16, paddingTop: 15, paddingBottom: 30 },
+  sectionLabel: { marginBottom: 8, color: colors.mutedInk, ...typography.label, fontSize: 10 },
+  nearbyLabel: { marginTop: 17 },
+  cardStack: { gap: 10 },
+  recentList: { paddingHorizontal: 16, paddingVertical: 12, gap: 10 },
+  recentRow: {
+    minHeight: 76,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 16,
+    backgroundColor: colors.background,
   },
-  pressedTab: {
-    opacity: 0.62,
+  segmentRow: { flexDirection: 'row', gap: 4 },
+  segmentBadge: {
+    minWidth: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 7,
+    borderRadius: 8,
   },
-  tabLabel: {
-    color: colors.mutedInk,
-    ...typography.bodyStrong,
-    fontSize: 13,
-  },
-  selectedTabLabel: {
-    color: colors.primary,
-    fontFamily: fontFamilies.extraBold,
-  },
-  content: {
-    paddingHorizontal: 16,
-    paddingTop: 15,
-    paddingBottom: 30,
-  },
-  scroll: {
-    flex: 1,
-  },
-  sectionLabel: {
-    marginBottom: 8,
-    color: colors.mutedInk,
-    ...typography.label,
-    fontSize: 10,
-  },
-  nearbyLabel: {
-    marginTop: 17,
-  },
-  cardStack: {
-    gap: 10,
-  },
+  segmentText: { color: colors.white, fontFamily: fontFamilies.extraBold, fontSize: 12 },
+  recentCopy: { minWidth: 0, flex: 1 },
+  recentDestination: { color: colors.ink, ...typography.bodyStrong, fontSize: 15 },
+  recentOrigin: { marginTop: 2, color: colors.mutedInk, ...typography.metadata },
+  recency: { color: colors.mutedInk, ...typography.metadata, fontSize: 10 },
   emptyState: {
     flex: 1,
     alignItems: 'center',
@@ -288,26 +335,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 42,
     paddingBottom: 36,
   },
-  emptyIcon: {
-    width: 54,
-    height: 54,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 14,
-    borderRadius: 27,
-    backgroundColor: colors.accent,
-  },
-  emptyIconText: {
-    color: colors.primary,
-    fontFamily: fontFamilies.bold,
-    fontSize: 26,
-  },
-  emptyTitle: {
-    color: colors.ink,
-    ...typography.sectionHeading,
-    fontSize: 16,
-    textAlign: 'center',
-  },
+  emptyIcon: { color: colors.primary, fontFamily: fontFamilies.bold, fontSize: 38 },
+  emptyTitle: { marginTop: 8, color: colors.ink, ...typography.sectionHeading, fontSize: 16 },
   emptyBody: {
     marginTop: 7,
     color: colors.mutedInk,

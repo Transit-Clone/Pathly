@@ -14,10 +14,9 @@ build/
 coverage/
 *.tsbuildinfo
 
-# Local configuration (commit examples only)
+# Local configuration
 .env
 .env.*
-!.env.example
 
 # Logs
 *.log

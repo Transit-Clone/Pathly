@@ -6,6 +6,8 @@ See `proposal.md` for motivation and `specs/mobile-prototype-navigation/spec.md`
 
 The prototype has no navigation dependency and all visible transit content is local mock data. This change should preserve that lightweight architecture while making the new flows explicit and testable.
 
+The repository also contains a preliminary `server` workspace with an Express/CORS health endpoint and a background mobile heartbeat. The revised `docs/Design.ipynb` selects Firebase, Cloud Firestore, Cloud Functions, Firebase Authentication, and Cloud Storage instead of a standalone Node.js/Express and MongoDB/Mongoose backend. No product feature currently depends on the health endpoint, so the obsolete server boundary can be removed without changing visible mobile behavior.
+
 ## Goals / Non-Goals
 
 **Goals:**
@@ -14,12 +16,16 @@ The prototype has no navigation dependency and all visible transit content is lo
 - Reuse shared visual primitives and structured mock data rather than cloning screens for each route or itinerary.
 - Coordinate the animated home sheet with map controls across minimized, compact, and expanded states.
 - Preserve accessible labels, 44-pixel controls, Android back behavior, and current visual language.
+- Align the runnable project, root scripts, dependency graph, environment examples, and contributor documentation with a future Firebase backend.
+- Keep the Expo prototype independently runnable while backend services are not yet implemented.
 
 **Non-Goals:**
 
 - Introduce a navigation package, backend route planner, real transit feeds, geocoding, fares, payments, or account services.
 - Persist pins, recents, trip criteria, preferences, or profile settings between launches.
 - Model every agency-specific service rule or produce geographically authoritative itineraries.
+- Install or configure Firebase SDKs, create a Firebase project, provision credentials, deploy Cloud Functions, define Firestore collections/rules, or implement authentication and storage.
+- Replace local mock transit behavior with network-backed data in this change.
 
 ## Decisions
 
@@ -61,6 +67,18 @@ Alternative considered: compute routes from route/stop graphs. Rejected because 
 
 The profile screen uses static account summary and settings rows with chevrons or switches where useful. Sign out provides pressed/local feedback only and is clearly a placeholder; it does not mutate credentials or navigation state beyond optional feedback.
 
+### 8. Remove the standalone API workspace rather than preserving an adapter
+
+Delete the `server` workspace, its source/tests/configuration, API-only environment examples, and the mobile health-check hook. Update root commands to delegate directly to `@pathly/mobile`, and regenerate the root lockfile so Express, CORS, and server-only development packages are no longer installed.
+
+Alternative considered: retain the Express health server until Firebase is implemented. Rejected because no visible feature depends on it, the updated architecture explicitly removes the standalone server, and keeping it would leave misleading setup and maintenance obligations.
+
+### 9. Document Firebase without installing it
+
+Describe Firebase and its planned services in the README architecture and prototype-boundary sections, but do not add Firebase packages or configuration files. A future feature change can choose the correct client SDKs, Cloud Functions layout, security rules, emulator setup, and environment separation when those behaviors are specified.
+
+Alternative considered: add an initialized but unused Firebase SDK. Rejected because unused configuration would require project identifiers and platform credentials, could create accidental network behavior, and would not deliver a user-facing capability.
+
 ## Risks / Trade-offs
 
 - **Three-way sheet gestures can select the wrong bound** → Clamp height continuously and snap to the nearest of the three measured heights using projected velocity.
@@ -69,6 +87,9 @@ The profile screen uses static account summary and settings rows with chevrons o
 - **Mock trip results may be mistaken for live guidance** → Label results as prototype recommendations and avoid claims of live accuracy.
 - **Editable fields could imply full address search** → Treat them as local controlled fields and keep route cards deterministic for the prototype.
 - **Added screens increase root-state complexity** → Centralize view transitions in `HomeScreen` and keep each child screen stateless except for its own local controls.
+- **Removing the heartbeat eliminates the only client/server connectivity smoke test** → Treat mobile lint, tests, type checking, and multi-platform Expo export as the current runnable-system checks; add Firebase-specific integration checks when Firebase is implemented.
+- **Documentation may imply Firebase is already operational** → Clearly separate the target architecture from currently implemented local prototype behavior.
+- **Deleting the server changes existing root commands** → Preserve command names where useful and retarget them directly to the mobile workspace.
 
 ## Migration Plan
 
@@ -79,6 +100,8 @@ The profile screen uses static account summary and settings rows with chevrons o
 5. Add Recent trip rows and their Route Results transition.
 6. Make search rows selectable and add Route Results with local controls and itinerary cards.
 7. Add the placeholder profile/settings screen and wire the profile control.
-8. Update interaction tests, run the full workspace validation suite, and exercise all new paths in Android.
+8. Remove the standalone server workspace, API heartbeat, API-only environment examples, and obsolete dependencies.
+9. Retarget root scripts to the mobile workspace, regenerate dependency metadata, and update setup/architecture documentation for planned Firebase services.
+10. Update interaction tests, run the full mobile validation suite, and exercise all new paths in Android.
 
-Rollback is limited to reverting mobile components, mock data, and tests. No server or persisted-data migration is required.
+Rollback is limited to reverting mobile components, mock data, tests, and repository configuration. No persisted-data migration is required because neither MongoDB nor Firebase stores application data in the current prototype.

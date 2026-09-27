@@ -87,8 +87,8 @@ The profile control on the home screen SHALL open a placeholder account/settings
 - **THEN** basic account and settings items including Sign out are displayed
 
 ### Requirement: Expanded prototype remains local
-All route details, recents, trip results, preferences, refresh feedback, and profile settings introduced by this change SHALL use deterministic local mock data and component state.
+All route details, recents, trip results, preferences, refresh feedback, and profile settings introduced by this change SHALL use deterministic local mock data and component state. The prototype MUST remain usable before Firebase services are configured or implemented.
 
 #### Scenario: Prototype runs without backend route data
-- **WHEN** the API is unavailable
+- **WHEN** Firebase is unconfigured or unavailable
 - **THEN** the new navigation flows and mock content remain usable without displaying technical failure state

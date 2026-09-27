@@ -9,47 +9,19 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 
+import type { RouteDetail } from '../data/transit';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { LiveSignal } from './LiveSignal';
 
-export type RouteAccent = 'blue' | 'green' | 'red';
-
-export type TransitDirection = {
-  direction: string;
-  live: boolean;
-  minutes: number;
-  stopName: string;
+type TransitCardProps = {
+  onPress: () => void;
+  route: RouteDetail;
 };
 
-export type TransitCardProps = {
-  agency: string;
-  directions: readonly [TransitDirection, TransitDirection];
-  onPress?: () => void;
-  route: string;
-  routeAccent: RouteAccent;
-  routeName: string;
-  testID?: string;
-};
-
-const routeColors: Record<RouteAccent, string> = {
-  blue: colors.primary,
-  green: colors.routeGreen,
-  red: colors.red,
-};
-
-export function TransitCard({
-  agency,
-  directions,
-  onPress,
-  route,
-  routeAccent,
-  routeName,
-  testID,
-}: TransitCardProps) {
+export function TransitCard({ onPress, route }: TransitCardProps) {
   const [pageWidth, setPageWidth] = useState(320);
   const [activePage, setActivePage] = useState(0);
-  const routeColor = routeColors[routeAccent];
 
   const updatePage = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     setActivePage(Math.round(event.nativeEvent.contentOffset.x / pageWidth));
@@ -58,8 +30,8 @@ export function TransitCard({
   return (
     <View
       onLayout={(event) => setPageWidth(event.nativeEvent.layout.width)}
-      style={[styles.card, { backgroundColor: routeColor }]}
-      testID={testID}
+      style={[styles.card, { backgroundColor: route.color }]}
+      testID={`route-card-${route.id}`}
     >
       <ScrollView
         decelerationRate="fast"
@@ -67,52 +39,33 @@ export function TransitCard({
         onMomentumScrollEnd={updatePage}
         pagingEnabled={true}
         showsHorizontalScrollIndicator={false}
-        testID={`transit-${route}-directions`}
+        testID={`transit-${route.id}-directions`}
       >
-        {directions.map((item, index) => (
+        {route.directions.map((item, index) => (
           <Pressable
             key={item.direction}
-            accessibilityHint={
-              onPress
-                ? 'Opens route details. Swipe horizontally for the other direction.'
-                : 'Swipe horizontally for the other direction.'
-            }
-            accessibilityLabel={`${agency} ${routeName}. ${item.direction}. ${item.stopName}. ${item.minutes} minutes, ${item.live ? 'live GPS prediction' : 'scheduled time'}.`}
-            accessibilityRole={onPress ? 'button' : undefined}
+            accessibilityHint="Opens route details. Swipe horizontally for the other direction."
+            accessibilityLabel={`${route.agency} ${route.routeName}. ${item.direction}. ${item.stopName}. ${item.minutes} minutes, ${item.live ? 'live GPS prediction' : 'scheduled time'}.`}
+            accessibilityRole="button"
             onPress={onPress}
             style={({ pressed }) => [
               styles.page,
               { width: pageWidth },
-              pressed && onPress && styles.pressedPage,
+              pressed && styles.pressedPage,
             ]}
-            testID={
-              index === 0
-                ? `${testID ?? `transit-${route}`}-primary`
-                : `transit-${route}-alternate`
-            }
+            testID={`route-card-${route.id}-${index === 0 ? 'primary' : 'alternate'}`}
           >
             <View style={styles.copy}>
-              <Text
-                numberOfLines={2}
-                style={styles.routeName}
-                testID={`transit-${route}-title`}
-              >
-                {routeName}
+              <Text numberOfLines={2} style={styles.routeName} testID={`transit-${route.id}-title`}>
+                {route.routeName}
               </Text>
-              <Text numberOfLines={1} style={styles.direction}>
-                {item.direction}
-              </Text>
-              <Text numberOfLines={1} style={styles.stopName}>
-                {item.stopName}
-              </Text>
+              <Text numberOfLines={1} style={styles.direction}>{item.direction}</Text>
+              <Text numberOfLines={1} style={styles.stopName}>{item.stopName}</Text>
             </View>
 
             <View style={[styles.timing, !item.live && styles.scheduledTiming]}>
               <View style={styles.timeRow}>
-                <Text
-                  style={styles.minutes}
-                  testID={`transit-${route}-arrival-${index}`}
-                >
+                <Text style={styles.minutes} testID={`transit-${route.id}-arrival-${index}`}>
                   {item.minutes}
                 </Text>
                 {item.live ? <LiveSignal /> : null}
@@ -125,7 +78,7 @@ export function TransitCard({
       </ScrollView>
 
       <View accessibilityElementsHidden={true} style={styles.pageDots}>
-        {directions.map((item, index) => (
+        {route.directions.map((item, index) => (
           <View
             key={item.direction}
             style={[styles.pageDot, index === activePage && styles.activePageDot]}
@@ -156,17 +109,9 @@ const styles = StyleSheet.create({
     paddingTop: 14,
     paddingBottom: 23,
   },
-  pressedPage: {
-    opacity: 0.82,
-  },
-  copy: {
-    minWidth: 0,
-    flex: 1,
-  },
-  routeName: {
-    color: colors.white,
-    ...typography.displayTime,
-  },
+  pressedPage: { opacity: 0.82 },
+  copy: { minWidth: 0, flex: 1 },
+  routeName: { color: colors.white, ...typography.displayTime },
   direction: {
     marginTop: 7,
     color: colors.white,
@@ -179,23 +124,15 @@ const styles = StyleSheet.create({
     ...typography.metadata,
     opacity: 0.84,
   },
-  timing: {
-    width: 92,
-    alignItems: 'center',
-  },
-  scheduledTiming: {
-    opacity: 0.68,
-  },
+  timing: { width: 92, alignItems: 'center' },
+  scheduledTiming: { opacity: 0.68 },
   timeRow: {
     minHeight: 30,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  minutes: {
-    color: colors.white,
-    ...typography.displayTime,
-  },
+  minutes: { color: colors.white, ...typography.displayTime },
   minuteUnit: {
     marginTop: -1,
     color: colors.white,
@@ -229,8 +166,5 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: 'rgba(255,255,255,0.42)',
   },
-  activePageDot: {
-    width: 14,
-    backgroundColor: colors.white,
-  },
+  activePageDot: { width: 14, backgroundColor: colors.white },
 });

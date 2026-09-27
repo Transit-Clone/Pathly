@@ -25,12 +25,14 @@ import { MapBackdrop } from './MapBackdrop';
 export type SearchViewProps = {
   initialQuery?: string;
   onCancel: () => void;
+  onSelect: (place: MockSearchPlace) => void;
 };
 
 type SearchResultRowProps = {
   index?: number;
   place: MockSearchPlace;
   recent?: boolean;
+  onPress: () => void;
 };
 
 function SearchIcon() {
@@ -48,14 +50,16 @@ function SearchIcon() {
 
 function SearchResultRow({
   index,
+  onPress,
   place,
   recent = false,
 }: SearchResultRowProps) {
   return (
-    <View
+    <Pressable
       accessibilityLabel={`${place.title}, ${place.subtitle}`}
-      accessible={true}
-      style={styles.resultRow}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [styles.resultRow, pressed && styles.pressedControl]}
       testID={`search-result-${place.id}`}
     >
       <View
@@ -81,11 +85,11 @@ function SearchResultRow({
       <Text accessibilityElementsHidden={true} style={styles.chevron}>
         ›
       </Text>
-    </View>
+    </Pressable>
   );
 }
 
-export function SearchView({ initialQuery = '', onCancel }: SearchViewProps) {
+export function SearchView({ initialQuery = '', onCancel, onSelect }: SearchViewProps) {
   const [query, setQuery] = useState(initialQuery);
   const { height, width } = useWindowDimensions();
   const normalizedQuery = query.trim();
@@ -201,6 +205,7 @@ export function SearchView({ initialQuery = '', onCancel }: SearchViewProps) {
                 <SearchResultRow
                   key={place.id}
                   index={index + 1}
+                  onPress={() => onSelect(place)}
                   place={place}
                   recent={!isSearching}
                 />
