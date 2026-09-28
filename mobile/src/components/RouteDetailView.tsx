@@ -6,12 +6,22 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { RouteDetail } from '../data/transit';
 import { colors } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
+import { CurrentLocationMarker } from './CurrentLocationMarker';
 import { LiveSignal } from './LiveSignal';
+import { MapBackdrop } from './MapBackdrop';
 
 type RouteDetailViewProps = {
   onBack: () => void;
   route: RouteDetail;
 };
+
+const stopPositions = [
+  { left: '13%', top: '48%' },
+  { left: '29%', top: '42%' },
+  { left: '44%', top: '37%' },
+  { left: '60%', top: '30%' },
+  { left: '76%', top: '23%' },
+] as const;
 
 export function RouteDetailView({ onBack, route }: RouteDetailViewProps) {
   const [alertsOpen, setAlertsOpen] = useState(false);
@@ -21,17 +31,42 @@ export function RouteDetailView({ onBack, route }: RouteDetailViewProps) {
     <View style={styles.viewport}>
       <View style={styles.screen} testID={`route-detail-${route.id}`}>
         <StatusBar style="dark" />
+
         <View style={styles.map}>
-          <View style={[styles.routePath, { backgroundColor: route.color }]} />
-          {route.mapLabels.map((label, index) => (
-            <View
-              key={label}
-              style={[styles.mapStop, { left: `${10 + index * 19}%`, top: 112 + (index % 2) * 42 }]}
-            >
-              <View style={[styles.mapDot, { borderColor: route.color }]} />
-              <Text style={styles.mapLabel}>{label}</Text>
+          <MapBackdrop />
+          <View style={[styles.routeSegment, styles.segmentOne, { backgroundColor: route.color }]} />
+          <View style={[styles.routeSegment, styles.segmentTwo, { backgroundColor: route.color }]} />
+          <View style={[styles.routeSegment, styles.segmentThree, { backgroundColor: route.color }]} />
+
+          {route.mapLabels.map((label, index) => {
+            const position = stopPositions[index % stopPositions.length];
+            return (
+              <View key={label} style={[styles.mapStop, position]}>
+                <View style={[styles.mapDot, { borderColor: route.color }]} />
+                <Text numberOfLines={2} style={styles.mapLabel}>{label}</Text>
+              </View>
+            );
+          })}
+
+          <View style={styles.routeIdentity}>
+            <View style={styles.agencyPill}>
+              <Text style={styles.agencyPillText}>{route.agency}</Text>
             </View>
-          ))}
+            <View
+              style={[styles.routeBadge, { backgroundColor: route.color }]}
+              testID="route-detail-badge"
+            >
+              <Text style={styles.routeBadgeText}>{route.shortName}</Text>
+            </View>
+          </View>
+
+          <View style={styles.vehicleMarker}>
+            <Text style={[styles.vehicleIcon, { color: route.color }]}>▣</Text>
+            <View style={[styles.liveBubble, { backgroundColor: route.color }]}>
+              <Text style={styles.liveBubbleText}>{route.predictions[0]?.minutes}m</Text>
+            </View>
+          </View>
+          <View style={styles.currentLocation}><CurrentLocationMarker /></View>
         </View>
 
         <SafeAreaView edges={['top']} style={styles.topBar}>
@@ -43,7 +78,6 @@ export function RouteDetailView({ onBack, route }: RouteDetailViewProps) {
             testID="route-back"
           >
             <Text style={styles.backIcon}>‹</Text>
-            <Text style={styles.backText}>Back</Text>
           </Pressable>
           <View style={styles.topActions}>
             <Pressable
@@ -52,7 +86,7 @@ export function RouteDetailView({ onBack, route }: RouteDetailViewProps) {
               style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
               testID="route-location"
             >
-              <Text style={styles.iconText}>◎</Text>
+              <Text style={styles.locationIcon}>◎</Text>
             </Pressable>
             <Pressable
               accessibilityLabel={isPinned ? 'Unpin route' : 'Pin route'}
@@ -66,53 +100,64 @@ export function RouteDetailView({ onBack, route }: RouteDetailViewProps) {
               ]}
               testID="route-pin"
             >
-              <Text style={[styles.iconText, isPinned && styles.pinnedIcon]}>◆</Text>
+              <Text style={[styles.pinIcon, { color: isPinned ? colors.white : route.color }]}>◆</Text>
             </Pressable>
           </View>
         </SafeAreaView>
+
+        <View style={styles.destinationOverlay}>
+          <View style={[styles.destinationDot, { backgroundColor: route.color }]} />
+          <Text numberOfLines={1} style={[styles.destinationText, { color: route.color }]}>
+            → {route.destination}
+          </Text>
+        </View>
 
         <SafeAreaView edges={['bottom']} style={styles.sheet}>
           <View style={styles.handle} />
           <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
             <View style={styles.titleRow}>
-              <View
-                style={[styles.routeBadge, { backgroundColor: route.color }]}
-                testID="route-detail-badge"
-              >
-                <Text style={styles.routeBadgeText}>{route.shortName}</Text>
-              </View>
               <View style={styles.titleCopy}>
-                <Text style={styles.agency}>{route.agency}</Text>
                 <Text style={styles.title}>{route.routeName}</Text>
-                <Text style={styles.direction}>
-                  {route.direction} · toward {route.destination}
-                </Text>
+                <Text style={styles.direction}>{route.direction} · toward {route.destination}</Text>
+              </View>
+              <View style={[styles.routeChip, { backgroundColor: route.color }]}>
+                <Text style={styles.routeChipText}>{route.shortName}</Text>
               </View>
             </View>
 
-            <Text style={styles.sectionLabel}>UPCOMING</Text>
-            <View style={styles.predictions}>
-              {route.predictions.map((prediction) => (
-                <View
-                  key={`${prediction.minutes}-${prediction.live}`}
-                  accessibilityLabel={`${prediction.minutes} minutes, ${prediction.live ? 'live GPS prediction' : 'scheduled time'}`}
-                  accessible={true}
-                  style={[styles.prediction, !prediction.live && styles.scheduled]}
-                  testID={`route-prediction-${prediction.minutes}`}
-                >
-                  <View style={styles.predictionRow}>
-                    <Text style={[styles.predictionTime, { color: route.color }]}>
-                      {prediction.minutes}
-                    </Text>
-                    {prediction.live ? <LiveSignal color={route.color} /> : null}
+            <ScrollView
+              contentContainerStyle={styles.predictions}
+              horizontal={true}
+              showsHorizontalScrollIndicator={false}
+            >
+              {route.predictions.map((prediction, index) => {
+                const highlighted = index === 0;
+                const predictionColor = highlighted ? colors.white : route.color;
+                return (
+                  <View
+                    key={`${prediction.minutes}-${prediction.live}`}
+                    accessibilityLabel={`${prediction.minutes} minutes, ${prediction.live ? 'live GPS prediction' : 'scheduled time'}`}
+                    accessible={true}
+                    style={[
+                      styles.prediction,
+                      { borderColor: route.color },
+                      highlighted && { backgroundColor: route.color },
+                      !prediction.live && styles.scheduled,
+                    ]}
+                    testID={`route-prediction-${prediction.minutes}`}
+                  >
+                    <View style={styles.predictionRow}>
+                      <Text style={[styles.predictionTime, { color: predictionColor }]}>
+                        {prediction.minutes}
+                      </Text>
+                      {prediction.live ? <LiveSignal color={predictionColor} /> : null}
+                    </View>
+                    <Text style={[styles.predictionUnit, { color: predictionColor }]}>minutes</Text>
+                    {!prediction.live ? <Text style={styles.predictionSource}>SCHEDULED</Text> : null}
                   </View>
-                  <Text style={[styles.predictionUnit, { color: route.color }]}>minutes</Text>
-                  <Text style={styles.predictionSource}>
-                    {prediction.live ? 'Live' : 'Scheduled'}
-                  </Text>
-                </View>
-              ))}
-            </View>
+                );
+              })}
+            </ScrollView>
 
             <Pressable
               accessibilityLabel="Service alerts"
@@ -124,9 +169,7 @@ export function RouteDetailView({ onBack, route }: RouteDetailViewProps) {
             >
               <View style={[styles.alertDot, { backgroundColor: route.alert.startsWith('No delays') ? colors.success : colors.warning }]} />
               <Text style={styles.alertText}>Service alerts</Text>
-              <Text style={styles.alertStatus}>
-                {route.alert.startsWith('No delays') ? 'No delays' : 'Advisory'}
-              </Text>
+              <Text style={styles.alertStatus}>{route.alert.startsWith('No delays') ? 'No delays' : 'Advisory'}</Text>
               <Text style={styles.chevron}>{alertsOpen ? '⌃' : '⌄'}</Text>
             </Pressable>
             {alertsOpen ? <Text style={styles.alertBody}>{route.alert}</Text> : null}
@@ -152,13 +195,7 @@ export function RouteDetailView({ onBack, route }: RouteDetailViewProps) {
                   >
                     <View style={styles.timelineRail}>
                       {!isFirst ? <View style={[styles.rail, styles.railTop, { backgroundColor: route.color }]} /> : null}
-                      <View
-                        style={[
-                          styles.stopDot,
-                          { borderColor: route.color },
-                          isFirst && { backgroundColor: route.color },
-                        ]}
-                      />
+                      <View style={[styles.stopDot, { borderColor: route.color }, isFirst && { backgroundColor: route.color }]} />
                       {!isLast ? <View style={[styles.rail, styles.railBottom, { backgroundColor: route.color }]} /> : null}
                     </View>
                     <View style={styles.stopCopy}>
@@ -180,143 +217,70 @@ export function RouteDetailView({ onBack, route }: RouteDetailViewProps) {
 const styles = StyleSheet.create({
   viewport: { flex: 1, alignItems: 'center', backgroundColor: colors.background },
   screen: { width: '100%', maxWidth: 540, flex: 1, overflow: 'hidden', backgroundColor: colors.canvas },
-  map: { height: 330, overflow: 'hidden', backgroundColor: colors.blueSoft },
-  routePath: {
-    position: 'absolute',
-    top: 148,
-    left: '8%',
-    width: '84%',
-    height: 6,
-    borderRadius: 3,
-    transform: [{ rotate: '-7deg' }],
-  },
-  mapStop: { position: 'absolute', width: 74, alignItems: 'center', marginLeft: -20 },
-  mapDot: { width: 15, height: 15, borderWidth: 4, borderRadius: 8, backgroundColor: colors.white },
-  mapLabel: {
-    marginTop: 5,
-    color: colors.ink,
-    fontFamily: fontFamilies.bold,
-    fontSize: 9,
-    textAlign: 'center',
-  },
-  topBar: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    left: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 10,
-  },
-  backButton: {
-    minHeight: 46,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 13,
-    borderRadius: 23,
-    backgroundColor: colors.surface,
-  },
-  backIcon: { color: colors.primary, fontFamily: fontFamilies.regular, fontSize: 30, lineHeight: 32 },
-  backText: { color: colors.primary, ...typography.bodyStrong },
-  topActions: { flexDirection: 'row', gap: 8 },
-  iconButton: {
-    width: 46,
-    height: 46,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 23,
-    backgroundColor: colors.surface,
-  },
-  iconText: { color: colors.primary, fontFamily: fontFamilies.extraBold, fontSize: 19 },
-  pinnedIcon: { color: colors.white },
-  pressed: { opacity: 0.65 },
-  sheet: {
-    position: 'absolute',
-    top: 275,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    overflow: 'hidden',
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    backgroundColor: colors.surface,
-  },
-  handle: {
-    width: 42,
-    height: 5,
-    alignSelf: 'center',
-    marginTop: 12,
-    borderRadius: 3,
-    backgroundColor: colors.border,
-  },
-  content: { padding: 20, paddingBottom: 36 },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  routeBadge: {
-    minWidth: 54,
-    height: 54,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 8,
-    borderRadius: 16,
-  },
-  routeBadgeText: { color: colors.white, fontFamily: fontFamilies.extraBold, fontSize: 18 },
+  map: { height: '58%', overflow: 'hidden', backgroundColor: colors.blueSoft },
+  routeSegment: { position: 'absolute', height: 10, borderRadius: 5 },
+  segmentOne: { top: '48%', left: '10%', width: '38%', transform: [{ rotate: '-18deg' }] },
+  segmentTwo: { top: '36%', left: '40%', width: '34%', transform: [{ rotate: '-28deg' }] },
+  segmentThree: { top: '23%', left: '69%', width: '25%', transform: [{ rotate: '-12deg' }] },
+  mapStop: { position: 'absolute', width: 76, alignItems: 'center', marginLeft: -28, marginTop: -8 },
+  mapDot: { width: 18, height: 18, borderWidth: 5, borderRadius: 9, backgroundColor: colors.white },
+  mapLabel: { marginTop: 4, color: colors.ink, fontFamily: fontFamilies.bold, fontSize: 9, lineHeight: 11, textAlign: 'center' },
+  routeIdentity: { position: 'absolute', top: 78, left: 20, alignItems: 'flex-start', gap: 7 },
+  agencyPill: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 13, backgroundColor: 'rgba(255,255,255,0.92)' },
+  agencyPillText: { color: colors.ink, ...typography.label, fontSize: 9 },
+  routeBadge: { minWidth: 76, height: 76, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, borderRadius: 22, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 6 },
+  routeBadgeText: { color: colors.white, fontFamily: fontFamilies.extraBold, fontSize: 36, lineHeight: 42 },
+  vehicleMarker: { position: 'absolute', top: '39%', left: '42%', width: 58, height: 58, alignItems: 'center', justifyContent: 'center', borderRadius: 29, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.18, shadowRadius: 9, elevation: 5 },
+  vehicleIcon: { fontFamily: fontFamilies.extraBold, fontSize: 26 },
+  liveBubble: { position: 'absolute', top: -7, right: -13, minWidth: 34, height: 24, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5, borderRadius: 12 },
+  liveBubbleText: { color: colors.white, fontFamily: fontFamilies.extraBold, fontSize: 10 },
+  currentLocation: { position: 'absolute', top: '54%', left: '56%' },
+  topBar: { position: 'absolute', top: 0, right: 0, left: 0, zIndex: 4, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 14, paddingTop: 8 },
+  backButton: { width: 46, height: 46, alignItems: 'center', justifyContent: 'center', borderRadius: 23, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.14, shadowRadius: 8, elevation: 4 },
+  backIcon: { color: colors.primary, fontFamily: fontFamilies.regular, fontSize: 33, lineHeight: 35 },
+  topActions: { gap: 9 },
+  iconButton: { width: 46, height: 46, alignItems: 'center', justifyContent: 'center', borderRadius: 23, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.14, shadowRadius: 8, elevation: 4 },
+  locationIcon: { color: colors.primary, fontFamily: fontFamilies.extraBold, fontSize: 24 },
+  pinIcon: { fontFamily: fontFamilies.extraBold, fontSize: 18 },
+  destinationOverlay: { position: 'absolute', top: '45%', left: 18, right: 88, zIndex: 2, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  destinationDot: { width: 13, height: 13, borderRadius: 7 },
+  destinationText: { fontFamily: fontFamilies.extraBold, fontSize: 22, lineHeight: 27 },
+  sheet: { position: 'absolute', top: '52%', right: 0, bottom: 0, left: 0, overflow: 'hidden', borderTopLeftRadius: 28, borderTopRightRadius: 28, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: -6 }, shadowOpacity: 0.12, shadowRadius: 16, elevation: 12 },
+  handle: { width: 42, height: 5, alignSelf: 'center', marginTop: 10, borderRadius: 3, backgroundColor: colors.border },
+  content: { padding: 18, paddingTop: 13, paddingBottom: 36 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   titleCopy: { minWidth: 0, flex: 1 },
-  agency: { color: colors.mutedInk, ...typography.label },
-  title: { color: colors.ink, ...typography.screenHeading, fontSize: 25 },
-  direction: { color: colors.mutedInk, ...typography.bodyStrong, fontSize: 13 },
-  sectionLabel: { marginTop: 22, marginBottom: 9, color: colors.mutedInk, ...typography.label },
-  predictions: { flexDirection: 'row', gap: 8 },
-  prediction: {
-    minHeight: 104,
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.accent,
-    borderRadius: 16,
-    backgroundColor: colors.blueSoft,
-  },
-  scheduled: { borderColor: colors.border, backgroundColor: colors.background, opacity: 0.7 },
+  title: { color: colors.ink, ...typography.screenHeading, fontSize: 23, lineHeight: 27 },
+  direction: { marginTop: 2, color: colors.mutedInk, ...typography.bodyStrong, fontSize: 12 },
+  routeChip: { minWidth: 42, height: 42, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8, borderRadius: 13 },
+  routeChipText: { color: colors.white, fontFamily: fontFamilies.extraBold, fontSize: 14 },
+  predictions: { gap: 10, paddingTop: 15, paddingRight: 18 },
+  prediction: { width: 112, minHeight: 112, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderRadius: 20, backgroundColor: colors.surface },
+  scheduled: { opacity: 0.68 },
   predictionRow: { flexDirection: 'row', alignItems: 'center' },
-  predictionTime: { fontFamily: fontFamilies.extraBold, fontSize: 28, lineHeight: 34 },
-  predictionUnit: { fontFamily: fontFamilies.bold, fontSize: 10 },
-  predictionSource: { marginTop: 6, color: colors.mutedInk, ...typography.label, fontSize: 9 },
-  alertButton: {
-    minHeight: 48,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 14,
-    paddingHorizontal: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 14,
-    backgroundColor: colors.background,
-  },
+  predictionTime: { fontFamily: fontFamilies.extraBold, fontSize: 36, lineHeight: 40 },
+  predictionUnit: { fontFamily: fontFamilies.bold, fontSize: 11 },
+  predictionSource: { marginTop: 5, color: colors.mutedInk, ...typography.label, fontSize: 8 },
+  alertButton: { minHeight: 48, flexDirection: 'row', alignItems: 'center', marginTop: 14, paddingHorizontal: 14, borderWidth: 1, borderColor: colors.border, borderRadius: 15, backgroundColor: colors.background },
   alertDot: { width: 9, height: 9, marginRight: 9, borderRadius: 5 },
   alertText: { flex: 1, color: colors.ink, ...typography.bodyStrong },
   alertStatus: { color: colors.success, ...typography.metadata },
   chevron: { marginLeft: 8, color: colors.mutedInk, fontFamily: fontFamilies.extraBold },
   alertBody: { paddingHorizontal: 14, paddingTop: 8, color: colors.mutedInk, ...typography.metadata },
-  timelineHeading: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 24,
-    marginBottom: 4,
-  },
+  timelineHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 22, marginBottom: 4 },
   timelineTitle: { color: colors.ink, ...typography.sectionHeading },
   onTimeChip: { flexDirection: 'row', alignItems: 'center', padding: 7, borderRadius: 10, backgroundColor: colors.greenSoft },
   onTimeDot: { width: 6, height: 6, marginRight: 5, borderRadius: 3, backgroundColor: colors.success },
   onTimeText: { color: colors.success, fontFamily: fontFamilies.extraBold, fontSize: 10 },
   stopRow: { minHeight: 74, flexDirection: 'row', alignItems: 'center' },
   timelineRail: { width: 30, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center', marginRight: 5 },
-  rail: { position: 'absolute', width: 3, height: '50%' },
+  rail: { position: 'absolute', width: 4, height: '50%' },
   railTop: { top: 0 },
   railBottom: { bottom: 0 },
-  stopDot: { zIndex: 1, width: 13, height: 13, borderWidth: 3, borderRadius: 7, backgroundColor: colors.surface },
+  stopDot: { zIndex: 1, width: 15, height: 15, borderWidth: 4, borderRadius: 8, backgroundColor: colors.surface },
   stopCopy: { minWidth: 0, flex: 1, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border },
   stopName: { color: colors.ink, fontFamily: fontFamilies.bold, fontSize: 16 },
   stopMeta: { marginTop: 3, color: colors.mutedInk, ...typography.metadata, fontSize: 11 },
-  stopTime: { paddingLeft: 10, color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 17 },
+  stopTime: { paddingLeft: 10, color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 16 },
+  pressed: { opacity: 0.65 },
 });

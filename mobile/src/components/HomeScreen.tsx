@@ -27,8 +27,8 @@ export function HomeScreen() {
   const [sheetState, setSheetState] = useState<SheetState>('compact');
   const { height } = useWindowDimensions();
   const minimizedSheetHeight = 64;
-  const compactSheetHeight = Math.min(520, Math.max(400, height * 0.5));
-  const expandedSheetHeight = Math.min(height - 108, Math.max(620, height * 0.8));
+  const compactSheetHeight = Math.min(460, Math.max(350, height * 0.44));
+  const expandedSheetHeight = Math.min(height - 104, Math.max(610, height * 0.78));
 
   const showHome = useCallback(() => setActiveView({ name: 'home' }), []);
   const showSearch = useCallback(() => setActiveView({ name: 'search' }), []);
@@ -112,6 +112,6 @@ const styles = StyleSheet.create({
   screen: { width: '100%', maxWidth: 540, flex: 1, overflow: 'hidden', backgroundColor: colors.canvas },
   safeArea: { zIndex: 4 },
   header: { paddingTop: 10, paddingHorizontal: 16 },
-  locationMarker: { position: 'absolute', top: '31%', left: '47%' },
+  locationMarker: { position: 'absolute', top: '29%', left: '47%' },
   locationButton: { position: 'absolute', right: 16, zIndex: 2 },
 });

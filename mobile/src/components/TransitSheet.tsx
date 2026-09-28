@@ -192,7 +192,6 @@ export function TransitSheet({
             showsVerticalScrollIndicator={false}
             style={styles.scroll}
           >
-            <Text style={styles.sectionLabel}>PINNED</Text>
             {pinnedRoutes.map((route) => (
               <TransitCard
                 key={route.id}
@@ -201,7 +200,6 @@ export function TransitSheet({
               />
             ))}
 
-            <Text style={[styles.sectionLabel, styles.nearbyLabel]}>NEAR YOU</Text>
             <View style={styles.cardStack}>
               {nearbyRoutes.map((route) => (
                 <TransitCard
@@ -260,8 +258,8 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     overflow: 'hidden',
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     backgroundColor: colors.surface,
     shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: -5 },
@@ -298,10 +296,8 @@ const styles = StyleSheet.create({
   tabLabel: { color: colors.mutedInk, ...typography.bodyStrong, fontSize: 13 },
   selectedTabLabel: { color: colors.primary, fontFamily: fontFamilies.extraBold },
   scroll: { flex: 1 },
-  content: { paddingHorizontal: 16, paddingTop: 15, paddingBottom: 30 },
-  sectionLabel: { marginBottom: 8, color: colors.mutedInk, ...typography.label, fontSize: 10 },
-  nearbyLabel: { marginTop: 17 },
-  cardStack: { gap: 10 },
+  content: { paddingHorizontal: 10, paddingTop: 10, paddingBottom: 30, gap: 8 },
+  cardStack: { gap: 8 },
   recentList: { paddingHorizontal: 16, paddingVertical: 12, gap: 10 },
   recentRow: {
     minHeight: 76,

@@ -91,9 +91,9 @@ export function TransitCard({ onPress, route }: TransitCardProps) {
 
 const styles = StyleSheet.create({
   card: {
-    minHeight: 132,
+    minHeight: 104,
     overflow: 'hidden',
-    borderRadius: 20,
+    borderRadius: 14,
     shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.12,
@@ -101,19 +101,19 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   page: {
-    minHeight: 132,
+    minHeight: 104,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    paddingHorizontal: 18,
-    paddingTop: 14,
-    paddingBottom: 23,
+    paddingHorizontal: 16,
+    paddingTop: 11,
+    paddingBottom: 18,
   },
   pressedPage: { opacity: 0.82 },
   copy: { minWidth: 0, flex: 1 },
   routeName: { color: colors.white, ...typography.displayTime },
   direction: {
-    marginTop: 7,
+    marginTop: 3,
     color: colors.white,
     ...typography.bodyStrong,
     fontSize: 13,
@@ -124,7 +124,7 @@ const styles = StyleSheet.create({
     ...typography.metadata,
     opacity: 0.84,
   },
-  timing: { width: 92, alignItems: 'center' },
+  timing: { width: 82, alignItems: 'center' },
   scheduledTiming: { opacity: 0.68 },
   timeRow: {
     minHeight: 30,
