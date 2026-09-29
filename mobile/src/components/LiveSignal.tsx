@@ -14,7 +14,6 @@ export function LiveSignal({ color = '#FFFFFF' }: LiveSignalProps) {
     >
       <View style={[styles.arc, styles.outerArc, { borderColor: color }]} />
       <View style={[styles.arc, styles.innerArc, { borderColor: color }]} />
-      <View style={[styles.dot, { backgroundColor: color }]} />
     </View>
   );
 }
@@ -22,40 +21,33 @@ export function LiveSignal({ color = '#FFFFFF' }: LiveSignalProps) {
 const styles = StyleSheet.create({
   signal: {
     position: 'relative',
-    width: 17,
-    height: 15,
-    marginTop: -8,
-    marginLeft: 2,
+    width: 11,
+    height: 9,
+    marginTop: -9,
+    marginLeft: 1,
+    transform: [{ rotate: '45deg' }],
   },
   arc: {
     position: 'absolute',
-    borderTopWidth: 2,
-    borderRightWidth: 2,
-    borderLeftWidth: 2,
+    borderTopWidth: 1.5,
+    borderRightWidth: 1.5,
+    borderLeftWidth: 1.5,
     borderBottomWidth: 0,
   },
   outerArc: {
     top: 0,
     right: 0,
-    width: 16,
-    height: 9,
-    borderTopLeftRadius: 12,
-    borderTopRightRadius: 12,
-  },
-  innerArc: {
-    top: 5,
-    right: 4,
-    width: 8,
-    height: 5,
+    width: 11,
+    height: 6,
     borderTopLeftRadius: 8,
     borderTopRightRadius: 8,
   },
-  dot: {
-    position: 'absolute',
-    right: 7,
-    bottom: 0,
-    width: 3,
-    height: 3,
-    borderRadius: 2,
+  innerArc: {
+    top: 4,
+    right: 3,
+    width: 6,
+    height: 4,
+    borderTopLeftRadius: 5,
+    borderTopRightRadius: 5,
   },
 });

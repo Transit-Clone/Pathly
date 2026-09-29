@@ -1,5 +1,13 @@
 export type RouteId = 'ronkonkoma' | 's1' | 'e' | '51' | '7';
 
+export const routeColors: Record<RouteId, string> = {
+  ronkonkoma: '#A626AA',
+  s1: '#C63F49',
+  e: '#0039A6',
+  '51': '#C63F49',
+  '7': '#B933AD',
+};
+
 export type TransitDirection = {
   direction: string;
   live: boolean;
@@ -38,7 +46,7 @@ export const routes: readonly RouteDetail[] = [
     agency: 'LIRR',
     shortName: 'R',
     routeName: 'Ronkonkoma Branch',
-    color: '#0B4F9C',
+    color: routeColors.ronkonkoma,
     direction: 'Westbound',
     destination: 'Penn Station',
     directions: [
@@ -65,7 +73,7 @@ export const routes: readonly RouteDetail[] = [
     agency: 'Suffolk County Transit',
     shortName: 'S1',
     routeName: 'S1',
-    color: '#13795B',
+    color: routeColors.s1,
     direction: 'Northbound',
     destination: 'Halesite',
     directions: [
@@ -92,7 +100,7 @@ export const routes: readonly RouteDetail[] = [
     agency: 'MTA Subway',
     shortName: 'E',
     routeName: 'E Train',
-    color: '#C43D4B',
+    color: routeColors.e,
     direction: 'Downtown',
     destination: 'World Trade Center',
     directions: [
@@ -119,7 +127,7 @@ export const routes: readonly RouteDetail[] = [
     agency: 'Suffolk County Transit',
     shortName: '51',
     routeName: 'Route 51',
-    color: '#13795B',
+    color: routeColors['51'],
     direction: 'Eastbound',
     destination: 'Patchogue',
     directions: [
@@ -146,7 +154,7 @@ export const routes: readonly RouteDetail[] = [
     agency: 'MTA Subway',
     shortName: '7',
     routeName: '7 Train',
-    color: '#8B4AA5',
+    color: routeColors['7'],
     direction: 'Westbound',
     destination: '34 St–Hudson Yards',
     directions: [

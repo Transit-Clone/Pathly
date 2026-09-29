@@ -4,6 +4,7 @@ import {
   recentTripById,
   recentTrips,
   routeById,
+  routeColors,
   routes,
 } from '../src/data/transit';
 
@@ -24,6 +25,19 @@ describe('transit prototype data', () => {
       expect(route.predictions.length).toBeGreaterThanOrEqual(3);
       expect(route.mapLabels.length).toBeGreaterThanOrEqual(3);
       expect(route.stops.length).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('uses recognizable route-specific colors', () => {
+    expect(routeColors).toEqual({
+      ronkonkoma: '#A626AA',
+      s1: '#C63F49',
+      e: '#0039A6',
+      '51': '#C63F49',
+      '7': '#B933AD',
+    });
+    for (const route of routes) {
+      expect(route.color).toBe(routeColors[route.id]);
     }
   });
 

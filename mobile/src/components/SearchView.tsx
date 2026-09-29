@@ -96,7 +96,7 @@ export function SearchView({ initialQuery = '', onCancel, onSelect }: SearchView
   const isSearching = normalizedQuery.length > 0;
   const searchResults = useMemo(() => findMockDestinations(query), [query]);
   const sheetHeight = isSearching
-    ? Math.min(440, Math.max(340, height * 0.45))
+    ? Math.max(160, Math.min(520, height * 0.58, height - 130))
     : Math.min(500, Math.max(405, height * 0.55));
   const mapHeight = height - sheetHeight;
   const screenWidth = Math.min(width, 540);
@@ -108,7 +108,7 @@ export function SearchView({ initialQuery = '', onCancel, onSelect }: SearchView
   return (
     <View style={styles.viewport}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.screen}
         testID="search-view"
       >

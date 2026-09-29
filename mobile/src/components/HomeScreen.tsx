@@ -11,7 +11,6 @@ import {
   type RouteId,
 } from '../data/transit';
 import { colors } from '../theme/colors';
-import { CurrentLocationButton } from './CurrentLocationButton';
 import { CurrentLocationMarker } from './CurrentLocationMarker';
 import { MapBackdrop } from './MapBackdrop';
 import { ProfileView } from './ProfileView';
@@ -40,11 +39,11 @@ export function HomeScreen() {
   const [activeTrip, setActiveTrip] = useState<ActiveTrip>(null);
   const [homeTab, setHomeTab] = useState<TransitTabId>('nearby');
   const [selectedSearchTripId, setSelectedSearchTripId] = useState<ItineraryId | null>(null);
-  const [sheetState, setSheetState] = useState<SheetState>('compact');
+  const [, setSheetState] = useState<SheetState>('compact');
   const { height } = useWindowDimensions();
-  const minimizedSheetHeight = 64;
-  const compactSheetHeight = Math.min(460, Math.max(350, height * 0.44));
-  const expandedSheetHeight = Math.min(height - 104, Math.max(610, height * 0.78));
+  const minimizedSheetHeight = 28;
+  const compactSheetHeight = Math.min(height - 80, Math.min(560, Math.max(400, height * 0.52)));
+  const expandedSheetHeight = height;
 
   const showHome = useCallback(() => setActiveView({ name: 'home' }), []);
   const showSearch = useCallback(() => {
@@ -161,9 +160,6 @@ export function HomeScreen() {
     return <ProfileView onBack={showHome} />;
   }
 
-  const locationButtonBottom =
-    sheetState === 'minimized' ? minimizedSheetHeight + 16 : compactSheetHeight + 16;
-
   return (
     <View style={styles.viewport}>
       <StatusBar style="dark" />
@@ -179,12 +175,6 @@ export function HomeScreen() {
         </SafeAreaView>
 
         <View style={styles.locationMarker}><CurrentLocationMarker /></View>
-
-        {sheetState !== 'expanded' ? (
-          <View style={[styles.locationButton, { bottom: locationButtonBottom }]}>
-            <CurrentLocationButton />
-          </View>
-        ) : null}
 
         <TransitSheet
           activeTripId={activeTrip?.kind === 'recent' ? activeTrip.tripId : null}
@@ -207,8 +197,13 @@ export function HomeScreen() {
 const styles = StyleSheet.create({
   viewport: { flex: 1, alignItems: 'center', backgroundColor: colors.background },
   screen: { width: '100%', maxWidth: 540, flex: 1, overflow: 'hidden', backgroundColor: colors.canvas },
-  safeArea: { zIndex: 4 },
+  safeArea: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    left: 0,
+    zIndex: 30,
+  },
   header: { paddingTop: 10, paddingHorizontal: 16 },
   locationMarker: { position: 'absolute', top: '29%', left: '47%' },
-  locationButton: { position: 'absolute', right: 16, zIndex: 2 },
 });

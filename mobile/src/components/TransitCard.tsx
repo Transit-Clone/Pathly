@@ -93,12 +93,8 @@ const styles = StyleSheet.create({
   card: {
     minHeight: 104,
     overflow: 'hidden',
-    borderRadius: 14,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 9,
-    elevation: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.34)',
   },
   page: {
     minHeight: 104,
@@ -132,7 +128,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  minutes: { color: colors.white, ...typography.displayTime },
+  minutes: {
+    color: colors.white,
+    ...typography.displayTime,
+    fontSize: 30,
+    lineHeight: 34,
+  },
   minuteUnit: {
     marginTop: -1,
     color: colors.white,

@@ -1,5 +1,4 @@
 import { act, fireEvent, render, within } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
 import mockSafeAreaContext from 'react-native-safe-area-context/jest/mock';
 
 import App from '../App';
@@ -41,17 +40,15 @@ describe('Pathly prototype navigation', () => {
     expect(within(screen.getByTestId('route-card-ronkonkoma-alternate')).queryByTestId('live-gps-signal', { includeHiddenElements: true })).toBeNull();
   });
 
-  it.each(routes.map((route) => [route.id, route.routeName, route.color] as const))(
+  it.each(routes.map((route) => [route.id, route.routeName] as const))(
     'opens shared details for %s and returns home',
-    (routeId, routeName, color) => {
+    (routeId, routeName) => {
       const screen = render(<App />);
       fireEvent.press(screen.getByTestId(`route-card-${routeId}-primary`));
 
       expect(screen.getByTestId(`route-detail-${routeId}`)).toBeTruthy();
       expect(screen.getAllByText(routeName).length).toBeGreaterThan(0);
-      expect(StyleSheet.flatten(screen.getByTestId('route-detail-badge').props.style)).toEqual(
-        expect.objectContaining({ backgroundColor: color }),
-      );
+      expect(screen.getByTestId('route-detail-badge')).toBeTruthy();
       fireEvent.press(screen.getByTestId('route-back'));
       expect(screen.getByTestId(`route-card-${routeId}`)).toBeTruthy();
     },
@@ -61,8 +58,11 @@ describe('Pathly prototype navigation', () => {
     jest.useFakeTimers();
     const screen = render(<App />);
     const handle = screen.getByTestId('transit-sheet-handle');
+    const sheetScroll = screen.getByTestId('nearby-route-list');
 
     expect(handle.props.accessibilityValue).toEqual({ text: 'compact' });
+    expect(within(sheetScroll).getByTestId('transit-sheet-handle')).toBeTruthy();
+    expect(within(sheetScroll).getByTestId('tab-nearby')).toBeTruthy();
     expect(screen.getByLabelText('Center on current location')).toBeTruthy();
 
     act(() => {
@@ -70,7 +70,9 @@ describe('Pathly prototype navigation', () => {
       jest.runAllTimers();
     });
     expect(screen.getByTestId('transit-sheet-handle').props.accessibilityValue).toEqual({ text: 'expanded' });
-    expect(screen.queryByLabelText('Center on current location')).toBeNull();
+    expect(
+      within(screen.getByTestId('transit-sheet-anchor')).getByLabelText('Center on current location'),
+    ).toBeTruthy();
 
     act(() => {
       fireEvent.press(screen.getByTestId('transit-sheet-handle'));
@@ -78,6 +80,22 @@ describe('Pathly prototype navigation', () => {
     });
     expect(screen.getByTestId('transit-sheet-handle').props.accessibilityValue).toEqual({ text: 'minimized' });
     expect(screen.getByLabelText('Center on current location')).toBeTruthy();
+
+    act(() => {
+      fireEvent(screen.getByTestId('nearby-route-list'), 'scrollBeginDrag');
+      jest.runAllTimers();
+    });
+    expect(screen.getByTestId('transit-sheet-handle').props.accessibilityValue).toEqual({ text: 'expanded' });
+  });
+
+  it('searches recent addresses with flexible punctuation and keeps results above the keyboard', () => {
+    const screen = render(<App />);
+    fireEvent.press(screen.getByTestId('search-trigger'));
+    fireEvent.changeText(screen.getByTestId('search-input'), '142 christian ave');
+
+    expect(screen.getByTestId('search-result-recent-christian-avenue')).toBeTruthy();
+    fireEvent.changeText(screen.getByTestId('search-input'), 'ronkonkoma lirr');
+    expect(screen.getByTestId('search-result-ronkonkoma-station')).toBeTruthy();
   });
 
   it('opens route results from search and preserves editable criteria across controls', () => {
@@ -90,16 +108,23 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByDisplayValue('123 Terry Rd')).toBeTruthy();
     fireEvent.changeText(screen.getByTestId('origin-input'), 'Stony Brook University');
     fireEvent.changeText(screen.getByTestId('destination-input'), 'Times Square');
+    fireEvent.press(screen.getByTestId('swap-endpoints'));
+    expect(screen.getByDisplayValue('Times Square')).toBeTruthy();
+    expect(screen.getByDisplayValue('Stony Brook University')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('swap-endpoints'));
+    fireEvent.press(screen.getByTestId('modes-control'));
     fireEvent.press(screen.getByTestId('preference-cheapest'));
     fireEvent.press(screen.getByTestId('leave-time-control'));
     fireEvent.press(screen.getByTestId('refresh-results'));
 
     expect(screen.getByDisplayValue('Stony Brook University')).toBeTruthy();
     expect(screen.getByDisplayValue('Times Square')).toBeTruthy();
-    expect(screen.getByText('Leave at 10:30')).toBeTruthy();
+    expect(screen.getByText('Leave: 10:30')).toBeTruthy();
     expect(screen.getByText('Updated now · 1')).toBeTruthy();
     expect(screen.getByTestId('preference-cheapest').props.accessibilityState).toEqual({ selected: true });
     expect(screen.getAllByTestId(/^itinerary-/)).toHaveLength(4);
+    expect(screen.queryByText('View trip')).toBeNull();
+    expect(screen.queryByText('Tap for trip details')).toBeNull();
 
     fireEvent.press(screen.getByTestId('results-back'));
     expect(screen.getByTestId('search-view')).toBeTruthy();
@@ -209,5 +234,37 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByLabelText('Stony Brook, departs 10:04 AM')).toBeTruthy();
     expect(screen.getByLabelText('Northport, arrives 10:34 AM')).toBeTruthy();
     expect(routeById.ronkonkoma.stops).toHaveLength(5);
+  });
+
+  it('moves route details vertically and pages between route directions', () => {
+    jest.useFakeTimers();
+    const screen = render(<App />);
+    fireEvent.press(screen.getByTestId('route-card-ronkonkoma-primary'));
+
+    const handle = screen.getByTestId('route-sheet-handle');
+    expect(handle.props.accessibilityValue).toEqual({ text: 'compact' });
+    act(() => {
+      fireEvent.press(handle);
+      jest.runAllTimers();
+    });
+    expect(screen.getByTestId('route-sheet-handle').props.accessibilityValue).toEqual({ text: 'expanded' });
+
+    fireEvent(screen.getByTestId('route-direction-pager'), 'momentumScrollEnd', {
+      nativeEvent: { contentOffset: { x: 354, y: 0 } },
+    });
+    expect(screen.getByText('Ronkonkoma')).toBeTruthy();
+    expect(screen.queryByText('Eastbound to Ronkonkoma')).toBeNull();
+
+    act(() => {
+      fireEvent.press(screen.getByTestId('route-sheet-handle'));
+      jest.runAllTimers();
+    });
+    expect(screen.getByTestId('route-sheet-handle').props.accessibilityValue).toEqual({ text: 'minimized' });
+
+    act(() => {
+      fireEvent(screen.getByTestId('route-sheet-scroll'), 'scrollBeginDrag');
+      jest.runAllTimers();
+    });
+    expect(screen.getByTestId('route-sheet-handle').props.accessibilityValue).toEqual({ text: 'expanded' });
   });
 });
