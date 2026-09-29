@@ -150,7 +150,6 @@ export function RouteResultsView({
         <View style={styles.mapLocation}><CurrentLocationButton /></View>
 
         <SafeAreaView edges={['bottom']} style={styles.resultsSheet}>
-          <View style={styles.handle} />
           <View style={styles.controls}>
             <Pressable
               accessibilityLabel="Choose transit modes"
@@ -312,8 +311,7 @@ const styles = StyleSheet.create({
   mapMarker: { position: 'absolute', top: '29%', left: '48%', zIndex: 1 },
   mapLocation: { position: 'absolute', top: '35%', right: 16, zIndex: 2 },
   resultsSheet: { position: 'absolute', top: '44%', right: 0, bottom: 0, left: 0, overflow: 'hidden', borderTopLeftRadius: 26, borderTopRightRadius: 26, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: -5 }, shadowOpacity: 0.12, shadowRadius: 16, elevation: 12 },
-  handle: { width: 42, height: 5, alignSelf: 'center', marginTop: 9, borderRadius: 3, backgroundColor: colors.border },
-  controls: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 10, paddingHorizontal: 14 },
+  controls: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 20, paddingHorizontal: 14 },
   toolbarPill: { height: 36, minWidth: 100, flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 18, backgroundColor: colors.surface },
   toolbarPillText: { fontFamily: fontFamilies.bold, fontSize: 10 },
   leaveControl: { color: colors.ink, minWidth: 100, height: 36, flex: 1.45, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 8, borderRadius: 18, borderColor: colors.border, borderWidth: 1, backgroundColor: colors.surface },

@@ -262,7 +262,7 @@ export function RouteDetailView({ onBack, route }: RouteDetailViewProps) {
               showsVerticalScrollIndicator={false}
               testID="route-sheet-scroll"
             >
-              <View style={styles.handleArea}>
+              {/* <View style={styles.handleArea}>
                 <Pressable
                   accessibilityHint="Drag up or down to resize route details"
                   accessibilityLabel="Resize route details"
@@ -275,7 +275,7 @@ export function RouteDetailView({ onBack, route }: RouteDetailViewProps) {
                 >
                   <View style={styles.handle} />
                 </Pressable>
-              </View>
+              </View> */}
 
               <View style={styles.content}>
               <View style={styles.titleRow}>
@@ -435,7 +435,7 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: 18, paddingBottom: 36 },
   directionPager: { marginHorizontal: 0 },
   directionPage: { paddingRight: 0 },
-  titleRow: { minHeight: 34, justifyContent: 'center' },
+  titleRow: { minHeight: 40, justifyContent: 'center', paddingTop: 20},
   title: { color: colors.ink, ...typography.screenHeading, fontSize: 23, lineHeight: 27 },
   predictions: { flexDirection: 'row', gap: 8, paddingTop: 10 },
   prediction: { minWidth: 0, minHeight: 112, flex: 1, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderRadius: 20, backgroundColor: colors.surface },

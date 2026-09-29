@@ -178,6 +178,21 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByTestId('search-trip-destination').props.children).toBe('Times Square');
     expect(screen.getByText('Ready')).toBeTruthy();
     expect(screen.getByTestId('search-trip-go')).toBeTruthy();
+    expect(StyleSheet.flatten(screen.getByTestId('search-trip-go').props.style)).toMatchObject({
+      position: 'absolute',
+      bottom: 16,
+    });
+    expect(screen.getByTestId('search-trip-location')).toBeTruthy();
+    expect(screen.getByTestId('search-trip-location').props.accessibilityState).toEqual({ selected: false });
+    fireEvent.press(screen.getByTestId('search-trip-location'));
+    expect(screen.getByTestId('search-trip-location').props.accessibilityState).toEqual({ selected: true });
+    expect(screen.getByTestId('search-trip-favorite').props.accessibilityState).toEqual({ selected: false });
+    fireEvent.press(screen.getByTestId('search-trip-favorite'));
+    expect(screen.getByTestId('search-trip-favorite').props.accessibilityState).toEqual({ selected: true });
+    expect(screen.getByTestId('search-trip-leave-time').props.children).toBe('10:04 AM');
+    expect(screen.getByTestId('search-trip-arrive-time').props.children).toBe('11:16 AM');
+    expect(screen.getByTestId('search-trip-step-0')).toBeTruthy();
+    expect(screen.getByTestId('search-trip-step-1')).toBeTruthy();
 
     fireEvent.press(screen.getByTestId('search-trip-back'));
     expect(screen.getByTestId('route-results-view')).toBeTruthy();
@@ -259,6 +274,94 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByText(/Firebase Authentication is added/)).toBeTruthy();
     fireEvent.press(screen.getByTestId('profile-back'));
     expect(screen.getByTestId('profile-trigger')).toBeTruthy();
+  });
+
+  it('uses one natural map-to-content scroll for planned and recent trip details', () => {
+    const screen = render(<App />);
+    fireEvent.press(screen.getByTestId('search-trigger'));
+    fireEvent.changeText(screen.getByTestId('search-input'), '123 Terry Rd');
+    fireEvent.press(screen.getByTestId('search-result-terry-road-smithtown'));
+    fireEvent.press(screen.getByTestId('search-result-view-rail-fast'));
+
+    const plannedScroll = screen.getByTestId('search-trip-scroll');
+    expect(plannedScroll.props.bounces).toBe(false);
+    expect(plannedScroll.props.overScrollMode).toBe('never');
+    expect(within(plannedScroll).getByTestId('search-trip-map')).toBeTruthy();
+    expect(within(plannedScroll).getByTestId('search-trip-content')).toBeTruthy();
+    fireEvent.scroll(plannedScroll, { nativeEvent: { contentOffset: { y: 140 } } });
+    fireEvent.scroll(plannedScroll, { nativeEvent: { contentOffset: { y: 280 } } });
+    fireEvent.scroll(plannedScroll, { nativeEvent: { contentOffset: { y: 0 } } });
+
+    fireEvent.press(screen.getByTestId('search-trip-back'));
+    fireEvent.press(screen.getByTestId('results-back'));
+    fireEvent.press(screen.getByLabelText('Cancel destination search'));
+    fireEvent.press(screen.getByTestId('tab-recents'));
+    fireEvent.press(screen.getByTestId('recent-trip-times-square'));
+
+    const recentScroll = screen.getByTestId('recent-trip-scroll');
+    expect(within(recentScroll).getByTestId('recent-trip-map')).toBeTruthy();
+    expect(within(recentScroll).getByTestId('recent-trip-content')).toBeTruthy();
+    expect(screen.getByTestId('recent-trip-leg-0')).toBeTruthy();
+    expect(screen.getByTestId('recent-trip-leg-1')).toBeTruthy();
+    expect(screen.getByText('3 days ago')).toBeTruthy();
+    expect(screen.getByTestId('recent-trip-leave-time').props.children).toBe('8:42 AM');
+    expect(screen.getByTestId('recent-trip-arrive-time').props.children).toBe('10:16 AM');
+
+    fireEvent.press(screen.getByTestId('recent-trip-favorite'));
+    fireEvent.press(screen.getByTestId('recent-trip-location'));
+    expect(screen.getByTestId('recent-trip-favorite').props.accessibilityState).toEqual({ selected: true });
+    expect(screen.getByTestId('recent-trip-location').props.accessibilityState).toEqual({ selected: true });
+  });
+
+  it('opens every profile category and keeps settings interactions local', () => {
+    const fetchMock = jest.fn();
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const screen = render(<App />);
+    fireEvent.press(screen.getByTestId('profile-trigger'));
+
+    for (const id of ['account', 'notifications', 'accessibility', 'privacy', 'travel', 'places', 'help']) {
+      expect(screen.getByTestId(`settings-row-${id}`)).toBeTruthy();
+    }
+
+    fireEvent.press(screen.getByTestId('settings-row-account'));
+    fireEvent.press(screen.getByTestId('account-display-name'));
+    expect(screen.getByText(/local prototype only/)).toBeTruthy();
+    fireEvent.press(screen.getByTestId('settings-back'));
+
+    fireEvent.press(screen.getByTestId('settings-row-notifications'));
+    fireEvent(screen.getByTestId('toggle-notifications'), 'valueChange', false);
+    expect(screen.getByText('Updated for this prototype session only')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('settings-back'));
+
+    fireEvent.press(screen.getByTestId('settings-row-accessibility'));
+    fireEvent.press(screen.getByTestId('text-size-large'));
+    expect(screen.getByTestId('text-size-large').props.accessibilityState).toEqual({ selected: true });
+    fireEvent.press(screen.getByTestId('settings-back'));
+
+    fireEvent.press(screen.getByTestId('settings-row-privacy'));
+    fireEvent(screen.getByTestId('toggle-location'), 'valueChange', false);
+    expect(screen.getByText(/do not change device permissions/)).toBeTruthy();
+    fireEvent.press(screen.getByTestId('settings-back'));
+
+    fireEvent.press(screen.getByTestId('settings-row-travel'));
+    fireEvent.press(screen.getByTestId('travel-mode-rail'));
+    expect(screen.getByTestId('travel-mode-rail').props.accessibilityState).toEqual({ selected: true });
+    fireEvent.press(screen.getByTestId('settings-back'));
+
+    fireEvent.press(screen.getByTestId('settings-row-places'));
+    fireEvent.press(screen.getByTestId('add-saved-place'));
+    expect(screen.getByText(/session only/)).toBeTruthy();
+    fireEvent.press(screen.getByTestId('settings-back'));
+
+    fireEvent.press(screen.getByTestId('settings-row-help'));
+    expect(screen.getByText('Version 0.1.0 · Local preview')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('help-faq'));
+    expect(screen.getByText('FAQ preview opened locally')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('settings-back'));
+
+    fireEvent.press(screen.getByTestId('sign-out'));
+    expect(screen.getByText(/Firebase Authentication is added/)).toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('keeps route stop timing and live provenance accessible', () => {
