@@ -253,8 +253,7 @@ export function RouteResultsView({
                           ))}
                         </View>
                         <Text style={styles.nextRide}>
-                          {itinerary.nextRide} · {itinerary.transfers}{' '}
-                          {itinerary.transfers === 1 ? 'transfer' : 'transfers'}
+                          {itinerary.nextRide}
                         </Text>
                       </View>
                       <View style={styles.summary}>
@@ -315,12 +314,12 @@ const styles = StyleSheet.create({
   resultsSheet: { position: 'absolute', top: '44%', right: 0, bottom: 0, left: 0, overflow: 'hidden', borderTopLeftRadius: 26, borderTopRightRadius: 26, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: -5 }, shadowOpacity: 0.12, shadowRadius: 16, elevation: 12 },
   handle: { width: 42, height: 5, alignSelf: 'center', marginTop: 9, borderRadius: 3, backgroundColor: colors.border },
   controls: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 10, paddingHorizontal: 14 },
-  toolbarPill: { height: 36, flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 18, backgroundColor: colors.surface },
-  toolbarPillText: { color: colors.ink, fontFamily: fontFamilies.bold, fontSize: 10 },
-  leaveControl: { minWidth: 104, height: 36, flex: 1.45, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 8, borderRadius: 18, backgroundColor: colors.background },
-  clock: { color: colors.primary, fontFamily: fontFamilies.extraBold, fontSize: 15 },
-  leaveTime: { color: colors.mutedInk, ...typography.bodyStrong, fontSize: 9 },
-  refreshButton: { width: 40, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: colors.surface },
+  toolbarPill: { height: 36, minWidth: 100, flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 18, backgroundColor: colors.surface },
+  toolbarPillText: { fontFamily: fontFamilies.bold, fontSize: 10 },
+  leaveControl: { color: colors.ink, minWidth: 100, height: 36, flex: 1.45, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 8, borderRadius: 18, borderColor: colors.border, borderWidth: 1, backgroundColor: colors.surface },
+  clock: { color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 20 },
+  leaveTime: { color: colors.ink, ...typography.bodyStrong, fontSize: 10 },
+  refreshButton: { width: 40, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 },
   refreshIcon: { color: colors.primary, fontFamily: fontFamilies.extraBold, fontSize: 19 },
   preferences: { flexDirection: 'row', gap: 7, paddingTop: 9, paddingHorizontal: 14 },
   preference: { minHeight: 36, flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5, borderWidth: 1, borderColor: colors.border, borderRadius: 18, backgroundColor: colors.surface },

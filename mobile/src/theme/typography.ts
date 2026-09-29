@@ -24,7 +24,7 @@ export const typography = {
   },
   displayTime: {
     fontFamily: fontFamilies.extraBold,
-    fontSize: 24,
+    fontSize: 26,
     lineHeight: 29,
   },
   body: {

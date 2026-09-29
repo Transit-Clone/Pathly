@@ -48,12 +48,20 @@ Each nearby route SHALL expose two mock directions within the same card through 
 - **WHEN** a rider swipes a route card horizontally
 - **THEN** the card displays the other direction's direction, stop name, minute prediction, and live-or-scheduled state while retaining the route identity
 
-### Requirement: Adjustable home transit sheet
-The lower home sheet SHALL be vertically draggable between compact and expanded bounds. As it expands, it SHALL cover more of the map while the search and profile controls remain fixed at the top.
+### Requirement: Continuous home map-to-transit scroll
+The home map and nearby-transit menu SHALL form one continuous native vertical scrolling surface without draggable-sheet bounds, snapping states, or a resize handle. The initial viewport SHALL show the transit tabs and at least one complete transit card so the transit menu is never entirely hidden. The search and profile controls SHALL remain fixed at the top.
 
 #### Scenario: Rider reveals more nearby routes
-- **WHEN** the rider drags the sheet handle upward or downward
-- **THEN** the sheet settles within its supported expanded or compact range and the map remains visible behind it
+- **WHEN** the rider scrolls downward through the nearby-transit page
+- **THEN** additional route cards enter the viewport while progressively less of the map remains visible
+
+#### Scenario: Rider restores the map
+- **WHEN** the rider scrolls upward toward the beginning of the nearby-transit page
+- **THEN** more of the map becomes visible again without reversing the requested scroll direction
+
+#### Scenario: Transit remains discoverable initially
+- **WHEN** the rider opens the home screen at the top of the page
+- **THEN** the transit tabs and at least one complete transit card are visible alongside the map
 
 ### Requirement: Glanceable route-detail hierarchy
 The route-detail screen SHALL emphasize the route name, multiple square-ish minute prediction tiles, and stop times over metadata while preserving the route map and ordered stop timeline. Prediction tiles SHALL display a large numeric minute count, a small centered `minutes` label, and either a nearby GPS signal for live data or a `Scheduled` label with reduced opacity for timetable data. They SHALL NOT display `Selected` or `Next train` captions.

@@ -19,6 +19,7 @@
     "@expo-google-fonts/nunito": "^0.4.2",
     "@expo/metro-runtime": "~57.0.15",
     "expo": "~57.0.24",
+    "expo-splash-screen": "~57.0.9",
     "expo-status-bar": "~57.0.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",

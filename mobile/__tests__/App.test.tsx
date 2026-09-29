@@ -1,12 +1,15 @@
 import { act, fireEvent, render, within } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 import mockSafeAreaContext from 'react-native-safe-area-context/jest/mock';
 
 import App from '../App';
 import { routeById, routes } from '../src/data/transit';
 
+const mockUseFonts = jest.fn(() => [true] as [boolean]);
+
 jest.mock('react-native-safe-area-context', () => mockSafeAreaContext);
 jest.mock('@expo-google-fonts/nunito/useFonts', () => ({
-  useFonts: () => [true],
+  useFonts: () => mockUseFonts(),
 }));
 
 describe('Pathly prototype navigation', () => {
@@ -16,6 +19,17 @@ describe('Pathly prototype navigation', () => {
     globalThis.fetch = originalFetch;
     jest.useRealTimers();
     jest.restoreAllMocks();
+    mockUseFonts.mockReturnValue([true]);
+  });
+
+  it('shows the Pathly logo while startup fonts are loading', () => {
+    mockUseFonts.mockReturnValueOnce([false]);
+    const screen = render(<App />);
+
+    expect(screen.getByTestId('loading-screen')).toBeTruthy();
+    expect(screen.getByTestId('loading-logo').props.source).toBeTruthy();
+    expect(screen.getByLabelText('Pathly is loading')).toBeTruthy();
+    expect(screen.queryByText('Where to?')).toBeNull();
   });
 
   it('renders five selectable routes without contacting a backend', () => {
@@ -30,6 +44,17 @@ describe('Pathly prototype navigation', () => {
     }
     expect(screen.getAllByText('minutes')).toHaveLength(10);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps nearby cards at a fixed height without filler space', () => {
+    const screen = render(<App />);
+
+    expect(screen.getByTestId('nearby-route-list').props.contentContainerStyle).toBeUndefined();
+    for (const route of routes) {
+      expect(StyleSheet.flatten(screen.getByTestId(`route-card-${route.id}`).props.style)).toMatchObject({
+        height: 104,
+      });
+    }
   });
 
   it('shows the two-arc live signal only on live predictions', () => {
@@ -54,38 +79,49 @@ describe('Pathly prototype navigation', () => {
     },
   );
 
-  it('moves the sheet through compact, expanded, and minimized states', () => {
-    jest.useFakeTimers();
+  it('keeps the transit menu in one natural page scroll with a route visible at rest', () => {
     const screen = render(<App />);
-    const handle = screen.getByTestId('transit-sheet-handle');
     const sheetScroll = screen.getByTestId('nearby-route-list');
 
-    expect(handle.props.accessibilityValue).toEqual({ text: 'compact' });
-    expect(within(sheetScroll).getByTestId('transit-sheet-handle')).toBeTruthy();
+    expect(screen.queryByTestId('transit-sheet-handle')).toBeNull();
+    expect(sheetScroll.props.onScrollBeginDrag).toBeUndefined();
+    expect(sheetScroll.props.onResponderMove).toBeUndefined();
+    expect(sheetScroll.props.bounces).toBe(false);
+    expect(sheetScroll.props.overScrollMode).toBe('never');
+    expect(StyleSheet.flatten(screen.getByTestId('map-window').props.style).height).toBeGreaterThan(0);
+    expect(screen.getByTestId('transit-sheet')).toBeTruthy();
+    expect(screen.getByTestId('route-card-ronkonkoma')).toBeTruthy();
     expect(within(sheetScroll).getByTestId('tab-nearby')).toBeTruthy();
+    expect(within(sheetScroll).getByTestId('tab-recents')).toBeTruthy();
+    expect(within(sheetScroll).getByTestId('tab-favorites')).toBeTruthy();
     expect(screen.getByLabelText('Center on current location')).toBeTruthy();
 
-    act(() => {
-      fireEvent.press(handle);
-      jest.runAllTimers();
+    fireEvent.scroll(sheetScroll, { nativeEvent: { contentOffset: { y: 120 } } });
+    fireEvent.scroll(sheetScroll, { nativeEvent: { contentOffset: { y: 240 } } });
+    expect(screen.getByTestId('route-card-7')).toBeTruthy();
+  });
+
+  it('keeps the transit sheet height stable while switching tabs', () => {
+    const screen = render(<App />);
+    const nearbyHeight = StyleSheet.flatten(
+      screen.getByTestId('nearby-route-content').props.style,
+    ).minHeight;
+
+    fireEvent.scroll(screen.getByTestId('nearby-route-list'), {
+      nativeEvent: { contentOffset: { y: 240 } },
     });
-    expect(screen.getByTestId('transit-sheet-handle').props.accessibilityValue).toEqual({ text: 'expanded' });
+    fireEvent.press(screen.getByTestId('tab-recents'));
+
+    expect(screen.getByTestId('recents-route-list')).toBeTruthy();
     expect(
-      within(screen.getByTestId('transit-sheet-anchor')).getByLabelText('Center on current location'),
-    ).toBeTruthy();
+      StyleSheet.flatten(screen.getByTestId('recents-route-content').props.style).minHeight,
+    ).toBe(nearbyHeight);
 
-    act(() => {
-      fireEvent.press(screen.getByTestId('transit-sheet-handle'));
-      jest.runAllTimers();
-    });
-    expect(screen.getByTestId('transit-sheet-handle').props.accessibilityValue).toEqual({ text: 'minimized' });
-    expect(screen.getByLabelText('Center on current location')).toBeTruthy();
-
-    act(() => {
-      fireEvent(screen.getByTestId('nearby-route-list'), 'scrollBeginDrag');
-      jest.runAllTimers();
-    });
-    expect(screen.getByTestId('transit-sheet-handle').props.accessibilityValue).toEqual({ text: 'expanded' });
+    fireEvent.press(screen.getByTestId('tab-favorites'));
+    expect(screen.getByTestId('favorites-route-list')).toBeTruthy();
+    expect(
+      StyleSheet.flatten(screen.getByTestId('favorites-route-content').props.style).minHeight,
+    ).toBe(nearbyHeight);
   });
 
   it('searches recent addresses with flexible punctuation and keeps results above the keyboard', () => {

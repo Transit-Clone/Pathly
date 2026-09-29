@@ -13,7 +13,7 @@ The current palette is warmer and brighter than `docs/Design.ipynb`, and key tra
 - Centralize the documented palette and a small Nunito type scale.
 - Make route names and arrival or departure times dominant at a glance.
 - Reduce redundant copy and decorative competition while retaining useful context.
-- Keep layouts responsive within the existing phone-width and 540-pixel maximum-width behavior, including swiped directions and dragged sheet positions.
+- Keep layouts responsive within the existing phone-width and 540-pixel maximum-width behavior, including horizontally swiped directions and the continuous vertical map-to-transit page.
 - Preserve accessible touch targets, labels, and semantic service-state communication.
 
 **Non-Goals:**
@@ -61,9 +61,11 @@ Map labels can remain smaller because they are secondary context, but essential 
 
 The stop timeline stays intact; only its prediction selector and surrounding visual controls change.
 
-### 5. Make the home sheet draggable
+### 5. Make the home map and transit menu one continuous page
 
-Use React Native's built-in gesture responder and animated value to drag the transit sheet between bounded compact and expanded heights. The map remains behind the sheet and is progressively covered as the sheet grows; the top search/profile overlay remains fixed. Snap to the nearer bound on release and keep the grab handle at least 44 logical pixels tall as a touch target.
+Use one native vertical `ScrollView` for the transparent map window, transit tabs, and transit content. Size the initial map window from the viewport height minus the 44-pixel tab row, one fixed 104-pixel route card, and a small visibility gutter. This guarantees that the initial viewport retains the map while showing at least one complete transit card.
+
+As the scroll offset increases, the opaque transit surface naturally covers more of the map and reveals additional routes. Scrolling back toward the top restores the map. The top search/profile overlay remains fixed, while the current-location control moves with the map window. Do not add draggable-sheet bounds, snapping states, a resize handle, or a second vertical gesture responder; keeping a single owner for vertical scrolling prevents consecutive same-direction gestures from being interpreted as an opposite sheet movement.
 
 ### 6. Remove redundant eyebrows and keep one clear heading per section
 
@@ -79,8 +81,9 @@ Preserve the existing interaction tests. Add focused assertions for important vi
 
 - **Nunito loading adds dependency and startup work** -> Load fonts once at the app root, include only used weights, and keep the loading state minimal.
 - **Large route names and times can crowd cards** -> Give the two display values dedicated columns, wrap route names when needed, and verify both direction pages at narrow Android widths.
-- **Nested horizontal swipes and vertical scrolling can conflict** -> Page only when horizontal movement clearly exceeds vertical movement and keep route tapping available.
-- **Dragging can move the sheet beyond usable bounds** -> Clamp animated height and snap to compact/expanded positions.
+- **Nested horizontal direction swipes and vertical page scrolling can conflict** -> Keep route directions in horizontal paged scroll views while one parent native scroll view exclusively owns vertical movement.
+- **The map can consume too much of the initial viewport** -> Derive its height from the viewport while reserving space for the tab row, one complete route card, and a small visibility gutter.
+- **Competing gesture responders can reverse or interrupt scrolling** -> Remove home-sheet pan responders and snapping state so repeated gestures in one direction update only the native page scroll.
 - **Removing labels may reduce context** -> Remove only duplicate visible language and retain distinct information plus complete accessibility labels.
 - **Exact brand colors may reduce contrast in some combinations** -> Use dark text on light accent surfaces and white text only on colors that pass practical contrast review.
 - **Visual tests can become brittle** -> Assert semantic tokens and critical hierarchy selectively, relying on device review for spacing and balance.
@@ -91,7 +94,7 @@ Preserve the existing interaction tests. Add focused assertions for important vi
 2. Update common controls and surfaces to the new palette and Nunito roles.
 3. Extend mock route data with two directions and live/scheduled prediction provenance.
 4. Update nearby-transit cards and add horizontal direction paging.
-5. Add bounded vertical sheet dragging while keeping top controls fixed.
+5. Compose the map window, transit tabs, and route cards into one continuous vertical scroll while keeping top controls fixed and one route card initially visible.
 6. Replace route-detail departure choices with minute prediction tiles, alerts, and location/pin controls.
 7. Update focused tests and run the complete mobile validation suite.
 8. Review gestures and existing flows on Android at narrow and standard phone sizes.

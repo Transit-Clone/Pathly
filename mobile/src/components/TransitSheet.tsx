@@ -1,13 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
-import {
-  Animated,
-  PanResponder,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -23,21 +14,21 @@ import { CurrentLocationButton } from './CurrentLocationButton';
 import { TransitCard } from './TransitCard';
 
 export type TransitTabId = 'nearby' | 'recents' | 'favorites';
-export type SheetState = 'minimized' | 'compact' | 'expanded';
 
 type TransitSheetProps = {
   activeTripId: RecentTripId | null;
   activeTab: TransitTabId;
-  compactHeight: number;
-  expandedHeight: number;
-  minimizedHeight: number;
+  mapHeight: number;
   onOpenRoute: (routeId: RouteId) => void;
   onOpenTrip: (tripId: RecentTripId) => void;
   onEndTrip: () => void;
   onStartTrip: (tripId: RecentTripId) => void;
-  onStateChange: (state: SheetState) => void;
   onTabChange: (tab: TransitTabId) => void;
 };
+
+const TAB_ROW_HEIGHT = 44;
+const TRANSIT_CARD_HEIGHT = 104;
+const TAB_CONTENT_MIN_HEIGHT = (pinnedRoutes.length + nearbyRoutes.length) * TRANSIT_CARD_HEIGHT;
 
 const tabs: { id: TransitTabId; label: string }[] = [
   { id: 'nearby', label: 'Nearby' },
@@ -48,301 +39,157 @@ const tabs: { id: TransitTabId; label: string }[] = [
 export function TransitSheet({
   activeTripId,
   activeTab,
-  compactHeight,
-  expandedHeight,
-  minimizedHeight,
+  mapHeight,
   onOpenRoute,
   onOpenTrip,
   onEndTrip,
   onStartTrip,
-  onStateChange,
   onTabChange,
 }: TransitSheetProps) {
-  const [sheetState, setSheetState] = useState<SheetState>('compact');
-  const [isScrollAtTop, setIsScrollAtTop] = useState(true);
-  const [animatedHeight] = useState(() => new Animated.Value(compactHeight));
-
-  const heights = useMemo(
-    () => ({ minimized: minimizedHeight, compact: compactHeight, expanded: expandedHeight }),
-    [compactHeight, expandedHeight, minimizedHeight],
-  );
-  const locationButtonTop = animatedHeight.interpolate({
-    inputRange: [minimizedHeight, compactHeight, expandedHeight],
-    outputRange: [-60, -60, 76],
-    extrapolate: 'clamp',
-  });
-
-  const settleSheet = useCallback(
-    (nextState: SheetState) => {
-      setSheetState(nextState);
-      onStateChange(nextState);
-      Animated.spring(animatedHeight, {
-        toValue: heights[nextState],
-        useNativeDriver: false,
-        damping: 22,
-        stiffness: 230,
-        mass: 0.8,
-      }).start();
-    },
-    [animatedHeight, heights, onStateChange],
-  );
-
-  const nearestState = useCallback(
-    (height: number): SheetState =>
-      (Object.keys(heights) as SheetState[]).reduce((closest, candidate) =>
-        Math.abs(heights[candidate] - height) < Math.abs(heights[closest] - height)
-          ? candidate
-          : closest,
-      ),
-    [heights],
-  );
-
-  const panResponder = useMemo(() => {
-    let dragStartHeight = compactHeight;
-
-    return PanResponder.create({
-      onMoveShouldSetPanResponder: (_, gesture) => {
-        const isVerticalDrag = Math.abs(gesture.dy) > 4
-          && Math.abs(gesture.dy) > Math.abs(gesture.dx);
-        return isVerticalDrag
-          && (sheetState !== 'expanded' || (isScrollAtTop && gesture.dy > 0));
-      },
-      onMoveShouldSetPanResponderCapture: (_, gesture) => {
-        const isVerticalDrag = Math.abs(gesture.dy) > 4
-          && Math.abs(gesture.dy) > Math.abs(gesture.dx);
-        return isVerticalDrag
-          && (sheetState !== 'expanded' || (isScrollAtTop && gesture.dy > 0));
-      },
-      onPanResponderGrant: () => {
-        animatedHeight.stopAnimation((value) => {
-          dragStartHeight = value;
-        });
-      },
-      onPanResponderMove: (_, gesture) => {
-        const nextHeight = Math.max(
-          minimizedHeight,
-          Math.min(expandedHeight, dragStartHeight - gesture.dy),
-        );
-        animatedHeight.setValue(nextHeight);
-      },
-      onPanResponderRelease: (_, gesture) => {
-        settleSheet(nearestState(dragStartHeight - gesture.dy - gesture.vy * 45));
-      },
-      onPanResponderTerminate: () => settleSheet(sheetState),
-    });
-  }, [
-    animatedHeight,
-    compactHeight,
-    expandedHeight,
-    isScrollAtTop,
-    minimizedHeight,
-    nearestState,
-    settleSheet,
-    sheetState,
-  ]);
-
-  const cycleState = () => {
-    settleSheet(
-      sheetState === 'compact'
-        ? 'expanded'
-        : sheetState === 'expanded'
-          ? 'minimized'
-          : 'compact',
-    );
-  };
-
-  const adjustState = (direction: 'increment' | 'decrement') => {
-    const ordered: SheetState[] = ['minimized', 'compact', 'expanded'];
-    const index = ordered.indexOf(sheetState);
-    const nextIndex = direction === 'increment'
-      ? Math.min(index + 1, ordered.length - 1)
-      : Math.max(index - 1, 0);
-    settleSheet(ordered[nextIndex] ?? sheetState);
-  };
-
   return (
-    <Animated.View
-      style={[styles.sheetAnchor, { height: animatedHeight }]}
-      testID="transit-sheet-anchor"
+    <ScrollView
+      bounces={false}
+      overScrollMode="never"
+      showsVerticalScrollIndicator={false}
+      style={styles.pageScroll}
+      testID={`${activeTab}-route-list`}
     >
-      <View
-        {...panResponder.panHandlers}
-        style={[styles.sheet, sheetState === 'expanded' && styles.expandedSheet]}
+      <View style={[styles.mapWindow, { height: mapHeight }]} testID="map-window">
+        <View style={styles.locationButton}>
+          <CurrentLocationButton />
+        </View>
+      </View>
+
+      <SafeAreaView
+        edges={['bottom']}
+        style={styles.sheet}
         testID="transit-sheet"
       >
-        <SafeAreaView edges={['bottom']} style={styles.safeContent}>
-          <ScrollView
-            contentContainerStyle={styles.sheetScrollContent}
-            onScrollBeginDrag={() => {
-              if (sheetState !== 'expanded') {
-                settleSheet('expanded');
-              }
-            }}
-            onScroll={(event) => {
-              setIsScrollAtTop(event.nativeEvent.contentOffset.y <= 0.5);
-            }}
-            overScrollMode="never"
-            scrollEventThrottle={16}
-            showsVerticalScrollIndicator={false}
-            style={styles.scroll}
-            testID={`${activeTab}-route-list`}
-          >
-            <View style={styles.handleGestureArea}>
+        <View accessibilityRole="tablist" style={styles.tabs}>
+          {tabs.map((tab) => {
+            const selected = tab.id === activeTab;
+            return (
               <Pressable
-                accessibilityActions={[{ name: 'activate' }, { name: 'increment' }, { name: 'decrement' }]}
-                accessibilityHint="Drag up or down to resize transit options"
-                accessibilityLabel="Resize transit options"
-                accessibilityRole="button"
-                accessibilityState={{ expanded: sheetState === 'expanded' }}
-                accessibilityValue={{ text: sheetState }}
-                onAccessibilityAction={(event) => {
-                  const action = event.nativeEvent.actionName;
-                  if (action === 'increment' || action === 'decrement') {
-                    adjustState(action);
-                  } else {
-                    cycleState();
-                  }
-                }}
-                onPress={cycleState}
-                style={styles.handleTarget}
-                testID="transit-sheet-handle"
+                key={tab.id}
+                accessibilityRole="tab"
+                accessibilityState={{ selected }}
+                onPress={() => onTabChange(tab.id)}
+                style={({ pressed }) => [
+                  styles.tab,
+                  selected && styles.selectedTab,
+                  pressed && styles.pressed,
+                ]}
+                testID={`tab-${tab.id}`}
               >
-                <View style={styles.handle} />
+                <Text style={[styles.tabLabel, selected && styles.selectedTabLabel]}>
+                  {tab.label}
+                </Text>
               </Pressable>
-            </View>
+            );
+          })}
+        </View>
 
-            <View accessibilityRole="tablist" style={styles.tabs}>
-              {tabs.map((tab) => {
-                const selected = tab.id === activeTab;
-                return (
+        {activeTab === 'nearby' ? (
+          <View style={styles.tabContent} testID="nearby-route-content">
+            {pinnedRoutes.map((route) => (
+              <TransitCard
+                key={route.id}
+                onPress={() => onOpenRoute(route.id)}
+                route={route}
+              />
+            ))}
+
+            <View style={styles.cardStack}>
+              {nearbyRoutes.map((route) => (
+                <TransitCard
+                  key={route.id}
+                  onPress={() => onOpenRoute(route.id)}
+                  route={route}
+                />
+              ))}
+            </View>
+          </View>
+        ) : activeTab === 'recents' ? (
+          <View style={[styles.tabContent]} testID="recents-route-content">
+            {recentTrips.map((trip) => {
+              const isActive = trip.id === activeTripId;
+              return (
+                <View key={trip.id} style={styles.recentRow}>
                   <Pressable
-                    key={tab.id}
-                    accessibilityRole="tab"
-                    accessibilityState={{ selected }}
-                    onPress={() => onTabChange(tab.id)}
-                    style={({ pressed }) => [
-                      styles.tab,
-                      selected && styles.selectedTab,
-                      pressed && styles.pressed,
-                    ]}
-                    testID={`tab-${tab.id}`}
+                    accessibilityLabel={`View recent trip to ${trip.destination} from ${trip.origin}`}
+                    accessibilityRole="button"
+                    onPress={() => onOpenTrip(trip.id)}
+                    style={({ pressed }) => [styles.recentMain, pressed && styles.pressed]}
+                    testID={`recent-trip-${trip.id}`}
                   >
-                    <Text style={[styles.tabLabel, selected && styles.selectedTabLabel]}>
-                      {tab.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            {activeTab === 'nearby' ? (
-              <View style={styles.content}>
-                {pinnedRoutes.map((route) => (
-                  <TransitCard
-                    key={route.id}
-                    onPress={() => onOpenRoute(route.id)}
-                    route={route}
-                  />
-                ))}
-
-                <View style={styles.cardStack}>
-                  {nearbyRoutes.map((route) => (
-                    <TransitCard
-                      key={route.id}
-                      onPress={() => onOpenRoute(route.id)}
-                      route={route}
-                    />
-                  ))}
-                </View>
-              </View>
-            ) : activeTab === 'recents' ? (
-              <View style={styles.recentList}>
-                {recentTrips.map((trip) => {
-                  const isActive = trip.id === activeTripId;
-                  return (
-                    <View key={trip.id} style={styles.recentRow}>
-                      <Pressable
-                        accessibilityLabel={`View recent trip to ${trip.destination} from ${trip.origin}`}
-                        accessibilityRole="button"
-                        onPress={() => onOpenTrip(trip.id)}
-                        style={({ pressed }) => [styles.recentMain, pressed && styles.pressed]}
-                        testID={`recent-trip-${trip.id}`}
-                      >
-                        <View style={styles.segmentRow}>
-                          {trip.legs.map((segment) => (
-                            <View
-                              key={segment.shortName}
-                              style={[styles.segmentBadge, { backgroundColor: segment.color }]}
-                            >
-                              <Text style={styles.segmentText}>{segment.shortName}</Text>
-                            </View>
-                          ))}
-                        </View>
-                        <View style={styles.recentCopy}>
-                          <Text style={styles.recentDestination}>{trip.destination}</Text>
-                          <Text numberOfLines={1} style={styles.recentOrigin}>From {trip.origin}</Text>
-                        </View>
-                      </Pressable>
-                      <View style={styles.recentActions}>
-                        <Text style={styles.recency}>{isActive ? 'In progress' : trip.recency}</Text>
-                        <Pressable
-                          accessibilityLabel={isActive ? `End trip to ${trip.destination}` : `Start trip to ${trip.destination}`}
-                          accessibilityRole="button"
-                          onPress={isActive ? onEndTrip : () => onStartTrip(trip.id)}
-                          style={({ pressed }) => [
-                            styles.goButton,
-                            isActive && styles.endTripButton,
-                            pressed && styles.pressed,
-                          ]}
-                          testID={isActive ? `recent-trip-end-${trip.id}` : `recent-trip-go-${trip.id}`}
+                    <View style={styles.segmentRow}>
+                      {trip.legs.map((segment) => (
+                        <View
+                          key={segment.shortName}
+                          style={[styles.segmentBadge, { backgroundColor: segment.color }]}
                         >
-                          <Text style={styles.goButtonText}>{isActive ? 'End trip' : 'Go'}</Text>
-                        </Pressable>
-                      </View>
+                          <Text style={styles.segmentText}>{segment.shortName}</Text>
+                        </View>
+                      ))}
                     </View>
-                  );
-                })}
-              </View>
-            ) : (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyIcon}>☆</Text>
-                <Text style={styles.emptyTitle}>No favorite stops yet</Text>
-                <Text style={styles.emptyBody}>Stops and routes you save will appear here.</Text>
-              </View>
-            )}
-          </ScrollView>
-        </SafeAreaView>
-      </View>
-      <Animated.View style={[styles.locationButton, { top: locationButtonTop }]}>
-        <CurrentLocationButton />
-      </Animated.View>
-    </Animated.View>
+                    <View style={styles.recentCopy}>
+                      <Text style={styles.recentDestination}>{trip.destination}</Text>
+                      <Text numberOfLines={1} style={styles.recentOrigin}>From {trip.origin}</Text>
+                    </View>
+                  </Pressable>
+                  <View style={styles.recentActions}>
+                    <Text style={styles.recency}>{isActive ? 'In progress' : trip.recency}</Text>
+                    <Pressable
+                      accessibilityLabel={isActive ? `End trip to ${trip.destination}` : `Start trip to ${trip.destination}`}
+                      accessibilityRole="button"
+                      onPress={isActive ? onEndTrip : () => onStartTrip(trip.id)}
+                      style={({ pressed }) => [
+                        styles.goButton,
+                        isActive && styles.endTripButton,
+                        pressed && styles.pressed,
+                      ]}
+                      testID={isActive ? `recent-trip-end-${trip.id}` : `recent-trip-go-${trip.id}`}
+                    >
+                      <Text style={styles.goButtonText}>{isActive ? 'End trip' : 'Go'}</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        ) : (
+          <View style={[styles.tabContent, styles.emptyState]} testID="favorites-route-content">
+            <Text style={styles.emptyIcon}>☆</Text>
+            <Text style={styles.emptyTitle}>No favorite stops yet</Text>
+            <Text style={styles.emptyBody}>Stops and routes you save will appear here.</Text>
+          </View>
+        )}
+      </SafeAreaView>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  sheetAnchor: {
-    position: 'absolute',
-    right: 0,
-    bottom: 0,
-    left: 0,
-    zIndex: 3,
-    overflow: 'visible',
-  },
-  locationButton: {
-    position: 'absolute',
-    right: 16,
-    zIndex: 20,
-    elevation: 20,
-  },
-  sheet: {
+  pageScroll: {
     position: 'absolute',
     top: 0,
     right: 0,
     bottom: 0,
     left: 0,
-    zIndex: 1,
-    userSelect: 'none',
+    zIndex: 3,
+    backgroundColor: 'transparent',
+  },
+  mapWindow: {
+    position: 'relative',
+  },
+  locationButton: {
+    position: 'absolute',
+    right: 16,
+    bottom: 16,
+    zIndex: 4,
+    elevation: 4,
+  },
+  sheet: {
     overflow: 'hidden',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
@@ -353,17 +200,8 @@ const styles = StyleSheet.create({
     shadowRadius: 18,
     elevation: 14,
   },
-  expandedSheet: { borderTopLeftRadius: 0, borderTopRightRadius: 0 },
-  safeContent: { flex: 1 },
-  handleGestureArea: { minHeight: 44 },
-  handleTarget: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  handle: {
-    width: 42,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: colors.border,
-  },
   tabs: {
+    paddingTop: 12,
     flexDirection: 'row',
     gap: 4,
     paddingHorizontal: 16,
@@ -371,7 +209,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   tab: {
-    minHeight: 44,
+    height: TAB_ROW_HEIGHT,
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -382,9 +220,7 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.62 },
   tabLabel: { color: colors.mutedInk, ...typography.bodyStrong, fontSize: 13 },
   selectedTabLabel: { color: colors.primary, fontFamily: fontFamilies.extraBold },
-  scroll: { flex: 1 },
-  sheetScrollContent: { flexGrow: 1, paddingBottom: 24 },
-  content: { paddingBottom: 30 },
+  tabContent: { minHeight: TAB_CONTENT_MIN_HEIGHT },
   cardStack: { gap: 0 },
   recentList: { paddingHorizontal: 16, paddingVertical: 12, gap: 10 },
   recentRow: {
@@ -419,11 +255,8 @@ const styles = StyleSheet.create({
   endTripButton: { backgroundColor: colors.red },
   goButtonText: { color: colors.white, fontFamily: fontFamilies.extraBold, fontSize: 13 },
   emptyState: {
-    flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 42,
-    paddingBottom: 36,
+    paddingVertical: 20,
   },
   emptyIcon: { color: colors.primary, fontFamily: fontFamilies.bold, fontSize: 38 },
   emptyTitle: { marginTop: 8, color: colors.ink, ...typography.sectionHeading, fontSize: 16 },

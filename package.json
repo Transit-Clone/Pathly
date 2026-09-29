@@ -4,7 +4,9 @@
   "private": true,
   "description": "A React Native and Expo prototype for the Pathly transit app.",
   "license": "MIT",
-  "workspaces": ["mobile"],
+  "workspaces": [
+    "mobile"
+  ],
   "engines": {
     "node": ">=24.9.0 <25",
     "npm": ">=11.6.0 <12"
@@ -20,5 +22,8 @@
     "test": "npm run test --workspace @pathly/mobile",
     "build": "npm run build --workspace @pathly/mobile",
     "typecheck": "npm run typecheck --workspace @pathly/mobile"
+  },
+  "devDependencies": {
+    "@fission-ai/openspec": "^1.13.2"
   }
 }

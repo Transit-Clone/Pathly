@@ -19,7 +19,12 @@ import { RouteDetailView } from './RouteDetailView';
 import { RouteResultsView } from './RouteResultsView';
 import { SearchHeader } from './SearchHeader';
 import { SearchView } from './SearchView';
-import { TransitSheet, type SheetState, type TransitTabId } from './TransitSheet';
+import { TransitSheet, type TransitTabId } from './TransitSheet';
+
+const TRANSIT_TABS_HEIGHT = 44;
+const TRANSIT_CARD_HEIGHT = 104;
+const VISIBLE_CARD_GUTTER = 24;
+const MINIMUM_MAP_HEIGHT = 240;
 
 type ActiveView =
   | { name: 'home' }
@@ -39,11 +44,11 @@ export function HomeScreen() {
   const [activeTrip, setActiveTrip] = useState<ActiveTrip>(null);
   const [homeTab, setHomeTab] = useState<TransitTabId>('nearby');
   const [selectedSearchTripId, setSelectedSearchTripId] = useState<ItineraryId | null>(null);
-  const [, setSheetState] = useState<SheetState>('compact');
   const { height } = useWindowDimensions();
-  const minimizedSheetHeight = 28;
-  const compactSheetHeight = Math.min(height - 80, Math.min(560, Math.max(400, height * 0.52)));
-  const expandedSheetHeight = height;
+  const mapHeight = Math.max(
+    MINIMUM_MAP_HEIGHT,
+    height - TRANSIT_TABS_HEIGHT - TRANSIT_CARD_HEIGHT - VISIBLE_CARD_GUTTER,
+  );
 
   const showHome = useCallback(() => setActiveView({ name: 'home' }), []);
   const showSearch = useCallback(() => {
@@ -56,7 +61,6 @@ export function HomeScreen() {
   }, []);
   const showRecents = useCallback(() => {
     setHomeTab('recents');
-    setSheetState('compact');
     setActiveView({ name: 'home' });
   }, []);
   const showRecentTrip = useCallback((tripId: RecentTripId) => {
@@ -179,14 +183,11 @@ export function HomeScreen() {
         <TransitSheet
           activeTripId={activeTrip?.kind === 'recent' ? activeTrip.tripId : null}
           activeTab={homeTab}
-          compactHeight={compactSheetHeight}
-          expandedHeight={expandedSheetHeight}
-          minimizedHeight={minimizedSheetHeight}
+          mapHeight={mapHeight}
           onOpenRoute={(routeId) => setActiveView({ name: 'route', routeId })}
           onOpenTrip={showRecentTrip}
           onEndTrip={endRecentTrip}
           onStartTrip={startRecentTrip}
-          onStateChange={setSheetState}
           onTabChange={setHomeTab}
         />
       </View>

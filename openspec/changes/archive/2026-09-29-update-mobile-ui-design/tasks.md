@@ -30,10 +30,10 @@
 - [x] 5.2 Run `npm run build`; verify Expo exports Android, iOS, and web bundles and the server TypeScript build remains unaffected.
 - [x] 5.3 Exercise the complete existing Android prototype flow—home, tabs, search, Ronkonkoma route, departure selection, and back navigation—and verify the visual update introduces no new screens, data behavior, or product functionality.
 
-## 6. Direction, Prediction, and Sheet Refinements
+## 6. Direction, Prediction, and Scrolling Refinements
 
 - [x] 6.1 Extend local transit mock data with two directions per route and explicit live-versus-scheduled prediction metadata; verify tests cover both provenance states and both directions.
 - [x] 6.2 Redesign home route cards as icon-free, route-colored swipe pages with route name and minute count at matching display size, ordered direction/stop text, centered `minutes`, and GPS or scheduled treatment; verify contrast and content on every route.
-- [x] 6.3 Make the home transit sheet vertically draggable between bounded compact and expanded positions while keeping search/profile controls fixed; verify drag clamping, snapping, and a 44-pixel handle target.
+- [x] 6.3 Make the home map and transit menu one continuous native vertical scroll while keeping search/profile controls fixed; size the initial map window so the tabs and at least one complete 104-pixel route card remain visible, and verify consecutive same-direction scrolls do not reverse movement.
 - [x] 6.4 Replace route-detail clock-time selectors with multiple square-ish minute prediction tiles, add GPS/scheduled provenance, a service-alert control, matching route/map/timeline color, and top-right location/pin controls; remove selected/next-train captions and verify local pin interaction.
-- [x] 6.5 Update focused interaction tests, run lint/test/typecheck/build, and exercise direction swiping, sheet dragging, route predictions, alerts, location, pinning, and back navigation on Android while leaving the emulator open for review.
+- [x] 6.5 Update focused interaction tests, run lint/test/typecheck/build, and exercise direction swiping, continuous home scrolling in both directions, initial route visibility, route predictions, alerts, location, pinning, and back navigation on Android while leaving the emulator open for review.

@@ -71,7 +71,6 @@ export function TransitCard({ onPress, route }: TransitCardProps) {
                 {item.live ? <LiveSignal /> : null}
               </View>
               <Text style={styles.minuteUnit}>minutes</Text>
-              <Text style={styles.provenance}>{item.live ? 'Live' : 'Scheduled'}</Text>
             </View>
           </Pressable>
         ))}
@@ -91,13 +90,13 @@ export function TransitCard({ onPress, route }: TransitCardProps) {
 
 const styles = StyleSheet.create({
   card: {
-    minHeight: 104,
+    height: 104,
     overflow: 'hidden',
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: 'rgba(255,255,255,0.34)',
   },
   page: {
-    minHeight: 104,
+    height: 104,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
@@ -120,7 +119,7 @@ const styles = StyleSheet.create({
     ...typography.metadata,
     opacity: 0.84,
   },
-  timing: { width: 82, alignItems: 'center' },
+  timing: { width: 50, alignItems: 'center' },
   scheduledTiming: { opacity: 0.68 },
   timeRow: {
     minHeight: 30,
@@ -131,7 +130,7 @@ const styles = StyleSheet.create({
   minutes: {
     color: colors.white,
     ...typography.displayTime,
-    fontSize: 30,
+    fontSize: 35,
     lineHeight: 34,
   },
   minuteUnit: {
