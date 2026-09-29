@@ -3,16 +3,28 @@ import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { itineraries, type RoutePreference } from '../data/transit';
+import {
+  itineraries,
+  itineraryById,
+  type ItineraryId,
+  type RoutePreference,
+} from '../data/transit';
 import { colors } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
 import { CurrentLocationButton } from './CurrentLocationButton';
 import { CurrentLocationMarker } from './CurrentLocationMarker';
 import { MapBackdrop } from './MapBackdrop';
+import { PlannedTripDetailView } from './PlannedTripDetailView';
 
 type RouteResultsViewProps = {
+  activeItineraryId: ItineraryId | null;
   destination: string;
   onBack: () => void;
+  onCloseTrip: () => void;
+  onEndTrip: () => void;
+  onOpenTrip: (itineraryId: ItineraryId) => void;
+  onStartTrip: (itineraryId: ItineraryId) => void;
+  selectedItineraryId: ItineraryId | null;
 };
 
 const preferences: { id: RoutePreference; label: string }[] = [
@@ -23,7 +35,16 @@ const preferences: { id: RoutePreference; label: string }[] = [
 
 const leaveTimes = ['Leave now', 'Leave at 10:30', 'Arrive by 12:00'] as const;
 
-export function RouteResultsView({ destination: initialDestination, onBack }: RouteResultsViewProps) {
+export function RouteResultsView({
+  activeItineraryId,
+  destination: initialDestination,
+  onBack,
+  onCloseTrip,
+  onEndTrip,
+  onOpenTrip,
+  onStartTrip,
+  selectedItineraryId,
+}: RouteResultsViewProps) {
   const [origin, setOrigin] = useState('Current location');
   const [destination, setDestination] = useState(initialDestination);
   const [preference, setPreference] = useState<RoutePreference>('fastest');
@@ -46,6 +67,19 @@ export function RouteResultsView({ destination: initialDestination, onBack }: Ro
       }),
     [preference],
   );
+
+  if (selectedItineraryId) {
+    return (
+      <PlannedTripDetailView
+        destination={destination}
+        isActive={activeItineraryId === selectedItineraryId}
+        itinerary={itineraryById[selectedItineraryId]}
+        onBack={onCloseTrip}
+        onEnd={onEndTrip}
+        onStart={() => onStartTrip(selectedItineraryId)}
+      />
+    );
+  }
 
   return (
     <View style={styles.viewport}>
@@ -154,7 +188,9 @@ export function RouteResultsView({ destination: initialDestination, onBack }: Ro
           </View>
 
           <ScrollView contentContainerStyle={styles.results} showsVerticalScrollIndicator={false}>
-            {orderedItineraries.map((itinerary) => (
+            {orderedItineraries.map((itinerary) => {
+              const isActive = itinerary.id === activeItineraryId;
+              return (
               <View key={itinerary.id} style={styles.itinerary} testID={`itinerary-${itinerary.id}`}>
                 <View style={styles.itineraryTop}>
                   <View style={styles.segmentColumn}>
@@ -169,7 +205,10 @@ export function RouteResultsView({ destination: initialDestination, onBack }: Ro
                         </View>
                       ))}
                     </View>
-                    <Text style={styles.nextRide}>{itinerary.nextRide}</Text>
+                    <Text style={styles.nextRide}>
+                      {itinerary.nextRide} · {itinerary.transfers}{' '}
+                      {itinerary.transfers === 1 ? 'transfer' : 'transfers'}
+                    </Text>
                   </View>
                   <View style={styles.summary}>
                     <Text style={styles.fare}>{itinerary.fare}</Text>
@@ -178,13 +217,32 @@ export function RouteResultsView({ destination: initialDestination, onBack }: Ro
                   </View>
                 </View>
                 <View style={styles.itineraryFooter}>
-                  <Text style={styles.transferText}>
-                    {itinerary.transfers} {itinerary.transfers === 1 ? 'transfer' : 'transfers'}
-                  </Text>
-                  <Text style={styles.detailsLink}>View trip  ›</Text>
+                  <Pressable
+                    accessibilityLabel={`View trip details to ${destination}`}
+                    accessibilityRole="button"
+                    onPress={() => onOpenTrip(itinerary.id)}
+                    style={({ pressed }) => [styles.viewTripButton, pressed && styles.pressed]}
+                    testID={`search-result-view-${itinerary.id}`}
+                  >
+                    <Text style={styles.detailsLink}>View trip</Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityLabel={isActive ? `End trip to ${destination}` : `Start trip to ${destination}`}
+                    accessibilityRole="button"
+                    onPress={isActive ? onEndTrip : () => onStartTrip(itinerary.id)}
+                    style={({ pressed }) => [
+                      styles.goButton,
+                      isActive && styles.endTripButton,
+                      pressed && styles.pressed,
+                    ]}
+                    testID={isActive ? `search-result-end-${itinerary.id}` : `search-result-go-${itinerary.id}`}
+                  >
+                    <Text style={styles.goButtonText}>{isActive ? 'End trip' : 'Go'}</Text>
+                  </Pressable>
                 </View>
               </View>
-            ))}
+              );
+            })}
           </ScrollView>
         </SafeAreaView>
       </View>
@@ -237,8 +295,11 @@ const styles = StyleSheet.create({
   fare: { color: colors.primary, ...typography.metadata, fontSize: 10 },
   duration: { color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 26, lineHeight: 28 },
   minuteLabel: { color: colors.mutedInk, ...typography.metadata, fontSize: 9 },
-  itineraryFooter: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.border },
-  transferText: { color: colors.mutedInk, ...typography.metadata, fontSize: 10 },
-  detailsLink: { color: colors.primary, ...typography.bodyStrong, fontSize: 10 },
+  itineraryFooter: { flexDirection: 'row', gap: 8, marginTop: 9, paddingTop: 9, borderTopWidth: 1, borderTopColor: colors.border },
+  viewTripButton: { minWidth: 0, flex: 1, height: 44, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.primary, borderRadius: 10, backgroundColor: colors.surface },
+  detailsLink: { color: colors.primary, ...typography.bodyStrong, fontSize: 11 },
+  goButton: { width: 86, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: colors.primary },
+  endTripButton: { backgroundColor: colors.red },
+  goButtonText: { color: colors.white, fontFamily: fontFamilies.extraBold, fontSize: 13 },
   pressed: { opacity: 0.62 },
 });

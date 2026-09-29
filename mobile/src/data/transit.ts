@@ -177,48 +177,120 @@ export const routeById = Object.fromEntries(
 export const pinnedRoutes = [routeById.ronkonkoma] as const;
 export const nearbyRoutes = routes.filter((route) => route.id !== 'ronkonkoma');
 
+export type RecentTripId = 'penn-station' | 'times-square' | 'patchogue';
+
+export type RecentTripLeg = {
+  alightStop: string;
+  alightTime: string;
+  boardStop: string;
+  boardTime: string;
+  color: string;
+  direction: string;
+  routeName: string;
+  shortName: string;
+};
+
 export type RecentTrip = {
   destination: string;
-  id: string;
+  durationMinutes: number;
+  fare: string;
+  id: RecentTripId;
+  legs: readonly RecentTripLeg[];
   origin: string;
   recency: string;
-  segments: readonly Pick<RouteDetail, 'color' | 'shortName'>[];
 };
 
 export const recentTrips: readonly RecentTrip[] = [
   {
     id: 'penn-station',
     destination: 'Penn Station',
+    durationMinutes: 72,
+    fare: '$14.25',
     origin: 'Stony Brook University',
     recency: 'Yesterday',
-    segments: [routeById.ronkonkoma],
+    legs: [
+      {
+        alightStop: 'Penn Station',
+        alightTime: '11:16 AM',
+        boardStop: 'Stony Brook Station',
+        boardTime: '10:04 AM',
+        color: routeById.ronkonkoma.color,
+        direction: 'Westbound to Penn Station',
+        routeName: routeById.ronkonkoma.routeName,
+        shortName: routeById.ronkonkoma.shortName,
+      },
+    ],
   },
   {
     id: 'times-square',
     destination: 'Times Square',
-    origin: 'Current location',
+    durationMinutes: 94,
+    fare: '$17.15',
+    origin: 'Stony Brook University',
     recency: '3 days ago',
-    segments: [routeById.s1, routeById.e],
+    legs: [
+      {
+        alightStop: 'Jamaica',
+        alightTime: '9:43 AM',
+        boardStop: 'Stony Brook Station',
+        boardTime: '8:42 AM',
+        color: routeById.ronkonkoma.color,
+        direction: 'Westbound to Penn Station',
+        routeName: routeById.ronkonkoma.routeName,
+        shortName: routeById.ronkonkoma.shortName,
+      },
+      {
+        alightStop: '42 St–Port Authority',
+        alightTime: '10:16 AM',
+        boardStop: 'Sutphin Blvd–Archer Av',
+        boardTime: '9:51 AM',
+        color: routeById.e.color,
+        direction: 'Downtown toward World Trade Center',
+        routeName: routeById.e.routeName,
+        shortName: routeById.e.shortName,
+      },
+    ],
   },
   {
     id: 'patchogue',
     destination: 'Patchogue Station',
+    durationMinutes: 51,
+    fare: '$2.25',
     origin: 'Stony Brook University',
     recency: 'Last week',
-    segments: [routeById['51']],
+    legs: [
+      {
+        alightStop: 'Patchogue Station',
+        alightTime: '4:01 PM',
+        boardStop: 'Stony Brook University',
+        boardTime: '3:10 PM',
+        color: routeById['51'].color,
+        direction: 'Eastbound to Patchogue',
+        routeName: routeById['51'].routeName,
+        shortName: routeById['51'].shortName,
+      },
+    ],
   },
 ] as const;
 
+export const recentTripById = Object.fromEntries(
+  recentTrips.map((trip) => [trip.id, trip]),
+) as Record<RecentTripId, RecentTrip>;
+
 export type RoutePreference = 'fastest' | 'transfers' | 'cheapest';
+export type ItineraryId = 'rail-fast' | 'few-transfers' | 'budget' | 'subway-mix';
 
 export type Itinerary = {
   durationMinutes: number;
   fare: string;
-  id: string;
+  id: ItineraryId;
   nextRide: string;
   preference: RoutePreference;
   recommended: boolean;
-  segments: readonly Pick<RouteDetail, 'color' | 'shortName'>[];
+  segments: readonly Pick<
+    RouteDetail,
+    'agency' | 'color' | 'destination' | 'direction' | 'routeName' | 'shortName'
+  >[];
   transfers: number;
 };
 
@@ -264,3 +336,7 @@ export const itineraries: readonly Itinerary[] = [
     nextRide: 'Leaves in 11 min · 10:11 AM',
   },
 ] as const;
+
+export const itineraryById = Object.fromEntries(
+  itineraries.map((itinerary) => [itinerary.id, itinerary]),
+) as Record<ItineraryId, Itinerary>;

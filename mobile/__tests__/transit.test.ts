@@ -1,5 +1,7 @@
 import {
   itineraries,
+  itineraryById,
+  recentTripById,
   recentTrips,
   routeById,
   routes,
@@ -27,7 +29,16 @@ describe('transit prototype data', () => {
 
   it('provides destination recents and comparable itineraries', () => {
     expect(recentTrips.length).toBeGreaterThanOrEqual(3);
+    for (const trip of recentTrips) {
+      expect(recentTripById[trip.id]).toBe(trip);
+      expect(trip.durationMinutes).toBeGreaterThan(0);
+      expect(trip.legs.length).toBeGreaterThan(0);
+    }
     expect(itineraries.length).toBeGreaterThanOrEqual(3);
+    for (const itinerary of itineraries) {
+      expect(itineraryById[itinerary.id]).toBe(itinerary);
+      expect(itinerary.segments.length).toBeGreaterThan(0);
+    }
     expect(itineraries[0]?.recommended).toBe(true);
     expect(new Set(itineraries.map((itinerary) => itinerary.preference))).toEqual(
       new Set(['fastest', 'transfers', 'cheapest']),

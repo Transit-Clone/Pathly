@@ -14,39 +14,49 @@ import {
   nearbyRoutes,
   pinnedRoutes,
   recentTrips,
+  type RecentTripId,
   type RouteId,
 } from '../data/transit';
 import { colors } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
 import { TransitCard } from './TransitCard';
 
-type TabId = 'nearby' | 'recents' | 'favorites';
+export type TransitTabId = 'nearby' | 'recents' | 'favorites';
 export type SheetState = 'minimized' | 'compact' | 'expanded';
 
 type TransitSheetProps = {
+  activeTripId: RecentTripId | null;
+  activeTab: TransitTabId;
   compactHeight: number;
   expandedHeight: number;
   minimizedHeight: number;
   onOpenRoute: (routeId: RouteId) => void;
-  onOpenTrip: (destination: string) => void;
+  onOpenTrip: (tripId: RecentTripId) => void;
+  onEndTrip: () => void;
+  onStartTrip: (tripId: RecentTripId) => void;
   onStateChange: (state: SheetState) => void;
+  onTabChange: (tab: TransitTabId) => void;
 };
 
-const tabs: { id: TabId; label: string }[] = [
+const tabs: { id: TransitTabId; label: string }[] = [
   { id: 'nearby', label: 'Nearby' },
   { id: 'recents', label: 'Recents' },
   { id: 'favorites', label: 'Favorites' },
 ];
 
 export function TransitSheet({
+  activeTripId,
+  activeTab,
   compactHeight,
   expandedHeight,
   minimizedHeight,
   onOpenRoute,
   onOpenTrip,
+  onEndTrip,
+  onStartTrip,
   onStateChange,
+  onTabChange,
 }: TransitSheetProps) {
-  const [activeTab, setActiveTab] = useState<TabId>('nearby');
   const [sheetState, setSheetState] = useState<SheetState>('compact');
   const [animatedHeight] = useState(() => new Animated.Value(compactHeight));
 
@@ -170,7 +180,7 @@ export function TransitSheet({
                 key={tab.id}
                 accessibilityRole="tab"
                 accessibilityState={{ selected }}
-                onPress={() => setActiveTab(tab.id)}
+                onPress={() => onTabChange(tab.id)}
                 style={({ pressed }) => [
                   styles.tab,
                   selected && styles.selectedTab,
@@ -212,32 +222,52 @@ export function TransitSheet({
           </ScrollView>
         ) : activeTab === 'recents' ? (
           <ScrollView contentContainerStyle={styles.recentList}>
-            {recentTrips.map((trip) => (
-              <Pressable
-                key={trip.id}
-                accessibilityLabel={`Recent trip to ${trip.destination} from ${trip.origin}`}
-                accessibilityRole="button"
-                onPress={() => onOpenTrip(trip.destination)}
-                style={({ pressed }) => [styles.recentRow, pressed && styles.pressed]}
-                testID={`recent-trip-${trip.id}`}
-              >
-                <View style={styles.segmentRow}>
-                  {trip.segments.map((segment) => (
-                    <View
-                      key={segment.shortName}
-                      style={[styles.segmentBadge, { backgroundColor: segment.color }]}
-                    >
-                      <Text style={styles.segmentText}>{segment.shortName}</Text>
+            {recentTrips.map((trip) => {
+              const isActive = trip.id === activeTripId;
+              return (
+                <View key={trip.id} style={styles.recentRow}>
+                  <Pressable
+                    accessibilityLabel={`View recent trip to ${trip.destination} from ${trip.origin}`}
+                    accessibilityRole="button"
+                    onPress={() => onOpenTrip(trip.id)}
+                    style={({ pressed }) => [styles.recentMain, pressed && styles.pressed]}
+                    testID={`recent-trip-${trip.id}`}
+                  >
+                    <View style={styles.segmentRow}>
+                      {trip.legs.map((segment) => (
+                        <View
+                          key={segment.shortName}
+                          style={[styles.segmentBadge, { backgroundColor: segment.color }]}
+                        >
+                          <Text style={styles.segmentText}>{segment.shortName}</Text>
+                        </View>
+                      ))}
                     </View>
-                  ))}
+                    <View style={styles.recentCopy}>
+                      <Text style={styles.recentDestination}>{trip.destination}</Text>
+                      <Text numberOfLines={1} style={styles.recentOrigin}>From {trip.origin}</Text>
+                      <Text style={styles.viewTrip}>View trip ›</Text>
+                    </View>
+                  </Pressable>
+                  <View style={styles.recentActions}>
+                    <Text style={styles.recency}>{isActive ? 'In progress' : trip.recency}</Text>
+                    <Pressable
+                      accessibilityLabel={isActive ? `End trip to ${trip.destination}` : `Start trip to ${trip.destination}`}
+                      accessibilityRole="button"
+                      onPress={isActive ? onEndTrip : () => onStartTrip(trip.id)}
+                      style={({ pressed }) => [
+                        styles.goButton,
+                        isActive && styles.endTripButton,
+                        pressed && styles.pressed,
+                      ]}
+                      testID={isActive ? `recent-trip-end-${trip.id}` : `recent-trip-go-${trip.id}`}
+                    >
+                      <Text style={styles.goButtonText}>{isActive ? 'End trip' : 'Go'}</Text>
+                    </Pressable>
+                  </View>
                 </View>
-                <View style={styles.recentCopy}>
-                  <Text style={styles.recentDestination}>{trip.destination}</Text>
-                  <Text style={styles.recentOrigin}>From {trip.origin}</Text>
-                </View>
-                <Text style={styles.recency}>{trip.recency}</Text>
-              </Pressable>
-            ))}
+              );
+            })}
           </ScrollView>
         ) : (
           <View style={styles.emptyState}>
@@ -300,16 +330,17 @@ const styles = StyleSheet.create({
   cardStack: { gap: 8 },
   recentList: { paddingHorizontal: 16, paddingVertical: 12, gap: 10 },
   recentRow: {
-    minHeight: 76,
+    minHeight: 92,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
     padding: 12,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 16,
     backgroundColor: colors.background,
   },
+  recentMain: { minWidth: 0, flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 10 },
   segmentRow: { flexDirection: 'row', gap: 4 },
   segmentBadge: {
     minWidth: 32,
@@ -323,7 +354,12 @@ const styles = StyleSheet.create({
   recentCopy: { minWidth: 0, flex: 1 },
   recentDestination: { color: colors.ink, ...typography.bodyStrong, fontSize: 15 },
   recentOrigin: { marginTop: 2, color: colors.mutedInk, ...typography.metadata },
+  recentActions: { alignItems: 'flex-end', gap: 7 },
   recency: { color: colors.mutedInk, ...typography.metadata, fontSize: 10 },
+  viewTrip: { marginTop: 3, color: colors.primary, ...typography.bodyStrong, fontSize: 10 },
+  goButton: { width: 86, height: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, borderRadius: 10, backgroundColor: colors.primary },
+  endTripButton: { backgroundColor: colors.red },
+  goButtonText: { color: colors.white, fontFamily: fontFamilies.extraBold, fontSize: 13 },
   emptyState: {
     flex: 1,
     alignItems: 'center',
