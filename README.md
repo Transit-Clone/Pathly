@@ -2,7 +2,7 @@
 
 Pathly is a mobile transportation app built for riders in the New York City and Long Island area and inspired by existing apps like Transit, Citymapper, and Google Maps. Like other transit apps, Pathly will allow users to search for transit routes, view nearby stops, compare routes, and navigate to their destinations using real-time and scheduled transportation data.
 
-Currently, this repository contains a very minimal prototype.
+Currently, this repository contains a very minimal prototype. The **design document** for M2 is located in `docs/Design.ipynb`.
 
 ## Requirements
 
@@ -14,9 +14,7 @@ Currently, this repository contains a very minimal prototype.
   - Android Studio with an Android Virtual Device, or
   - a physical iOS or Android phone with Expo Go
 
-No Firebase project, database, mapping key, transit API key, paid Apple Developer membership, CocoaPods installation, or global Expo CLI installation is required for the current prototype.
-
-## Clone and install
+## Installation
 
 ```sh
 git clone https://github.com/Transit-Clone/Pathly.git
@@ -73,16 +71,16 @@ Keep Expo running while using the app. If the device cannot load the project, co
 
 ## Commands
 
-| Command | Purpose |
-| --- | --- |
-| `npm start` | Alias for `npm run dev` |
-| `npm run dev` | Start the Expo development server |
-| `npm run dev:web` | Start the web app |
-| `npm run dev:ios` | Open the iOS Simulator app |
-| `npm run dev:android` | Open the Android app |
-| `npm run lint` | Lint the mobile workspace |
-| `npm test` | Run mobile tests |
-| `npm run typecheck` | Type-check the mobile workspace |
-| `npm run build` | Create Android, iOS, and web Expo exports |
+| Command               | Purpose                                   |
+| --------------------- | ----------------------------------------- |
+| `npm start`           | Alias for `npm run dev`                   |
+| `npm run dev`         | Start the Expo development server         |
+| `npm run dev:web`     | Start the web app                         |
+| `npm run dev:ios`     | Open the iOS Simulator app                |
+| `npm run dev:android` | Open the Android app                      |
+| `npm run lint`        | Lint the mobile workspace                 |
+| `npm test`            | Run mobile tests                          |
+| `npm run typecheck`   | Type-check the mobile workspace           |
+| `npm run build`       | Create Android, iOS, and web Expo exports |
 
 Stop development processes with `Ctrl+C`.
