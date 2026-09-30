@@ -1,12 +1,14 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors } from '../theme/colors';
+import { fontFamilies, typography } from '../theme/typography';
 
 type SearchHeaderProps = {
+  onProfilePress: () => void;
   onSearchPress: () => void;
 };
 
-export function SearchHeader({ onSearchPress }: SearchHeaderProps) {
+export function SearchHeader({ onProfilePress, onSearchPress }: SearchHeaderProps) {
   return (
     <View style={styles.row}>
       <Pressable
@@ -27,8 +29,9 @@ export function SearchHeader({ onSearchPress }: SearchHeaderProps) {
       <Pressable
         accessibilityLabel="Profile"
         accessibilityRole="button"
-        onPress={() => undefined}
+        onPress={onProfilePress}
         style={({ pressed }) => [styles.profile, pressed && styles.pressed]}
+        testID="profile-trigger"
       >
         <Text style={styles.profileText}>P</Text>
       </Pressable>
@@ -63,8 +66,8 @@ const styles = StyleSheet.create({
   },
   searchText: {
     color: colors.ink,
+    ...typography.bodyStrong,
     fontSize: 17,
-    fontWeight: '700',
   },
   searchIcon: {
     width: 20,
@@ -95,7 +98,7 @@ const styles = StyleSheet.create({
     borderRadius: 27,
     borderWidth: 3,
     borderColor: colors.surface,
-    backgroundColor: colors.ink,
+    backgroundColor: colors.primary,
     shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 5 },
     shadowOpacity: 0.18,
@@ -104,7 +107,7 @@ const styles = StyleSheet.create({
   },
   profileText: {
     color: colors.white,
+    fontFamily: fontFamilies.extraBold,
     fontSize: 18,
-    fontWeight: '800',
   },
 });

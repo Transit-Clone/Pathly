@@ -64,15 +64,27 @@ export const mockSearchDestinations: readonly MockSearchPlace[] = [
   },
 ];
 
+const searchableDestinations: readonly MockSearchPlace[] = [
+  ...recentSearches,
+  ...mockSearchDestinations,
+];
+
+function normalizeSearchText(value: string) {
+  return value
+    .toLocaleLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
 export function findMockDestinations(query: string): readonly MockSearchPlace[] {
-  const tokens = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  const tokens = normalizeSearchText(query).split(/\s+/).filter(Boolean);
 
   if (tokens.length === 0) {
     return [];
   }
 
-  return mockSearchDestinations.filter((destination) => {
-    const searchableText = `${destination.title} ${destination.subtitle}`.toLocaleLowerCase();
+  return searchableDestinations.filter((destination) => {
+    const searchableText = normalizeSearchText(`${destination.title} ${destination.subtitle}`);
 
     return tokens.every((token) => searchableText.includes(token));
   });
