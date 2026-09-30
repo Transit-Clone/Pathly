@@ -1,7 +1,10 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
-import { colors } from '../theme/colors';
-import { fontFamilies, typography } from '../theme/typography';
+import { useTheme, useThemedStyles } from '../theme/AppSettings';
+import type { Palette } from '../theme/colors';
+import { typography } from '../theme/typography';
+import { Icon } from './Icon';
+import { PressableScale } from './PressableScale';
 
 type SearchHeaderProps = {
   onProfilePress: () => void;
@@ -9,37 +12,36 @@ type SearchHeaderProps = {
 };
 
 export function SearchHeader({ onProfilePress, onSearchPress }: SearchHeaderProps) {
+  const styles = useThemedStyles(createStyles);
+  const { colors } = useTheme();
   return (
     <View style={styles.row}>
-      <Pressable
+      <PressableScale
         accessibilityHint="Opens destination search"
         accessibilityLabel="Where to?"
         accessibilityRole="button"
         onPress={onSearchPress}
-        style={({ pressed }) => [styles.search, pressed && styles.pressed]}
+        style={styles.search}
         testID="search-trigger"
       >
-        <View style={styles.searchIcon}>
-          <View style={styles.searchIconCircle} />
-          <View style={styles.searchIconHandle} />
-        </View>
+        <Icon color={colors.ink} name="search" size={20} />
         <Text style={styles.searchText}>Where to?</Text>
-      </Pressable>
+      </PressableScale>
 
-      <Pressable
+      <PressableScale
         accessibilityLabel="Profile"
         accessibilityRole="button"
         onPress={onProfilePress}
-        style={({ pressed }) => [styles.profile, pressed && styles.pressed]}
+        style={styles.profile}
         testID="profile-trigger"
       >
-        <Text style={styles.profileText}>P</Text>
-      </Pressable>
+        <Icon color={colors.onPrimary} filled={true} name="person" size={24} />
+      </PressableScale>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: Palette) => StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -60,35 +62,10 @@ const styles = StyleSheet.create({
     shadowRadius: 13,
     elevation: 6,
   },
-  pressed: {
-    opacity: 0.84,
-    transform: [{ scale: 0.985 }],
-  },
   searchText: {
     color: colors.ink,
     ...typography.bodyStrong,
     fontSize: 17,
-  },
-  searchIcon: {
-    width: 20,
-    height: 20,
-  },
-  searchIconCircle: {
-    width: 13,
-    height: 13,
-    borderWidth: 2,
-    borderColor: colors.ink,
-    borderRadius: 7,
-  },
-  searchIconHandle: {
-    position: 'absolute',
-    width: 8,
-    height: 2,
-    top: 13,
-    left: 11,
-    borderRadius: 2,
-    backgroundColor: colors.ink,
-    transform: [{ rotate: '45deg' }],
   },
   profile: {
     width: 54,
@@ -104,10 +81,5 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.18,
     shadowRadius: 10,
     elevation: 6,
-  },
-  profileText: {
-    color: colors.white,
-    fontFamily: fontFamilies.extraBold,
-    fontSize: 18,
   },
 });

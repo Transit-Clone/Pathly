@@ -1,22 +1,41 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useState } from 'react';
+import { StyleSheet } from 'react-native';
 
-import { colors } from '../theme/colors';
+import { useThemedStyles } from '../theme/AppSettings';
+import type { Palette } from '../theme/colors';
+import { Icon } from './Icon';
+import { PressableScale } from './PressableScale';
 
-export function CurrentLocationButton() {
+type CurrentLocationButtonProps = {
+  onPress?: () => void;
+  selected?: boolean;
+  testID?: string;
+};
+
+export function CurrentLocationButton({ onPress, selected, testID }: CurrentLocationButtonProps) {
+  const styles = useThemedStyles(createStyles);
+  const [centered, setCentered] = useState(false);
+  const isSelected = selected ?? centered;
+
   return (
-    <Pressable
+    <PressableScale
       accessibilityHint="Centers the map on your location"
       accessibilityLabel="Center on current location"
       accessibilityRole="button"
-      onPress={() => undefined}
-      style={({ pressed }) => [styles.button, pressed && styles.pressed]}
+      accessibilityState={{ selected: isSelected }}
+      onPress={() => {
+        setCentered(true);
+        onPress?.();
+      }}
+      style={[styles.button, isSelected && styles.selected]}
+      testID={testID}
     >
-      <View style={styles.compassNeedle} />
-    </Pressable>
+      <Icon filled={isSelected} name="locate" size={22} />
+    </PressableScale>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: Palette) => StyleSheet.create({
   button: {
     width: 48,
     height: 48,
@@ -30,19 +49,7 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 5,
   },
-  pressed: {
-    opacity: 0.82,
-    transform: [{ scale: 0.96 }],
-  },
-  compassNeedle: {
-    width: 18,
-    height: 18,
-    borderLeftWidth: 9,
-    borderRightWidth: 9,
-    borderBottomWidth: 18,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderBottomColor: colors.primary,
-    transform: [{ rotate: '36deg' }, { scale: 0.8 }],
+  selected: {
+    backgroundColor: colors.blueSoft,
   },
 });

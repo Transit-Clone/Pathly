@@ -1,34 +1,48 @@
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Animated, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { favoriteTripKey, plannedTripCardData, type FavoriteTrip } from '../data/favorites';
 import {
-  nearbyRoutes,
-  pinnedRoutes,
+  allNearbyRoutes,
+  recentTripById,
   recentTrips,
+  routeById,
   type RecentTripId,
   type RouteId,
 } from '../data/transit';
-import { colors } from '../theme/colors';
+import { useAppSettings, useThemedStyles } from '../theme/AppSettings';
+import { useLayoutEase, useNativeDriver } from '../theme/motion';
+import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
 import { CurrentLocationButton } from './CurrentLocationButton';
+import { Icon } from './Icon';
 import { TransitCard } from './TransitCard';
+import { TripCard } from './TripCard';
+import { PressableScale } from './PressableScale';
 
 export type TransitTabId = 'nearby' | 'recents' | 'favorites';
 
 type TransitSheetProps = {
   activeTripId: RecentTripId | null;
   activeTab: TransitTabId;
+  favoriteRouteIds: readonly RouteId[];
+  favoriteTrips: readonly FavoriteTrip[];
   mapHeight: number;
+  onOpenFavoriteTrip: (trip: FavoriteTrip) => void;
   onOpenRoute: (routeId: RouteId) => void;
   onOpenTrip: (tripId: RecentTripId) => void;
   onEndTrip: () => void;
   onStartTrip: (tripId: RecentTripId) => void;
   onTabChange: (tab: TransitTabId) => void;
+  pinnedRouteIds: readonly RouteId[];
 };
 
 const TAB_ROW_HEIGHT = 44;
+const TAB_ROW_PADDING = 16;
+const TAB_GAP = 4;
 const TRANSIT_CARD_HEIGHT = 104;
-const TAB_CONTENT_MIN_HEIGHT = (pinnedRoutes.length + nearbyRoutes.length) * TRANSIT_CARD_HEIGHT;
+const TAB_CONTENT_MIN_HEIGHT = allNearbyRoutes.length * TRANSIT_CARD_HEIGHT;
 
 const tabs: { id: TransitTabId; label: string }[] = [
   { id: 'nearby', label: 'Nearby' },
@@ -39,13 +53,37 @@ const tabs: { id: TransitTabId; label: string }[] = [
 export function TransitSheet({
   activeTripId,
   activeTab,
+  favoriteRouteIds,
+  favoriteTrips,
   mapHeight,
+  onOpenFavoriteTrip,
   onOpenRoute,
   onOpenTrip,
   onEndTrip,
   onStartTrip,
   onTabChange,
+  pinnedRouteIds,
 }: TransitSheetProps) {
+  const styles = useThemedStyles(createStyles);
+  const pinnedRoutes = pinnedRouteIds.map((id) => routeById[id]);
+  const nearbyRoutes = allNearbyRoutes.filter((route) => !pinnedRouteIds.includes(route.id));
+  const hasFavorites = favoriteRouteIds.length > 0 || favoriteTrips.length > 0;
+  const ease = useLayoutEase();
+  const { reducedMotionActive } = useAppSettings();
+  const [tabsWidth, setTabsWidth] = useState(0);
+  const [indicatorX] = useState(() => new Animated.Value(0));
+  const tabWidth = Math.max(0, (tabsWidth - TAB_ROW_PADDING * 2 - TAB_GAP * (tabs.length - 1)) / tabs.length);
+  const activeIndex = tabs.findIndex((tab) => tab.id === activeTab);
+
+  useEffect(() => {
+    const toValue = TAB_ROW_PADDING + activeIndex * (tabWidth + TAB_GAP);
+    if (reducedMotionActive || tabWidth === 0) {
+      indicatorX.setValue(toValue);
+      return;
+    }
+    Animated.spring(indicatorX, { toValue, speed: 18, bounciness: 4, useNativeDriver }).start();
+  }, [activeIndex, indicatorX, reducedMotionActive, tabWidth]);
+
   return (
     <ScrollView
       bounces={false}
@@ -65,41 +103,46 @@ export function TransitSheet({
         style={styles.sheet}
         testID="transit-sheet"
       >
-        <View accessibilityRole="tablist" style={styles.tabs}>
+        <View accessibilityRole="tablist" onLayout={(event) => setTabsWidth(event.nativeEvent.layout.width)} style={styles.tabs}>
+          <Animated.View pointerEvents="none" style={[styles.tabIndicator, { width: tabWidth, transform: [{ translateX: indicatorX }] }]} testID="tab-indicator" />
           {tabs.map((tab) => {
             const selected = tab.id === activeTab;
             return (
-              <Pressable
+              <PressableScale
                 key={tab.id}
                 accessibilityRole="tab"
                 accessibilityState={{ selected }}
-                onPress={() => onTabChange(tab.id)}
-                style={({ pressed }) => [
-                  styles.tab,
-                  selected && styles.selectedTab,
-                  pressed && styles.pressed,
-                ]}
+                onPress={() => {
+                  ease();
+                  onTabChange(tab.id);
+                }}
+                style={styles.tab}
                 testID={`tab-${tab.id}`}
               >
                 <Text style={[styles.tabLabel, selected && styles.selectedTabLabel]}>
                   {tab.label}
                 </Text>
-              </Pressable>
+              </PressableScale>
             );
           })}
         </View>
 
         {activeTab === 'nearby' ? (
           <View style={styles.tabContent} testID="nearby-route-content">
-            {pinnedRoutes.map((route) => (
-              <TransitCard
-                key={route.id}
-                onPress={() => onOpenRoute(route.id)}
-                route={route}
-              />
-            ))}
+            {pinnedRoutes.length > 0 ? (
+              <View testID="pinned-routes">
+                {pinnedRoutes.map((route) => (
+                  <TransitCard
+                    key={route.id}
+                    onPress={() => onOpenRoute(route.id)}
+                    pinned={true}
+                    route={route}
+                  />
+                ))}
+              </View>
+            ) : null}
 
-            <View style={styles.cardStack}>
+            <View style={styles.cardStack} testID="nearby-routes">
               {nearbyRoutes.map((route) => (
                 <TransitCard
                   key={route.id}
@@ -110,66 +153,68 @@ export function TransitSheet({
             </View>
           </View>
         ) : activeTab === 'recents' ? (
-          <View style={[styles.tabContent]} testID="recents-route-content">
+          <View style={[styles.tabContent, styles.recentList]} testID="recents-route-content">
             {recentTrips.map((trip) => {
               const isActive = trip.id === activeTripId;
               return (
-                <View key={trip.id} style={styles.recentRow}>
-                  <Pressable
-                    accessibilityLabel={`View recent trip to ${trip.destination} from ${trip.origin}`}
-                    accessibilityRole="button"
-                    onPress={() => onOpenTrip(trip.id)}
-                    style={({ pressed }) => [styles.recentMain, pressed && styles.pressed]}
-                    testID={`recent-trip-${trip.id}`}
-                  >
-                    <View style={styles.segmentRow}>
-                      {trip.legs.map((segment) => (
-                        <View
-                          key={segment.shortName}
-                          style={[styles.segmentBadge, { backgroundColor: segment.color }]}
-                        >
-                          <Text style={styles.segmentText}>{segment.shortName}</Text>
-                        </View>
-                      ))}
-                    </View>
-                    <View style={styles.recentCopy}>
-                      <Text style={styles.recentDestination}>{trip.destination}</Text>
-                      <Text numberOfLines={1} style={styles.recentOrigin}>From {trip.origin}</Text>
-                    </View>
-                  </Pressable>
-                  <View style={styles.recentActions}>
-                    <Text style={styles.recency}>{isActive ? 'In progress' : trip.recency}</Text>
-                    <Pressable
-                      accessibilityLabel={isActive ? `End trip to ${trip.destination}` : `Start trip to ${trip.destination}`}
-                      accessibilityRole="button"
-                      onPress={isActive ? onEndTrip : () => onStartTrip(trip.id)}
-                      style={({ pressed }) => [
-                        styles.goButton,
-                        isActive && styles.endTripButton,
-                        pressed && styles.pressed,
-                      ]}
-                      testID={isActive ? `recent-trip-end-${trip.id}` : `recent-trip-go-${trip.id}`}
-                    >
-                      <Text style={styles.goButtonText}>{isActive ? 'End trip' : 'Go'}</Text>
-                    </Pressable>
-                  </View>
-                </View>
+                <TripCard
+                  key={trip.id}
+                  actionTestID={isActive ? `recent-trip-end-${trip.id}` : `recent-trip-go-${trip.id}`}
+                  isActive={isActive}
+                  onAction={isActive ? onEndTrip : () => onStartTrip(trip.id)}
+                  onOpen={() => onOpenTrip(trip.id)}
+                  testID={`recent-trip-${trip.id}`}
+                  trip={trip}
+                />
               );
             })}
           </View>
         ) : (
-          <View style={[styles.tabContent, styles.emptyState]} testID="favorites-route-content">
-            <Text style={styles.emptyIcon}>☆</Text>
-            <Text style={styles.emptyTitle}>No favorite stops yet</Text>
-            <Text style={styles.emptyBody}>Stops and routes you save will appear here.</Text>
-          </View>
+          hasFavorites ? (
+            <View style={styles.tabContent} testID="favorites-route-content">
+              {favoriteRouteIds.length > 0 ? (
+                <View testID="favorite-routes">
+                  <Text style={[styles.sectionLabel, styles.sectionHeading]}>ROUTES</Text>
+                  {favoriteRouteIds.map((id) => (
+                    <View key={id} testID={`favorite-route-${id}`}>
+                      <TransitCard onPress={() => onOpenRoute(id)} route={routeById[id]} />
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+              {favoriteTrips.length > 0 ? (
+                <View style={styles.favoriteTrips} testID="favorite-trips">
+                  <Text style={[styles.sectionLabel, styles.sectionHeading, styles.flushHeading]}>TRIPS</Text>
+                  {favoriteTrips.map((trip) => {
+                    const key = favoriteTripKey(trip);
+                    const data = trip.kind === 'recent' ? recentTripById[trip.tripId] : plannedTripCardData(trip);
+                    return (
+                      <TripCard
+                        key={key}
+                        accessibilityLabel={`View favorite trip to ${data.destination}`}
+                        onOpen={() => onOpenFavoriteTrip(trip)}
+                        testID={`favorite-trip-${key}`}
+                        trip={data}
+                      />
+                    );
+                  })}
+                </View>
+              ) : null}
+            </View>
+          ) : (
+            <View style={[styles.tabContent, styles.emptyState]} testID="favorites-route-content">
+              <View style={styles.emptyIcon}><Icon name="favorite" size={30} /></View>
+              <Text style={styles.emptyTitle}>No favorites yet</Text>
+              <Text style={styles.emptyBody}>Tap the star on a route or trip to save it here.</Text>
+            </View>
+          )
         )}
       </SafeAreaView>
     </ScrollView>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: Palette) => StyleSheet.create({
   pageScroll: {
     position: 'absolute',
     top: 0,
@@ -203,8 +248,8 @@ const styles = StyleSheet.create({
   tabs: {
     paddingTop: 12,
     flexDirection: 'row',
-    gap: 4,
-    paddingHorizontal: 16,
+    gap: TAB_GAP,
+    paddingHorizontal: TAB_ROW_PADDING,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -216,49 +261,21 @@ const styles = StyleSheet.create({
     borderBottomWidth: 3,
     borderBottomColor: 'transparent',
   },
-  selectedTab: { borderBottomColor: colors.primary },
-  pressed: { opacity: 0.62 },
+  tabIndicator: { position: 'absolute', bottom: 0, left: 0, height: 3, borderRadius: 2, backgroundColor: colors.primary },
   tabLabel: { color: colors.mutedInk, ...typography.bodyStrong, fontSize: 13 },
   selectedTabLabel: { color: colors.primary, fontFamily: fontFamilies.extraBold },
   tabContent: { minHeight: TAB_CONTENT_MIN_HEIGHT },
   cardStack: { gap: 0 },
-  recentList: { paddingHorizontal: 16, paddingVertical: 12, gap: 10 },
-  recentRow: {
-    minHeight: 92,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 16,
-    backgroundColor: colors.background,
-  },
-  recentMain: { minWidth: 0, flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 10 },
-  segmentRow: { flexDirection: 'row', gap: 4 },
-  segmentBadge: {
-    minWidth: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 7,
-    borderRadius: 8,
-  },
-  segmentText: { color: colors.white, fontFamily: fontFamilies.extraBold, fontSize: 12 },
-  recentCopy: { minWidth: 0, flex: 1 },
-  recentDestination: { color: colors.ink, ...typography.bodyStrong, fontSize: 15 },
-  recentOrigin: { marginTop: 2, color: colors.mutedInk, ...typography.metadata },
-  recentActions: { alignItems: 'flex-end', gap: 7 },
-  recency: { color: colors.mutedInk, ...typography.metadata, fontSize: 10 },
-  viewTrip: { marginTop: 3, color: colors.primary, ...typography.bodyStrong, fontSize: 10 },
-  goButton: { width: 86, height: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, borderRadius: 10, backgroundColor: colors.primary },
-  endTripButton: { backgroundColor: colors.red },
-  goButtonText: { color: colors.white, fontFamily: fontFamilies.extraBold, fontSize: 13 },
+  sectionHeading: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 },
+  sectionLabel: { color: colors.mutedInk, ...typography.label },
+  favoriteTrips: { gap: 10, paddingHorizontal: 12, paddingBottom: 12 },
+  flushHeading: { paddingHorizontal: 4 },
+  recentList: { paddingHorizontal: 12, paddingVertical: 12, gap: 10 },
   emptyState: {
     alignItems: 'center',
     paddingVertical: 20,
   },
-  emptyIcon: { color: colors.primary, fontFamily: fontFamilies.bold, fontSize: 38 },
+  emptyIcon: { width: 60, height: 60, alignItems: 'center', justifyContent: 'center', borderRadius: 30, backgroundColor: colors.blueSoft },
   emptyTitle: { marginTop: 8, color: colors.ink, ...typography.sectionHeading, fontSize: 16 },
   emptyBody: {
     marginTop: 7,

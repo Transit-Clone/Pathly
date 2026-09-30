@@ -1,10 +1,8 @@
-import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useState } from 'react';
 import {
   Keyboard,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -19,9 +17,12 @@ import {
   recentSearches,
   type MockSearchPlace,
 } from '../data/mockSearch';
-import { colors } from '../theme/colors';
+import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
+import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
+import { Icon } from './Icon';
 import { MapBackdrop } from './MapBackdrop';
+import { PressableScale } from './PressableScale';
 
 export type SearchViewProps = {
   initialQuery?: string;
@@ -37,16 +38,8 @@ type SearchResultRowProps = {
 };
 
 function SearchIcon() {
-  return (
-    <View
-      accessibilityElementsHidden={true}
-      importantForAccessibility="no-hide-descendants"
-      style={styles.searchIcon}
-    >
-      <View style={styles.searchIconCircle} />
-      <View style={styles.searchIconHandle} />
-    </View>
-  );
+  const { colors } = useTheme();
+  return <Icon color={colors.ink} name="search" size={20} />;
 }
 
 function SearchResultRow({
@@ -55,12 +48,14 @@ function SearchResultRow({
   place,
   recent = false,
 }: SearchResultRowProps) {
+  const styles = useThemedStyles(createStyles);
+  const { colors } = useTheme();
   return (
-    <Pressable
+    <PressableScale
       accessibilityLabel={`${place.title}, ${place.subtitle}`}
       accessibilityRole="button"
       onPress={onPress}
-      style={({ pressed }) => [styles.resultRow, pressed && styles.pressedControl]}
+      style={styles.resultRow}
       testID={`search-result-${place.id}`}
     >
       <View
@@ -69,9 +64,11 @@ function SearchResultRow({
           recent ? styles.recentIcon : styles.numberIcon,
         ]}
       >
-        <Text style={[styles.resultIconText, recent && styles.recentIconText]}>
-          {recent ? '↻' : index}
-        </Text>
+        {recent ? (
+          <Icon name="recent" size={20} />
+        ) : (
+          <Text style={styles.resultIconText}>{index}</Text>
+        )}
       </View>
 
       <View style={styles.resultCopy}>
@@ -83,14 +80,14 @@ function SearchResultRow({
         </Text>
       </View>
 
-      <Text accessibilityElementsHidden={true} style={styles.chevron}>
-        ›
-      </Text>
-    </Pressable>
+      <Icon color={colors.mutedInk} name="forward" size={20} style={styles.chevron} />
+    </PressableScale>
   );
 }
 
 export function SearchView({ initialQuery = '', onCancel, onSelect }: SearchViewProps) {
+  const styles = useThemedStyles(createStyles);
+  const { colors } = useTheme();
   const [query, setQuery] = useState(initialQuery);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const { height, width } = useWindowDimensions();
@@ -129,7 +126,7 @@ export function SearchView({ initialQuery = '', onCancel, onSelect }: SearchView
         style={styles.screen}
         testID="search-view"
       >
-        <StatusBar style="dark" />
+        <ThemedStatusBar />
         <MapBackdrop />
 
         <SafeAreaView edges={['top']} style={styles.searchSafeArea}>
@@ -152,26 +149,26 @@ export function SearchView({ initialQuery = '', onCancel, onSelect }: SearchView
                 value={query}
               />
               {query.length > 0 ? (
-                <Pressable
+                <PressableScale
                   accessibilityLabel="Clear search"
                   accessibilityRole="button"
                   hitSlop={10}
                   onPress={() => changeQuery('')}
-                  style={({ pressed }) => [styles.clearButton, pressed && styles.pressedControl]}
+                  style={styles.clearButton}
                 >
-                  <Text style={styles.clearButtonText}>×</Text>
-                </Pressable>
+                  <Icon color={colors.mutedInk} name="close" size={22} />
+                </PressableScale>
               ) : null}
             </View>
 
-            <Pressable
+            <PressableScale
               accessibilityLabel="Cancel destination search"
               accessibilityRole="button"
               onPress={onCancel}
-              style={({ pressed }) => [styles.cancelButton, pressed && styles.pressedControl]}
+              style={styles.cancelButton}
             >
               <Text style={styles.cancelText}>Cancel</Text>
-            </Pressable>
+            </PressableScale>
           </View>
         </SafeAreaView>
 
@@ -195,11 +192,15 @@ export function SearchView({ initialQuery = '', onCancel, onSelect }: SearchView
           : null}
 
         <SafeAreaView edges={['bottom']} style={[styles.sheet, { height: sheetHeight }]}>
-          <View style={styles.handle} />
           <View style={styles.sheetHeading}>
-            <Text accessibilityLiveRegion="polite" style={styles.heading}>
-              {isSearching ? `${searchResults.length} matches` : 'Recent'}
+            <Text accessibilityRole="header" style={styles.heading}>
+              {isSearching ? 'Matches' : 'Recent'}
             </Text>
+            {isSearching ? (
+              <Text accessibilityLiveRegion="polite" style={styles.headingCount} testID="search-match-count">
+                {searchResults.length === 1 ? '1 place' : `${searchResults.length} places`}
+              </Text>
+            ) : null}
           </View>
 
           {isSearching && searchResults.length === 0 ? (
@@ -235,7 +236,7 @@ export function SearchView({ initialQuery = '', onCancel, onSelect }: SearchView
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: Palette) => StyleSheet.create({
   viewport: {
     flex: 1,
     alignItems: 'center',
@@ -286,27 +287,6 @@ const styles = StyleSheet.create({
     ...typography.bodyStrong,
     fontSize: 16,
   },
-  searchIcon: {
-    width: 20,
-    height: 20,
-  },
-  searchIconCircle: {
-    width: 13,
-    height: 13,
-    borderWidth: 2,
-    borderColor: colors.ink,
-    borderRadius: 7,
-  },
-  searchIconHandle: {
-    position: 'absolute',
-    width: 8,
-    height: 2,
-    top: 13,
-    left: 11,
-    borderRadius: 2,
-    backgroundColor: colors.ink,
-    transform: [{ rotate: '45deg' }],
-  },
   clearButton: {
     minWidth: 44,
     minHeight: 44,
@@ -314,12 +294,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 22,
     backgroundColor: colors.blueSoft,
-  },
-  clearButtonText: {
-    marginTop: -2,
-    color: colors.mutedInk,
-    fontFamily: fontFamilies.semibold,
-    fontSize: 23,
   },
   cancelButton: {
     minWidth: 54,
@@ -332,9 +306,6 @@ const styles = StyleSheet.create({
     color: colors.primary,
     ...typography.bodyStrong,
     fontSize: 15,
-  },
-  pressedControl: {
-    opacity: 0.55,
   },
   mapPin: {
     position: 'absolute',
@@ -357,7 +328,7 @@ const styles = StyleSheet.create({
   },
   mapPinText: {
     zIndex: 2,
-    color: colors.white,
+    color: colors.onPrimary,
     fontFamily: fontFamilies.extraBold,
     fontSize: 14,
   },
@@ -379,7 +350,7 @@ const styles = StyleSheet.create({
     left: 0,
     zIndex: 4,
     overflow: 'hidden',
-    paddingTop: 10,
+    paddingTop: 22,
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
     backgroundColor: colors.surface,
@@ -388,14 +359,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.13,
     shadowRadius: 18,
     elevation: 14,
-  },
-  handle: {
-    width: 42,
-    height: 5,
-    alignSelf: 'center',
-    marginBottom: 15,
-    borderRadius: 3,
-    backgroundColor: colors.border,
   },
   sheetHeading: {
     flexDirection: 'row',
@@ -407,6 +370,10 @@ const styles = StyleSheet.create({
   heading: {
     color: colors.ink,
     ...typography.screenHeading,
+  },
+  headingCount: {
+    color: colors.mutedInk,
+    ...typography.metadata,
   },
   resultList: {
     paddingHorizontal: 16,
@@ -435,13 +402,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
   },
   resultIconText: {
-    color: colors.white,
+    color: colors.onPrimary,
     fontFamily: fontFamilies.extraBold,
     fontSize: 13,
-  },
-  recentIconText: {
-    color: colors.primary,
-    fontSize: 20,
   },
   resultCopy: {
     minWidth: 0,
@@ -459,9 +422,6 @@ const styles = StyleSheet.create({
   },
   chevron: {
     paddingHorizontal: 4,
-    color: colors.mutedInk,
-    fontFamily: fontFamilies.regular,
-    fontSize: 27,
   },
   emptyState: {
     flex: 1,

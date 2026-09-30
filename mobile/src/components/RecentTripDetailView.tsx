@@ -3,9 +3,11 @@ import { SharedTripDetailView, type TripDetailModel } from './SharedTripDetailVi
 
 type RecentTripDetailViewProps = {
   isActive: boolean;
+  isFavorite: boolean;
   onBack: () => void;
   onEnd: () => void;
   onStart: () => void;
+  onToggleFavorite: () => void;
   trip: RecentTrip;
 };
 
@@ -38,7 +40,8 @@ function toTripDetailModel(trip: RecentTrip, isActive: boolean): TripDetailModel
     contextLabel: isActive ? 'ACTIVE TRIP' : `RECENT TRIP · ${trip.recency.toUpperCase()}`,
     statusLabel: isActive ? 'In progress' : 'Completed',
     legs: trip.legs.map((leg, index) => ({
-      agency: leg.routeName.includes('Train') ? 'MTA Subway' : leg.routeName.includes('Branch') ? 'LIRR' : 'Transit',
+      agency: leg.agency,
+      routeId: leg.routeId,
       color: leg.color,
       direction: leg.direction,
       durationMinutes: legDuration(leg.boardTime, leg.alightTime),
@@ -54,14 +57,16 @@ function toTripDetailModel(trip: RecentTrip, isActive: boolean): TripDetailModel
   };
 }
 
-export function RecentTripDetailView({ isActive, onBack, onEnd, onStart, trip }: RecentTripDetailViewProps) {
+export function RecentTripDetailView({ isActive, isFavorite, onBack, onEnd, onStart, onToggleFavorite, trip }: RecentTripDetailViewProps) {
   return (
     <SharedTripDetailView
       actionLabel={isActive ? 'End current trip' : `Start trip to ${trip.destination}`}
       backLabel="Back to Recents"
+      isFavorite={isFavorite}
       model={toTripDetailModel(trip, isActive)}
       onAction={isActive ? onEnd : onStart}
       onBack={onBack}
+      onToggleFavorite={onToggleFavorite}
       rootTestID={`recent-trip-detail-${trip.id}`}
       testPrefix="recent-trip"
       tone="recent"

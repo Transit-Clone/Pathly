@@ -3,10 +3,13 @@ import { Nunito_600SemiBold } from '@expo-google-fonts/nunito/600SemiBold';
 import { Nunito_700Bold } from '@expo-google-fonts/nunito/700Bold';
 import { Nunito_800ExtraBold } from '@expo-google-fonts/nunito/800ExtraBold';
 import { useFonts } from '@expo-google-fonts/nunito/useFonts';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Image, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { HomeScreen } from './src/components/HomeScreen';
+import { AppSettingsProvider } from './src/theme/AppSettings';
 import { colors } from './src/theme/colors';
 
 const pathlyLogo = require('./assets/pathly-logo.png');
@@ -17,6 +20,8 @@ export default function App() {
     Nunito_600SemiBold,
     Nunito_700Bold,
     Nunito_800ExtraBold,
+    ...Ionicons.font,
+    ...MaterialCommunityIcons.font,
   });
 
   if (!fontsLoaded) {
@@ -40,7 +45,9 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <HomeScreen />
+      <AppSettingsProvider>
+        <HomeScreen />
+      </AppSettingsProvider>
     </SafeAreaProvider>
   );
 }

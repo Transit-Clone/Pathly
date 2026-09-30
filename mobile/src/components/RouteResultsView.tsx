@@ -1,30 +1,41 @@
-import { StatusBar } from 'expo-status-bar';
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
+  formatTripTimeChoice,
   itineraries,
   itineraryById,
+  scheduleItinerary,
   type ItineraryId,
   type RoutePreference,
+  type TripTimeChoice,
 } from '../data/transit';
-import { colors } from '../theme/colors';
+import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
+import { ScreenTransition, useLayoutEase } from '../theme/motion';
+import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
 import { CurrentLocationButton } from './CurrentLocationButton';
-import { CurrentLocationMarker } from './CurrentLocationMarker';
+import { Icon, type IconName } from './Icon';
+import { LeaveTimeSheet } from './LeaveTimeSheet';
 import { MapBackdrop } from './MapBackdrop';
 import { PlannedTripDetailView } from './PlannedTripDetailView';
+import { RouteBadge, transitModeForAgency, type TransitMode } from './RouteBadge';
+import { PressableScale } from './PressableScale';
 
 type RouteResultsViewProps = {
   activeItineraryId: ItineraryId | null;
   destination: string;
+  isTripFavorite: (itineraryId: ItineraryId, destination: string) => boolean;
   onBack: () => void;
+  onChangeTripTime: (choice: TripTimeChoice) => void;
   onCloseTrip: () => void;
   onEndTrip: () => void;
   onOpenTrip: (itineraryId: ItineraryId) => void;
   onStartTrip: (itineraryId: ItineraryId) => void;
+  onToggleTripFavorite: (itineraryId: ItineraryId, destination: string) => void;
   selectedItineraryId: ItineraryId | null;
+  tripTime: TripTimeChoice;
 };
 
 const preferences: { id: RoutePreference; label: string }[] = [
@@ -33,23 +44,39 @@ const preferences: { id: RoutePreference; label: string }[] = [
   { id: 'cheapest', label: 'Lowest fare' },
 ];
 
-const leaveTimes = ['Leave now', 'Leave at 10:30', 'Arrive by 12:00'] as const;
+const transitModes: { id: TransitMode; label: string; icon: IconName }[] = [
+  { id: 'subway', label: 'Subway', icon: 'subway' },
+  { id: 'bus', label: 'Bus', icon: 'bus' },
+  { id: 'rail', label: 'Rail', icon: 'rail' },
+];
+
+const ALL_MODES: readonly TransitMode[] = ['subway', 'bus', 'rail'];
+
+type OptionsPanel = 'modes' | 'filter' | null;
 
 export function RouteResultsView({
   activeItineraryId,
   destination: initialDestination,
+  isTripFavorite,
   onBack,
+  onChangeTripTime,
   onCloseTrip,
   onEndTrip,
   onOpenTrip,
   onStartTrip,
+  onToggleTripFavorite,
   selectedItineraryId,
+  tripTime,
 }: RouteResultsViewProps) {
+  const styles = useThemedStyles(createStyles);
+  const { colors } = useTheme();
+  const { height } = useWindowDimensions();
   const [origin, setOrigin] = useState('Current location');
   const [destination, setDestination] = useState(initialDestination);
   const [preference, setPreference] = useState<RoutePreference>('fastest');
-  const [optionsOpen, setOptionsOpen] = useState(false);
-  const [leaveIndex, setLeaveIndex] = useState(0);
+  const [openPanel, setOpenPanel] = useState<OptionsPanel>(null);
+  const [enabledModes, setEnabledModes] = useState<readonly TransitMode[]>(ALL_MODES);
+  const [timeSheetOpen, setTimeSheetOpen] = useState(false);
   const [refreshCount, setRefreshCount] = useState(0);
 
   const swapEndpoints = () => {
@@ -73,37 +100,60 @@ export function RouteResultsView({
       }),
     [preference],
   );
+  const visibleItineraries = orderedItineraries.filter((itinerary) =>
+    itinerary.segments.every((segment) => enabledModes.includes(transitModeForAgency(segment.agency))),
+  );
+  const modesFiltered = enabledModes.length < ALL_MODES.length;
+
+  const ease = useLayoutEase();
+  const togglePanel = (panel: Exclude<OptionsPanel, null>) => {
+    ease();
+    setOpenPanel((current) => (current === panel ? null : panel));
+  };
+  const toggleMode = (mode: TransitMode) => {
+    ease();
+    setEnabledModes((current) => {
+      if (!current.includes(mode)) return ALL_MODES.filter((item) => item === mode || current.includes(item));
+      return current.length === 1 ? current : current.filter((item) => item !== mode);
+    });
+  };
 
   if (selectedItineraryId) {
     return (
+      <ScreenTransition key="trip">
       <PlannedTripDetailView
         destination={destination}
         isActive={activeItineraryId === selectedItineraryId}
+        isFavorite={isTripFavorite(selectedItineraryId, destination)}
         itinerary={itineraryById[selectedItineraryId]}
         onBack={onCloseTrip}
         onEnd={onEndTrip}
         onStart={() => onStartTrip(selectedItineraryId)}
+        onToggleFavorite={() => onToggleTripFavorite(selectedItineraryId, destination)}
+        schedule={scheduleItinerary(itineraryById[selectedItineraryId], tripTime)}
       />
+      </ScreenTransition>
     );
   }
 
   return (
+    <ScreenTransition key="list">
     <View style={styles.viewport}>
       <View style={styles.screen} testID="route-results-view">
-        <StatusBar style="dark" />
-        <MapBackdrop />
+        <ThemedStatusBar />
+        <MapBackdrop padding={{ top: 120, bottom: height * 0.56 }} showUserLocation={true} />
 
         <SafeAreaView edges={['top']} style={styles.topOverlay}>
           <View style={styles.tripRow}>
-            <Pressable
+            <PressableScale
               accessibilityLabel="Back to destination search"
               accessibilityRole="button"
               onPress={onBack}
-              style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
+              style={styles.backButton}
               testID="results-back"
             >
-              <Text style={styles.backIcon}>‹</Text>
-            </Pressable>
+              <Icon name="back" size={26} />
+            </PressableScale>
 
             <View style={styles.criteriaCard}>
               <View style={styles.endpointStack}>
@@ -133,87 +183,108 @@ export function RouteResultsView({
                   />
                 </View>
               </View>
-              <Pressable
+              <PressableScale
                 accessibilityLabel="Swap origin and destination"
                 accessibilityRole="button"
                 onPress={swapEndpoints}
-                style={({ pressed }) => [styles.swapButton, pressed && styles.pressed]}
+                style={styles.swapButton}
                 testID="swap-endpoints"
               >
-                <Text style={styles.swapIcon}>⇅</Text>
-              </Pressable>
+                <Icon name="swap" size={20} />
+              </PressableScale>
             </View>
           </View>
         </SafeAreaView>
 
-        <View style={styles.mapMarker}><CurrentLocationMarker /></View>
-        <View style={styles.mapLocation}><CurrentLocationButton /></View>
+        <View style={styles.mapLocation}><CurrentLocationButton testID="results-location" /></View>
 
         <SafeAreaView edges={['bottom']} style={styles.resultsSheet}>
           <View style={styles.controls}>
-            <Pressable
+            <PressableScale
               accessibilityLabel="Choose transit modes"
               accessibilityRole="button"
-              accessibilityState={{ expanded: optionsOpen }}
-              onPress={() => setOptionsOpen((open) => !open)}
-              style={({ pressed }) => [styles.toolbarPill, pressed && styles.pressed]}
+              accessibilityState={{ expanded: openPanel === 'modes' }}
+              onPress={() => togglePanel('modes')}
+              style={[styles.toolbarPill, (openPanel === 'modes' || modesFiltered) && styles.activePill]}
               testID="modes-control"
             >
-              <Text style={styles.toolbarPillText}>Modes</Text>
-            </Pressable>
-            <Pressable
+              <Icon color={modesFiltered ? colors.primary : colors.ink} name="modes" size={15} />
+              <Text style={[styles.toolbarPillText, modesFiltered && styles.activePillText]}>{modesFiltered ? `Modes · ${enabledModes.length}` : 'Modes'}</Text>
+            </PressableScale>
+            <PressableScale
               accessibilityLabel="Filter routes"
               accessibilityRole="button"
-              accessibilityState={{ expanded: optionsOpen }}
-              onPress={() => setOptionsOpen((open) => !open)}
-              style={({ pressed }) => [styles.toolbarPill, pressed && styles.pressed]}
+              accessibilityState={{ expanded: openPanel === 'filter' }}
+              onPress={() => togglePanel('filter')}
+              style={[styles.toolbarPill, openPanel === 'filter' && styles.activePill]}
               testID="filter-control"
             >
+              <Icon color={colors.ink} name="filter" size={15} />
               <Text style={styles.toolbarPillText}>Filter</Text>
-            </Pressable>
-            <Pressable
+            </PressableScale>
+            <PressableScale
               accessibilityLabel="Refresh route results"
               accessibilityRole="button"
               onPress={() => setRefreshCount((count) => count + 1)}
-              style={({ pressed }) => [styles.refreshButton, pressed && styles.pressed]}
+              style={styles.refreshButton}
               testID="refresh-results"
             >
-              <Text style={styles.refreshIcon}>↻</Text>
-            </Pressable>
-            <Pressable
+              <Icon name="refresh" size={19} />
+            </PressableScale>
+            <PressableScale
               accessibilityLabel="Change leave time"
               accessibilityRole="button"
-              onPress={() => setLeaveIndex((index) => (index + 1) % leaveTimes.length)}
-              style={({ pressed }) => [styles.leaveControl, pressed && styles.pressed]}
+              onPress={() => setTimeSheetOpen(true)}
+              style={[styles.leaveControl, tripTime.mode !== 'now' && styles.activePill]}
               testID="leave-time-control"
             >
-              <Text style={styles.clock}>◷</Text>
-              <Text style={styles.leaveTime}>
-                {leaveIndex === 0 ? 'Leave: Now' : leaveIndex === 1 ? 'Leave: 10:30' : 'Arrive: 12:00'}
+              <Icon color={tripTime.mode === 'now' ? colors.ink : colors.primary} name="time" size={16} />
+              <Text numberOfLines={1} style={[styles.leaveTime, tripTime.mode !== 'now' && styles.activePillText]} testID="leave-time-label">
+                {formatTripTimeChoice(tripTime)}
               </Text>
-            </Pressable>
+            </PressableScale>
           </View>
 
-          {optionsOpen ? <View style={styles.preferences}>
+          {openPanel === 'modes' ? <View style={styles.preferences} testID="modes-panel">
+            {transitModes.map((item) => {
+              const selected = enabledModes.includes(item.id);
+              return (
+                <PressableScale
+                  key={item.id}
+                  accessibilityLabel={`${item.label} routes`}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: selected }}
+                  onPress={() => toggleMode(item.id)}
+                  style={[styles.preference, styles.modeChip, selected && styles.selectedPreference]}
+                  testID={`mode-${item.id}`}
+                >
+                  <Icon color={selected ? colors.onPrimary : colors.mutedInk} filled={selected} name={item.icon} size={14} />
+                  <Text style={[styles.preferenceText, selected && styles.selectedPreferenceText]}>{item.label}</Text>
+                </PressableScale>
+              );
+            })}
+          </View> : null}
+
+          {openPanel === 'filter' ? <View style={styles.preferences} testID="filter-panel">
             {preferences.map((item) => {
               const selected = item.id === preference;
               return (
-                <Pressable
+                <PressableScale
                   key={item.id}
                   accessibilityRole="button"
                   accessibilityState={{ selected }}
-                  onPress={() => setPreference(item.id)}
-                  style={({ pressed }) => [
-                    styles.preference,
-                    selected && styles.selectedPreference,
-                    pressed && styles.pressed,
-                  ]}
+                  onPress={() => {
+                    ease();
+                    setPreference(item.id);
+                  }}
+                  style={[styles.preference,
+                    selected && styles.selectedPreference]}
                   testID={`preference-${item.id}`}
                 >
                   <Text style={[styles.preferenceText, selected && styles.selectedPreferenceText]}>
                     {item.label}
                   </Text>
-                </Pressable>
+                </PressableScale>
               );
             })}
           </View> : null}
@@ -226,16 +297,28 @@ export function RouteResultsView({
           </View>
 
           <ScrollView contentContainerStyle={styles.results} showsVerticalScrollIndicator={false}>
-            {orderedItineraries.map((itinerary) => {
-              const isActive = itinerary.id === activeItineraryId;
+            {visibleItineraries.length === 0 ? (
+              <View accessibilityLiveRegion="polite" style={styles.emptyResults} testID="results-empty">
+                <Icon color={colors.mutedInk} name="modes" size={28} />
+                <Text style={styles.emptyTitle}>No routes match these modes</Text>
+                <PressableScale accessibilityRole="button" onPress={() => {
+                  ease();
+                  setEnabledModes(ALL_MODES);
+                }} style={styles.resetButton} testID="results-reset-modes">
+                  <Text style={styles.resetText}>Show all modes</Text>
+                </PressableScale>
+              </View>
+            ) : null}
+            {visibleItineraries.map((itinerary) => {
+              const schedule = scheduleItinerary(itinerary, tripTime);
               return (
                 <View key={itinerary.id} style={styles.itinerary} testID={`itinerary-${itinerary.id}`}>
-                  <Pressable
+                  <PressableScale
                     accessibilityHint="Opens the complete trip plan"
                     accessibilityLabel={`View trip details to ${destination}, ${itinerary.durationMinutes} minutes, ${itinerary.fare}`}
                     accessibilityRole="button"
                     onPress={() => onOpenTrip(itinerary.id)}
-                    style={({ pressed }) => [styles.itineraryPressable, pressed && styles.pressedCard]}
+                    style={styles.itineraryPressable}
                     testID={`search-result-view-${itinerary.id}`}
                   >
                     <View style={styles.itineraryTop}>
@@ -244,15 +327,13 @@ export function RouteResultsView({
                         <View style={styles.segmentRow}>
                           {itinerary.segments.map((segment, index) => (
                             <View key={`${segment.shortName}-${index}`} style={styles.segmentGroup}>
-                              <View style={[styles.segmentBadge, { backgroundColor: segment.color }]}>
-                                <Text style={styles.segmentText}>{segment.shortName}</Text>
-                              </View>
-                              {index < itinerary.segments.length - 1 ? <Text style={styles.arrow}>›</Text> : null}
+                              <RouteBadge agency={segment.agency} color={segment.color} shortName={segment.shortName} size="small" />
+                              {index < itinerary.segments.length - 1 ? <Icon color={colors.mutedInk} name="forward" size={14} /> : null}
                             </View>
                           ))}
                         </View>
-                        <Text style={styles.nextRide}>
-                          {itinerary.nextRide}
+                        <Text style={styles.nextRide} testID={`schedule-${itinerary.id}`}>
+                          {schedule.label}
                         </Text>
                       </View>
                       <View style={styles.summary}>
@@ -263,43 +344,35 @@ export function RouteResultsView({
                         </View>
                       </View>
                     </View>
-                  </Pressable>
-                  <Pressable
-                    accessibilityLabel={isActive ? `End trip to ${destination}` : `Start trip to ${destination}`}
-                    accessibilityRole="button"
-                    onPress={() => {
-                      if (isActive) {
-                        onEndTrip();
-                      } else {
-                        onStartTrip(itinerary.id);
-                      }
-                    }}
-                    style={({ pressed }) => [
-                      styles.goButton,
-                      isActive && styles.endTripButton,
-                      pressed && styles.pressed,
-                    ]}
-                    testID={isActive ? `search-result-end-${itinerary.id}` : `search-result-go-${itinerary.id}`}
-                  >
-                    <Text style={styles.goButtonText}>{isActive ? 'End' : 'Go'}</Text>
-                  </Pressable>
+                  </PressableScale>
                 </View>
               );
             })}
           </ScrollView>
         </SafeAreaView>
+
+        {timeSheetOpen ? (
+          <LeaveTimeSheet
+            onCancel={() => setTimeSheetOpen(false)}
+            onConfirm={(choice) => {
+              onChangeTripTime(choice);
+              setTimeSheetOpen(false);
+            }}
+            value={tripTime}
+          />
+        ) : null}
       </View>
     </View>
+    </ScreenTransition>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: Palette) => StyleSheet.create({
   viewport: { flex: 1, alignItems: 'center', backgroundColor: colors.background },
   screen: { width: '100%', maxWidth: 540, flex: 1, overflow: 'hidden', backgroundColor: colors.canvas },
   topOverlay: { zIndex: 4 },
   tripRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingTop: 8, paddingHorizontal: 12 },
   backButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', marginTop: 18, borderRadius: 22, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.14, shadowRadius: 8, elevation: 4 },
-  backIcon: { color: colors.primary, fontFamily: fontFamilies.regular, fontSize: 33, lineHeight: 35 },
   criteriaCard: { minWidth: 0, flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 14, paddingRight: 9, paddingVertical: 8, borderRadius: 20, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.16, shadowRadius: 12, elevation: 6 },
   endpointStack: { minWidth: 0, flex: 1 },
   endpointRow: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 11 },
@@ -307,46 +380,41 @@ const styles = StyleSheet.create({
   endpointConnector: { width: 2, height: 7, marginLeft: 4, backgroundColor: colors.border },
   endpointInput: { minWidth: 0, flex: 1, paddingVertical: 7, color: colors.ink, ...typography.bodyStrong, fontSize: 14 },
   swapButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19, backgroundColor: colors.blueSoft },
-  swapIcon: { color: colors.primary, fontFamily: fontFamilies.extraBold, fontSize: 20, lineHeight: 22 },
-  mapMarker: { position: 'absolute', top: '29%', left: '48%', zIndex: 1 },
   mapLocation: { position: 'absolute', top: '35%', right: 16, zIndex: 2 },
   resultsSheet: { position: 'absolute', top: '44%', right: 0, bottom: 0, left: 0, overflow: 'hidden', borderTopLeftRadius: 26, borderTopRightRadius: 26, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: -5 }, shadowOpacity: 0.12, shadowRadius: 16, elevation: 12 },
   controls: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 20, paddingHorizontal: 14 },
-  toolbarPill: { height: 36, minWidth: 100, flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 18, backgroundColor: colors.surface },
-  toolbarPillText: { fontFamily: fontFamilies.bold, fontSize: 10 },
+  toolbarPill: { height: 36, minWidth: 100, flex: 1, flexDirection: 'row', gap: 5, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 18, backgroundColor: colors.surface },
+  toolbarPillText: { color: colors.ink, fontFamily: fontFamilies.bold, fontSize: 10 },
   leaveControl: { color: colors.ink, minWidth: 100, height: 36, flex: 1.45, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 8, borderRadius: 18, borderColor: colors.border, borderWidth: 1, backgroundColor: colors.surface },
-  clock: { color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 20 },
   leaveTime: { color: colors.ink, ...typography.bodyStrong, fontSize: 10 },
   refreshButton: { width: 40, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 },
-  refreshIcon: { color: colors.primary, fontFamily: fontFamilies.extraBold, fontSize: 19 },
   preferences: { flexDirection: 'row', gap: 7, paddingTop: 9, paddingHorizontal: 14 },
   preference: { minHeight: 36, flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5, borderWidth: 1, borderColor: colors.border, borderRadius: 18, backgroundColor: colors.surface },
   selectedPreference: { borderColor: colors.primary, backgroundColor: colors.primary },
   preferenceText: { color: colors.mutedInk, fontFamily: fontFamilies.bold, fontSize: 10, textAlign: 'center' },
-  selectedPreferenceText: { color: colors.white },
+  selectedPreferenceText: { color: colors.onPrimary },
+  modeChip: { flexDirection: 'row', gap: 5 },
+  activePill: { borderColor: colors.primary, backgroundColor: colors.blueSoft },
+  activePillText: { color: colors.primary },
+  emptyResults: { alignItems: 'center', gap: 8, paddingVertical: 28 },
+  emptyTitle: { color: colors.ink, ...typography.bodyStrong },
+  resetButton: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 16, borderRadius: 20, backgroundColor: colors.primary },
+  resetText: { color: colors.onPrimary, fontFamily: fontFamilies.extraBold, fontSize: 13 },
   resultHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 12, paddingHorizontal: 16 },
   resultTitle: { color: colors.ink, ...typography.sectionHeading, fontSize: 18 },
   updated: { color: colors.mutedInk, ...typography.metadata, fontSize: 9 },
   results: { gap: 8, padding: 12, paddingTop: 9, paddingBottom: 30 },
   itinerary: { overflow: 'hidden', borderWidth: 1, borderColor: colors.border, borderRadius: 12, backgroundColor: colors.surface },
-  itineraryPressable: { paddingLeft: 12, paddingRight: 72, paddingVertical: 10 },
-  pressedCard: { backgroundColor: colors.blueSoft },
+  itineraryPressable: { paddingHorizontal: 12, paddingVertical: 10 },
   itineraryTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   segmentColumn: { minWidth: 0, flex: 1 },
   recommended: { marginBottom: 5, color: colors.primary, ...typography.label, fontSize: 8 },
   segmentRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4 },
   segmentGroup: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  segmentBadge: { minWidth: 32, height: 29, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 7, borderRadius: 7 },
-  segmentText: { color: colors.white, fontFamily: fontFamilies.extraBold, fontSize: 11 },
-  arrow: { color: colors.mutedInk, fontFamily: fontFamilies.extraBold, fontSize: 16 },
   nextRide: { marginTop: 6, color: colors.mutedInk, ...typography.metadata, fontSize: 10 },
   summary: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   fare: { color: colors.primary, fontFamily: fontFamilies.extraBold, fontSize: 11 },
   durationGroup: { alignItems: 'flex-end' },
   duration: { color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 26, lineHeight: 28 },
   minuteLabel: { color: colors.mutedInk, ...typography.metadata, fontSize: 9 },
-  goButton: { position: 'absolute', top: '50%', right: 12, zIndex: 2, minWidth: 48, height: 32, alignItems: 'center', justifyContent: 'center', marginTop: -16, paddingHorizontal: 9, borderRadius: 9, backgroundColor: colors.primary },
-  endTripButton: { backgroundColor: colors.red },
-  goButtonText: { color: colors.white, fontFamily: fontFamilies.extraBold, fontSize: 13 },
-  pressed: { opacity: 0.62 },
 });

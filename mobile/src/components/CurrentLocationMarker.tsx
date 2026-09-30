@@ -1,8 +1,10 @@
 import { StyleSheet, View } from 'react-native';
 
-import { colors } from '../theme/colors';
+import { useThemedStyles } from '../theme/AppSettings';
+import type { Palette } from '../theme/colors';
 
 export function CurrentLocationMarker() {
+  const styles = useThemedStyles(createStyles);
   return (
     <View
       accessibilityLabel="Current location"
@@ -14,14 +16,14 @@ export function CurrentLocationMarker() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: Palette) => StyleSheet.create({
   pulse: {
     width: 38,
     height: 38,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 19,
-    backgroundColor: 'rgba(167, 216, 255, 0.46)',
+    backgroundColor: colors.locationHalo,
   },
   dot: {
     width: 17,
