@@ -23,6 +23,7 @@ import { TransitSheet, type TransitTabId } from './TransitSheet';
 
 const TRANSIT_TABS_HEIGHT = 44;
 const TRANSIT_CARD_HEIGHT = 104;
+const VISIBLE_TRANSIT_CARDS = 3;
 const VISIBLE_CARD_GUTTER = 24;
 const MINIMUM_MAP_HEIGHT = 240;
 
@@ -47,7 +48,10 @@ export function HomeScreen() {
   const { height } = useWindowDimensions();
   const mapHeight = Math.max(
     MINIMUM_MAP_HEIGHT,
-    height - TRANSIT_TABS_HEIGHT - TRANSIT_CARD_HEIGHT - VISIBLE_CARD_GUTTER,
+    height
+      - TRANSIT_TABS_HEIGHT
+      - TRANSIT_CARD_HEIGHT * VISIBLE_TRANSIT_CARDS
+      - VISIBLE_CARD_GUTTER,
   );
 
   const showHome = useCallback(() => setActiveView({ name: 'home' }), []);

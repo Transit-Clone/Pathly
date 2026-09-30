@@ -4,6 +4,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -20,7 +21,8 @@ type TransitCardProps = {
 };
 
 export function TransitCard({ onPress, route }: TransitCardProps) {
-  const [pageWidth, setPageWidth] = useState(320);
+  const { width } = useWindowDimensions();
+  const pageWidth = Math.min(width, 540);
   const [activePage, setActivePage] = useState(0);
 
   const updatePage = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -29,7 +31,6 @@ export function TransitCard({ onPress, route }: TransitCardProps) {
 
   return (
     <View
-      onLayout={(event) => setPageWidth(event.nativeEvent.layout.width)}
       style={[styles.card, { backgroundColor: route.color }]}
       testID={`route-card-${route.id}`}
     >

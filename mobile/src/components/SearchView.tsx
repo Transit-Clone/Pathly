@@ -1,6 +1,7 @@
 import { StatusBar } from 'expo-status-bar';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -91,12 +92,14 @@ function SearchResultRow({
 
 export function SearchView({ initialQuery = '', onCancel, onSelect }: SearchViewProps) {
   const [query, setQuery] = useState(initialQuery);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const { height, width } = useWindowDimensions();
   const normalizedQuery = query.trim();
   const isSearching = normalizedQuery.length > 0;
   const searchResults = useMemo(() => findMockDestinations(query), [query]);
+  const availableHeight = height - keyboardHeight;
   const sheetHeight = isSearching
-    ? Math.max(160, Math.min(520, height * 0.58, height - 130))
+    ? Math.max(160, Math.min(520, height * 0.58, availableHeight - 120))
     : Math.min(500, Math.max(405, height * 0.55));
   const mapHeight = height - sheetHeight;
   const screenWidth = Math.min(width, 540);
@@ -104,6 +107,20 @@ export function SearchView({ initialQuery = '', onCancel, onSelect }: SearchView
   const changeQuery = (value: string) => {
     setQuery(value);
   };
+
+  useEffect(() => {
+    const showSubscription = Keyboard.addListener('keyboardDidShow', (event) => {
+      setKeyboardHeight(event.endCoordinates.height);
+    });
+    const hideSubscription = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardHeight(0);
+    });
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
 
   return (
     <View style={styles.viewport}>

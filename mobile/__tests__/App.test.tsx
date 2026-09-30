@@ -1,4 +1,4 @@
-import { act, fireEvent, render, within } from '@testing-library/react-native';
+import { fireEvent, render, within } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import mockSafeAreaContext from 'react-native-safe-area-context/jest/mock';
 
@@ -375,35 +375,32 @@ describe('Pathly prototype navigation', () => {
     expect(routeById.ronkonkoma.stops).toHaveLength(5);
   });
 
-  it('moves route details vertically and pages between route directions', () => {
-    jest.useFakeTimers();
+  it('uses one natural route-detail page while keeping controls fixed', () => {
     const screen = render(<App />);
     fireEvent.press(screen.getByTestId('route-card-ronkonkoma-primary'));
 
-    const handle = screen.getByTestId('route-sheet-handle');
-    expect(handle.props.accessibilityValue).toEqual({ text: 'compact' });
-    act(() => {
-      fireEvent.press(handle);
-      jest.runAllTimers();
-    });
-    expect(screen.getByTestId('route-sheet-handle').props.accessibilityValue).toEqual({ text: 'expanded' });
+    const routeScroll = screen.getByTestId('route-detail-scroll');
+    expect(screen.queryByTestId('route-sheet-handle')).toBeNull();
+    expect(screen.queryByTestId('route-sheet-anchor')).toBeNull();
+    expect(routeScroll.props.bounces).toBe(false);
+    expect(routeScroll.props.overScrollMode).toBe('never');
+    expect(within(routeScroll).getByTestId('route-detail-map')).toBeTruthy();
+    expect(within(routeScroll).getByTestId('route-detail-content')).toBeTruthy();
+    expect(screen.getByTestId('route-back')).toBeTruthy();
+    expect(screen.getByTestId('route-location')).toBeTruthy();
+    expect(screen.getByTestId('route-pin')).toBeTruthy();
+
+    fireEvent.scroll(routeScroll, { nativeEvent: { contentOffset: { y: 140 } } });
+    fireEvent.scroll(routeScroll, { nativeEvent: { contentOffset: { y: 280 } } });
+    fireEvent.scroll(routeScroll, { nativeEvent: { contentOffset: { y: 0 } } });
+
+    fireEvent.press(screen.getByTestId('route-location'));
+    expect(screen.getByTestId('route-location').props.accessibilityState).toEqual({ selected: true });
 
     fireEvent(screen.getByTestId('route-direction-pager'), 'momentumScrollEnd', {
       nativeEvent: { contentOffset: { x: 354, y: 0 } },
     });
     expect(screen.getByText('Ronkonkoma')).toBeTruthy();
     expect(screen.queryByText('Eastbound to Ronkonkoma')).toBeNull();
-
-    act(() => {
-      fireEvent.press(screen.getByTestId('route-sheet-handle'));
-      jest.runAllTimers();
-    });
-    expect(screen.getByTestId('route-sheet-handle').props.accessibilityValue).toEqual({ text: 'minimized' });
-
-    act(() => {
-      fireEvent(screen.getByTestId('route-sheet-scroll'), 'scrollBeginDrag');
-      jest.runAllTimers();
-    });
-    expect(screen.getByTestId('route-sheet-handle').props.accessibilityValue).toEqual({ text: 'expanded' });
   });
 });

@@ -11,7 +11,7 @@ The current mobile prototype has the intended map-first structure, but its warm 
 - Redesign nearby-transit cards as route-colored, icon-free surfaces where the route name and minute count share top visual priority, followed by direction and stop name.
 - Distinguish live GPS-tracked predictions from scheduled times with a small GPS signal for live values and reduced opacity plus a `Scheduled` label for timetable values.
 - Provide two directions for each nearby route through horizontal swiping without adding new destinations or backend data.
-- Make the home map and nearby-transit menu one continuous vertical page so scrolling down reveals more routes while progressively covering the map, and scrolling back up restores it. Keep the search/profile controls fixed at the top and leave at least one complete transit card visible in the initial viewport.
+- Make the home map and nearby-transit menu one continuous vertical page so scrolling down reveals more routes while progressively covering the map, and scrolling back up restores it. Keep the search/profile controls fixed at the top and leave at least three complete transit card visible in the initial viewport.
 - Replace route-detail clock-time selectors with multiple square-ish minute prediction tiles, add a service-alert control, keep route/map colors aligned, and add current-location and pin controls.
 - Simplify repetitive headings, labels, chips, and decorative treatments across the home, search, and route-detail screens.
 - Keep the prototype local and mock-data-driven; do not add route planning, authentication, persistence, real transit feeds, or new screens. The new direction swipe, continuous page scroll, alert, location, and pin affordances are prototype UI interactions only.
