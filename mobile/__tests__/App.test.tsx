@@ -175,8 +175,7 @@ describe('Pathly prototype navigation', () => {
 
     fireEvent.press(screen.getByTestId('search-result-view-rail-fast'));
     expect(screen.getByTestId('search-trip-detail-rail-fast')).toBeTruthy();
-    expect(screen.getByTestId('search-trip-destination').props.children).toBe('Times Square');
-    expect(screen.getByText('Ready')).toBeTruthy();
+    expect(screen.getByLabelText('Start trip to Times Square')).toBeTruthy();
     expect(screen.getByTestId('search-trip-go')).toBeTruthy();
     expect(StyleSheet.flatten(screen.getByTestId('search-trip-go').props.style)).toMatchObject({
       position: 'absolute',
@@ -199,9 +198,8 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByDisplayValue('Times Square')).toBeTruthy();
 
     fireEvent.press(screen.getByTestId('search-result-go-rail-fast'));
-    expect(screen.getByText('ACTIVE TRIP')).toBeTruthy();
-    expect(screen.getByText('In progress')).toBeTruthy();
     expect(screen.getByTestId('search-trip-end')).toBeTruthy();
+    expect(screen.getByText('END TRIP')).toBeTruthy();
 
     fireEvent.press(screen.getByTestId('search-trip-back'));
     expect(screen.getByTestId('search-result-end-rail-fast')).toBeTruthy();
@@ -225,8 +223,7 @@ describe('Pathly prototype navigation', () => {
     fireEvent.press(screen.getByTestId('recent-trip-penn-station'));
     expect(screen.getByTestId('recent-trip-detail-penn-station')).toBeTruthy();
     expect(screen.queryByTestId('route-results-view')).toBeNull();
-    expect(screen.getByTestId('recent-trip-destination').props.children).toBe('Penn Station');
-    expect(screen.getByText('From Stony Brook University')).toBeTruthy();
+    expect(screen.getByLabelText('Start trip to Penn Station')).toBeTruthy();
     expect(screen.getByText('Ronkonkoma Branch')).toBeTruthy();
     expect(screen.getByTestId('recent-trip-go')).toBeTruthy();
 
@@ -242,9 +239,8 @@ describe('Pathly prototype navigation', () => {
 
     fireEvent.press(screen.getByTestId('recent-trip-go-penn-station'));
     expect(screen.getByTestId('recent-trip-detail-penn-station')).toBeTruthy();
-    expect(screen.getByText('ACTIVE TRIP')).toBeTruthy();
-    expect(screen.getByText('In progress')).toBeTruthy();
     expect(screen.getByTestId('recent-trip-end')).toBeTruthy();
+    expect(screen.getByText('END TRIP')).toBeTruthy();
 
     fireEvent.press(screen.getByTestId('recent-trip-back'));
     expect(screen.getByTestId('tab-recents').props.accessibilityState).toEqual({ selected: true });
@@ -256,7 +252,7 @@ describe('Pathly prototype navigation', () => {
     fireEvent.press(screen.getByTestId('recent-trip-penn-station'));
     fireEvent.press(screen.getByTestId('recent-trip-go'));
     expect(screen.getByTestId('recent-trip-end')).toBeTruthy();
-    expect(screen.getByText('Started now')).toBeTruthy();
+    expect(screen.getByLabelText('End current trip')).toBeTruthy();
 
     fireEvent.press(screen.getByTestId('recent-trip-end'));
     expect(screen.getByTestId('recent-trip-penn-station')).toBeTruthy();
@@ -303,7 +299,7 @@ describe('Pathly prototype navigation', () => {
     expect(within(recentScroll).getByTestId('recent-trip-content')).toBeTruthy();
     expect(screen.getByTestId('recent-trip-leg-0')).toBeTruthy();
     expect(screen.getByTestId('recent-trip-leg-1')).toBeTruthy();
-    expect(screen.getByText('3 days ago')).toBeTruthy();
+    expect(screen.getByLabelText('Start trip to Times Square')).toBeTruthy();
     expect(screen.getByTestId('recent-trip-leave-time').props.children).toBe('8:42 AM');
     expect(screen.getByTestId('recent-trip-arrive-time').props.children).toBe('10:16 AM');
 

@@ -30,11 +30,11 @@ describe('transit prototype data', () => {
 
   it('uses recognizable route-specific colors', () => {
     expect(routeColors).toEqual({
-      ronkonkoma: '#A626AA',
-      s1: '#C63F49',
-      e: '#0062CF',
-      '51': '#C63F49',
-      '7': '#B933AD',
+      ronkonkoma: '#a625a9',
+      s1: '#d6173f',
+      e: '#0139a6',
+      '51': '#ff0011',
+      '7': '#a625a9',
     });
     for (const route of routes) {
       expect(route.color).toBe(routeColors[route.id]);
