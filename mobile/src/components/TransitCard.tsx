@@ -20,9 +20,11 @@ type TransitCardProps = {
   route: RouteDetail;
 };
 
+const CARD_HORIZONTAL_MARGIN = 8;
+
 export function TransitCard({ onPress, route }: TransitCardProps) {
   const { width } = useWindowDimensions();
-  const pageWidth = Math.min(width, 540);
+  const pageWidth = Math.min(width, 540) - CARD_HORIZONTAL_MARGIN * 2;
   const [activePage, setActivePage] = useState(0);
 
   const updatePage = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -93,8 +95,9 @@ const styles = StyleSheet.create({
   card: {
     height: 104,
     overflow: 'hidden',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(255,255,255,0.34)',
+    marginHorizontal: CARD_HORIZONTAL_MARGIN,
+    marginVertical: 3,
+    borderRadius: 14,
   },
   page: {
     height: 104,

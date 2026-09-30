@@ -32,7 +32,7 @@ describe('transit prototype data', () => {
     expect(routeColors).toEqual({
       ronkonkoma: '#A626AA',
       s1: '#C63F49',
-      e: '#0039A6',
+      e: '#0062CF',
       '51': '#C63F49',
       '7': '#B933AD',
     });

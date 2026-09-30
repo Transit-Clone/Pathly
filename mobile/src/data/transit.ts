@@ -1,11 +1,11 @@
 export type RouteId = 'ronkonkoma' | 's1' | 'e' | '51' | '7';
 
 export const routeColors: Record<RouteId, string> = {
-  ronkonkoma: '#A626AA',
-  s1: '#C63F49',
-  e: '#0039A6',
-  '51': '#C63F49',
-  '7': '#B933AD',
+  ronkonkoma: '#a625a9',
+  s1: '#d6173f',
+  e: '#0139a6',
+  '51': '#ff0011',
+  '7': '#a625a9',
 };
 
 export type TransitDirection = {
@@ -183,7 +183,12 @@ export const routeById = Object.fromEntries(
 ) as Record<RouteId, RouteDetail>;
 
 export const pinnedRoutes = [routeById.ronkonkoma] as const;
-export const nearbyRoutes = routes.filter((route) => route.id !== 'ronkonkoma');
+export const nearbyRoutes = [
+  routeById.e,
+  routeById.s1,
+  routeById['7'],
+  routeById['51'],
+] as const;
 
 export type RecentTripId = 'penn-station' | 'times-square' | 'patchogue';
 
