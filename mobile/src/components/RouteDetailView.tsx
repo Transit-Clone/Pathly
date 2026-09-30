@@ -1,21 +1,28 @@
-import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ScrollView, StyleSheet, Text, useWindowDimensions, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 
 import type { RouteDetail, RoutePrediction } from '../data/transit';
-import { colors } from '../theme/colors';
+import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
+import { useLayoutEase } from '../theme/motion';
+import type { Palette } from '../theme/colors';
+import { readableColor } from '../theme/contrast';
 import { fontFamilies, typography } from '../theme/typography';
-import { CurrentLocationMarker } from './CurrentLocationMarker';
-import { LiveSignal } from './LiveSignal';
+import { DetailMapPage } from './DetailMapPage';
+import { Icon } from './Icon';
+import { LIVE_SIGNAL_WIDTH, LiveSignal } from './LiveSignal';
 import { MapBackdrop } from './MapBackdrop';
+import { pointAlong, routeFocus, RouteLines, VehicleMarker, type MapLeg } from './RouteMapOverlay';
+import { RouteBadge, transitModeForAgency } from './RouteBadge';
+import { PressableScale } from './PressableScale';
 
-type RouteDetailViewProps = { onBack: () => void; route: RouteDetail };
-
-const stopPositions = [
-  { left: '13%', top: '48%' }, { left: '29%', top: '42%' }, { left: '44%', top: '37%' },
-  { left: '60%', top: '30%' }, { left: '76%', top: '23%' },
-] as const;
+type RouteDetailViewProps = {
+  isFavorite: boolean;
+  isPinned: boolean;
+  onBack: () => void;
+  onToggleFavorite: () => void;
+  onTogglePin: () => void;
+  route: RouteDetail;
+};
 
 function predictionsForDirection(route: RouteDetail, directionIndex: number): readonly RoutePrediction[] {
   if (directionIndex === 0) return route.predictions;
@@ -31,10 +38,14 @@ function destinationForDirection(direction: string) {
   return direction.replace(/^(?:westbound|eastbound|northbound|southbound|uptown|downtown)\s+(?:to|toward)\s+/i, '');
 }
 
-export function RouteDetailView({ onBack, route }: RouteDetailViewProps) {
+export function RouteDetailView({ isFavorite, isPinned, onBack, onToggleFavorite, onTogglePin, route }: RouteDetailViewProps) {
+  const styles = useThemedStyles(createStyles);
+  const { colors, isDark } = useTheme();
+  // Route colors stay exact on fills; text and icons are lightened in dark mode to stay readable.
+  const routeText = isDark ? readableColor(route.color, colors.surface) : route.color;
   const { height, width } = useWindowDimensions();
   const [alertsOpen, setAlertsOpen] = useState(false);
-  const [isPinned, setIsPinned] = useState(false);
+  const ease = useLayoutEase();
   const [isLocationCentered, setIsLocationCentered] = useState(false);
   const [activeDirectionIndex, setActiveDirectionIndex] = useState(0);
   const mapHeight = Math.max(280, Math.min(390, height * 0.58));
@@ -47,256 +58,122 @@ export function RouteDetailView({ onBack, route }: RouteDetailViewProps) {
   const activeDirection = route.directions[activeDirectionIndex] ?? route.directions[0];
   const activeDestination = destinationForDirection(activeDirection.direction);
 
+  const vehicleIcon = transitModeForAgency(route.agency);
+  const hasDelay = !route.alert.startsWith('No delays');
+
+  const routeLeg: MapLeg = {
+    color: route.color,
+    path: route.mapPath,
+    stops: route.mapStops.map((pathIndex, index) => ({ label: route.mapLabels[index], point: route.mapPath[pathIndex]! })),
+  };
+
+  const map = (
+    <>
+      <MapBackdrop
+        focus={routeFocus([route.mapPath])}
+        initialSize={{ width: Math.min(width, 540), height: mapHeight }}
+        padding={{ top: 76, right: 64, bottom: 44, left: 16 }}
+        renderMarkers={(projection) => (
+          <VehicleMarker color={route.color} minutes={activeDirection.minutes} mode={vehicleIcon} point={pointAlong(route.mapPath, activeDirectionIndex === 0 ? 0.3 : 0.7)} projection={projection} />
+        )}
+        renderOverlay={({ scale }) => <RouteLines legs={[routeLeg]} scale={scale} />}
+        showUserLocation={true}
+      />
+      <RouteBadge agency={route.agency} color={route.color} shortName={route.shortName} size="large" style={styles.mapRouteBadge} testID="route-detail-badge" withModeIcon={true} />
+    </>
+  );
+
+  const controls = (
+    <View pointerEvents="box-none" style={styles.topBar}>
+      <PressableScale accessibilityLabel="Back" accessibilityRole="button" onPress={onBack} style={styles.iconButton} testID="route-back"><Icon name="back" size={26} /></PressableScale>
+      <View style={styles.topActions}>
+        <PressableScale accessibilityLabel="Show current location" accessibilityRole="button" accessibilityState={{ selected: isLocationCentered }} onPress={() => setIsLocationCentered(true)} style={[styles.iconButton, isLocationCentered && styles.selectedButton]} testID="route-location"><Icon filled={isLocationCentered} name="locate" /></PressableScale>
+        <PressableScale accessibilityLabel={isFavorite ? 'Remove route from favorites' : 'Add route to favorites'} accessibilityRole="button" accessibilityState={{ selected: isFavorite }} onPress={onToggleFavorite} style={[styles.iconButton, isFavorite && styles.selectedButton]} testID="route-favorite"><Icon color={isFavorite ? colors.warning : colors.primary} filled={isFavorite} name="favorite" /></PressableScale>
+        <PressableScale accessibilityLabel={isPinned ? 'Unpin route' : 'Pin route'} accessibilityRole="button" accessibilityState={{ selected: isPinned }} onPress={onTogglePin} style={[styles.iconButton, isPinned && { backgroundColor: route.color }]} testID="route-pin"><Icon color={isPinned ? colors.white : routeText} filled={isPinned} name="pin" /></PressableScale>
+      </View>
+    </View>
+  );
+
   return (
-    <View style={styles.viewport}>
-      <View style={styles.screen} testID={`route-detail-${route.id}`}>
-        <StatusBar style="dark" />
+    <DetailMapPage
+      controlsScrollWithMap={true}
+      contentStyle={styles.content}
+      contentTestID="route-detail-content"
+      controls={controls}
+      map={map}
+      mapHeight={mapHeight}
+      mapTestID="route-detail-map"
+      scrollTestID="route-detail-scroll"
+      showHeader={false}
+      testID={`route-detail-${route.id}`}
+    >
+      <ThemedStatusBar />
+      <View style={styles.titleRow}><Text accessibilityRole="header" numberOfLines={2} style={styles.title} testID="route-detail-destination">{activeDestination}</Text></View>
 
-        <ScrollView bounces={false} contentContainerStyle={styles.page} overScrollMode="never" showsVerticalScrollIndicator={false} testID="route-detail-scroll">
-          <View style={[styles.map, { height: mapHeight }]} testID="route-detail-map">
-            <MapBackdrop />
-            <View style={[styles.routeSegment, styles.segmentOne, { backgroundColor: route.color }]} />
-            <View style={[styles.routeSegment, styles.segmentTwo, { backgroundColor: route.color }]} />
-            <View style={[styles.routeSegment, styles.segmentThree, { backgroundColor: route.color }]} />
-
-            {route.mapLabels.map((label, index) => {
-              const position = stopPositions[index % stopPositions.length];
-              return <View key={label} style={[styles.mapStop, position]}><View style={[styles.mapDot, { borderColor: route.color }]} /><Text numberOfLines={2} style={styles.mapLabel}>{label}</Text></View>;
-            })}
-
-            <View style={styles.vehicleMarker}><Text style={[styles.vehicleIcon, { color: route.color }]}>▣</Text><View style={[styles.liveBubble, { backgroundColor: route.color }]}><Text style={styles.liveBubbleText}>{activeDirection.minutes}m</Text></View></View>
-            <View style={styles.currentLocation}><CurrentLocationMarker /></View>
-            <View style={[styles.mapRouteBadge, { backgroundColor: route.color }]} testID="route-detail-badge"><Text style={styles.mapRouteBadgeText}>{route.shortName}</Text></View>
-            <View style={styles.destinationOverlay}><Text numberOfLines={1} style={[styles.destinationText, { color: route.color }]}>{activeDestination}</Text></View>
-          </View>
-
-          <SafeAreaView edges={['bottom']} style={styles.content} testID="route-detail-content">
-            <View style={styles.titleRow}><Text style={styles.title}>{route.routeName}</Text></View>
-
-            <ScrollView decelerationRate="fast" horizontal={true} onMomentumScrollEnd={updateDirection} onScroll={updateDirection} pagingEnabled={true} scrollEventThrottle={16} showsHorizontalScrollIndicator={false} style={styles.directionPager} testID="route-direction-pager">
-              {route.directions.map((direction, directionIndex) => (
-                <View key={direction.direction} style={[styles.directionPage, { width: pageWidth }]} testID={`route-direction-${directionIndex}`}>
-                  <View style={styles.predictions}>
-                    {predictionsForDirection(route, directionIndex).map((prediction, index) => {
-                      const highlighted = index === 0;
-                      const predictionColor = highlighted ? colors.white : route.color;
-                      return (
-                        <View key={`${directionIndex}-${prediction.minutes}-${prediction.live}`} accessibilityLabel={`${prediction.minutes} minutes, ${prediction.live ? 'live GPS prediction' : 'scheduled time'}`} accessible={true} style={[styles.prediction, { borderColor: route.color }, highlighted && { backgroundColor: route.color }, !prediction.live && styles.scheduled]} testID={`route-prediction-${directionIndex}-${prediction.minutes}`}>
-                          <View style={styles.predictionRow}><Text style={[styles.predictionTime, { color: predictionColor }]}>{prediction.minutes}</Text>{prediction.live ? <LiveSignal color={predictionColor} /> : null}</View>
-                          <Text style={[styles.predictionUnit, { color: predictionColor }]}>minutes</Text>
-                          {!prediction.live ? <Text style={styles.predictionSource}>SCHEDULED</Text> : null}
-                        </View>
-                      );
-                    })}
-                  </View>
-                </View>
-              ))}
-            </ScrollView>
-
-            <View accessibilityElementsHidden={true} style={styles.pageDots}>{route.directions.map((direction, index) => <View key={direction.direction} style={[styles.pageDot, index === activeDirectionIndex && { backgroundColor: route.color }]} />)}</View>
-
-            <Pressable accessibilityLabel="Service alerts" accessibilityRole="button" accessibilityState={{ expanded: alertsOpen }} onPress={() => setAlertsOpen((value) => !value)} style={({ pressed }) => [styles.alertButton, pressed && styles.pressed]} testID="service-alerts">
-              <View style={[styles.alertDot, { backgroundColor: route.alert.startsWith('No delays') ? colors.success : colors.warning }]} /><Text style={styles.alertText}>Service alerts</Text><Text style={styles.alertStatus}>{route.alert.startsWith('No delays') ? 'No delays' : 'Advisory'}</Text><Text style={styles.chevron}>{alertsOpen ? '⌃' : '⌄'}</Text>
-            </Pressable>
-            {alertsOpen ? <Text style={styles.alertBody}>{route.alert}</Text> : null}
-
-            <View style={styles.timelineHeading}><Text style={styles.timelineTitle}>Route stops</Text><View style={styles.onTimeChip}><View style={styles.onTimeDot} /><Text style={styles.onTimeText}>On time</Text></View></View>
-            <View accessibilityLabel="Stops for the next departure">
-              {route.stops.map((stop, index) => {
-                const isFirst = index === 0;
-                const isLast = index === route.stops.length - 1;
+      <ScrollView decelerationRate="fast" horizontal={true} onMomentumScrollEnd={updateDirection} onScroll={updateDirection} pagingEnabled={true} scrollEventThrottle={16} showsHorizontalScrollIndicator={false} style={styles.directionPager} testID="route-direction-pager">
+        {route.directions.map((direction, directionIndex) => (
+          <View key={direction.direction} style={[styles.directionPage, { width: pageWidth }]} testID={`route-direction-${directionIndex}`}>
+            <View style={styles.predictions}>
+              {predictionsForDirection(route, directionIndex).map((prediction, index) => {
+                const highlighted = index === 0;
+                const predictionColor = highlighted ? colors.white : routeText;
                 return (
-                  <View key={stop.name} accessibilityLabel={`${stop.name}, ${isFirst ? 'departs' : 'arrives'} ${stop.time}`} accessible={true} style={styles.stopRow}>
-                    <View style={styles.timelineRail}>{!isFirst ? <View style={[styles.rail, styles.railTop, { backgroundColor: route.color }]} /> : null}<View style={[styles.stopDot, { borderColor: route.color }, isFirst && { backgroundColor: route.color }]} />{!isLast ? <View style={[styles.rail, styles.railBottom, { backgroundColor: route.color }]} /> : null}</View>
-                    <View style={styles.stopCopy}><Text style={styles.stopName}>{stop.name}</Text><Text style={styles.stopMeta}>{isFirst ? 'Departs' : isLast ? 'Final stop' : 'Scheduled stop'}</Text></View>
-                    <Text style={styles.stopTime}>{stop.time}</Text>
+                  <View key={`${directionIndex}-${prediction.minutes}-${prediction.live}`} accessibilityLabel={`${prediction.minutes} minutes, ${prediction.live ? 'live GPS prediction' : 'scheduled time'}`} accessible={true} style={[styles.prediction, { borderColor: route.color }, highlighted && { backgroundColor: route.color }, !prediction.live && styles.scheduled]} testID={`route-prediction-${directionIndex}-${prediction.minutes}`}>
+                    <View style={styles.predictionRow}>{prediction.live ? <View style={styles.predictionSignalSpacer} /> : null}<Text style={[styles.predictionTime, { color: predictionColor }]}>{prediction.minutes}</Text>{prediction.live ? <LiveSignal color={predictionColor} style={styles.predictionSignal} /> : null}</View>
+                    <Text style={[styles.predictionUnit, { color: predictionColor }]}>minutes</Text>
+                    {!prediction.live ? <Text style={styles.predictionSource}>SCHEDULED</Text> : null}
                   </View>
                 );
               })}
             </View>
-          </SafeAreaView>
-        </ScrollView>
-
-        <SafeAreaView edges={['top']} pointerEvents="box-none" style={styles.topBar}>
-          <Pressable accessibilityLabel="Back" accessibilityRole="button" onPress={onBack} style={({ pressed }) => [styles.backButton, pressed && styles.pressed]} testID="route-back"><Text style={styles.backIcon}>‹</Text></Pressable>
-          <View style={styles.topActions}>
-            <Pressable accessibilityLabel="Show current location" accessibilityRole="button" accessibilityState={{ selected: isLocationCentered }} onPress={() => setIsLocationCentered(true)} style={({ pressed }) => [styles.iconButton, isLocationCentered && styles.selectedButton, pressed && styles.pressed]} testID="route-location"><Text style={styles.locationIcon}>◎</Text></Pressable>
-            <Pressable accessibilityLabel={isPinned ? 'Unpin route' : 'Pin route'} accessibilityRole="button" accessibilityState={{ selected: isPinned }} onPress={() => setIsPinned((value) => !value)} style={({ pressed }) => [styles.iconButton, isPinned && { backgroundColor: route.color }, pressed && styles.pressed]} testID="route-pin"><Text style={[styles.pinIcon, { color: isPinned ? colors.white : route.color }]}>◆</Text></Pressable>
           </View>
-        </SafeAreaView>
+        ))}
+      </ScrollView>
+
+      <View accessibilityElementsHidden={true} style={styles.pageDots}>{route.directions.map((direction, index) => <View key={direction.direction} style={[styles.pageDot, index === activeDirectionIndex && { backgroundColor: route.color }]} />)}</View>
+
+      <PressableScale accessibilityLabel="Service alerts" accessibilityRole="button" accessibilityState={{ expanded: alertsOpen }} onPress={() => {
+        ease();
+        setAlertsOpen((value) => !value);
+      }} style={styles.alertButton} testID="service-alerts">
+        <Icon color={hasDelay ? colors.warning : colors.success} filled={true} name={hasDelay ? 'alert' : 'ok'} size={18} style={styles.alertIcon} /><Text style={styles.alertText}>Service alerts</Text><Text style={[styles.alertStatus, hasDelay && { color: colors.warning }]}>{hasDelay ? 'Advisory' : 'No delays'}</Text><Icon color={colors.mutedInk} name={alertsOpen ? 'collapse' : 'expand'} size={18} style={styles.chevron} />
+      </PressableScale>
+      {alertsOpen ? <Text style={styles.alertBody}>{route.alert}</Text> : null}
+
+      <View style={styles.timelineHeading}><Text style={styles.timelineTitle}>Route stops</Text><View style={styles.onTimeChip}><View style={styles.onTimeDot} /><Text style={styles.onTimeText}>On time</Text></View></View>
+      <View accessibilityLabel="Stops for the next departure">
+        {route.stops.map((stop, index) => {
+          const isFirst = index === 0;
+          const isLast = index === route.stops.length - 1;
+          return (
+            <View key={stop.name} accessibilityLabel={`${stop.name}, ${isFirst ? 'departs' : 'arrives'} ${stop.time}`} accessible={true} style={styles.stopRow}>
+              <View style={styles.timelineRail}>{!isFirst ? <View style={[styles.rail, styles.railTop, { backgroundColor: route.color }]} /> : null}<View style={[styles.stopDot, { borderColor: route.color }, isFirst && { backgroundColor: route.color }]} />{!isLast ? <View style={[styles.rail, styles.railBottom, { backgroundColor: route.color }]} /> : null}</View>
+              <View style={styles.stopCopy}><Text style={styles.stopName}>{stop.name}</Text><Text style={styles.stopMeta}>{isFirst ? 'Departs' : isLast ? 'Final stop' : 'Scheduled stop'}</Text></View>
+              <Text style={styles.stopTime}>{stop.time}</Text>
+            </View>
+          );
+        })}
       </View>
-    </View>
+    </DetailMapPage>
   );
 }
 
-const styles = StyleSheet.create({
-  viewport: {
-    flex: 1,
-    alignItems: 'center',
-    backgroundColor: colors.background,
-  },
-  screen: {
-    width: '100%',
-    maxWidth: 540,
-    flex: 1,
-    overflow: 'hidden',
-    backgroundColor: colors.canvas,
-  },
-  page: {
-    backgroundColor: colors.surface,
-    paddingBottom: 8,
-  },
-  map: {
-    overflow: 'hidden',
-    backgroundColor: colors.blueSoft,
-  },
-  routeSegment: {
-    position: 'absolute',
-    height: 10,
-    borderRadius: 5,
-  },
-  segmentOne: {
-    top: '48%',
-    left: '10%',
-    width: '38%',
-    transform: [{ rotate: '-18deg' }],
-  },
-  segmentTwo: {
-    top: '36%',
-    left: '40%',
-    width: '34%',
-    transform: [{ rotate: '-28deg' }],
-  },
-  segmentThree: {
-    top: '23%',
-    left: '69%',
-    width: '25%',
-    transform: [{ rotate: '-12deg' }],
-  },
-  mapStop: {
-    position: 'absolute',
-    width: 76,
-    alignItems: 'center',
-    marginLeft: -28,
-    marginTop: -8,
-  },
-  mapDot: {
-    width: 18,
-    height: 18,
-    borderWidth: 5,
-    borderRadius: 9,
-    backgroundColor: colors.white,
-  },
-  mapLabel: {
-    marginTop: 4,
-    color: colors.ink,
-    fontFamily: fontFamilies.bold,
-    fontSize: 9,
-    lineHeight: 11,
-    textAlign: 'center',
-  },
-  vehicleMarker: {
-    position: 'absolute',
-    top: '39%',
-    left: '42%',
-    width: 58,
-    height: 58,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 29,
-    backgroundColor: colors.surface,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.18,
-    shadowRadius: 9,
-    elevation: 5,
-  },
-  vehicleIcon: {
-    fontFamily: fontFamilies.extraBold,
-    fontSize: 26,
-  },
-  liveBubble: {
-    position: 'absolute',
-    top: -7,
-    right: -13,
-    minWidth: 34,
-    height: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 5,
-    borderRadius: 12,
-  },
-  liveBubbleText: {
-    color: colors.white,
-    fontFamily: fontFamilies.extraBold,
-    fontSize: 10,
-  },
-  currentLocation: {
-    position: 'absolute',
-    top: '54%',
-    left: '56%',
-  },
+const createStyles = (colors: Palette) => StyleSheet.create({
   mapRouteBadge: {
     position: 'absolute',
     top: 120,
     left: 14,
-    minWidth: 48,
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 8,
-    borderRadius: 15,
     shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.16,
     shadowRadius: 8,
     elevation: 4,
   },
-  mapRouteBadgeText: {
-    color: colors.white,
-    fontFamily: fontFamilies.extraBold,
-    fontSize: 18,
-  },
-  destinationOverlay: {
-    position: 'absolute',
-    right: 18,
-    bottom: 10,
-    left: 18,
-  },
-  destinationText: {
-    fontFamily: fontFamilies.extraBold,
-    fontSize: 20,
-    lineHeight: 23,
-  },
   topBar: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    left: 0,
-    zIndex: 10,
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingHorizontal: 14,
     paddingTop: 8,
-  },
-  backButton: {
-    width: 46,
-    height: 46,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 23,
-    backgroundColor: colors.surface,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.14,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  backIcon: {
-    color: colors.primary,
-    fontFamily: fontFamilies.regular,
-    fontSize: 33,
-    lineHeight: 35,
   },
   topActions: {
     gap: 9,
@@ -317,28 +194,10 @@ const styles = StyleSheet.create({
   selectedButton: {
     backgroundColor: colors.blueSoft,
   },
-  locationIcon: {
-    color: colors.primary,
-    fontFamily: fontFamilies.extraBold,
-    fontSize: 24,
-  },
-  pinIcon: {
-    fontFamily: fontFamilies.extraBold,
-    fontSize: 18,
-  },
   content: {
-    minHeight: 560,
     paddingHorizontal: 18,
     paddingTop: 16,
     paddingBottom: 36,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    backgroundColor: colors.surface,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: -6 },
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    elevation: 12,
   },
   titleRow: {
     minHeight: 40,
@@ -351,6 +210,7 @@ const styles = StyleSheet.create({
     lineHeight: 27,
   },
   directionPager: {
+    flexGrow: 0,
     marginHorizontal: 0,
   },
   directionPage: {
@@ -376,7 +236,16 @@ const styles = StyleSheet.create({
   },
   predictionRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+  },
+  // Mirrors the signal so the number stays centered over "minutes".
+  predictionSignalSpacer: {
+    width: LIVE_SIGNAL_WIDTH,
+  },
+  predictionSignal: {
+    marginLeft: 2,
+    marginTop: 6,
   },
   predictionTime: {
     fontFamily: fontFamilies.extraBold,
@@ -387,8 +256,10 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.bold,
     fontSize: 11,
   },
+  // Positioned so scheduled tiles keep the same number and label placement as live ones.
   predictionSource: {
-    marginTop: 5,
+    position: 'absolute',
+    bottom: 12,
     color: colors.mutedInk,
     ...typography.label,
     fontSize: 8,
@@ -416,11 +287,8 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     backgroundColor: colors.background,
   },
-  alertDot: {
-    width: 9,
-    height: 9,
-    marginRight: 9,
-    borderRadius: 5,
+  alertIcon: {
+    marginRight: 8,
   },
   alertText: {
     flex: 1,
@@ -526,8 +394,5 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontFamily: fontFamilies.extraBold,
     fontSize: 16,
-  },
-  pressed: {
-    opacity: 0.65,
   },
 });

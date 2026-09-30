@@ -1,3 +1,5 @@
+import type { Point } from './mapGeometry';
+
 export type RouteId = 'ronkonkoma' | 's1' | 'e' | '51' | '7';
 
 export const routeColors: Record<RouteId, string> = {
@@ -34,6 +36,10 @@ export type RouteDetail = {
   directions: readonly [TransitDirection, TransitDirection];
   id: RouteId;
   mapLabels: readonly string[];
+  /** Route line in map world coordinates. */
+  mapPath: readonly Point[];
+  /** Index into `mapPath` for each entry of `mapLabels`. */
+  mapStops: readonly number[];
   predictions: readonly RoutePrediction[];
   routeName: string;
   shortName: string;
@@ -59,6 +65,8 @@ export const routes: readonly RouteDetail[] = [
       { minutes: 34, live: true },
     ],
     mapLabels: ['Stony Brook', 'St. James', 'Smithtown', 'Kings Park', 'Northport'],
+    mapPath: [[610, 470], [470, 478], [330, 470], [200, 460], [70, 452]],
+    mapStops: [0, 1, 2, 3, 4],
     stops: [
       { name: 'Stony Brook', time: '10:04 AM' },
       { name: 'St. James', time: '10:11 AM' },
@@ -86,6 +94,8 @@ export const routes: readonly RouteDetail[] = [
       { minutes: 28, live: true },
     ],
     mapLabels: ['Amityville', 'North Babylon', 'Deer Park', 'Dix Hills', 'Halesite'],
+    mapPath: [[240, 1380], [250, 1200], [270, 980], [300, 760], [322, 560], [330, 395], [312, 290]],
+    mapStops: [0, 1, 2, 4, 6],
     stops: [
       { name: 'Amityville Station', time: '10:06 AM' },
       { name: 'North Babylon', time: '10:15 AM' },
@@ -113,6 +123,8 @@ export const routes: readonly RouteDetail[] = [
       { minutes: 19, live: true },
     ],
     mapLabels: ['Jamaica Center', 'Sutphin Blvd', 'Queens Plaza', '42 St', 'World Trade Center'],
+    mapPath: [[1000, 1060], [850, 1090], [700, 1120], [580, 1145], [460, 1170], [240, 1215], [40, 1232]],
+    mapStops: [0, 1, 2, 4, 6],
     stops: [
       { name: 'Jamaica Center', time: '10:04 AM' },
       { name: 'Sutphin Blvd–Archer Av', time: '10:08 AM' },
@@ -140,6 +152,8 @@ export const routes: readonly RouteDetail[] = [
       { minutes: 38, live: true },
     ],
     mapLabels: ['Port Jefferson', 'Stony Brook', 'Centereach', 'Holbrook', 'Patchogue'],
+    mapPath: [[980, 354], [880, 372], [760, 405], [612, 430], [590, 500], [545, 530], [450, 560], [435, 700], [475, 822], [600, 835], [640, 900], [652, 1080], [660, 1250], [666, 1380]],
+    mapStops: [0, 7, 11, 12, 13],
     stops: [
       { name: 'Port Jefferson Station', time: '10:09 AM' },
       { name: 'Stony Brook University', time: '10:22 AM' },
@@ -167,6 +181,8 @@ export const routes: readonly RouteDetail[] = [
       { minutes: 15, live: true },
     ],
     mapLabels: ['Flushing', 'Jackson Hts', 'Queensboro Plaza', 'Times Sq', 'Hudson Yards'],
+    mapPath: [[1000, 990], [820, 1000], [652, 1020], [450, 1060], [270, 1080], [0, 1100]],
+    mapStops: [0, 1, 3, 4, 5],
     stops: [
       { name: 'Flushing–Main St', time: '10:03 AM' },
       { name: 'Jackson Hts–Roosevelt Av', time: '10:17 AM' },
@@ -182,17 +198,21 @@ export const routeById = Object.fromEntries(
   routes.map((route) => [route.id, route]),
 ) as Record<RouteId, RouteDetail>;
 
-export const pinnedRoutes = [routeById.ronkonkoma] as const;
-export const nearbyRoutes = [
+export const allNearbyRoutes = [
+  routeById.ronkonkoma,
   routeById.e,
   routeById.s1,
   routeById['7'],
   routeById['51'],
 ] as const;
 
+export const DEFAULT_PINNED_ROUTE_IDS: readonly RouteId[] = ['ronkonkoma'];
+
 export type RecentTripId = 'penn-station' | 'times-square' | 'patchogue';
 
 export type RecentTripLeg = {
+  agency: string;
+  routeId: RouteId;
   alightStop: string;
   alightTime: string;
   boardStop: string;
@@ -223,6 +243,8 @@ export const recentTrips: readonly RecentTrip[] = [
     recency: 'Yesterday',
     legs: [
       {
+        agency: routeById.ronkonkoma.agency,
+        routeId: 'ronkonkoma',
         alightStop: 'Penn Station',
         alightTime: '11:16 AM',
         boardStop: 'Stony Brook Station',
@@ -243,6 +265,8 @@ export const recentTrips: readonly RecentTrip[] = [
     recency: '3 days ago',
     legs: [
       {
+        agency: routeById.ronkonkoma.agency,
+        routeId: 'ronkonkoma',
         alightStop: 'Jamaica',
         alightTime: '9:43 AM',
         boardStop: 'Stony Brook Station',
@@ -253,6 +277,8 @@ export const recentTrips: readonly RecentTrip[] = [
         shortName: routeById.ronkonkoma.shortName,
       },
       {
+        agency: routeById.e.agency,
+        routeId: 'e',
         alightStop: '42 St–Port Authority',
         alightTime: '10:16 AM',
         boardStop: 'Sutphin Blvd–Archer Av',
@@ -273,6 +299,8 @@ export const recentTrips: readonly RecentTrip[] = [
     recency: 'Last week',
     legs: [
       {
+        agency: routeById['51'].agency,
+        routeId: '51',
         alightStop: 'Patchogue Station',
         alightTime: '4:01 PM',
         boardStop: 'Stony Brook University',
@@ -296,13 +324,13 @@ export type ItineraryId = 'rail-fast' | 'few-transfers' | 'budget' | 'subway-mix
 export type Itinerary = {
   durationMinutes: number;
   fare: string;
+  departureOffsetMinutes: number;
   id: ItineraryId;
-  nextRide: string;
   preference: RoutePreference;
   recommended: boolean;
   segments: readonly Pick<
     RouteDetail,
-    'agency' | 'color' | 'destination' | 'direction' | 'routeName' | 'shortName'
+    'agency' | 'color' | 'destination' | 'direction' | 'id' | 'routeName' | 'shortName'
   >[];
   transfers: number;
 };
@@ -316,7 +344,7 @@ export const itineraries: readonly Itinerary[] = [
     fare: '$14.25',
     durationMinutes: 72,
     transfers: 1,
-    nextRide: 'Leaves in 4 min · 10:04 AM',
+    departureOffsetMinutes: 4,
   },
   {
     id: 'few-transfers',
@@ -326,7 +354,7 @@ export const itineraries: readonly Itinerary[] = [
     fare: '$5.80',
     durationMinutes: 91,
     transfers: 1,
-    nextRide: 'Leaves in 9 min · 10:09 AM',
+    departureOffsetMinutes: 9,
   },
   {
     id: 'budget',
@@ -336,7 +364,7 @@ export const itineraries: readonly Itinerary[] = [
     fare: '$2.90',
     durationMinutes: 108,
     transfers: 2,
-    nextRide: 'Leaves in 6 min · 10:06 AM',
+    departureOffsetMinutes: 6,
   },
   {
     id: 'subway-mix',
@@ -346,10 +374,60 @@ export const itineraries: readonly Itinerary[] = [
     fare: '$2.90',
     durationMinutes: 84,
     transfers: 1,
-    nextRide: 'Leaves in 11 min · 10:11 AM',
+    departureOffsetMinutes: 11,
   },
 ] as const;
 
 export const itineraryById = Object.fromEntries(
   itineraries.map((itinerary) => [itinerary.id, itinerary]),
 ) as Record<ItineraryId, Itinerary>;
+
+/** Minutes after midnight that the prototype treats as "now" (10:00 AM). */
+export const MOCK_NOW_MINUTES = 10 * 60;
+
+export type TripTimeChoice =
+  | { mode: 'now' }
+  | { mode: 'depart' | 'arrive'; minutes: number };
+
+export type ItinerarySchedule = {
+  arrival: number;
+  departure: number;
+  label: string;
+};
+
+const MINUTES_PER_DAY = 24 * 60;
+
+function wrapMinutes(minutes: number) {
+  return ((minutes % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
+}
+
+export function formatClockTime(minutes: number) {
+  const wrapped = wrapMinutes(minutes);
+  const hours = Math.floor(wrapped / 60);
+  const period = hours >= 12 ? 'PM' : 'AM';
+  return `${hours % 12 || 12}:${String(wrapped % 60).padStart(2, '0')} ${period}`;
+}
+
+export function formatTripTimeChoice(choice: TripTimeChoice) {
+  if (choice.mode === 'now') return 'Leave now';
+  return `${choice.mode === 'depart' ? 'Depart' : 'Arrive by'} ${formatClockTime(choice.minutes)}`;
+}
+
+export function scheduleItinerary(
+  itinerary: Pick<Itinerary, 'departureOffsetMinutes' | 'durationMinutes'>,
+  choice: TripTimeChoice,
+): ItinerarySchedule {
+  const offset = itinerary.departureOffsetMinutes;
+  if (choice.mode === 'arrive') {
+    const arrival = wrapMinutes(choice.minutes - offset);
+    const departure = wrapMinutes(arrival - itinerary.durationMinutes);
+    return { arrival, departure, label: `Departs ${formatClockTime(departure)} · Arrives ${formatClockTime(arrival)}` };
+  }
+  const start = choice.mode === 'now' ? MOCK_NOW_MINUTES : choice.minutes;
+  const departure = wrapMinutes(start + offset);
+  const arrival = wrapMinutes(departure + itinerary.durationMinutes);
+  const label = choice.mode === 'now'
+    ? `Leaves in ${offset} min · ${formatClockTime(departure)}`
+    : `Departs ${formatClockTime(departure)} · Arrives ${formatClockTime(arrival)}`;
+  return { arrival, departure, label };
+}

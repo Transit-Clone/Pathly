@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import {
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -11,18 +10,23 @@ import {
 } from 'react-native';
 
 import type { RouteDetail } from '../data/transit';
-import { colors } from '../theme/colors';
+import { useThemedStyles } from '../theme/AppSettings';
+import type { Palette } from '../theme/colors';
 import { typography } from '../theme/typography';
-import { LiveSignal } from './LiveSignal';
+import { Icon } from './Icon';
+import { LIVE_SIGNAL_WIDTH, LiveSignal } from './LiveSignal';
+import { PressableScale } from './PressableScale';
 
 type TransitCardProps = {
   onPress: () => void;
+  pinned?: boolean;
   route: RouteDetail;
 };
 
 const CARD_HORIZONTAL_MARGIN = 8;
 
-export function TransitCard({ onPress, route }: TransitCardProps) {
+export function TransitCard({ onPress, pinned = false, route }: TransitCardProps) {
+  const styles = useThemedStyles(createStyles);
   const { width } = useWindowDimensions();
   const pageWidth = Math.min(width, 540) - CARD_HORIZONTAL_MARGIN * 2;
   const [activePage, setActivePage] = useState(0);
@@ -45,17 +49,14 @@ export function TransitCard({ onPress, route }: TransitCardProps) {
         testID={`transit-${route.id}-directions`}
       >
         {route.directions.map((item, index) => (
-          <Pressable
+          <PressableScale
             key={item.direction}
             accessibilityHint="Opens route details. Swipe horizontally for the other direction."
             accessibilityLabel={`${route.agency} ${route.routeName}. ${item.direction}. ${item.stopName}. ${item.minutes} minutes, ${item.live ? 'live GPS prediction' : 'scheduled time'}.`}
             accessibilityRole="button"
             onPress={onPress}
-            style={({ pressed }) => [
-              styles.page,
-              { width: pageWidth },
-              pressed && styles.pressedPage,
-            ]}
+            style={[styles.page,
+              { width: pageWidth }]}
             testID={`route-card-${route.id}-${index === 0 ? 'primary' : 'alternate'}`}
           >
             <View style={styles.copy}>
@@ -68,17 +69,19 @@ export function TransitCard({ onPress, route }: TransitCardProps) {
 
             <View style={[styles.timing, !item.live && styles.scheduledTiming]}>
               <View style={styles.timeRow}>
+                {item.live ? <View style={styles.signalSpacer} /> : null}
                 <Text style={styles.minutes} testID={`transit-${route.id}-arrival-${index}`}>
                   {item.minutes}
                 </Text>
-                {item.live ? <LiveSignal /> : null}
+                {item.live ? <LiveSignal style={styles.signal} /> : null}
               </View>
               <Text style={styles.minuteUnit}>minutes</Text>
             </View>
-          </Pressable>
+          </PressableScale>
         ))}
       </ScrollView>
 
+      {pinned ? <View pointerEvents="none" style={styles.pinBadge} testID={`route-card-${route.id}-pinned`}><Icon color="rgba(255,255,255,0.9)" filled={true} name="pin" size={12} /></View> : null}
       <View accessibilityElementsHidden={true} style={styles.pageDots}>
         {route.directions.map((item, index) => (
           <View
@@ -91,7 +94,7 @@ export function TransitCard({ onPress, route }: TransitCardProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: Palette) => StyleSheet.create({
   card: {
     height: 104,
     overflow: 'hidden',
@@ -108,7 +111,6 @@ const styles = StyleSheet.create({
     paddingTop: 11,
     paddingBottom: 18,
   },
-  pressedPage: { opacity: 0.82 },
   copy: { minWidth: 0, flex: 1 },
   routeName: { color: colors.white, ...typography.displayTime },
   direction: {
@@ -123,14 +125,18 @@ const styles = StyleSheet.create({
     ...typography.metadata,
     opacity: 0.84,
   },
-  timing: { width: 50, alignItems: 'center' },
+  timing: { minWidth: 56, alignItems: 'center' },
   scheduledTiming: { opacity: 0.68 },
   timeRow: {
     minHeight: 30,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'center',
   },
+  // The spacer mirrors the signal so the number stays centered over "minutes".
+  signalSpacer: { width: LIVE_SIGNAL_WIDTH },
+  signal: { marginLeft: 2, marginTop: 1 },
+  pinBadge: { position: 'absolute', top: 6, right: 8, transform: [{ rotate: '30deg' }] },
   minutes: {
     color: colors.white,
     ...typography.displayTime,

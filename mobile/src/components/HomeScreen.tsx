@@ -1,17 +1,20 @@
-import { StatusBar } from 'expo-status-bar';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { BackHandler, Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { favoriteTripKey, type FavoriteTrip } from '../data/favorites';
 import {
+  DEFAULT_PINNED_ROUTE_IDS,
   recentTripById,
   routeById,
   type ItineraryId,
   type RecentTripId,
   type RouteId,
+  type TripTimeChoice,
 } from '../data/transit';
-import { colors } from '../theme/colors';
-import { CurrentLocationMarker } from './CurrentLocationMarker';
+import { ThemedStatusBar, useThemedStyles } from '../theme/AppSettings';
+import { ScreenTransition } from '../theme/motion';
+import type { Palette } from '../theme/colors';
 import { MapBackdrop } from './MapBackdrop';
 import { ProfileView } from './ProfileView';
 import { RecentTripDetailView } from './RecentTripDetailView';
@@ -31,8 +34,8 @@ type ActiveView =
   | { name: 'home' }
   | { name: 'search' }
   | { name: 'route'; routeId: RouteId }
-  | { name: 'results'; destination: string }
-  | { name: 'recentTrip'; tripId: RecentTripId }
+  | { name: 'results'; destination: string; returnTo: 'search' | 'favorites' }
+  | { name: 'recentTrip'; tripId: RecentTripId; returnTab: TransitTabId }
   | { name: 'profile' };
 
 type ActiveTrip =
@@ -40,11 +43,20 @@ type ActiveTrip =
   | { kind: 'recent'; tripId: RecentTripId }
   | null;
 
+function toggleItem<T>(items: readonly T[], item: T): T[] {
+  return items.includes(item) ? items.filter((value) => value !== item) : [...items, item];
+}
+
 export function HomeScreen() {
+  const styles = useThemedStyles(createStyles);
   const [activeView, setActiveView] = useState<ActiveView>({ name: 'home' });
   const [activeTrip, setActiveTrip] = useState<ActiveTrip>(null);
   const [homeTab, setHomeTab] = useState<TransitTabId>('nearby');
   const [selectedSearchTripId, setSelectedSearchTripId] = useState<ItineraryId | null>(null);
+  const [tripTime, setTripTime] = useState<TripTimeChoice>({ mode: 'now' });
+  const [pinnedRouteIds, setPinnedRouteIds] = useState<readonly RouteId[]>(DEFAULT_PINNED_ROUTE_IDS);
+  const [favoriteRouteIds, setFavoriteRouteIds] = useState<readonly RouteId[]>([]);
+  const [favoriteTrips, setFavoriteTrips] = useState<readonly FavoriteTrip[]>([]);
   const { height } = useWindowDimensions();
   const mapHeight = Math.max(
     MINIMUM_MAP_HEIGHT,
@@ -61,7 +73,31 @@ export function HomeScreen() {
   }, []);
   const showRouteResults = useCallback((destination: string) => {
     setSelectedSearchTripId(null);
-    setActiveView({ name: 'results', destination });
+    setActiveView({ name: 'results', destination, returnTo: 'search' });
+  }, []);
+  const showFavorites = useCallback(() => {
+    setHomeTab('favorites');
+    setActiveView({ name: 'home' });
+  }, []);
+  const isTripFavorite = useCallback(
+    (trip: FavoriteTrip) => favoriteTrips.some((item) => favoriteTripKey(item) === favoriteTripKey(trip)),
+    [favoriteTrips],
+  );
+  const toggleTripFavorite = useCallback((trip: FavoriteTrip) => {
+    setFavoriteTrips((current) =>
+      current.some((item) => favoriteTripKey(item) === favoriteTripKey(trip))
+        ? current.filter((item) => favoriteTripKey(item) !== favoriteTripKey(trip))
+        : [...current, trip],
+    );
+  }, []);
+  const openFavoriteTrip = useCallback((trip: FavoriteTrip) => {
+    if (trip.kind === 'recent') {
+      setActiveView({ name: 'recentTrip', tripId: trip.tripId, returnTab: 'favorites' });
+      return;
+    }
+    setTripTime(trip.time);
+    setSelectedSearchTripId(trip.itineraryId);
+    setActiveView({ name: 'results', destination: trip.destination, returnTo: 'favorites' });
   }, []);
   const showRecents = useCallback(() => {
     setHomeTab('recents');
@@ -69,23 +105,45 @@ export function HomeScreen() {
   }, []);
   const showRecentTrip = useCallback((tripId: RecentTripId) => {
     setHomeTab('recents');
-    setActiveView({ name: 'recentTrip', tripId });
+    setActiveView({ name: 'recentTrip', tripId, returnTab: 'recents' });
   }, []);
   const startRecentTrip = useCallback((tripId: RecentTripId) => {
     setActiveTrip({ kind: 'recent', tripId });
-    setHomeTab('recents');
-    setActiveView({ name: 'recentTrip', tripId });
+    setActiveView((current) => ({
+      name: 'recentTrip',
+      tripId,
+      returnTab: current.name === 'recentTrip' ? current.returnTab : 'recents',
+    }));
   }, []);
+  const closeRecentTrip = useCallback(() => {
+    const returnTab = activeView.name === 'recentTrip' ? activeView.returnTab : 'recents';
+    setHomeTab(returnTab);
+    setActiveView({ name: 'home' });
+  }, [activeView]);
   const endRecentTrip = useCallback(() => {
     setActiveTrip(null);
+    if (activeView.name === 'recentTrip') {
+      closeRecentTrip();
+      return;
+    }
     showRecents();
-  }, [showRecents]);
+  }, [activeView.name, closeRecentTrip, showRecents]);
   const showPlannedTrip = useCallback((itineraryId: ItineraryId) => {
     setSelectedSearchTripId(itineraryId);
   }, []);
   const closePlannedTrip = useCallback(() => {
     setSelectedSearchTripId(null);
-  }, []);
+    if (activeView.name === 'results' && activeView.returnTo === 'favorites') {
+      showFavorites();
+    }
+  }, [activeView, showFavorites]);
+  const closeResults = useCallback(() => {
+    if (activeView.name === 'results' && activeView.returnTo === 'favorites') {
+      showFavorites();
+      return;
+    }
+    showSearch();
+  }, [activeView, showFavorites, showSearch]);
   const startPlannedTrip = useCallback((itineraryId: ItineraryId) => {
     setActiveTrip({ kind: 'planned', itineraryId });
     setSelectedSearchTripId(itineraryId);
@@ -101,17 +159,17 @@ export function HomeScreen() {
         closePlannedTrip();
         return;
       }
-      showSearch();
+      closeResults();
       return;
     }
 
     if (activeView.name === 'recentTrip') {
-      showRecents();
+      closeRecentTrip();
       return;
     }
 
     showHome();
-  }, [activeView.name, closePlannedTrip, selectedSearchTripId, showHome, showRecents, showSearch]);
+  }, [activeView.name, closePlannedTrip, closeRecentTrip, closeResults, selectedSearchTripId, showHome]);
 
   useEffect(() => {
     if (activeView.name === 'home' || Platform.OS === 'web') {
@@ -124,8 +182,15 @@ export function HomeScreen() {
     return () => subscription.remove();
   }, [activeView.name, closeCurrentView]);
 
+  const transitionKey = activeView.name === 'route'
+    ? `route-${activeView.routeId}`
+    : activeView.name === 'recentTrip'
+      ? `recent-${activeView.tripId}`
+      : activeView.name;
+  const screen = (node: ReactNode) => <ScreenTransition key={transitionKey}>{node}</ScreenTransition>;
+
   if (activeView.name === 'search') {
-    return (
+    return screen(
       <SearchView
         onCancel={showHome}
         onSelect={(place) => showRouteResults(place.title)}
@@ -134,45 +199,61 @@ export function HomeScreen() {
   }
 
   if (activeView.name === 'route') {
-    return <RouteDetailView onBack={showHome} route={routeById[activeView.routeId]} />;
+    const { routeId } = activeView;
+    return screen(
+      <RouteDetailView
+        isFavorite={favoriteRouteIds.includes(routeId)}
+        isPinned={pinnedRouteIds.includes(routeId)}
+        onBack={showHome}
+        onToggleFavorite={() => setFavoriteRouteIds((current) => toggleItem(current, routeId))}
+        onTogglePin={() => setPinnedRouteIds((current) => toggleItem(current, routeId))}
+        route={routeById[routeId]}
+      />
+    );
   }
 
   if (activeView.name === 'results') {
-    return (
+    return screen(
       <RouteResultsView
         activeItineraryId={activeTrip?.kind === 'planned' ? activeTrip.itineraryId : null}
         destination={activeView.destination}
-        onBack={showSearch}
+        isTripFavorite={(itineraryId, destination) => isTripFavorite({ kind: 'planned', itineraryId, destination, time: tripTime })}
+        onBack={closeResults}
+        onChangeTripTime={setTripTime}
         onCloseTrip={closePlannedTrip}
         onEndTrip={endPlannedTrip}
         onOpenTrip={showPlannedTrip}
         onStartTrip={startPlannedTrip}
+        onToggleTripFavorite={(itineraryId, destination) => toggleTripFavorite({ kind: 'planned', itineraryId, destination, time: tripTime })}
         selectedItineraryId={selectedSearchTripId}
+        tripTime={tripTime}
       />
     );
   }
 
   if (activeView.name === 'recentTrip') {
-    return (
+    return screen(
       <RecentTripDetailView
         isActive={activeTrip?.kind === 'recent' && activeTrip.tripId === activeView.tripId}
-        onBack={showRecents}
+        isFavorite={isTripFavorite({ kind: 'recent', tripId: activeView.tripId })}
+        onBack={closeRecentTrip}
         onEnd={endRecentTrip}
         onStart={() => startRecentTrip(activeView.tripId)}
+        onToggleFavorite={() => toggleTripFavorite({ kind: 'recent', tripId: activeView.tripId })}
         trip={recentTripById[activeView.tripId]}
       />
     );
   }
 
   if (activeView.name === 'profile') {
-    return <ProfileView onBack={showHome} />;
+    return screen(<ProfileView onBack={showHome} />);
   }
 
-  return (
+  return screen(
     <View style={styles.viewport}>
-      <StatusBar style="dark" />
+      <ThemedStatusBar />
       <View style={styles.screen}>
-        <MapBackdrop />
+        <MapBackdrop padding={{ top: 80, bottom: height - mapHeight }} showUserLocation={true} />
         <SafeAreaView edges={['top']} style={styles.safeArea}>
           <View style={styles.header}>
             <SearchHeader
@@ -182,24 +263,26 @@ export function HomeScreen() {
           </View>
         </SafeAreaView>
 
-        <View style={styles.locationMarker}><CurrentLocationMarker /></View>
-
         <TransitSheet
           activeTripId={activeTrip?.kind === 'recent' ? activeTrip.tripId : null}
           activeTab={homeTab}
+          favoriteRouteIds={favoriteRouteIds}
+          favoriteTrips={favoriteTrips}
           mapHeight={mapHeight}
+          onOpenFavoriteTrip={openFavoriteTrip}
           onOpenRoute={(routeId) => setActiveView({ name: 'route', routeId })}
           onOpenTrip={showRecentTrip}
           onEndTrip={endRecentTrip}
           onStartTrip={startRecentTrip}
           onTabChange={setHomeTab}
+          pinnedRouteIds={pinnedRouteIds}
         />
       </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: Palette) => StyleSheet.create({
   viewport: { flex: 1, alignItems: 'center', backgroundColor: colors.background },
   screen: { width: '100%', maxWidth: 540, flex: 1, overflow: 'hidden', backgroundColor: colors.canvas },
   safeArea: {
@@ -210,5 +293,4 @@ const styles = StyleSheet.create({
     zIndex: 30,
   },
   header: { paddingTop: 10, paddingHorizontal: 16 },
-  locationMarker: { position: 'absolute', top: '29%', left: '47%' },
 });

@@ -4,6 +4,7 @@ import mockSafeAreaContext from 'react-native-safe-area-context/jest/mock';
 
 import App from '../App';
 import { routeById, routes } from '../src/data/transit';
+import { darkColors, lightColors } from '../src/theme/colors';
 
 const mockUseFonts = jest.fn(() => [true] as [boolean]);
 
@@ -72,7 +73,9 @@ describe('Pathly prototype navigation', () => {
       fireEvent.press(screen.getByTestId(`route-card-${routeId}-primary`));
 
       expect(screen.getByTestId(`route-detail-${routeId}`)).toBeTruthy();
-      expect(screen.getAllByText(routeName).length).toBeGreaterThan(0);
+      const destination = screen.getByTestId('route-detail-destination').props.children as string;
+      expect(routeById[routeId].directions[0].direction.endsWith(destination)).toBe(true);
+      expect(screen.queryByText(routeName === routeById[routeId].shortName ? '__none__' : routeName)).toBeNull();
       expect(screen.getByTestId('route-detail-badge')).toBeTruthy();
       fireEvent.press(screen.getByTestId('route-back'));
       expect(screen.getByTestId(`route-card-${routeId}`)).toBeTruthy();
@@ -127,7 +130,10 @@ describe('Pathly prototype navigation', () => {
   it('searches recent addresses with flexible punctuation and keeps results above the keyboard', () => {
     const screen = render(<App />);
     fireEvent.press(screen.getByTestId('search-trigger'));
+    expect(screen.getByText('Recent')).toBeTruthy();
     fireEvent.changeText(screen.getByTestId('search-input'), '142 christian ave');
+    expect(screen.getByText('Matches')).toBeTruthy();
+    expect(screen.getByTestId('search-match-count').props.children).toMatch(/^\d+ places?$/);
 
     expect(screen.getByTestId('search-result-recent-christian-avenue')).toBeTruthy();
     fireEvent.changeText(screen.getByTestId('search-input'), 'ronkonkoma lirr');
@@ -148,14 +154,16 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByDisplayValue('Times Square')).toBeTruthy();
     expect(screen.getByDisplayValue('Stony Brook University')).toBeTruthy();
     fireEvent.press(screen.getByTestId('swap-endpoints'));
-    fireEvent.press(screen.getByTestId('modes-control'));
+    fireEvent.press(screen.getByTestId('filter-control'));
     fireEvent.press(screen.getByTestId('preference-cheapest'));
     fireEvent.press(screen.getByTestId('leave-time-control'));
+    fireEvent.press(screen.getByTestId('leave-mode-depart'));
+    fireEvent.press(screen.getByTestId('leave-time-done'));
     fireEvent.press(screen.getByTestId('refresh-results'));
 
     expect(screen.getByDisplayValue('Stony Brook University')).toBeTruthy();
     expect(screen.getByDisplayValue('Times Square')).toBeTruthy();
-    expect(screen.getByText('Leave: 10:30')).toBeTruthy();
+    expect(screen.getByTestId('leave-time-label').props.children).toBe('Depart 10:30 AM');
     expect(screen.getByText('Updated now · 1')).toBeTruthy();
     expect(screen.getByTestId('preference-cheapest').props.accessibilityState).toEqual({ selected: true });
     expect(screen.getAllByTestId(/^itinerary-/)).toHaveLength(4);
@@ -166,7 +174,178 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByTestId('search-view')).toBeTruthy();
   });
 
-  it('starts and ends a searched trip from its result card and detail screen', () => {
+  const openResults = () => {
+    const screen = render(<App />);
+    fireEvent.press(screen.getByTestId('search-trigger'));
+    fireEvent.changeText(screen.getByTestId('search-input'), '123 Terry Rd');
+    fireEvent.press(screen.getByTestId('search-result-terry-road-smithtown'));
+    return screen;
+  };
+
+  it('picks a departure time from the wheel and reschedules every itinerary', () => {
+    const screen = openResults();
+    expect(screen.getByTestId('leave-time-label').props.children).toBe('Leave now');
+    expect(screen.getByTestId('schedule-rail-fast').props.children).toBe('Leaves in 4 min · 10:04 AM');
+
+    fireEvent.press(screen.getByTestId('leave-time-control'));
+    expect(screen.getByTestId('leave-time-sheet')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('leave-mode-depart'));
+    fireEvent.press(screen.getByTestId('leave-hour-2'));
+    fireEvent.press(screen.getByTestId('leave-minute-15'));
+    fireEvent.press(screen.getByTestId('leave-period-pm'));
+    expect(screen.getByTestId('leave-time-preview').props.children).toBe('Depart 2:15 PM');
+    fireEvent.press(screen.getByTestId('leave-time-done'));
+
+    expect(screen.queryByTestId('leave-time-sheet')).toBeNull();
+    expect(screen.getByTestId('leave-time-label').props.children).toBe('Depart 2:15 PM');
+    expect(screen.getByTestId('schedule-rail-fast').props.children).toBe('Departs 2:19 PM · Arrives 3:31 PM');
+
+    fireEvent.press(screen.getByTestId('search-result-view-rail-fast'));
+    expect(screen.getByTestId('search-trip-leave-time').props.children).toBe('2:19 PM');
+    expect(screen.getByTestId('search-trip-arrive-time').props.children).toBe('3:31 PM');
+  });
+
+  it('keeps arrive-by itineraries on time and discards a cancelled pick', () => {
+    const screen = openResults();
+    fireEvent.press(screen.getByTestId('leave-time-control'));
+    fireEvent.press(screen.getByTestId('leave-mode-arrive'));
+    fireEvent.press(screen.getByTestId('leave-time-done'));
+    expect(screen.getByTestId('leave-time-label').props.children).toBe('Arrive by 12:00 PM');
+    expect(screen.getByTestId('schedule-rail-fast').props.children).toBe('Departs 10:44 AM · Arrives 11:56 AM');
+
+    fireEvent.press(screen.getByTestId('leave-time-control'));
+    fireEvent.press(screen.getByTestId('leave-mode-now'));
+    fireEvent.press(screen.getByTestId('leave-time-cancel'));
+    expect(screen.getByTestId('leave-time-label').props.children).toBe('Arrive by 12:00 PM');
+  });
+
+  it('filters itineraries by mode separately from sort preferences', () => {
+    const screen = openResults();
+    fireEvent.press(screen.getByTestId('modes-control'));
+    expect(screen.getByTestId('modes-panel')).toBeTruthy();
+    expect(screen.queryByTestId('filter-panel')).toBeNull();
+
+    fireEvent.press(screen.getByTestId('mode-rail'));
+    expect(screen.queryByTestId('itinerary-rail-fast')).toBeNull();
+    expect(screen.getAllByTestId(/^itinerary-/)).toHaveLength(3);
+    expect(screen.getByText('Modes · 2')).toBeTruthy();
+
+    fireEvent.press(screen.getByTestId('filter-control'));
+    expect(screen.getByTestId('filter-panel')).toBeTruthy();
+    expect(screen.queryByTestId('modes-panel')).toBeNull();
+    fireEvent.press(screen.getByTestId('preference-transfers'));
+    expect(screen.getByTestId('preference-transfers').props.accessibilityState).toEqual({ selected: true });
+
+    fireEvent.press(screen.getByTestId('modes-control'));
+    fireEvent.press(screen.getByTestId('mode-subway'));
+    expect(screen.getByTestId('results-empty')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('mode-bus'));
+    expect(screen.getByTestId('mode-bus').props.accessibilityState).toEqual({ checked: true });
+    fireEvent.press(screen.getByTestId('results-reset-modes'));
+    expect(screen.getAllByTestId(/^itinerary-/)).toHaveLength(4);
+  });
+
+  it('pins and unpins routes in the Nearby list', () => {
+    const screen = render(<App />);
+    expect(within(screen.getByTestId('pinned-routes')).getByTestId('route-card-ronkonkoma')).toBeTruthy();
+    expect(screen.queryByText('PINNED')).toBeNull();
+    expect(screen.getByTestId('route-card-ronkonkoma-pinned', { includeHiddenElements: true })).toBeTruthy();
+    expect(screen.queryByTestId('route-card-e-pinned', { includeHiddenElements: true })).toBeNull();
+
+    fireEvent.press(screen.getByTestId('route-card-51-primary'));
+    expect(screen.getByTestId('route-pin').props.accessibilityState).toEqual({ selected: false });
+    fireEvent.press(screen.getByTestId('route-pin'));
+    expect(screen.getByTestId('route-pin').props.accessibilityState).toEqual({ selected: true });
+    fireEvent.press(screen.getByTestId('route-back'));
+
+    expect(within(screen.getByTestId('pinned-routes')).getByTestId('route-card-51')).toBeTruthy();
+    expect(within(screen.getByTestId('nearby-routes')).queryByTestId('route-card-51')).toBeNull();
+
+    fireEvent.press(screen.getByTestId('route-card-ronkonkoma-primary'));
+    fireEvent.press(screen.getByTestId('route-pin'));
+    fireEvent.press(screen.getByTestId('route-back'));
+    expect(within(screen.getByTestId('nearby-routes')).getByTestId('route-card-ronkonkoma')).toBeTruthy();
+    for (const route of routes) {
+      expect(screen.getAllByTestId(`route-card-${route.id}`)).toHaveLength(1);
+    }
+    expect(StyleSheet.flatten(screen.getByTestId('nearby-route-content').props.style).minHeight).toBe(5 * 104);
+  });
+
+  it('saves favorite routes and trips to the Favorites tab and opens them', () => {
+    const screen = render(<App />);
+    fireEvent.press(screen.getByTestId('tab-favorites'));
+    expect(screen.getByText('No favorites yet')).toBeTruthy();
+
+    fireEvent.press(screen.getByTestId('tab-nearby'));
+    fireEvent.press(screen.getByTestId('route-card-e-primary'));
+    fireEvent.press(screen.getByTestId('route-favorite'));
+    fireEvent.press(screen.getByTestId('route-back'));
+
+    fireEvent.press(screen.getByTestId('tab-recents'));
+    fireEvent.press(screen.getByTestId('recent-trip-times-square'));
+    fireEvent.press(screen.getByTestId('recent-trip-favorite'));
+    fireEvent.press(screen.getByTestId('recent-trip-back'));
+    fireEvent.press(screen.getByTestId('recent-trip-times-square'));
+    expect(screen.getByTestId('recent-trip-favorite').props.accessibilityState).toEqual({ selected: true });
+    fireEvent.press(screen.getByTestId('recent-trip-back'));
+
+    fireEvent.press(screen.getByTestId('search-trigger'));
+    fireEvent.changeText(screen.getByTestId('search-input'), '123 Terry Rd');
+    fireEvent.press(screen.getByTestId('search-result-terry-road-smithtown'));
+    fireEvent.press(screen.getByTestId('leave-time-control'));
+    fireEvent.press(screen.getByTestId('leave-mode-depart'));
+    fireEvent.press(screen.getByTestId('leave-time-done'));
+    fireEvent.press(screen.getByTestId('search-result-view-budget'));
+    fireEvent.press(screen.getByTestId('search-trip-favorite'));
+    fireEvent.press(screen.getByTestId('search-trip-back'));
+    fireEvent.press(screen.getByTestId('results-back'));
+    fireEvent.press(screen.getByLabelText('Cancel destination search'));
+
+    fireEvent.press(screen.getByTestId('tab-favorites'));
+    expect(within(screen.getByTestId('favorite-routes')).getByTestId('route-card-e')).toBeTruthy();
+    const trips = screen.getByTestId('favorite-trips');
+    expect(within(trips).getByTestId('favorite-trip-recent-times-square')).toBeTruthy();
+    expect(within(trips).getByTestId('favorite-trip-planned-budget-123 Terry Rd')).toBeTruthy();
+    expect(within(trips).getByText('Depart 10:30 AM')).toBeTruthy();
+
+    fireEvent.press(within(screen.getByTestId('favorite-routes')).getByTestId('route-card-e-primary'));
+    expect(screen.getByTestId('route-detail-e')).toBeTruthy();
+    expect(screen.getByTestId('route-favorite').props.accessibilityState).toEqual({ selected: true });
+    fireEvent.press(screen.getByTestId('route-favorite'));
+    fireEvent.press(screen.getByTestId('route-back'));
+    expect(screen.queryByTestId('favorite-routes')).toBeNull();
+
+    fireEvent.press(screen.getByTestId('favorite-trip-planned-budget-123 Terry Rd'));
+    expect(screen.getByTestId('search-trip-detail-budget')).toBeTruthy();
+    expect(screen.getByTestId('search-trip-leave-time').props.children).toBe('10:36 AM');
+    fireEvent.press(screen.getByTestId('search-trip-favorite'));
+    fireEvent.press(screen.getByTestId('search-trip-back'));
+    expect(screen.getByTestId('tab-favorites').props.accessibilityState).toEqual({ selected: true });
+
+    fireEvent.press(screen.getByTestId('favorite-trip-recent-times-square'));
+    expect(screen.getByTestId('recent-trip-detail-times-square')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('recent-trip-favorite'));
+    fireEvent.press(screen.getByTestId('recent-trip-back'));
+    expect(screen.getByTestId('tab-favorites').props.accessibilityState).toEqual({ selected: true });
+    expect(screen.getByText('No favorites yet')).toBeTruthy();
+  });
+
+  it('shows a selected state on home and results location buttons', () => {
+    const screen = render(<App />);
+    const homeLocation = screen.getByLabelText('Center on current location');
+    expect(homeLocation.props.accessibilityState).toEqual({ selected: false });
+    fireEvent.press(homeLocation);
+    expect(screen.getByLabelText('Center on current location').props.accessibilityState).toEqual({ selected: true });
+
+    fireEvent.press(screen.getByTestId('search-trigger'));
+    fireEvent.changeText(screen.getByTestId('search-input'), '123 Terry Rd');
+    fireEvent.press(screen.getByTestId('search-result-terry-road-smithtown'));
+    expect(screen.getByTestId('results-location').props.accessibilityState).toEqual({ selected: false });
+    fireEvent.press(screen.getByTestId('results-location'));
+    expect(screen.getByTestId('results-location').props.accessibilityState).toEqual({ selected: true });
+  });
+
+  it('starts and ends a searched trip from its detail screen, with no Go buttons on result cards', () => {
     const screen = render(<App />);
     fireEvent.press(screen.getByTestId('search-trigger'));
     fireEvent.changeText(screen.getByTestId('search-input'), '123 Terry Rd');
@@ -177,10 +356,7 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByTestId('search-trip-detail-rail-fast')).toBeTruthy();
     expect(screen.getByLabelText('Start trip to Times Square')).toBeTruthy();
     expect(screen.getByTestId('search-trip-go')).toBeTruthy();
-    expect(StyleSheet.flatten(screen.getByTestId('search-trip-go').props.style)).toMatchObject({
-      position: 'absolute',
-      bottom: 16,
-    });
+    expect(within(screen.getByTestId('search-trip-scroll')).queryByTestId('search-trip-go')).toBeNull();
     expect(screen.getByTestId('search-trip-location')).toBeTruthy();
     expect(screen.getByTestId('search-trip-location').props.accessibilityState).toEqual({ selected: false });
     fireEvent.press(screen.getByTestId('search-trip-location'));
@@ -197,20 +373,21 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByTestId('route-results-view')).toBeTruthy();
     expect(screen.getByDisplayValue('Times Square')).toBeTruthy();
 
-    fireEvent.press(screen.getByTestId('search-result-go-rail-fast'));
-    expect(screen.getByTestId('search-trip-end')).toBeTruthy();
-    expect(screen.getByText('END TRIP')).toBeTruthy();
-
-    fireEvent.press(screen.getByTestId('search-trip-back'));
-    expect(screen.getByTestId('search-result-end-rail-fast')).toBeTruthy();
-    fireEvent.press(screen.getByTestId('search-result-end-rail-fast'));
-    expect(screen.getByTestId('search-result-go-rail-fast')).toBeTruthy();
+    expect(screen.queryByTestId('search-result-go-rail-fast')).toBeNull();
+    expect(screen.queryByTestId(/^search-result-(go|end)-/)).toBeNull();
 
     fireEvent.press(screen.getByTestId('search-result-view-rail-fast'));
     fireEvent.press(screen.getByTestId('search-trip-go'));
+    expect(screen.getByTestId('search-trip-end')).toBeTruthy();
+    expect(screen.getByText('END')).toBeTruthy();
+
+    fireEvent.press(screen.getByTestId('search-trip-back'));
+    fireEvent.press(screen.getByTestId('search-result-view-rail-fast'));
+    expect(screen.getByTestId('search-trip-end')).toBeTruthy();
     fireEvent.press(screen.getByTestId('search-trip-end'));
     expect(screen.getByTestId('route-results-view')).toBeTruthy();
-    expect(screen.getByTestId('search-result-go-rail-fast')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('search-result-view-rail-fast'));
+    expect(screen.getByTestId('search-trip-go')).toBeTruthy();
   });
 
   it('opens recent trip details and returns home with Recents selected', () => {
@@ -233,6 +410,36 @@ describe('Pathly prototype navigation', () => {
     expect(screen.queryByTestId('recent-trip-detail-penn-station')).toBeNull();
   });
 
+  it('shows route badges, time range, duration, fare, and recency on recent-trip cards', () => {
+    const screen = render(<App />);
+    fireEvent.press(screen.getByTestId('tab-recents'));
+    const card = screen.getByTestId('recent-trip-times-square');
+
+    expect(within(card).getByLabelText('R rail')).toBeTruthy();
+    expect(within(card).getByLabelText('E train')).toBeTruthy();
+    expect(within(card).getByText('8:42 AM – 10:16 AM')).toBeTruthy();
+    expect(within(card).getByText('94 min')).toBeTruthy();
+    expect(within(card).getByText('$17.15')).toBeTruthy();
+    expect(within(card).getByText('3 days ago')).toBeTruthy();
+    expect(within(card).getByText('From Stony Brook University')).toBeTruthy();
+  });
+
+  it('highlights an in-progress recent trip and swaps Go for End', () => {
+    const screen = render(<App />);
+    const nearbyHeight = StyleSheet.flatten(screen.getByTestId('nearby-route-content').props.style).minHeight;
+    fireEvent.press(screen.getByTestId('tab-recents'));
+    expect(screen.queryByText('In progress')).toBeNull();
+
+    fireEvent.press(screen.getByTestId('recent-trip-go-patchogue'));
+    fireEvent.press(screen.getByTestId('recent-trip-back'));
+
+    expect(within(screen.getByTestId('recent-trip-patchogue')).getByText('In progress')).toBeTruthy();
+    expect(within(screen.getByTestId('recent-trip-patchogue')).queryByText('Last week')).toBeNull();
+    expect(screen.getByTestId('recent-trip-end-patchogue')).toBeTruthy();
+    expect(screen.getByLabelText('End trip to Patchogue Station')).toBeTruthy();
+    expect(StyleSheet.flatten(screen.getByTestId('recents-route-content').props.style).minHeight).toBe(nearbyHeight);
+  });
+
   it('starts and ends a recent trip from both Go buttons', () => {
     const screen = render(<App />);
     fireEvent.press(screen.getByTestId('tab-recents'));
@@ -240,7 +447,7 @@ describe('Pathly prototype navigation', () => {
     fireEvent.press(screen.getByTestId('recent-trip-go-penn-station'));
     expect(screen.getByTestId('recent-trip-detail-penn-station')).toBeTruthy();
     expect(screen.getByTestId('recent-trip-end')).toBeTruthy();
-    expect(screen.getByText('END TRIP')).toBeTruthy();
+    expect(screen.getByText('END')).toBeTruthy();
 
     fireEvent.press(screen.getByTestId('recent-trip-back'));
     expect(screen.getByTestId('tab-recents').props.accessibilityState).toEqual({ selected: true });
@@ -272,7 +479,7 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByTestId('profile-trigger')).toBeTruthy();
   });
 
-  it('uses one natural map-to-content scroll for planned and recent trip details', () => {
+  it('keeps the trip map fixed while details scroll over it', () => {
     const screen = render(<App />);
     fireEvent.press(screen.getByTestId('search-trigger'));
     fireEvent.changeText(screen.getByTestId('search-input'), '123 Terry Rd');
@@ -282,8 +489,14 @@ describe('Pathly prototype navigation', () => {
     const plannedScroll = screen.getByTestId('search-trip-scroll');
     expect(plannedScroll.props.bounces).toBe(false);
     expect(plannedScroll.props.overScrollMode).toBe('never');
-    expect(within(plannedScroll).getByTestId('search-trip-map')).toBeTruthy();
+    expect(within(plannedScroll).queryByTestId('search-trip-map')).toBeNull();
+    expect(screen.getByTestId('search-trip-map')).toBeTruthy();
     expect(within(plannedScroll).getByTestId('search-trip-content')).toBeTruthy();
+    expect(StyleSheet.flatten(screen.getByTestId('search-trip-scroll-map-window').props.style).height).toBe(
+      StyleSheet.flatten(screen.getByTestId('search-trip-map').props.style).height,
+    );
+    expect(within(plannedScroll).queryByTestId('search-trip-back')).toBeNull();
+    expect(within(plannedScroll).queryByTestId('search-trip-favorite')).toBeNull();
     fireEvent.scroll(plannedScroll, { nativeEvent: { contentOffset: { y: 140 } } });
     fireEvent.scroll(plannedScroll, { nativeEvent: { contentOffset: { y: 280 } } });
     fireEvent.scroll(plannedScroll, { nativeEvent: { contentOffset: { y: 0 } } });
@@ -295,7 +508,8 @@ describe('Pathly prototype navigation', () => {
     fireEvent.press(screen.getByTestId('recent-trip-times-square'));
 
     const recentScroll = screen.getByTestId('recent-trip-scroll');
-    expect(within(recentScroll).getByTestId('recent-trip-map')).toBeTruthy();
+    expect(within(recentScroll).queryByTestId('recent-trip-map')).toBeNull();
+    expect(screen.getByTestId('recent-trip-map')).toBeTruthy();
     expect(within(recentScroll).getByTestId('recent-trip-content')).toBeTruthy();
     expect(screen.getByTestId('recent-trip-leg-0')).toBeTruthy();
     expect(screen.getByTestId('recent-trip-leg-1')).toBeTruthy();
@@ -309,13 +523,96 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByTestId('recent-trip-location').props.accessibilityState).toEqual({ selected: true });
   });
 
+  type TestElement = ReturnType<ReturnType<typeof render>['getByTestId']>;
+  const backgroundOf = (element: TestElement) => StyleSheet.flatten(element.props.style)?.backgroundColor;
+
+  const renderDark = () => {
+    const screen = render(<App />);
+    fireEvent.press(screen.getByTestId('profile-trigger'));
+    fireEvent.press(screen.getByTestId('settings-row-appearance'));
+    fireEvent.press(screen.getByTestId('appearance-dark'));
+    fireEvent.press(screen.getByTestId('settings-back'));
+    fireEvent.press(screen.getByTestId('profile-back'));
+    return screen;
+  };
+
+  it('switches appearance from Settings and remembers the choice for the session', () => {
+    const screen = render(<App />);
+    expect(backgroundOf(screen.getByTestId('transit-sheet'))).toBe(lightColors.surface);
+
+    fireEvent.press(screen.getByTestId('profile-trigger'));
+    fireEvent.press(screen.getByTestId('settings-row-appearance'));
+    expect(screen.getByTestId('appearance-light').props.accessibilityState).toEqual({ selected: true });
+    fireEvent.press(screen.getByTestId('appearance-dark'));
+    expect(screen.getByTestId('appearance-dark').props.accessibilityState).toEqual({ selected: true });
+    fireEvent.press(screen.getByTestId('settings-back'));
+    fireEvent.press(screen.getByTestId('settings-row-appearance'));
+    expect(screen.getByTestId('appearance-dark').props.accessibilityState).toEqual({ selected: true });
+    fireEvent.press(screen.getByTestId('settings-back'));
+    fireEvent.press(screen.getByTestId('profile-back'));
+
+    expect(backgroundOf(screen.getByTestId('transit-sheet'))).toBe(darkColors.surface);
+  });
+
+  it('renders home surfaces dark while route cards keep their colors', () => {
+    const screen = renderDark();
+    expect(backgroundOf(screen.getByTestId('transit-sheet'))).toBe(darkColors.surface);
+    expect(backgroundOf(screen.getByTestId('route-card-e'))).toBe(routeById.e.color);
+    fireEvent.press(screen.getByTestId('tab-recents'));
+    expect(backgroundOf(screen.getByTestId('recent-trip-penn-station-card'))).toBe(darkColors.surface);
+  });
+
+  it('renders results and the time picker dark', () => {
+    const screen = renderDark();
+    fireEvent.press(screen.getByTestId('search-trigger'));
+    fireEvent.changeText(screen.getByTestId('search-input'), '123 Terry Rd');
+    fireEvent.press(screen.getByTestId('search-result-terry-road-smithtown'));
+    expect(backgroundOf(screen.getByTestId('route-results-view'))).toBe(darkColors.canvas);
+    fireEvent.press(screen.getByTestId('leave-time-control'));
+    expect(backgroundOf(screen.getByTestId('leave-time-sheet'))).toBe(darkColors.surface);
+  });
+
+  it('renders route detail, trip detail, and settings dark', () => {
+    const screen = renderDark();
+    fireEvent.press(screen.getByTestId('route-card-ronkonkoma-primary'));
+    expect(backgroundOf(screen.getByTestId('route-detail-content'))).toBe(darkColors.surface);
+    fireEvent.press(screen.getByTestId('route-back'));
+
+    fireEvent.press(screen.getByTestId('tab-recents'));
+    fireEvent.press(screen.getByTestId('recent-trip-times-square'));
+    expect(backgroundOf(screen.getByTestId('recent-trip-content'))).toBe(darkColors.surfaceMuted);
+    fireEvent.press(screen.getByTestId('recent-trip-back'));
+
+    fireEvent.press(screen.getByTestId('profile-trigger'));
+    expect(backgroundOf(screen.getByTestId('profile-view'))).toBe(darkColors.background);
+    fireEvent.press(screen.getByTestId('settings-row-accessibility'));
+    expect(backgroundOf(screen.getByTestId('settings-accessibility'))).toBe(darkColors.background);
+  });
+
+  it('draws route and trip overlays on the illustrated map', () => {
+    const hidden = { includeHiddenElements: true };
+    const screen = render(<App />);
+    fireEvent.press(screen.getByTestId('route-card-ronkonkoma-primary'));
+    expect(screen.getAllByTestId(/^map-route-path-/, hidden)).toHaveLength(1);
+    expect(screen.getAllByTestId(/^map-stop-0-/, hidden)).toHaveLength(5);
+    expect(screen.getByTestId('map-vehicle', hidden)).toBeTruthy();
+    fireEvent.press(screen.getByTestId('route-back'));
+
+    fireEvent.press(screen.getByTestId('tab-recents'));
+    fireEvent.press(screen.getByTestId('recent-trip-times-square'));
+    expect(screen.getAllByTestId(/^map-route-path-/, hidden)).toHaveLength(2);
+    expect(screen.getAllByTestId(/^map-connector-/, hidden)).toHaveLength(1);
+    expect(screen.getByTestId('map-trip-start', hidden)).toBeTruthy();
+    expect(screen.getByTestId('map-destination-pin', hidden)).toBeTruthy();
+  });
+
   it('opens every profile category and keeps settings interactions local', () => {
     const fetchMock = jest.fn();
     globalThis.fetch = fetchMock as unknown as typeof fetch;
     const screen = render(<App />);
     fireEvent.press(screen.getByTestId('profile-trigger'));
 
-    for (const id of ['account', 'notifications', 'accessibility', 'privacy', 'travel', 'places', 'help']) {
+    for (const id of ['appearance', 'account', 'notifications', 'accessibility', 'privacy', 'travel', 'places', 'help']) {
       expect(screen.getByTestId(`settings-row-${id}`)).toBeTruthy();
     }
 
@@ -371,7 +668,7 @@ describe('Pathly prototype navigation', () => {
     expect(routeById.ronkonkoma.stops).toHaveLength(5);
   });
 
-  it('uses one natural route-detail page while keeping controls fixed', () => {
+  it('keeps the route map fixed while the page and its map controls scroll', () => {
     const screen = render(<App />);
     fireEvent.press(screen.getByTestId('route-card-ronkonkoma-primary'));
 
@@ -380,7 +677,11 @@ describe('Pathly prototype navigation', () => {
     expect(screen.queryByTestId('route-sheet-anchor')).toBeNull();
     expect(routeScroll.props.bounces).toBe(false);
     expect(routeScroll.props.overScrollMode).toBe('never');
-    expect(within(routeScroll).getByTestId('route-detail-map')).toBeTruthy();
+    expect(within(routeScroll).queryByTestId('route-detail-map')).toBeNull();
+    expect(screen.getByTestId('route-detail-map')).toBeTruthy();
+    expect(within(routeScroll).getByTestId('route-pin')).toBeTruthy();
+    expect(within(routeScroll).getByTestId('route-back')).toBeTruthy();
+    expect(screen.queryByTestId('route-detail-ronkonkoma-header')).toBeNull();
     expect(within(routeScroll).getByTestId('route-detail-content')).toBeTruthy();
     expect(screen.getByTestId('route-back')).toBeTruthy();
     expect(screen.getByTestId('route-location')).toBeTruthy();
