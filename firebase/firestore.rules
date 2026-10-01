@@ -1,0 +1,15 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Locked down by default. Add per-collection rules as more Firestore-backed
+    // features (favorites, trip history, etc.) land, scoped to request.auth.uid.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

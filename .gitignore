@@ -18,6 +18,12 @@ coverage/
 .env
 .env.*
 
+# Firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+firebase/functions/lib/
+
 # Logs
 *.log
 npm-debug.log*

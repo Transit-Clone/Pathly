@@ -1,4 +1,5 @@
 import { fireEvent, render, within } from '@testing-library/react-native';
+import { signOut } from 'firebase/auth';
 import { StyleSheet } from 'react-native';
 import mockSafeAreaContext from 'react-native-safe-area-context/jest/mock';
 
@@ -466,7 +467,7 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByTestId('tab-recents').props.accessibilityState).toEqual({ selected: true });
   });
 
-  it('opens profile settings and keeps sign out local', () => {
+  it('opens profile settings and can trigger sign out', () => {
     const screen = render(<App />);
     fireEvent.press(screen.getByTestId('profile-trigger'));
 
@@ -474,7 +475,7 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByText('Account details')).toBeTruthy();
     expect(screen.getByText('Notifications')).toBeTruthy();
     fireEvent.press(screen.getByTestId('sign-out'));
-    expect(screen.getByText(/Firebase Authentication is added/)).toBeTruthy();
+    expect(signOut).toHaveBeenCalled();
     fireEvent.press(screen.getByTestId('profile-back'));
     expect(screen.getByTestId('profile-trigger')).toBeTruthy();
   });
@@ -618,7 +619,7 @@ describe('Pathly prototype navigation', () => {
 
     fireEvent.press(screen.getByTestId('settings-row-account'));
     fireEvent.press(screen.getByTestId('account-display-name'));
-    expect(screen.getByText(/local prototype only/)).toBeTruthy();
+    expect(screen.getByText(/coming soon/)).toBeTruthy();
     fireEvent.press(screen.getByTestId('settings-back'));
 
     fireEvent.press(screen.getByTestId('settings-row-notifications'));
@@ -653,7 +654,7 @@ describe('Pathly prototype navigation', () => {
     fireEvent.press(screen.getByTestId('settings-back'));
 
     fireEvent.press(screen.getByTestId('sign-out'));
-    expect(screen.getByText(/Firebase Authentication is added/)).toBeTruthy();
+    expect(signOut).toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
