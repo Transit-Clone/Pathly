@@ -92,12 +92,12 @@ describe('Pathly prototype navigation', () => {
     expect(sheetScroll.props.onResponderMove).toBeUndefined();
     expect(sheetScroll.props.bounces).toBe(false);
     expect(sheetScroll.props.overScrollMode).toBe('never');
-    expect(StyleSheet.flatten(screen.getByTestId('map-window').props.style).height).toBeGreaterThan(0);
+    expect(StyleSheet.flatten(screen.getByTestId('transit-sheet').props.style).top).toBeGreaterThan(0);
     expect(screen.getByTestId('transit-sheet')).toBeTruthy();
     expect(screen.getByTestId('route-card-ronkonkoma')).toBeTruthy();
-    expect(within(sheetScroll).getByTestId('tab-nearby')).toBeTruthy();
-    expect(within(sheetScroll).getByTestId('tab-recents')).toBeTruthy();
-    expect(within(sheetScroll).getByTestId('tab-favorites')).toBeTruthy();
+    expect(screen.getByTestId('tab-nearby')).toBeTruthy();
+    expect(screen.getByTestId('tab-recents')).toBeTruthy();
+    expect(screen.getByTestId('tab-favorites')).toBeTruthy();
     expect(screen.getByLabelText('Center on current location')).toBeTruthy();
 
     fireEvent.scroll(sheetScroll, { nativeEvent: { contentOffset: { y: 120 } } });

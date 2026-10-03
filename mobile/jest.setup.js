@@ -38,6 +38,20 @@ jest.mock('firebase/functions', () => ({
   getFunctions: jest.fn(() => ({})),
 }));
 
+// Keep location deterministic in tests: permission denied, so screens render with the
+// Stony Brook fallback rather than racing a real (mocked) GPS lookup.
+jest.mock('expo-location', () => ({
+  requestForegroundPermissionsAsync: jest.fn(() => Promise.resolve({ status: 'denied' })),
+  getCurrentPositionAsync: jest.fn(),
+}));
+
+// react-native-maps needs a real native module (TurboModule) that doesn't exist under Jest.
+jest.mock('react-native-maps', () => {
+  const { View } = require('react-native');
+  const MockMapView = (props) => <View {...props} />;
+  return { __esModule: true, default: MockMapView, PROVIDER_GOOGLE: 'google' };
+});
+
 jest.mock('@expo/vector-icons/Ionicons', () => {
   const { Text } = require('react-native');
   const MockIcon = ({ name, ...props }) => <Text {...props}>{name}</Text>;

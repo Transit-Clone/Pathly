@@ -3,10 +3,12 @@ import { type FirebaseOptions, getApps, initializeApp } from 'firebase/app';
 // The RN-specific persistence helper is only exposed via @firebase/auth's "react-native"
 // export condition; the firebase/auth wrapper package doesn't re-export it for tsc.
 import { getReactNativePersistence, initializeAuth } from '@firebase/auth';
+import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getFunctions } from 'firebase/functions';
+import { Platform } from 'react-native';
 
-/** Populated from mobile/.env (copy .env.example); these are safe to ship in the app bundle. */
+/** Populated from mobile/.env; these are safe to ship in the app bundle. */
 const firebaseConfig: FirebaseOptions = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -18,9 +20,9 @@ const firebaseConfig: FirebaseOptions = {
 
 export const app = getApps()[0] ?? initializeApp(firebaseConfig);
 
-export const auth = initializeAuth(app, {
-  persistence: getReactNativePersistence(AsyncStorage),
-});
+// @firebase/auth's "react-native" build (which getReactNativePersistence requires) has no
+// web implementation; on web, the regular browser-persisted getAuth() is the right call.
+export const auth = Platform.OS === 'web' ? getAuth(app) : initializeAuth(app, { persistence: getReactNativePersistence(AsyncStorage) });
 
 export const db = getFirestore(app);
 

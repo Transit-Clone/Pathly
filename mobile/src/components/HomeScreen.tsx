@@ -15,7 +15,8 @@ import {
 import { ThemedStatusBar, useThemedStyles } from '../theme/AppSettings';
 import { ScreenTransition } from '../theme/motion';
 import type { Palette } from '../theme/colors';
-import { MapBackdrop } from './MapBackdrop';
+import { CurrentLocationButton } from './CurrentLocationButton';
+import { GoogleMapView } from './GoogleMapView';
 import { ProfileView } from './ProfileView';
 import { RecentTripDetailView } from './RecentTripDetailView';
 import { RouteDetailView } from './RouteDetailView';
@@ -253,7 +254,10 @@ export function HomeScreen() {
     <View style={styles.viewport}>
       <ThemedStatusBar />
       <View style={styles.screen}>
-        <MapBackdrop padding={{ top: 80, bottom: height - mapHeight }} showUserLocation={true} />
+        <GoogleMapView padding={{ top: 80, bottom: height - mapHeight }} />
+        <View style={[styles.locationButton, { bottom: height - mapHeight + 16 }]}>
+          <CurrentLocationButton />
+        </View>
         <SafeAreaView edges={['top']} style={styles.safeArea}>
           <View style={styles.header}>
             <SearchHeader
@@ -293,4 +297,10 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     zIndex: 30,
   },
   header: { paddingTop: 10, paddingHorizontal: 16 },
+  locationButton: {
+    position: 'absolute',
+    right: 16,
+    zIndex: 4,
+    elevation: 4,
+  },
 });

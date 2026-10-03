@@ -3,6 +3,7 @@
   "compilerOptions": {
     "strict": true,
     "noUncheckedIndexedAccess": true,
+    "moduleSuffixes": [".ios", ".android", ".native", ".web", ""],
     "types": [
       "jest"
     ]

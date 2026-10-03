@@ -15,7 +15,6 @@ import { useAppSettings, useThemedStyles } from '../theme/AppSettings';
 import { useLayoutEase, useNativeDriver } from '../theme/motion';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
-import { CurrentLocationButton } from './CurrentLocationButton';
 import { Icon } from './Icon';
 import { TransitCard } from './TransitCard';
 import { TripCard } from './TripCard';
@@ -85,48 +84,42 @@ export function TransitSheet({
   }, [activeIndex, indicatorX, reducedMotionActive, tabWidth]);
 
   return (
-    <ScrollView
-      bounces={false}
-      overScrollMode="never"
-      showsVerticalScrollIndicator={false}
-      style={styles.pageScroll}
-      testID={`${activeTab}-route-list`}
+    <SafeAreaView
+      edges={['bottom']}
+      style={[styles.sheet, { top: mapHeight }]}
+      testID="transit-sheet"
     >
-      <View style={[styles.mapWindow, { height: mapHeight }]} testID="map-window">
-        <View style={styles.locationButton}>
-          <CurrentLocationButton />
-        </View>
+      <View accessibilityRole="tablist" onLayout={(event) => setTabsWidth(event.nativeEvent.layout.width)} style={styles.tabs}>
+        <Animated.View pointerEvents="none" style={[styles.tabIndicator, { width: tabWidth, transform: [{ translateX: indicatorX }] }]} testID="tab-indicator" />
+        {tabs.map((tab) => {
+          const selected = tab.id === activeTab;
+          return (
+            <PressableScale
+              key={tab.id}
+              accessibilityRole="tab"
+              accessibilityState={{ selected }}
+              onPress={() => {
+                ease();
+                onTabChange(tab.id);
+              }}
+              style={styles.tab}
+              testID={`tab-${tab.id}`}
+            >
+              <Text style={[styles.tabLabel, selected && styles.selectedTabLabel]}>
+                {tab.label}
+              </Text>
+            </PressableScale>
+          );
+        })}
       </View>
 
-      <SafeAreaView
-        edges={['bottom']}
-        style={styles.sheet}
-        testID="transit-sheet"
+      <ScrollView
+        bounces={false}
+        overScrollMode="never"
+        showsVerticalScrollIndicator={false}
+        style={styles.tabScroll}
+        testID={`${activeTab}-route-list`}
       >
-        <View accessibilityRole="tablist" onLayout={(event) => setTabsWidth(event.nativeEvent.layout.width)} style={styles.tabs}>
-          <Animated.View pointerEvents="none" style={[styles.tabIndicator, { width: tabWidth, transform: [{ translateX: indicatorX }] }]} testID="tab-indicator" />
-          {tabs.map((tab) => {
-            const selected = tab.id === activeTab;
-            return (
-              <PressableScale
-                key={tab.id}
-                accessibilityRole="tab"
-                accessibilityState={{ selected }}
-                onPress={() => {
-                  ease();
-                  onTabChange(tab.id);
-                }}
-                style={styles.tab}
-                testID={`tab-${tab.id}`}
-              >
-                <Text style={[styles.tabLabel, selected && styles.selectedTabLabel]}>
-                  {tab.label}
-                </Text>
-              </PressableScale>
-            );
-          })}
-        </View>
-
         {activeTab === 'nearby' ? (
           <View style={styles.tabContent} testID="nearby-route-content">
             {pinnedRoutes.length > 0 ? (
@@ -209,32 +202,18 @@ export function TransitSheet({
             </View>
           )
         )}
-      </SafeAreaView>
-    </ScrollView>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const createStyles = (colors: Palette) => StyleSheet.create({
-  pageScroll: {
+  sheet: {
     position: 'absolute',
-    top: 0,
     right: 0,
     bottom: 0,
     left: 0,
     zIndex: 3,
-    backgroundColor: 'transparent',
-  },
-  mapWindow: {
-    position: 'relative',
-  },
-  locationButton: {
-    position: 'absolute',
-    right: 16,
-    bottom: 16,
-    zIndex: 4,
-    elevation: 4,
-  },
-  sheet: {
     overflow: 'hidden',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
@@ -244,6 +223,9 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     shadowOpacity: 0.13,
     shadowRadius: 18,
     elevation: 14,
+  },
+  tabScroll: {
+    flex: 1,
   },
   tabs: {
     paddingTop: 12,
