@@ -83,11 +83,11 @@ describe('Pathly prototype navigation', () => {
     },
   );
 
-  it('keeps the transit menu in one natural page scroll with a route visible at rest', () => {
+  it('keeps the transit list scrolling natural, with a drag handle and a route visible at rest', () => {
     const screen = render(<App />);
     const sheetScroll = screen.getByTestId('nearby-route-list');
 
-    expect(screen.queryByTestId('transit-sheet-handle')).toBeNull();
+    expect(screen.getByTestId('transit-sheet-handle')).toBeTruthy();
     expect(sheetScroll.props.onScrollBeginDrag).toBeUndefined();
     expect(sheetScroll.props.onResponderMove).toBeUndefined();
     expect(sheetScroll.props.bounces).toBe(false);

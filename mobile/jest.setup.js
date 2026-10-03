@@ -47,9 +47,14 @@ jest.mock('expo-location', () => ({
 
 // react-native-maps needs a real native module (TurboModule) that doesn't exist under Jest.
 jest.mock('react-native-maps', () => {
+  const { forwardRef, useImperativeHandle } = require('react');
   const { View } = require('react-native');
-  const MockMapView = (props) => <View {...props} />;
-  return { __esModule: true, default: MockMapView, PROVIDER_GOOGLE: 'google' };
+  const MockMapView = forwardRef((props, ref) => {
+    useImperativeHandle(ref, () => ({ animateToRegion: jest.fn() }));
+    return <View {...props} />;
+  });
+  const MockPolygon = (props) => <View {...props} />;
+  return { __esModule: true, default: MockMapView, PROVIDER_GOOGLE: 'google', Polygon: MockPolygon };
 });
 
 jest.mock('@expo/vector-icons/Ionicons', () => {

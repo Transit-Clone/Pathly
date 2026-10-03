@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { BackHandler, Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Animated, BackHandler, Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { favoriteTripKey, type FavoriteTrip } from '../data/favorites';
@@ -12,8 +12,9 @@ import {
   type RouteId,
   type TripTimeChoice,
 } from '../data/transit';
+import { useCurrentLocation } from '../hooks/useCurrentLocation';
 import { ThemedStatusBar, useThemedStyles } from '../theme/AppSettings';
-import { ScreenTransition } from '../theme/motion';
+import { ScreenTransition, useNativeDriver } from '../theme/motion';
 import type { Palette } from '../theme/colors';
 import { CurrentLocationButton } from './CurrentLocationButton';
 import { GoogleMapView } from './GoogleMapView';
@@ -59,6 +60,15 @@ export function HomeScreen() {
   const [favoriteRouteIds, setFavoriteRouteIds] = useState<readonly RouteId[]>([]);
   const [favoriteTrips, setFavoriteTrips] = useState<readonly FavoriteTrip[]>([]);
   const { height } = useWindowDimensions();
+  const { location, refresh: refreshLocation } = useCurrentLocation();
+  const [isLocationCentered, setIsLocationCentered] = useState(false);
+  const [sheetExpanded, setSheetExpanded] = useState(false);
+  const [locationButtonOpacity] = useState(() => new Animated.Value(1));
+
+  const handleSheetExpandChange = useCallback((expanded: boolean) => {
+    setSheetExpanded(expanded);
+    Animated.timing(locationButtonOpacity, { toValue: expanded ? 0 : 1, duration: 200, useNativeDriver }).start();
+  }, [locationButtonOpacity]);
   const mapHeight = Math.max(
     MINIMUM_MAP_HEIGHT,
     height
@@ -254,10 +264,23 @@ export function HomeScreen() {
     <View style={styles.viewport}>
       <ThemedStatusBar />
       <View style={styles.screen}>
-        <GoogleMapView padding={{ top: 80, bottom: height - mapHeight }} />
-        <View style={[styles.locationButton, { bottom: height - mapHeight + 16 }]}>
-          <CurrentLocationButton />
-        </View>
+        <GoogleMapView
+          location={location}
+          onUserPan={() => setIsLocationCentered(false)}
+          padding={{ top: 80, bottom: height - mapHeight }}
+        />
+        <Animated.View
+          pointerEvents={sheetExpanded ? 'none' : 'auto'}
+          style={[styles.locationButton, { bottom: height - mapHeight + 16, opacity: locationButtonOpacity }]}
+        >
+          <CurrentLocationButton
+            onPress={() => {
+              setIsLocationCentered(true);
+              void refreshLocation();
+            }}
+            selected={isLocationCentered}
+          />
+        </Animated.View>
         <SafeAreaView edges={['top']} style={styles.safeArea}>
           <View style={styles.header}>
             <SearchHeader
@@ -277,6 +300,7 @@ export function HomeScreen() {
           onOpenRoute={(routeId) => setActiveView({ name: 'route', routeId })}
           onOpenTrip={showRecentTrip}
           onEndTrip={endRecentTrip}
+          onExpandChange={handleSheetExpandChange}
           onStartTrip={startRecentTrip}
           onTabChange={setHomeTab}
           pinnedRouteIds={pinnedRouteIds}

@@ -1,34 +1,36 @@
 import * as Location from 'expo-location';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { SERVICE_AREA_FALLBACK } from '../data/serviceArea';
 
 export type Coordinates = { latitude: number; longitude: number };
 
+async function fetchCurrentCoordinates(): Promise<Coordinates | null> {
+  const { status } = await Location.requestForegroundPermissionsAsync();
+  if (status !== 'granted') return null;
+  try {
+    const position = await Location.getCurrentPositionAsync({});
+    return { latitude: position.coords.latitude, longitude: position.coords.longitude };
+  } catch {
+    return null;
+  }
+}
+
 /** User's current GPS location; falls back to Stony Brook if permission is denied or lookup fails. */
 export function useCurrentLocation() {
   const [location, setLocation] = useState<Coordinates>(SERVICE_AREA_FALLBACK);
-  const [hasRealLocation, setHasRealLocation] = useState(false);
 
-  useEffect(() => {
-    let isMounted = true;
-    (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return;
-      try {
-        const position = await Location.getCurrentPositionAsync({});
-        if (isMounted) {
-          setLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude });
-          setHasRealLocation(true);
-        }
-      } catch {
-        // Keep the Stony Brook fallback.
-      }
-    })();
-    return () => {
-      isMounted = false;
-    };
+  const refresh = useCallback(async () => {
+    const coordinates = await fetchCurrentCoordinates();
+    if (coordinates) setLocation(coordinates);
   }, []);
 
-  return { hasRealLocation, location };
+  useEffect(() => {
+    (async () => {
+      const coordinates = await fetchCurrentCoordinates();
+      if (coordinates) setLocation(coordinates);
+    })();
+  }, []);
+
+  return { location, refresh };
 }
