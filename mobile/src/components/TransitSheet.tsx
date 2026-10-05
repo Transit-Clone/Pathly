@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, PanResponder, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { applyLirrLive } from '../data/applyLirrLive';
 import { favoriteTripKey, plannedTripCardData, type FavoriteTrip } from '../data/favorites';
+import { useLirrLive } from '../data/LirrLiveContext';
 import {
   allNearbyRoutes,
   recentTripById,
@@ -71,8 +73,9 @@ export function TransitSheet({
   pinnedRouteIds,
 }: TransitSheetProps) {
   const styles = useThemedStyles(createStyles);
-  const pinnedRoutes = pinnedRouteIds.map((id) => routeById[id]);
-  const nearbyRoutes = allNearbyRoutes.filter((route) => !pinnedRouteIds.includes(route.id));
+  const lirrLive = useLirrLive();
+  const pinnedRoutes = pinnedRouteIds.map((id) => applyLirrLive(routeById[id], lirrLive));
+  const nearbyRoutes = allNearbyRoutes.filter((route) => !pinnedRouteIds.includes(route.id)).map((route) => applyLirrLive(route, lirrLive));
   const hasFavorites = favoriteRouteIds.length > 0 || favoriteTrips.length > 0;
   const ease = useLayoutEase();
   const { reducedMotionActive } = useAppSettings();
@@ -234,7 +237,7 @@ export function TransitSheet({
                     <Text style={[styles.sectionLabel, styles.sectionHeading]}>ROUTES</Text>
                     {favoriteRouteIds.map((id) => (
                       <View key={id} testID={`favorite-route-${id}`}>
-                        <TransitCard onPress={() => onOpenRoute(id)} route={routeById[id]} />
+                        <TransitCard onPress={() => onOpenRoute(id)} route={applyLirrLive(routeById[id], lirrLive)} />
                       </View>
                     ))}
                   </View>

@@ -34,8 +34,17 @@ jest.mock('firebase/firestore', () => ({
   setDoc: jest.fn(),
 }));
 
+// Resolves with no live/static predictions by default; keeps screens on their static fallback data in tests.
 jest.mock('firebase/functions', () => ({
   getFunctions: jest.fn(() => ({})),
+  httpsCallable: jest.fn(() => jest.fn(() => Promise.resolve({
+    data: {
+      routeId: '10',
+      routeName: 'Port Jefferson Branch',
+      vehicles: [],
+      stopPredictions: { towardDirection1: [], towardDirection0: [] },
+    },
+  }))),
 }));
 
 // Keep location deterministic in tests: permission denied, so screens render with the
@@ -54,7 +63,16 @@ jest.mock('react-native-maps', () => {
     return <View {...props} />;
   });
   const MockPolygon = (props) => <View {...props} />;
-  return { __esModule: true, default: MockMapView, PROVIDER_GOOGLE: 'google', Polygon: MockPolygon };
+  const MockMarker = (props) => <View {...props} />;
+  const MockPolyline = (props) => <View {...props} />;
+  return {
+    __esModule: true,
+    default: MockMapView,
+    PROVIDER_GOOGLE: 'google',
+    Polygon: MockPolygon,
+    Marker: MockMarker,
+    Polyline: MockPolyline,
+  };
 });
 
 jest.mock('@expo/vector-icons/Ionicons', () => {

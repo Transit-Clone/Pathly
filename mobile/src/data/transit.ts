@@ -22,9 +22,14 @@ export type RoutePrediction = {
   minutes: number;
 };
 
+export function minuteLabel(minutes: number): string {
+  return minutes === 1 ? 'minute' : 'minutes';
+}
+
 export type RouteStop = {
   name: string;
-  time: string;
+  /** Minutes after the route's first stop — real GTFS hop durations for the LIRR branch, approximate for the mock bus/subway routes. */
+  offsetMinutes: number;
 };
 
 export type RouteDetail = {
@@ -35,45 +40,89 @@ export type RouteDetail = {
   direction: string;
   directions: readonly [TransitDirection, TransitDirection];
   id: RouteId;
+  /**
+   * The real LIRR route_id/stop_id to poll for live data, and which `directions` index
+   * corresponds to GTFS direction_id 1 (the other index is implicitly direction_id 0). Omit
+   * for routes with no live feed (everything except the Port Jefferson Branch, for now) — see
+   * routes.txt/stops.txt in firebase/functions/static_data/lirr for valid IDs.
+   */
+  liveSource?: { routeId: string; stopId: string; direction1Index: 0 | 1 };
   mapLabels: readonly string[];
   /** Route line in map world coordinates. */
   mapPath: readonly Point[];
   /** Index into `mapPath` for each entry of `mapLabels`. */
   mapStops: readonly number[];
   predictions: readonly RoutePrediction[];
+  /** Real live predictions for the reverse direction (directions[1]), when a live feed has any; falls back to a synthetic estimate otherwise. */
+  reversePredictions?: readonly RoutePrediction[];
   routeName: string;
   shortName: string;
   stops: readonly RouteStop[];
+  /** Which `directions` index `stops` is authored in chronological (departs-first) order for — the other direction's "Route stops" list is shown reversed, re-anchored from its own end. Defaults to 0. */
+  stopsDirectionIndex?: 0 | 1;
 };
 
 export const routes: readonly RouteDetail[] = [
   {
+    // Internal key only (used for pins/favorites/tests) — the real branch is Port
+    // Jefferson, not Ronkonkoma; see firebase/functions/static_data/lirr/routes.txt.
     id: 'ronkonkoma',
     agency: 'LIRR',
-    shortName: 'R',
-    routeName: 'Ronkonkoma Branch',
+    shortName: 'PJ',
+    routeName: 'Port Jefferson Branch',
     color: routeColors.ronkonkoma,
     direction: 'Westbound',
     destination: 'Penn Station',
+    // route_id "10", stop_id "14" (Stony Brook); direction_id 1 = toward Penn Station = directions[0].
+    liveSource: { routeId: '10', stopId: '14', direction1Index: 0 },
     directions: [
       { direction: 'Westbound to Penn Station', stopName: 'Stony Brook Station', minutes: 18, live: true },
-      { direction: 'Eastbound to Ronkonkoma', stopName: 'Stony Brook Station', minutes: 26, live: false },
+      { direction: 'Eastbound to Port Jefferson', stopName: 'Stony Brook Station', minutes: 26, live: false },
     ],
     predictions: [
       { minutes: 4, live: true },
       { minutes: 18, live: false },
       { minutes: 34, live: true },
     ],
-    mapLabels: ['Stony Brook', 'St. James', 'Smithtown', 'Kings Park', 'Northport'],
-    mapPath: [[610, 470], [470, 478], [330, 470], [200, 460], [70, 452]],
-    mapStops: [0, 1, 2, 3, 4],
+    // Full real branch (Penn Station through Port Jefferson), not just the Stony
+    // Brook-local segment — matches firebase/functions/static_data/lirr's actual station order, so
+    // this reads correctly for a rider boarding anywhere on the branch. offsetMinutes are
+    // real GTFS inter-station durations (firebase/functions/static_data/lirr/stop_times.txt) chained
+    // end to end — not one single real trip_id (LIRR splits some trips at Huntington,
+    // electric/diesel), but every hop length is real. scheduleStopsFromNow() below projects
+    // these onto the actual current time so "Route stops" tracks real time instead of a
+    // fixed baked-in schedule.
+    mapLabels: ['Penn Station', 'Woodside', 'Forest Hills', 'Kew Gardens', 'Jamaica', 'Elmont-UBS Arena', 'New Hyde Park', 'Merillon Avenue', 'Mineola', 'Carle Place', 'Westbury', 'Hicksville', 'Syosset', 'Cold Spring Harbor', 'Huntington', 'Greenlawn', 'Northport', 'Kings Park', 'Smithtown', 'St. James', 'Stony Brook', 'Port Jefferson'],
+    mapPath: Array.from({ length: 22 }, (_, i) => [980 - i * 46, 460 + (i % 2 === 0 ? 10 : -10)] as Point),
+    mapStops: Array.from({ length: 22 }, (_, i) => i),
     stops: [
-      { name: 'Stony Brook', time: '10:04 AM' },
-      { name: 'St. James', time: '10:11 AM' },
-      { name: 'Smithtown', time: '10:16 AM' },
-      { name: 'Kings Park', time: '10:23 AM' },
-      { name: 'Northport', time: '10:34 AM' },
+      { name: 'Penn Station', offsetMinutes: 0 },
+      { name: 'Woodside', offsetMinutes: 10 },
+      { name: 'Forest Hills', offsetMinutes: 15 },
+      { name: 'Kew Gardens', offsetMinutes: 17 },
+      { name: 'Jamaica', offsetMinutes: 22 },
+      { name: 'Elmont-UBS Arena', offsetMinutes: 32 },
+      { name: 'New Hyde Park', offsetMinutes: 35 },
+      { name: 'Merillon Avenue', offsetMinutes: 38 },
+      { name: 'Mineola', offsetMinutes: 40 },
+      { name: 'Carle Place', offsetMinutes: 43 },
+      { name: 'Westbury', offsetMinutes: 46 },
+      { name: 'Hicksville', offsetMinutes: 51 },
+      { name: 'Syosset', offsetMinutes: 58 },
+      { name: 'Cold Spring Harbor', offsetMinutes: 64 },
+      { name: 'Huntington', offsetMinutes: 70 },
+      { name: 'Greenlawn', offsetMinutes: 75 },
+      { name: 'Northport', offsetMinutes: 80 },
+      { name: 'Kings Park', offsetMinutes: 90 },
+      { name: 'Smithtown', offsetMinutes: 99 },
+      { name: 'St. James', offsetMinutes: 105 },
+      { name: 'Stony Brook', offsetMinutes: 111 },
+      { name: 'Port Jefferson', offsetMinutes: 123 },
     ],
+    // These stops are authored Penn Station -> Port Jefferson, matching real GTFS order and
+    // the real map's geometry (portJeffersonGeometry.ts) — that's directions[1] (Eastbound to
+    // Port Jefferson), not directions[0] like every other route here.
+    stopsDirectionIndex: 1,
     alert: 'No delays reported on this route.',
   },
   {
@@ -97,11 +146,11 @@ export const routes: readonly RouteDetail[] = [
     mapPath: [[240, 1380], [250, 1200], [270, 980], [300, 760], [322, 560], [330, 395], [312, 290]],
     mapStops: [0, 1, 2, 4, 6],
     stops: [
-      { name: 'Amityville Station', time: '10:06 AM' },
-      { name: 'North Babylon', time: '10:15 AM' },
-      { name: 'Deer Park Ave', time: '10:23 AM' },
-      { name: 'Dix Hills', time: '10:34 AM' },
-      { name: 'Halesite', time: '10:47 AM' },
+      { name: 'Amityville Station', offsetMinutes: 0 },
+      { name: 'North Babylon', offsetMinutes: 9 },
+      { name: 'Deer Park Ave', offsetMinutes: 17 },
+      { name: 'Dix Hills', offsetMinutes: 28 },
+      { name: 'Halesite', offsetMinutes: 41 },
     ],
     alert: 'Minor traffic delays near Deer Park Avenue.',
   },
@@ -126,11 +175,11 @@ export const routes: readonly RouteDetail[] = [
     mapPath: [[1000, 1060], [850, 1090], [700, 1120], [580, 1145], [460, 1170], [240, 1215], [40, 1232]],
     mapStops: [0, 1, 2, 4, 6],
     stops: [
-      { name: 'Jamaica Center', time: '10:04 AM' },
-      { name: 'Sutphin Blvd–Archer Av', time: '10:08 AM' },
-      { name: 'Queens Plaza', time: '10:25 AM' },
-      { name: '42 St–Port Authority', time: '10:36 AM' },
-      { name: 'World Trade Center', time: '10:49 AM' },
+      { name: 'Jamaica Center', offsetMinutes: 0 },
+      { name: 'Sutphin Blvd–Archer Av', offsetMinutes: 4 },
+      { name: 'Queens Plaza', offsetMinutes: 21 },
+      { name: '42 St–Port Authority', offsetMinutes: 32 },
+      { name: 'World Trade Center', offsetMinutes: 45 },
     ],
     alert: 'No delays reported on this route.',
   },
@@ -155,11 +204,11 @@ export const routes: readonly RouteDetail[] = [
     mapPath: [[980, 354], [880, 372], [760, 405], [612, 430], [590, 500], [545, 530], [450, 560], [435, 700], [475, 822], [600, 835], [640, 900], [652, 1080], [660, 1250], [666, 1380]],
     mapStops: [0, 7, 11, 12, 13],
     stops: [
-      { name: 'Port Jefferson Station', time: '10:09 AM' },
-      { name: 'Stony Brook University', time: '10:22 AM' },
-      { name: 'Centereach Mall', time: '10:39 AM' },
-      { name: 'Holbrook', time: '10:52 AM' },
-      { name: 'Patchogue Station', time: '11:08 AM' },
+      { name: 'Port Jefferson Station', offsetMinutes: 0 },
+      { name: 'Stony Brook University', offsetMinutes: 13 },
+      { name: 'Centereach Mall', offsetMinutes: 30 },
+      { name: 'Holbrook', offsetMinutes: 43 },
+      { name: 'Patchogue Station', offsetMinutes: 59 },
     ],
     alert: 'No delays reported on this route.',
   },
@@ -184,11 +233,11 @@ export const routes: readonly RouteDetail[] = [
     mapPath: [[1000, 990], [820, 1000], [652, 1020], [450, 1060], [270, 1080], [0, 1100]],
     mapStops: [0, 1, 3, 4, 5],
     stops: [
-      { name: 'Flushing–Main St', time: '10:03 AM' },
-      { name: 'Jackson Hts–Roosevelt Av', time: '10:17 AM' },
-      { name: 'Queensboro Plaza', time: '10:27 AM' },
-      { name: 'Times Sq–42 St', time: '10:39 AM' },
-      { name: '34 St–Hudson Yards', time: '10:43 AM' },
+      { name: 'Flushing–Main St', offsetMinutes: 0 },
+      { name: 'Jackson Hts–Roosevelt Av', offsetMinutes: 14 },
+      { name: 'Queensboro Plaza', offsetMinutes: 24 },
+      { name: 'Times Sq–42 St', offsetMinutes: 36 },
+      { name: '34 St–Hudson Yards', offsetMinutes: 40 },
     ],
     alert: 'No delays reported on this route.',
   },
@@ -411,6 +460,39 @@ export function formatClockTime(minutes: number) {
 export function formatTripTimeChoice(choice: TripTimeChoice) {
   if (choice.mode === 'now') return 'Leave now';
   return `${choice.mode === 'depart' ? 'Depart' : 'Arrive by'} ${formatClockTime(choice.minutes)}`;
+}
+
+export type ScheduledStop = { name: string; time: string };
+
+/**
+ * `route.stops` in the order a rider traveling in `directionIndex` actually passes them —
+ * reversed and re-anchored from the route's own authored order (`stopsDirectionIndex`,
+ * default 0) when showing the opposite direction. Without this, a route's "Route stops" list
+ * would always read in one fixed physical order regardless of which direction is selected,
+ * which is backwards for the other direction (e.g. showing the origin as the final stop).
+ */
+export function stopsForDirection(
+  route: Pick<RouteDetail, 'stops' | 'stopsDirectionIndex'>,
+  directionIndex: number,
+): readonly RouteStop[] {
+  const naturalIndex = route.stopsDirectionIndex ?? 0;
+  if (directionIndex === naturalIndex) return route.stops;
+  const total = route.stops[route.stops.length - 1]?.offsetMinutes ?? 0;
+  return [...route.stops].reverse().map((stop) => ({ name: stop.name, offsetMinutes: total - stop.offsetMinutes }));
+}
+
+/**
+ * Projects a (direction-ordered) stop list's relative offsets onto actual wall-clock time,
+ * anchored so the first stop departs `leadMinutes` from now. This is what makes "Route stops"
+ * track real time — matching what a real transit app shows — instead of a fixed baked-in schedule.
+ */
+export function scheduleStopsFromNow(
+  stops: readonly RouteStop[],
+  nowMinutes: number,
+  leadMinutes: number,
+): readonly ScheduledStop[] {
+  const anchor = nowMinutes + leadMinutes;
+  return stops.map((stop) => ({ name: stop.name, time: formatClockTime(anchor + stop.offsetMinutes) }));
 }
 
 export function scheduleItinerary(

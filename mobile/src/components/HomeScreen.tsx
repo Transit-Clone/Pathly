@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Animated, BackHandler, Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { applyLirrLive } from '../data/applyLirrLive';
 import { favoriteTripKey, type FavoriteTrip } from '../data/favorites';
+import { LirrLiveProvider, useLirrLive } from '../data/LirrLiveContext';
 import {
   DEFAULT_PINNED_ROUTE_IDS,
   recentTripById,
@@ -47,6 +49,30 @@ type ActiveTrip =
 
 function toggleItem<T>(items: readonly T[], item: T): T[] {
   return items.includes(item) ? items.filter((value) => value !== item) : [...items, item];
+}
+
+type RouteDetailScreenProps = {
+  isFavorite: boolean;
+  isPinned: boolean;
+  onBack: () => void;
+  onToggleFavorite: () => void;
+  onTogglePin: () => void;
+  routeId: RouteId;
+};
+
+/** Reads live LIRR data itself — must render under LirrLiveProvider, which HomeScreen itself can't consume. */
+function RouteDetailScreen({ isFavorite, isPinned, onBack, onToggleFavorite, onTogglePin, routeId }: RouteDetailScreenProps) {
+  const lirrLive = useLirrLive();
+  return (
+    <RouteDetailView
+      isFavorite={isFavorite}
+      isPinned={isPinned}
+      onBack={onBack}
+      onToggleFavorite={onToggleFavorite}
+      onTogglePin={onTogglePin}
+      route={applyLirrLive(routeById[routeId], lirrLive)}
+    />
+  );
 }
 
 export function HomeScreen() {
@@ -198,7 +224,14 @@ export function HomeScreen() {
     : activeView.name === 'recentTrip'
       ? `recent-${activeView.tripId}`
       : activeView.name;
-  const screen = (node: ReactNode) => <ScreenTransition key={transitionKey}>{node}</ScreenTransition>;
+  // Only the Port Jefferson Branch has a live feed wired up today; this is the one place that
+  // decides which branch's data the rest of the screen tree sees via useLirrLive().
+  const liveSource = routeById.ronkonkoma.liveSource;
+  const screen = (node: ReactNode) => (
+    <LirrLiveProvider routeId={liveSource?.routeId ?? ''} stopId={liveSource?.stopId ?? ''}>
+      <ScreenTransition key={transitionKey}>{node}</ScreenTransition>
+    </LirrLiveProvider>
+  );
 
   if (activeView.name === 'search') {
     return screen(
@@ -212,13 +245,13 @@ export function HomeScreen() {
   if (activeView.name === 'route') {
     const { routeId } = activeView;
     return screen(
-      <RouteDetailView
+      <RouteDetailScreen
         isFavorite={favoriteRouteIds.includes(routeId)}
         isPinned={pinnedRouteIds.includes(routeId)}
         onBack={showHome}
         onToggleFavorite={() => setFavoriteRouteIds((current) => toggleItem(current, routeId))}
         onTogglePin={() => setPinnedRouteIds((current) => toggleItem(current, routeId))}
-        route={routeById[routeId]}
+        routeId={routeId}
       />
     );
   }

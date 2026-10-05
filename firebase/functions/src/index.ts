@@ -1,8 +1,33 @@
 import { defineSecret } from 'firebase-functions/params';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 
+import { getStopPredictions } from './lirrSchedule';
+import { getLirrBranchStatus } from './lirrStatus';
+
 /** Set once with: firebase functions:secrets:set GOOGLE_MAPS_API_KEY */
 const googleMapsApiKey = defineSecret('GOOGLE_MAPS_API_KEY');
+
+type LirrBranchLiveStatusRequest = { routeId: string; stopId: string };
+
+/**
+ * Live LIRR trip updates (stop names/coordinates resolved via the static GTFS data, delays
+ * from the real-time feed) for any branch/stop, plus departure predictions at `stopId` that
+ * fall back to the real published timetable — never a placeholder — whenever the real-time
+ * feed has nothing upcoming for a direction. Generalized over route_id/stop_id (rather than
+ * hardcoded to Port Jefferson/Stony Brook) so additional LIRR branches can reuse this same
+ * function later; see routes.txt/stops.txt in firebase/functions/static_data/lirr for valid
+ * IDs. No API key needed for this feed.
+ * Client call: httpsCallable(functions, 'getLirrBranchLiveStatus')({ routeId, stopId }).
+ */
+export const getLirrBranchLiveStatus = onCall<LirrBranchLiveStatusRequest>(async (request) => {
+  const { routeId, stopId } = request.data ?? {};
+  if (!routeId) throw new HttpsError('invalid-argument', 'routeId is required');
+  if (!stopId) throw new HttpsError('invalid-argument', 'stopId is required');
+
+  const status = await getLirrBranchStatus(routeId);
+  const stopPredictions = getStopPredictions(routeId, stopId, status.trips);
+  return { ...status, stopPredictions };
+});
 
 type GeocodeRequest = { address: string };
 type GeocodeResult = { lat: number; lng: number; formattedAddress: string };

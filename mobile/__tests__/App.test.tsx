@@ -402,7 +402,7 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByTestId('recent-trip-detail-penn-station')).toBeTruthy();
     expect(screen.queryByTestId('route-results-view')).toBeNull();
     expect(screen.getByLabelText('Start trip to Penn Station')).toBeTruthy();
-    expect(screen.getByText('Ronkonkoma Branch')).toBeTruthy();
+    expect(screen.getByText('Port Jefferson Branch')).toBeTruthy();
     expect(screen.getByTestId('recent-trip-go')).toBeTruthy();
 
     fireEvent.press(screen.getByTestId('recent-trip-back'));
@@ -416,7 +416,7 @@ describe('Pathly prototype navigation', () => {
     fireEvent.press(screen.getByTestId('tab-recents'));
     const card = screen.getByTestId('recent-trip-times-square');
 
-    expect(within(card).getByLabelText('R rail')).toBeTruthy();
+    expect(within(card).getByLabelText('PJ rail')).toBeTruthy();
     expect(within(card).getByLabelText('E train')).toBeTruthy();
     expect(within(card).getByText('8:42 AM – 10:16 AM')).toBeTruthy();
     expect(within(card).getByText('94 min')).toBeTruthy();
@@ -593,10 +593,11 @@ describe('Pathly prototype navigation', () => {
   it('draws route and trip overlays on the illustrated map', () => {
     const hidden = { includeHiddenElements: true };
     const screen = render(<App />);
+    // Port Jefferson Branch (ronkonkoma) has a real live feed, so it renders the real map
+    // instead of the illustrated overlay the other routes still use.
     fireEvent.press(screen.getByTestId('route-card-ronkonkoma-primary'));
-    expect(screen.getAllByTestId(/^map-route-path-/, hidden)).toHaveLength(1);
-    expect(screen.getAllByTestId(/^map-stop-0-/, hidden)).toHaveLength(5);
-    expect(screen.getByTestId('map-vehicle', hidden)).toBeTruthy();
+    expect(screen.getByTestId('lirr-route-map', hidden)).toBeTruthy();
+    expect(screen.getAllByTestId(/^lirr-stop-/, hidden)).toHaveLength(22);
     fireEvent.press(screen.getByTestId('route-back'));
 
     fireEvent.press(screen.getByTestId('tab-recents'));
@@ -659,14 +660,25 @@ describe('Pathly prototype navigation', () => {
   });
 
   it('keeps route stop timing and live provenance accessible', () => {
-    const screen = render(<App />);
-    fireEvent.press(screen.getByTestId('route-card-ronkonkoma-primary'));
+    // Route stops are projected onto the actual current time (see scheduleStopsFromNow in
+    // transit.ts), so the clock is pinned here to make the rendered times deterministic.
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date(2024, 0, 1, 10, 0, 0));
+    try {
+      const screen = render(<App />);
+      fireEvent.press(screen.getByTestId('route-card-ronkonkoma-primary'));
 
-    expect(screen.getByLabelText('4 minutes, live GPS prediction')).toBeTruthy();
-    expect(screen.getByLabelText('18 minutes, scheduled time')).toBeTruthy();
-    expect(screen.getByLabelText('Stony Brook, departs 10:04 AM')).toBeTruthy();
-    expect(screen.getByLabelText('Northport, arrives 10:34 AM')).toBeTruthy();
-    expect(routeById.ronkonkoma.stops).toHaveLength(5);
+      expect(screen.getByLabelText('4 minutes, live GPS prediction')).toBeTruthy();
+      expect(screen.getByLabelText('18 minutes, scheduled time')).toBeTruthy();
+      // Westbound (the default tab) travels Port Jefferson -> Penn Station, the reverse of how
+      // `stops` is authored (Penn -> Port Jefferson, see stopsDirectionIndex), so the "Route
+      // stops" list is shown reversed here — Port Jefferson departs, Penn Station is the final stop.
+      expect(screen.getByLabelText('Port Jefferson, departs 10:04 AM')).toBeTruthy();
+      expect(screen.getByLabelText('Penn Station, arrives 12:07 PM')).toBeTruthy();
+      expect(routeById.ronkonkoma.stops).toHaveLength(22);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('keeps the route map fixed while the page and its map controls scroll', () => {
@@ -698,7 +710,7 @@ describe('Pathly prototype navigation', () => {
     fireEvent(screen.getByTestId('route-direction-pager'), 'momentumScrollEnd', {
       nativeEvent: { contentOffset: { x: 354, y: 0 } },
     });
-    expect(screen.getByText('Ronkonkoma')).toBeTruthy();
-    expect(screen.queryByText('Eastbound to Ronkonkoma')).toBeNull();
+    expect(screen.getByTestId('route-detail-destination').props.children).toBe('Port Jefferson');
+    expect(screen.queryByText('Eastbound to Port Jefferson')).toBeNull();
   });
 });

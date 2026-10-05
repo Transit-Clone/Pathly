@@ -2,14 +2,12 @@ import { GoogleMap, Rectangle, useJsApiLoader } from '@react-google-maps/api';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_SCRIPT_ID } from '../data/googleMapsLoaderConfig';
 import { SERVICE_AREA_BOUNDS } from '../data/serviceArea';
 import type { Coordinates } from '../hooks/useCurrentLocation';
 
 const ZOOM = 14;
 const MIN_ZOOM = 9;
-// Must be a stable reference — recreating this array on every render makes
-// useJsApiLoader think the script needs reloading with different libraries.
-const MAP_LIBRARIES: 'marker'[] = ['marker'];
 
 const containerStyle = { width: '100%', height: '100%' };
 
@@ -65,9 +63,9 @@ type GoogleMapViewProps = {
  */
 export function GoogleMapView({ location, onUserPan, padding, testID = 'google-map-view' }: GoogleMapViewProps) {
   const { isLoaded } = useJsApiLoader({
-    id: 'pathly-google-maps-script',
+    id: GOOGLE_MAPS_SCRIPT_ID,
     googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY ?? '',
-    libraries: MAP_LIBRARIES,
+    libraries: GOOGLE_MAPS_LIBRARIES,
   });
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const markerRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null);

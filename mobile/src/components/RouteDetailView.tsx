@@ -1,7 +1,8 @@
-import { useState } from 'react';
-import { ScrollView, StyleSheet, Text, useWindowDimensions, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Platform, ScrollView, StyleSheet, Text, useWindowDimensions, View, type GestureResponderEvent, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 
-import type { RouteDetail, RoutePrediction } from '../data/transit';
+import { useLirrLive } from '../data/LirrLiveContext';
+import { minuteLabel, scheduleStopsFromNow, stopsForDirection, type RouteDetail, type RoutePrediction } from '../data/transit';
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
 import { useLayoutEase } from '../theme/motion';
 import type { Palette } from '../theme/colors';
@@ -9,6 +10,7 @@ import { readableColor } from '../theme/contrast';
 import { fontFamilies, typography } from '../theme/typography';
 import { DetailMapPage } from './DetailMapPage';
 import { Icon } from './Icon';
+import { LirrRouteMap } from './LirrRouteMap';
 import { LIVE_SIGNAL_WIDTH, LiveSignal } from './LiveSignal';
 import { MapBackdrop } from './MapBackdrop';
 import { pointAlong, routeFocus, RouteLines, VehicleMarker, type MapLeg } from './RouteMapOverlay';
@@ -26,6 +28,7 @@ type RouteDetailViewProps = {
 
 function predictionsForDirection(route: RouteDetail, directionIndex: number): readonly RoutePrediction[] {
   if (directionIndex === 0) return route.predictions;
+  if (route.reversePredictions) return route.reversePredictions;
   const direction = route.directions[directionIndex] ?? route.directions[0];
   return [
     { minutes: direction.minutes, live: direction.live },
@@ -46,6 +49,7 @@ export function RouteDetailView({ isFavorite, isPinned, onBack, onToggleFavorite
   const { height, width } = useWindowDimensions();
   const [alertsOpen, setAlertsOpen] = useState(false);
   const ease = useLayoutEase();
+  const lirrLive = useLirrLive();
   const [isLocationCentered, setIsLocationCentered] = useState(false);
   const [activeDirectionIndex, setActiveDirectionIndex] = useState(0);
   const mapHeight = Math.max(280, Math.min(390, height * 0.58));
@@ -55,8 +59,62 @@ export function RouteDetailView({ isFavorite, isPinned, onBack, onToggleFavorite
     setActiveDirectionIndex(Math.round(event.nativeEvent.contentOffset.x / pageWidth));
   };
 
+  // Opens on whichever direction's next train is actually sooner, not always the first
+  // direction — otherwise a much closer train on the other tab (e.g. 9 min eastbound) could
+  // sit hidden behind a farther one shown first (e.g. 60 min westbound) just because of tab
+  // order. Only acts once real live data exists for *both* directions (so it's never guessing
+  // off the illustrative mock numbers), and only on first load — it won't yank the view out
+  // from under someone who already swiped or tapped a direction themselves. Adjusted during
+  // render (React's documented pattern for this, see "Adjusting state when a prop changes")
+  // rather than in an effect, since it's a one-time derivation from props, not a subscription.
+  const [hasAutoSelectedDirection, setHasAutoSelectedDirection] = useState(false);
+  const directionScrollRef = useRef<ScrollView>(null);
+  if (!hasAutoSelectedDirection) {
+    const [first, second] = route.directions;
+    if (first.live && second.live) {
+      setHasAutoSelectedDirection(true);
+      if (second.minutes < first.minutes) setActiveDirectionIndex(1);
+    }
+  }
+
+  // On native, the ScrollView's own scroll position (not `activeDirectionIndex`) decides which
+  // page is actually visible, so it's kept in sync here — covers the auto-select above and is
+  // a no-op (already there) after the user's own scroll gesture updates the index instead.
+  useEffect(() => {
+    directionScrollRef.current?.scrollTo({ x: activeDirectionIndex * pageWidth, animated: false });
+  }, [activeDirectionIndex, pageWidth]);
+
+  // react-native-web's horizontal ScrollView doesn't support click-and-drag scrolling for
+  // mouse users the way native touch devices do (browsers only do that for real touch/trackpad
+  // gestures), so `pagingEnabled` alone never lets a mouse user swipe here — same gap already
+  // hit on the route card. Native keeps the ScrollView paging below, which already works.
+  const directionDragStartX = useRef<number | null>(null);
+  const DIRECTION_SWIPE_THRESHOLD = 24;
+
+  const handleDirectionPressIn = (event: GestureResponderEvent) => {
+    directionDragStartX.current = event.nativeEvent.pageX;
+  };
+
+  const handleDirectionPressOut = (event: GestureResponderEvent) => {
+    const startX = directionDragStartX.current;
+    directionDragStartX.current = null;
+    if (startX == null) return;
+    const dx = event.nativeEvent.pageX - startX;
+    if (Math.abs(dx) <= DIRECTION_SWIPE_THRESHOLD) return;
+    const direction = dx < 0 ? 1 : -1;
+    setActiveDirectionIndex((current) => Math.min(Math.max(current + direction, 0), route.directions.length - 1));
+  };
+
   const activeDirection = route.directions[activeDirectionIndex] ?? route.directions[0];
   const activeDestination = destinationForDirection(activeDirection.direction);
+
+  // Anchored to the actual current time (not a fixed baked-in schedule) so "Route stops"
+  // reads like a real transit app — the first stop leaves in as many minutes as the
+  // headline prediction above already shows, and every other stop is offset from that.
+  const now = new Date();
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const leadMinutes = predictionsForDirection(route, activeDirectionIndex)[0]?.minutes ?? 0;
+  const liveStops = scheduleStopsFromNow(stopsForDirection(route, activeDirectionIndex), nowMinutes, leadMinutes);
 
   const vehicleIcon = transitModeForAgency(route.agency);
   const hasDelay = !route.alert.startsWith('No delays');
@@ -67,7 +125,13 @@ export function RouteDetailView({ isFavorite, isPinned, onBack, onToggleFavorite
     stops: route.mapStops.map((pathIndex, index) => ({ label: route.mapLabels[index], point: route.mapPath[pathIndex]! })),
   };
 
-  const map = (
+  // Port Jefferson Branch has a real live feed; every other route still uses the illustrative map.
+  const map = route.id === 'ronkonkoma' ? (
+    <>
+      <LirrRouteMap vehicles={lirrLive?.vehicles ?? []} />
+      <RouteBadge agency={route.agency} color={route.color} shortName={route.shortName} size="large" style={styles.mapRouteBadge} testID="route-detail-badge" withModeIcon={true} />
+    </>
+  ) : (
     <>
       <MapBackdrop
         focus={routeFocus([route.mapPath])}
@@ -110,27 +174,65 @@ export function RouteDetailView({ isFavorite, isPinned, onBack, onToggleFavorite
       <ThemedStatusBar />
       <View style={styles.titleRow}><Text accessibilityRole="header" numberOfLines={2} style={styles.title} testID="route-detail-destination">{activeDestination}</Text></View>
 
-      <ScrollView decelerationRate="fast" horizontal={true} onMomentumScrollEnd={updateDirection} onScroll={updateDirection} pagingEnabled={true} scrollEventThrottle={16} showsHorizontalScrollIndicator={false} style={styles.directionPager} testID="route-direction-pager">
-        {route.directions.map((direction, directionIndex) => (
-          <View key={direction.direction} style={[styles.directionPage, { width: pageWidth }]} testID={`route-direction-${directionIndex}`}>
-            <View style={styles.predictions}>
-              {predictionsForDirection(route, directionIndex).map((prediction, index) => {
-                const highlighted = index === 0;
-                const predictionColor = highlighted ? colors.white : routeText;
-                return (
-                  <View key={`${directionIndex}-${prediction.minutes}-${prediction.live}`} accessibilityLabel={`${prediction.minutes} minutes, ${prediction.live ? 'live GPS prediction' : 'scheduled time'}`} accessible={true} style={[styles.prediction, { borderColor: route.color }, highlighted && { backgroundColor: route.color }, !prediction.live && styles.scheduled]} testID={`route-prediction-${directionIndex}-${prediction.minutes}`}>
-                    <View style={styles.predictionRow}>{prediction.live ? <View style={styles.predictionSignalSpacer} /> : null}<Text style={[styles.predictionTime, { color: predictionColor }]}>{prediction.minutes}</Text>{prediction.live ? <LiveSignal color={predictionColor} style={styles.predictionSignal} /> : null}</View>
-                    <Text style={[styles.predictionUnit, { color: predictionColor }]}>minutes</Text>
-                    {!prediction.live ? <Text style={styles.predictionSource}>SCHEDULED</Text> : null}
-                  </View>
-                );
-              })}
-            </View>
+      {Platform.OS === 'web' ? (
+        <PressableScale
+          accessibilityHint="Swipe horizontally for the other direction."
+          accessible={false}
+          onPressIn={handleDirectionPressIn}
+          onPressOut={handleDirectionPressOut}
+          style={[styles.directionPage, { width: pageWidth }]}
+          testID={`route-direction-${activeDirectionIndex}`}
+        >
+          <View style={styles.predictions}>
+            {predictionsForDirection(route, activeDirectionIndex).map((prediction, index) => {
+              const highlighted = index === 0;
+              const predictionColor = highlighted ? colors.white : routeText;
+              return (
+                <View key={`${activeDirectionIndex}-${prediction.minutes}-${prediction.live}`} accessibilityLabel={`${prediction.minutes} ${minuteLabel(prediction.minutes)}, ${prediction.live ? 'live GPS prediction' : 'scheduled time'}`} accessible={true} style={[styles.prediction, { borderColor: route.color }, highlighted && { backgroundColor: route.color }, !prediction.live && styles.scheduled]} testID={`route-prediction-${activeDirectionIndex}-${prediction.minutes}`}>
+                  <View style={styles.predictionRow}>{prediction.live ? <View style={styles.predictionSignalSpacer} /> : null}<Text style={[styles.predictionTime, { color: predictionColor }]}>{prediction.minutes}</Text>{prediction.live ? <LiveSignal color={predictionColor} style={styles.predictionSignal} /> : null}</View>
+                  <Text style={[styles.predictionUnit, { color: predictionColor }]}>{minuteLabel(prediction.minutes)}</Text>
+                  {!prediction.live ? <Text style={styles.predictionSource}>SCHEDULED</Text> : null}
+                </View>
+              );
+            })}
           </View>
-        ))}
-      </ScrollView>
+        </PressableScale>
+      ) : (
+        <ScrollView ref={directionScrollRef} decelerationRate="fast" horizontal={true} onMomentumScrollEnd={updateDirection} onScroll={updateDirection} pagingEnabled={true} scrollEventThrottle={16} showsHorizontalScrollIndicator={false} style={styles.directionPager} testID="route-direction-pager">
+          {route.directions.map((direction, directionIndex) => (
+            <View key={direction.direction} style={[styles.directionPage, { width: pageWidth }]} testID={`route-direction-${directionIndex}`}>
+              <View style={styles.predictions}>
+                {predictionsForDirection(route, directionIndex).map((prediction, index) => {
+                  const highlighted = index === 0;
+                  const predictionColor = highlighted ? colors.white : routeText;
+                  return (
+                    <View key={`${directionIndex}-${prediction.minutes}-${prediction.live}`} accessibilityLabel={`${prediction.minutes} ${minuteLabel(prediction.minutes)}, ${prediction.live ? 'live GPS prediction' : 'scheduled time'}`} accessible={true} style={[styles.prediction, { borderColor: route.color }, highlighted && { backgroundColor: route.color }, !prediction.live && styles.scheduled]} testID={`route-prediction-${directionIndex}-${prediction.minutes}`}>
+                      <View style={styles.predictionRow}>{prediction.live ? <View style={styles.predictionSignalSpacer} /> : null}<Text style={[styles.predictionTime, { color: predictionColor }]}>{prediction.minutes}</Text>{prediction.live ? <LiveSignal color={predictionColor} style={styles.predictionSignal} /> : null}</View>
+                      <Text style={[styles.predictionUnit, { color: predictionColor }]}>{minuteLabel(prediction.minutes)}</Text>
+                      {!prediction.live ? <Text style={styles.predictionSource}>SCHEDULED</Text> : null}
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+          ))}
+        </ScrollView>
+      )}
 
-      <View accessibilityElementsHidden={true} style={styles.pageDots}>{route.directions.map((direction, index) => <View key={direction.direction} style={[styles.pageDot, index === activeDirectionIndex && { backgroundColor: route.color }]} />)}</View>
+      <View style={styles.pageDots}>
+        {route.directions.map((direction, index) => (
+          <PressableScale
+            key={direction.direction}
+            accessibilityLabel={`Show ${destinationForDirection(direction.direction)} predictions`}
+            accessibilityRole="button"
+            accessibilityState={{ selected: index === activeDirectionIndex }}
+            hitSlop={8}
+            onPress={() => setActiveDirectionIndex(index)}
+          >
+            <View style={[styles.pageDot, index === activeDirectionIndex && { backgroundColor: route.color }]} />
+          </PressableScale>
+        ))}
+      </View>
 
       <PressableScale accessibilityLabel="Service alerts" accessibilityRole="button" accessibilityState={{ expanded: alertsOpen }} onPress={() => {
         ease();
@@ -142,9 +244,9 @@ export function RouteDetailView({ isFavorite, isPinned, onBack, onToggleFavorite
 
       <View style={styles.timelineHeading}><Text style={styles.timelineTitle}>Route stops</Text><View style={styles.onTimeChip}><View style={styles.onTimeDot} /><Text style={styles.onTimeText}>On time</Text></View></View>
       <View accessibilityLabel="Stops for the next departure">
-        {route.stops.map((stop, index) => {
+        {liveStops.map((stop, index) => {
           const isFirst = index === 0;
-          const isLast = index === route.stops.length - 1;
+          const isLast = index === liveStops.length - 1;
           return (
             <View key={stop.name} accessibilityLabel={`${stop.name}, ${isFirst ? 'departs' : 'arrives'} ${stop.time}`} accessible={true} style={styles.stopRow}>
               <View style={styles.timelineRail}>{!isFirst ? <View style={[styles.rail, styles.railTop, { backgroundColor: route.color }]} /> : null}<View style={[styles.stopDot, { borderColor: route.color }, isFirst && { backgroundColor: route.color }]} />{!isLast ? <View style={[styles.rail, styles.railBottom, { backgroundColor: route.color }]} /> : null}</View>
