@@ -52,6 +52,8 @@ jest.mock('firebase/functions', () => ({
 jest.mock('expo-location', () => ({
   requestForegroundPermissionsAsync: jest.fn(() => Promise.resolve({ status: 'denied' })),
   getCurrentPositionAsync: jest.fn(),
+  watchPositionAsync: jest.fn(() => Promise.resolve({ remove: jest.fn() })),
+  Accuracy: { Balanced: 3 },
 }));
 
 // react-native-maps needs a real native module (TurboModule) that doesn't exist under Jest.

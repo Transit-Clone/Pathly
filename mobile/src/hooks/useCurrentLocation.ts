@@ -16,7 +16,18 @@ async function fetchCurrentCoordinates(): Promise<Coordinates | null> {
   }
 }
 
-/** User's current GPS location; falls back to Stony Brook if permission is denied or lookup fails. */
+const WATCH_OPTIONS = {
+  accuracy: Location.Accuracy.Balanced,
+  timeInterval: 10_000,
+  distanceInterval: 25,
+};
+
+/**
+ * User's current GPS location, continuously updated as they actually move (not just on mount)
+ * via a location subscription; falls back to Stony Brook if permission is denied or lookup
+ * fails. `refresh()` is still exposed separately for the "center on me" button, so pressing it
+ * gets an immediate fresh fix rather than waiting for the subscription's next update.
+ */
 export function useCurrentLocation() {
   const [location, setLocation] = useState<Coordinates>(SERVICE_AREA_FALLBACK);
 
@@ -26,10 +37,22 @@ export function useCurrentLocation() {
   }, []);
 
   useEffect(() => {
+    let subscription: Location.LocationSubscription | null = null;
+    let cancelled = false;
+
     (async () => {
-      const coordinates = await fetchCurrentCoordinates();
-      if (coordinates) setLocation(coordinates);
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted' || cancelled) return;
+
+      subscription = await Location.watchPositionAsync(WATCH_OPTIONS, (position) => {
+        setLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude });
+      });
     })();
+
+    return () => {
+      cancelled = true;
+      subscription?.remove();
+    };
   }, []);
 
   return { location, refresh };
