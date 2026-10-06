@@ -1,0 +1,10 @@
+service_id,service_description
+262-1,"Sunday"
+262-2,"Saturday"
+262-3,"Weekdays"
+265-1,"Sunday"
+265-2,"Weekdays"
+265-3,"Saturday"
+272-1,"Weekdays"
+272-2,"Saturday"
+272-3,"Sunday"

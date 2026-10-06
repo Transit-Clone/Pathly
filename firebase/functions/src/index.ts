@@ -1,32 +1,97 @@
 import { defineSecret } from 'firebase-functions/params';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 
-import { getStopPredictions } from './lirrSchedule';
-import { getLirrBranchStatus } from './lirrStatus';
+import { findNearbyTransit as findNearbyTransitDiscovery, getNearestStopForRoute, getRouteGeometry as getRouteGeometryDiscovery } from './gtfsDiscovery';
+import type { AgencyId } from './gtfsAgencies';
+import { getStopPredictions } from './gtfsSchedule';
+import { getRouteStatus } from './gtfsStatus';
 
 /** Set once with: firebase functions:secrets:set GOOGLE_MAPS_API_KEY */
 const googleMapsApiKey = defineSecret('GOOGLE_MAPS_API_KEY');
+/** Set once with: firebase functions:secrets:set SWIFTLY_API_KEY. Needed for NICE Bus/Suffolk County Transit's real-time feeds (hosted by Swiftly, a third-party provider); not used by LIRR or subway. */
+const swiftlyApiKey = defineSecret('SWIFTLY_API_KEY');
 
-type LirrBranchLiveStatusRequest = { routeId: string; stopId: string };
+type RouteLiveStatusRequest = { agencyId: AgencyId; routeId: string; direction1StopId: string; direction0StopId: string };
 
 /**
- * Live LIRR trip updates (stop names/coordinates resolved via the static GTFS data, delays
- * from the real-time feed) for any branch/stop, plus departure predictions at `stopId` that
- * fall back to the real published timetable — never a placeholder — whenever the real-time
- * feed has nothing upcoming for a direction. Generalized over route_id/stop_id (rather than
- * hardcoded to Port Jefferson/Stony Brook) so additional LIRR branches can reuse this same
- * function later; see routes.txt/stops.txt in firebase/functions/static_data/lirr for valid
- * IDs. No API key needed for this feed.
- * Client call: httpsCallable(functions, 'getLirrBranchLiveStatus')({ routeId, stopId }).
+ * Live trip updates and vehicle positions for one route on any configured agency (gtfsAgencies.ts),
+ * plus departure predictions at a station — padded with the real published timetable when live
+ * has nothing upcoming, for agencies where that's reliable (see getStopPredictions). One
+ * callable for every agency rather than one per agency; see routes.txt/stops.txt under each
+ * agency's static_data directory for valid IDs. LIRR and subway need no API key; NICE
+ * Bus/Suffolk County Transit's Swiftly-hosted feeds do — declaring the secret here makes it
+ * available as `process.env.SWIFTLY_API_KEY` wherever this call ends up (gtfsAgencies.ts),
+ * without every other callable needing to know about it.
+ * Client call: httpsCallable(functions, 'getRouteLiveStatus')({ agencyId, routeId, direction1StopId, direction0StopId }).
+ * (For agencies where one stop_id serves a station regardless of direction, pass the same id
+ * for both direction1StopId and direction0StopId.)
  */
-export const getLirrBranchLiveStatus = onCall<LirrBranchLiveStatusRequest>(async (request) => {
-  const { routeId, stopId } = request.data ?? {};
+export const getRouteLiveStatus = onCall<RouteLiveStatusRequest>({ secrets: [swiftlyApiKey] }, async (request) => {
+  const { agencyId, routeId, direction1StopId, direction0StopId } = request.data ?? {};
+  if (!agencyId) throw new HttpsError('invalid-argument', 'agencyId is required');
   if (!routeId) throw new HttpsError('invalid-argument', 'routeId is required');
-  if (!stopId) throw new HttpsError('invalid-argument', 'stopId is required');
+  if (!direction1StopId) throw new HttpsError('invalid-argument', 'direction1StopId is required');
+  if (!direction0StopId) throw new HttpsError('invalid-argument', 'direction0StopId is required');
 
-  const status = await getLirrBranchStatus(routeId);
-  const stopPredictions = getStopPredictions(routeId, stopId, status.trips);
+  const status = await getRouteStatus(agencyId, routeId);
+  const stopPredictions = await getStopPredictions(agencyId, routeId, direction1StopId, direction0StopId, status.trips);
   return { ...status, stopPredictions };
+});
+
+type FindNearbyTransitRequest = { lat: number; lon: number };
+
+/**
+ * Every real route, on every configured agency, near a point — not limited to the handful of
+ * routes this app has hand-built UI for. Each result already carries its own nearest stop and
+ * both directions' real headsigns/stop_ids, ready to pass straight into getRouteLiveStatus for
+ * live predictions, or getRouteGeometry for a real map.
+ * Client call: httpsCallable(functions, 'findNearbyTransit')({ lat, lon }).
+ */
+export const findNearbyTransit = onCall<FindNearbyTransitRequest>(async (request) => {
+  const { lat, lon } = request.data ?? {};
+  if (typeof lat !== 'number' || typeof lon !== 'number') throw new HttpsError('invalid-argument', 'lat and lon are required');
+  const routes = await findNearbyTransitDiscovery(lat, lon);
+  return { routes };
+});
+
+type NearestRouteStopRequest = { agencyId: AgencyId; routeId: string; lat: number; lon: number };
+
+/**
+ * The nearest stop *on this specific route* to a point — not just the nearest station
+ * system-wide. Lets a route card follow the rider's real location instead of anchoring to one
+ * fixed station, for any route with a `liveSource`, not just the handful this app hand-picked
+ * stations for originally.
+ * Client call: httpsCallable(functions, 'getNearestRouteStop')({ agencyId, routeId, lat, lon }).
+ */
+export const getNearestRouteStop = onCall<NearestRouteStopRequest>(async (request) => {
+  const { agencyId, routeId, lat, lon } = request.data ?? {};
+  if (!agencyId) throw new HttpsError('invalid-argument', 'agencyId is required');
+  if (!routeId) throw new HttpsError('invalid-argument', 'routeId is required');
+  if (typeof lat !== 'number' || typeof lon !== 'number') throw new HttpsError('invalid-argument', 'lat and lon are required');
+
+  const stop = await getNearestStopForRoute(agencyId, routeId, lat, lon);
+  if (!stop) throw new HttpsError('not-found', `No stops found for ${agencyId} route "${routeId}"`);
+  return stop;
+});
+
+type RouteGeometryRequest = { agencyId: AgencyId; routeId: string; directionId: 0 | 1 };
+
+/**
+ * A representative real station sequence for any route's direction on any configured agency,
+ * derived generically from its longest scheduled trip — not limited to routes with hand-built
+ * geometry. See gtfsDiscovery.ts for the "longest trip" caveat on branches that split partway
+ * (e.g. LIRR's Port Jefferson Branch at Huntington).
+ * Client call: httpsCallable(functions, 'getRouteGeometry')({ agencyId, routeId, directionId }).
+ */
+export const getRouteGeometry = onCall<RouteGeometryRequest>(async (request) => {
+  const { agencyId, routeId, directionId } = request.data ?? {};
+  if (!agencyId) throw new HttpsError('invalid-argument', 'agencyId is required');
+  if (!routeId) throw new HttpsError('invalid-argument', 'routeId is required');
+  if (directionId !== 0 && directionId !== 1) throw new HttpsError('invalid-argument', 'directionId must be 0 or 1');
+
+  const geometry = await getRouteGeometryDiscovery(agencyId, routeId, directionId);
+  if (!geometry) throw new HttpsError('not-found', `No scheduled trips found for ${agencyId} route "${routeId}" direction ${directionId}`);
+  return geometry;
 });
 
 type GeocodeRequest = { address: string };

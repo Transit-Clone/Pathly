@@ -1,4 +1,4 @@
-import type { LirrVehicle } from './lirrLive';
+import type { RouteLiveVehicle } from './transitLive';
 
 /** A train whose last GPS fix is older than this is parked or finished, not "live". */
 export const STALE_TRAIN_MS = 5 * 60 * 1000;
@@ -16,7 +16,7 @@ export function formatAge(ageMs: number): string {
  * Trains to draw: only the selected GTFS direction (when given), and never stale ones. A train
  * with no timestamp (backend deployed before timestamps existed) is kept, since its age is unknown.
  */
-export function visibleTrains(vehicles: readonly LirrVehicle[], directionId: number | undefined, now: number): LirrVehicle[] {
+export function visibleTrains(vehicles: readonly RouteLiveVehicle[], directionId: number | undefined, now: number): RouteLiveVehicle[] {
   return vehicles.filter(
     (vehicle) =>
       (directionId === undefined || vehicle.directionId === directionId) &&

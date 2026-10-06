@@ -1,19 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Platform, StyleSheet, Text, View, type ScrollView } from 'react-native';
+import { ActivityIndicator, Animated, Platform, StyleSheet, Text, View, type ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { applyLirrLive } from '../data/applyLirrLive';
+import { applyRouteLive } from '../data/applyRouteLive';
 import { favoriteTripKey, plannedTripCardData, type FavoriteTrip } from '../data/favorites';
-import { useLirrLive } from '../data/LirrLiveContext';
+import { realFareForRecentTrip } from '../data/lirrFares';
+import { useTransitLiveMap } from '../data/TransitLiveContext';
 import {
-  allNearbyRoutes,
   recentTripById,
   recentTrips,
-  routeById,
   type RecentTripId,
-  type RouteId,
+  type RouteDetail,
 } from '../data/transit';
-import { useAppSettings, useThemedStyles } from '../theme/AppSettings';
+import { useAppSettings, useTheme, useThemedStyles } from '../theme/AppSettings';
 import { useLayoutEase, useNativeDriver } from '../theme/motion';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
@@ -27,16 +26,21 @@ export type TransitTabId = 'nearby' | 'recents' | 'favorites';
 type TransitSheetProps = {
   activeTripId: RecentTripId | null;
   activeTab: TransitTabId;
-  favoriteRouteIds: readonly RouteId[];
+  favoriteRouteIds: readonly string[];
   favoriteTrips: readonly FavoriteTrip[];
+  /** Resolves a route id — the demo catalog's own or a dynamically-discovered one — to its full data, for pinned/favorited routes which can be either kind. */
+  findRoute: (routeId: string) => RouteDetail | undefined;
   mapHeight: number;
+  /** Every real nearby route for the rider's current location, across every configured agency (nearbyTransit.ts) — not a fixed handful of hand-picked lines. */
+  nearbyRoutes: readonly RouteDetail[];
+  nearbyStatus: 'loading' | 'loaded' | 'error';
   onOpenFavoriteTrip: (trip: FavoriteTrip) => void;
-  onOpenRoute: (routeId: RouteId) => void;
+  onOpenRoute: (routeId: string) => void;
   onOpenTrip: (tripId: RecentTripId) => void;
   onEndTrip: () => void;
   onStartTrip: (tripId: RecentTripId) => void;
   onTabChange: (tab: TransitTabId) => void;
-  pinnedRouteIds: readonly RouteId[];
+  pinnedRouteIds: readonly string[];
   scrollY: Animated.Value;
 };
 
@@ -44,7 +48,6 @@ const TAB_ROW_HEIGHT = 44;
 const TAB_ROW_PADDING = 16;
 const TAB_GAP = 4;
 const TRANSIT_CARD_HEIGHT = 104;
-const TAB_CONTENT_MIN_HEIGHT = allNearbyRoutes.length * TRANSIT_CARD_HEIGHT;
 // Expanded = sheet scrolled up to just below the fixed search header (HomeScreen's 80pt top inset).
 const EXPANDED_TOP = 80;
 const DRAG_HANDLE_HEIGHT = 28;
@@ -62,7 +65,10 @@ export function TransitSheet({
   activeTab,
   favoriteRouteIds,
   favoriteTrips,
+  findRoute,
   mapHeight,
+  nearbyRoutes,
+  nearbyStatus,
   onOpenFavoriteTrip,
   onOpenRoute,
   onOpenTrip,
@@ -73,9 +79,19 @@ export function TransitSheet({
   scrollY,
 }: TransitSheetProps) {
   const styles = useThemedStyles(createStyles);
-  const lirrLive = useLirrLive();
-  const pinnedRoutes = pinnedRouteIds.map((id) => applyLirrLive(routeById[id], lirrLive));
-  const nearbyRoutes = allNearbyRoutes.filter((route) => !pinnedRouteIds.includes(route.id)).map((route) => applyLirrLive(route, lirrLive));
+  const { colors } = useTheme();
+  const liveMap = useTransitLiveMap();
+  const pinnedRoutes = pinnedRouteIds
+    .map((id) => findRoute(id))
+    .filter((route): route is RouteDetail => route != null)
+    .map((route) => applyRouteLive(route, liveMap.get(route.id) ?? { status: 'error' }));
+  const nearbyCards = nearbyRoutes
+    .filter((route) => !pinnedRouteIds.includes(route.id))
+    .map((route) => applyRouteLive(route, liveMap.get(route.id) ?? { status: 'error' }));
+  // Keeps the sheet's resting height stable across tabs — the Nearby tab's own count varies with
+  // the rider's real location, so this can't be a fixed constant. Never below three cards, so
+  // the single-scroll page always has room to scroll the menu up.
+  const tabContentMinHeight = Math.max(3, pinnedRoutes.length + nearbyCards.length) * TRANSIT_CARD_HEIGHT;
   const hasFavorites = favoriteRouteIds.length > 0 || favoriteTrips.length > 0;
   const ease = useLayoutEase();
   const { reducedMotionActive } = useAppSettings();
@@ -169,7 +185,7 @@ export function TransitSheet({
         </View>
 
         {activeTab === 'nearby' ? (
-            <View style={styles.tabContent} testID="nearby-route-content">
+            <View style={[styles.tabContent, { minHeight: tabContentMinHeight }]} testID="nearby-route-content">
               {pinnedRoutes.length > 0 ? (
                 <View testID="pinned-routes">
                   {pinnedRoutes.map((route) => (
@@ -184,17 +200,29 @@ export function TransitSheet({
               ) : null}
 
               <View style={styles.cardStack} testID="nearby-routes">
-                {nearbyRoutes.map((route) => (
+                {nearbyCards.map((route) => (
                   <TransitCard
                     key={route.id}
                     onPress={() => onOpenRoute(route.id)}
                     route={route}
                   />
                 ))}
+                {nearbyStatus !== 'loaded' || nearbyCards.length === 0 ? (
+                  <View accessible={true} style={styles.nearbyEmpty} testID="nearby-routes-empty">
+                    {nearbyStatus === 'loading' ? <ActivityIndicator color={colors.primary} style={styles.nearbyEmptySpinner} /> : null}
+                    <Text style={styles.nearbyEmptyText}>
+                      {nearbyStatus === 'loading'
+                        ? 'Finding transit near you…'
+                        : nearbyStatus === 'error'
+                          ? 'Could not check for nearby transit right now.'
+                          : 'No other nearby transit found.'}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
             </View>
           ) : activeTab === 'recents' ? (
-            <View style={[styles.tabContent, styles.recentList]} testID="recents-route-content">
+            <View style={[styles.tabContent, styles.recentList, { minHeight: tabContentMinHeight }]} testID="recents-route-content">
               {recentTrips.map((trip) => {
                 const isActive = trip.id === activeTripId;
                 return (
@@ -205,22 +233,26 @@ export function TransitSheet({
                     onAction={isActive ? onEndTrip : () => onStartTrip(trip.id)}
                     onOpen={() => onOpenTrip(trip.id)}
                     testID={`recent-trip-${trip.id}`}
-                    trip={trip}
+                    trip={{ ...trip, fare: realFareForRecentTrip(trip) }}
                   />
                 );
               })}
             </View>
           ) : (
             hasFavorites ? (
-              <View style={styles.tabContent} testID="favorites-route-content">
+              <View style={[styles.tabContent, { minHeight: tabContentMinHeight }]} testID="favorites-route-content">
                 {favoriteRouteIds.length > 0 ? (
                   <View testID="favorite-routes">
                     <Text style={[styles.sectionLabel, styles.sectionHeading]}>ROUTES</Text>
-                    {favoriteRouteIds.map((id) => (
-                      <View key={id} testID={`favorite-route-${id}`}>
-                        <TransitCard onPress={() => onOpenRoute(id)} route={applyLirrLive(routeById[id], lirrLive)} />
-                      </View>
-                    ))}
+                    {favoriteRouteIds.map((id) => {
+                      const route = findRoute(id);
+                      if (!route) return null;
+                      return (
+                        <View key={id} testID={`favorite-route-${id}`}>
+                          <TransitCard onPress={() => onOpenRoute(id)} route={applyRouteLive(route, liveMap.get(id) ?? { status: 'error' })} />
+                        </View>
+                      );
+                    })}
                   </View>
                 ) : null}
                 {favoriteTrips.length > 0 ? (
@@ -228,7 +260,9 @@ export function TransitSheet({
                     <Text style={[styles.sectionLabel, styles.sectionHeading, styles.flushHeading]}>TRIPS</Text>
                     {favoriteTrips.map((trip) => {
                       const key = favoriteTripKey(trip);
-                      const data = trip.kind === 'recent' ? recentTripById[trip.tripId] : plannedTripCardData(trip);
+                      const data = trip.kind === 'recent'
+                        ? { ...recentTripById[trip.tripId], fare: realFareForRecentTrip(recentTripById[trip.tripId]) }
+                        : plannedTripCardData(trip);
                       return (
                         <TripCard
                           key={key}
@@ -243,7 +277,7 @@ export function TransitSheet({
                 ) : null}
               </View>
             ) : (
-              <View style={[styles.tabContent, styles.emptyState]} testID="favorites-route-content">
+              <View style={[styles.tabContent, styles.emptyState, { minHeight: tabContentMinHeight }]} testID="favorites-route-content">
                 <View style={styles.emptyIcon}><Icon name="favorite" size={30} /></View>
                 <Text style={styles.emptyTitle}>No favorites yet</Text>
                 <Text style={styles.emptyBody}>Tap the star on a route or trip to save it here.</Text>
@@ -298,7 +332,9 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   tabIndicator: { position: 'absolute', bottom: 0, left: 0, height: 3, borderRadius: 2, backgroundColor: colors.primary },
   tabLabel: { color: colors.mutedInk, ...typography.bodyStrong, fontSize: 13 },
   selectedTabLabel: { color: colors.primary, fontFamily: fontFamilies.extraBold },
-  tabContent: { minHeight: TAB_CONTENT_MIN_HEIGHT },
+  // minHeight is applied inline per-render (tabContentMinHeight varies with how many nearby
+  // routes are currently found) rather than baked in here.
+  tabContent: {},
   dragHandle: {
     height: DRAG_HANDLE_HEIGHT,
     alignItems: 'center',
@@ -311,6 +347,9 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     backgroundColor: colors.border,
   },
   cardStack: { gap: 0 },
+  nearbyEmpty: { alignItems: 'center', paddingVertical: 20, paddingHorizontal: 20, gap: 8 },
+  nearbyEmptySpinner: { marginBottom: 2 },
+  nearbyEmptyText: { color: colors.mutedInk, ...typography.metadata, textAlign: 'center' },
   sectionHeading: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 },
   sectionLabel: { color: colors.mutedInk, ...typography.label },
   favoriteTrips: { gap: 10, paddingHorizontal: 12, paddingBottom: 12 },

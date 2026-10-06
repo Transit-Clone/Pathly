@@ -1,0 +1,26 @@
+route_id,agency_id,route_short_name,route_long_name,route_desc,route_type,route_url,route_color,route_text_color
+6859,262,"1","01 - Amityville RR to Halesite",Amityville Railroad to Halesite,3,,C63F49,FFFFFF
+6860,262,"12","12 - Farmingdale State College to Bay Shore",Farmingdale State College to Bay Shore,3,,C63F49,FFFFFF
+6861,262,"10","10 - Amityville RR to Babylon RR",Amityville Railroad to Babylon Railroad,3,,0454A2,FFFFFF
+6862,262,"4","04 - Amityville RR to Smith Haven Mall",Amityville Railroad to Smith Haven Mall,3,,C63F49,FFFFFF
+6863,262,"6","06 - Walt Whitman Shops to Patchogue RR",Walt Whitman Shops to Patchogue Railroad,3,,C63F49,FFFFFF
+6864,262,"7","07 - Bay Shore to Northport VA Medical Center",Bay Shore to Northport VA Medical Center,3,,C63F49,FFFFFF
+6865,262,"3","03 - Babylon RR to Walt Whitman Shops",Babylon Railroad to Walt Whitman Shops,3,,0454A2,FFFFFF
+6866,262,"5","05 - Babylon RR to Smith Haven Mall",Babylon Railroad to Smith Haven Mall,3,,C63F49,FFFFFF
+6867,272,"77Y","77Y - Patchogue RR to East Yaphank",Patchogue Railroad to East Yaphank (Peak Only),3,,0454A2,FFFFFF
+6868,272,"51","51 - Patchogue RR to Port Jefferson Station",Patchogue Railroad to Port Jefferson Station,3,,C63F49,FFFFFF
+6869,272,"2","02 - Amityville RR to Patchogue RR",Amityville Railroad to Patchogue Railroad,3,,C63F49,FFFFFF
+6870,272,"58","58 - Brentwood RR to Riverhead RR",Brentwood Railroad to Riverhead Railroad,3,,0454A2,FFFFFF
+6871,272,"62","62 - Hauppauge to Riverhead RR",Hauppauge to Riverhead Railroad,3,,0454A2,FFFFFF
+6872,272,"55","55 - Patchogue RR to Port Jefferson Station",Patchogue Railroad to Port Jefferson Station,3,,0454A2,FFFFFF
+6873,272,"77","77 - Patchogue RR to Bellport",Patchogue Railroad to Bellport,3,,0454A2,FFFFFF
+6874,272,"17","17 - East Islip to Hauppauge",East Islip to Hauppauge,3,,C63F49,FFFFFF
+6875,272,"56","56 - Kings Park Manor to Smithtown RR",Kings Park Manor to Smithtown Railroad,3,,0454A2,FFFFFF
+6876,272,"52B","52B - Central Islip RR to Gordon Heights",Central Islip Railroad to Gordon Heights,3,,0454A2,FFFFFF
+6877,272,"66","66 - Patchogue RR to Riverhead RR",Patchogue Railroad to Riverhead Railroad,3,,C63F49,FFFFFF
+6878,272,"52A","52A - Central Islip RR to Gordon Heights",Central Islip Railroad to Gordon Heights,3,,0454A2,FFFFFF
+6879,272,"15","15 - Babylon RR to Robert Moses State Park",Babylon Railroad to Robert Moses State Park (Summer Only),3,,0454A2,FFFFFF
+6880,272,"11","11 - Bay Shore to Hauppauge",Bay Shore to Hauppauge,3,,C63F49,FFFFFF
+6887,265,"80","80 Riverhead Circulator",Riverhead Circulator,3,,0454A2,FFFFFF
+6892,265,"92","92 East Hampton RR to Orient Point Ferry Dock",East Hampton Railroad to Orient Point Ferry Dock,3,,0454A2,FFFFFF
+6896,272,"53","53 - Patchogue RR to Port Jefferson Station",Patchogue Railroad to Port Jefferson Station,3,,0454A2,FFFFFF

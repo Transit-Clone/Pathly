@@ -1,7 +1,7 @@
 """Generate mobile/src/data/stationTransfers.ts: the bus, subway, and rail lines a rider can
 transfer to at each Port Jefferson Branch station.
 
-For every station in mobile/src/data/portJeffersonGeometry.ts, this finds the routes of each
+For every Port Jefferson Branch station (LIRR route_id 10, from the LIRR static GTFS in the repo), this finds the routes of each
 agency below that stop within RADIUS_M metres of the station, plus the other LIRR branches that
 serve the same LIRR stop. Static GTFS feeds are downloaded fresh from each agency (a few MB each,
 about 37 MB total) into a temporary directory, so re-run this whenever schedules change:
@@ -24,7 +24,6 @@ from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-STATIONS_TS = ROOT / 'mobile/src/data/portJeffersonGeometry.ts'
 LIRR_DIR = ROOT / 'firebase/functions/static_data/lirr'
 OUT_TS = ROOT / 'mobile/src/data/stationTransfers.ts'
 
@@ -34,6 +33,8 @@ RADIUS_M = 400
 LIRR_ROUTE_ID = '10'  # Port Jefferson Branch itself; never listed as its own transfer.
 # LIRR's "City Terminal Zone" route groups intra-city service; it isn't a branch riders transfer to.
 LIRR_EXCLUDED_ROUTE_NAMES = {'City Terminal Zone'}
+# Maintenance yard that appears in stop_times as a timing point, not a passenger station.
+NON_PASSENGER_STOPS = {'Hillside Facility'}
 
 FEEDS = [
     # (file stem, agency label, mode, official URL)
@@ -54,9 +55,19 @@ def metres(lat1, lon1, lat2, lon2):
 
 
 def load_stations():
-    text = STATIONS_TS.read_text(encoding='utf-8')
-    rows = re.findall(r"name: '([^']+)', stopId: '([^']+)', lat: ([\d.-]+), lon: ([\d.-]+)", text)
-    return [{'name': n, 'stopId': s, 'lat': float(a), 'lon': float(b)} for n, s, a, b in rows]
+    """Every stop served by the Port Jefferson Branch, in first-seen trip order."""
+    stops_by_id = {row['stop_id']: row for row in read_csv(LIRR_DIR, 'stops.txt')}
+    branch_trips = {row['trip_id'] for row in read_csv(LIRR_DIR, 'trips.txt') if row['route_id'] == LIRR_ROUTE_ID}
+    stop_ids = []
+    for row in read_csv(LIRR_DIR, 'stop_times.txt'):
+        if row['trip_id'] in branch_trips and row['stop_id'] not in stop_ids:
+            if stops_by_id[row['stop_id']]['stop_name'] in NON_PASSENGER_STOPS:
+                continue
+            stop_ids.append(row['stop_id'])
+    return [
+        {'name': stops_by_id[i]['stop_name'], 'stopId': i, 'lat': float(stops_by_id[i]['stop_lat']), 'lon': float(stops_by_id[i]['stop_lon'])}
+        for i in stop_ids
+    ]
 
 
 def read_csv(source, name):
@@ -163,7 +174,7 @@ def main():
         '  textColor: string | null;',
         '};',
         '',
-        '/** Keyed by station name, as in PORT_JEFFERSON_STOPS. Ordered rail, subway, then bus. */',
+        '/** Keyed by LIRR station name (stops.txt stop_name). Ordered rail, subway, then bus. */',
         'export const STATION_TRANSFERS: Readonly<Record<string, readonly StationTransfer[]>> = {',
     ]
     for station in stations:

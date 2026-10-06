@@ -1,0 +1,5 @@
+fare_media_id,fare_media_name,fare_media_type
+WZ_FM_0,Cash & Coins,0
+WZ_FM_1,Transfer Tickets,1
+WZ_FM_2,Ticket Booklet,1
+WZ_FM_4,Suffolk FastFare,4
