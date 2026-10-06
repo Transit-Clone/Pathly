@@ -95,9 +95,11 @@ Destination search uses Google Places Autocomplete (Places API (New)). Without a
 | `npm run dev:ios`     | Open the iOS Simulator app                |
 | `npm run dev:android` | Open the Android app                      |
 | `npm run lint`        | Lint the mobile workspace                 |
-| `npm test`            | Run mobile tests                          |
+| `npm test`            | Run mobile and Functions tests            |
 | `npm run typecheck`   | Type-check the mobile workspace           |
 | `npm run build`       | Create Android, iOS, and web Expo exports |
+| `npm run functions:test` | Build and test Cloud Functions         |
+| `npm run deploy:backend` | Deploy Storage rules and Functions     |
 
 Stop development processes with `Ctrl+C`.
 
@@ -116,12 +118,61 @@ firebase functions:secrets:set SWIFTLY_API_KEY
 
 For the local Functions emulator only, copy `firebase/functions/.secret.local.example` to
 `firebase/functions/.secret.local`. Keep provider quotas and billing alerts enabled; the
-in-process per-user limiter is paired with a low Functions `maxInstances` ceiling and is not
-a replacement for a shared production rate limiter when the service scales out.
+deployed per-user limiter uses an atomic Firestore transaction so cold starts and horizontal
+scaling cannot multiply a user's limit. A bounded in-process bucket rejects obvious bursts
+before that shared check.
 
 Do not create or share Firebase Admin service-account JSON keys for routine development.
-Cloud Functions uses its managed runtime identity; developers should use `firebase login` for
-the CLI and user Application Default Credentials where ADC is actually required.
+Cloud Functions uses dedicated managed runtime identities; developers should use
+`firebase login` for the CLI and user Application Default Credentials where ADC is actually
+required.
+
+### Static GTFS refresh
+
+The deployed backend refreshes the official LIRR, subway, NICE Bus, and Suffolk County Transit
+static GTFS feeds every day at 04:00 `America/New_York`. A successful run validates the full
+feed, uploads an immutable ZIP to `gtfs/v1/<agency>/versions/<archive-sha256>.zip`, then switches
+`gtfs/v1/<agency>/current.json` with a Cloud Storage generation precondition. Invalid, expired,
+rolled-back, or incompatible feeds leave the last published snapshot untouched. Repacked ZIPs
+whose runtime CSVs are unchanged only advance the trusted source watermark; they do not force
+instances to rehydrate. Callables check the
+manifest at most once every five minutes, hydrate a verified version into ephemeral `/tmp`,
+and retain the last good version for that warm instance. A cold instance falls back to the
+GTFS files bundled with the deployment if Storage is unavailable.
+
+Production setup for the `pathly-b7f0f` project:
+
+1. Keep the project on the Blaze plan, initialize Firestore and the default Firebase Storage
+   bucket, and keep Storage Public Access Prevention enabled. Client rules deny access to GTFS
+   objects and to the `_pathlyCallableRateLimits` collection; only Admin SDK identities use them.
+2. Create `pathly-callable-runtime@pathly-b7f0f.iam.gserviceaccount.com` and
+   `pathly-gtfs-writer@pathly-b7f0f.iam.gserviceaccount.com`. Do not create JSON keys for either.
+3. On the Storage bucket, grant the callable identity **Storage Object Viewer** and the writer
+   identity **Storage Object User**, with IAM Conditions restricting both grants to object names
+   under `gtfs/v1/`. At the project level, grant the callable identity **Cloud Datastore User**
+   for the shared limiter and Secret Manager access to the declared Maps/Swiftly secrets. Give
+   the deployer `iam.serviceAccounts.actAs` on both identities. Do not give the default compute
+   identity broad bucket write access; remove any temporary grant only after this deployment is
+   verified.
+4. Enable Firestore TTL for collection group `_pathlyCallableRateLimits`, field `expiresAt`.
+   Rate-limit documents contain only hashes and expire 24 hours after their last successful use.
+5. Enable the Cloud Scheduler API. The Functions deployment manages the
+   `firebase-schedule-refreshGtfsStaticData-us-central1` job; do not edit or delete it by hand.
+6. Run `npx --yes firebase-tools@15.32.1 login`, then `npm run deploy:backend`. The repository
+   scripts pin a Firebase CLI version that supports the Node 24 Functions runtime.
+
+After the first deploy, manually run the managed Scheduler job once. Confirm that all four
+`current.json` files and their referenced ZIPs exist, and that logs contain four
+`gtfs_snapshot_published` (or `gtfs_snapshot_unchanged`) events with no
+`gtfs_refresh_failed`. Run it a second time and confirm all four are unchanged. Then wait up
+to five minutes, invoke the authenticated nearby-transit flow, and confirm a
+`gtfs_snapshot_hydrated` event for each agency. Alert on `gtfs_refresh_failed`,
+`gtfs_snapshot_fallback`, and `gtfs_service_expiring`; also alert if no complete refresh
+succeeds (`gtfs_refresh_completed`) within 26 hours. The scheduler retains immutable ZIP
+history rather than deleting archives concurrently with publication; this makes content
+rollback and A-to-B-to-A reuse safe. Do not apply a blanket lifecycle rule that could remove an
+archive referenced by a live manifest. If manual cleanup is ever needed, pause the scheduler
+first and preserve at least every current and previous archive reference.
 
 ### App Check rollout
 

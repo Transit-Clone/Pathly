@@ -9,7 +9,9 @@ import { transit_realtime } from 'gtfs-realtime-bindings';
 // the in-flight *promise* (not just the resolved value) per feed URL, briefly, means every
 // route asking for the same feed within one poll cycle shares a single real request — this
 // benefits every agency, not just rate-limited ones, so it's not Swiftly-specific.
-const FEED_CACHE_TTL_MS = 25_000; // a little under the client's 30s poll interval
+const FEED_CACHE_TTL_MS = 25_000; // spans successive 15-second client polls without serving data for long
+const FEED_FAILURE_CACHE_TTL_MS = 10_000;
+const FEED_TIMEOUT_MS = 15_000;
 const feedCache = new Map<string, { expiresAt: number; promise: Promise<transit_realtime.FeedEntity[]> }>();
 
 /**
@@ -22,14 +24,20 @@ export function fetchFeedEntities(feedUrl: string, headers?: Record<string, stri
   if (cached && cached.expiresAt > Date.now()) return cached.promise;
 
   const promise = (async () => {
-    const response = await fetch(feedUrl, headers ? { headers } : undefined);
+    const response = await fetch(feedUrl, { headers, signal: AbortSignal.timeout(FEED_TIMEOUT_MS) });
     if (!response.ok) throw new Error(`GTFS-RT request to ${feedUrl} failed: ${response.status}`);
     const buffer = new Uint8Array(await response.arrayBuffer());
     return transit_realtime.FeedMessage.decode(buffer).entity;
   })();
-  // A failed fetch shouldn't keep being replayed to every route asking for this feed until the
-  // TTL expires — clear it immediately so the next caller gets a fresh attempt instead.
-  promise.catch(() => feedCache.delete(feedUrl));
-  feedCache.set(feedUrl, { expiresAt: Date.now() + FEED_CACHE_TTL_MS, promise });
+  const entry = { expiresAt: Date.now() + FEED_CACHE_TTL_MS, promise };
+  feedCache.set(feedUrl, entry);
+  // Cache a provider failure briefly too. Otherwise a parallel route-poll burst would turn one
+  // 429/503 into one upstream retry per route and make a quota outage worse. The identity check
+  // prevents a slow, expired request from shortening a newer cache entry.
+  void promise.catch(() => {
+    if (feedCache.get(feedUrl)?.promise === promise) {
+      entry.expiresAt = Date.now() + FEED_FAILURE_CACHE_TTL_MS;
+    }
+  });
   return promise;
 }

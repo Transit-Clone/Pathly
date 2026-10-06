@@ -6,6 +6,7 @@ const {
   consumeTokenBucket,
   enforceCallableSecurity,
   resetCallableSecurityForTests,
+  setSharedRateLimitConsumerForTests,
 } = require('../lib/callableSecurity');
 const {
   findNearbyTransit,
@@ -24,9 +25,9 @@ function request(uid) {
 
 test.beforeEach(() => resetCallableSecurityForTests());
 
-test('requires an authenticated Firebase user', () => {
-  assert.throws(
-    () => enforceCallableSecurity(request(null), 'endpoint', { userPerMinute: 2 }, 1_000),
+test('requires an authenticated Firebase user', async () => {
+  await assert.rejects(
+    enforceCallableSecurity(request(null), 'endpoint', { userPerMinute: 2 }, 1_000),
     (error) => error.code === 'unauthenticated',
   );
 });
@@ -40,31 +41,69 @@ test('every callable rejects anonymous traffic before validation or provider wor
   }
 });
 
-test('blocks a user after exhausting the configured token bucket', () => {
+test('serializes transit requests so a response cannot mix two GTFS snapshots', () => {
+  for (const callable of [findNearbyTransit, getNearestRouteStop, getRouteGeometry]) {
+    assert.equal(callable.__endpoint.concurrency, 1);
+    assert.equal(callable.__endpoint.maxInstances, 10);
+    assert.equal(
+      callable.__endpoint.serviceAccountEmail,
+      'pathly-callable-runtime@pathly-b7f0f.iam.gserviceaccount.com',
+    );
+  }
+  assert.equal(getRouteLiveStatus.__endpoint.concurrency, 1);
+  assert.equal(getRouteLiveStatus.__endpoint.maxInstances, 1);
+  assert.equal(
+    getRouteLiveStatus.__endpoint.serviceAccountEmail,
+    'pathly-callable-runtime@pathly-b7f0f.iam.gserviceaccount.com',
+  );
+});
+
+test('blocks a user after exhausting the configured token bucket', async () => {
   const limits = { userPerMinute: 2 };
-  enforceCallableSecurity(request('user-1'), 'endpoint', limits, 1_000);
-  enforceCallableSecurity(request('user-1'), 'endpoint', limits, 2_000);
-  assert.throws(
-    () => enforceCallableSecurity(request('user-1'), 'endpoint', limits, 3_000),
+  await enforceCallableSecurity(request('user-1'), 'endpoint', limits, 1_000);
+  await enforceCallableSecurity(request('user-1'), 'endpoint', limits, 2_000);
+  await assert.rejects(
+    enforceCallableSecurity(request('user-1'), 'endpoint', limits, 3_000),
     (error) => error.code === 'resource-exhausted' && error.details.retryAfterSeconds > 0,
   );
 });
 
-test('bounds high-cardinality bucket storage without a full-map sort', () => {
+test('bounds high-cardinality bucket storage without a full-map sort', async () => {
   const limits = { userPerMinute: 1 };
   for (let index = 0; index <= 20_000; index += 1) {
-    enforceCallableSecurity(request(`user-${index}`), 'endpoint', limits, 1_000);
+    await enforceCallableSecurity(request(`user-${index}`), 'endpoint', limits, 1_000);
   }
 
   // The oldest entry was evicted at the cap, so it can be admitted again immediately.
-  assert.doesNotThrow(() => enforceCallableSecurity(request('user-0'), 'endpoint', limits, 1_000));
+  await assert.doesNotReject(enforceCallableSecurity(request('user-0'), 'endpoint', limits, 1_000));
 });
 
-test('keeps endpoint buckets independent and resets after one minute', () => {
+test('keeps endpoint buckets independent and resets after one minute', async () => {
   const limits = { userPerMinute: 1 };
-  enforceCallableSecurity(request('user-1'), 'endpoint-a', limits, 1_000);
-  enforceCallableSecurity(request('user-1'), 'endpoint-b', limits, 2_000);
-  assert.doesNotThrow(() => enforceCallableSecurity(request('user-1'), 'endpoint-a', limits, 61_000));
+  await enforceCallableSecurity(request('user-1'), 'endpoint-a', limits, 1_000);
+  await enforceCallableSecurity(request('user-1'), 'endpoint-b', limits, 2_000);
+  await assert.doesNotReject(enforceCallableSecurity(request('user-1'), 'endpoint-a', limits, 61_000));
+});
+
+test('enforces a shared rate limit when requests are spread across instances', async () => {
+  let sharedBucket;
+  setSharedRateLimitConsumerForTests(async (_key, limit, nowMs) => {
+    const result = consumeTokenBucket(sharedBucket, limit, nowMs);
+    if (result.allowed) sharedBucket = result.next;
+    return result;
+  });
+
+  await enforceCallableSecurity(request('user-1'), 'endpoint', { userPerMinute: 1 }, 1_000);
+  resetCallableSecurityForTests();
+  setSharedRateLimitConsumerForTests(async (_key, limit, nowMs) => {
+    const result = consumeTokenBucket(sharedBucket, limit, nowMs);
+    if (result.allowed) sharedBucket = result.next;
+    return result;
+  });
+  await assert.rejects(
+    enforceCallableSecurity(request('user-1'), 'endpoint', { userPerMinute: 1 }, 2_000),
+    (error) => error.code === 'resource-exhausted',
+  );
 });
 
 test('refills token buckets continuously with deterministic retry timing', () => {
