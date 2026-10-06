@@ -8,6 +8,8 @@ import { getRouteStatus } from './gtfsStatus';
 
 /** Set once with: firebase functions:secrets:set GOOGLE_MAPS_API_KEY */
 const googleMapsApiKey = defineSecret('GOOGLE_MAPS_API_KEY');
+/** Set once with: firebase functions:secrets:set SWIFTLY_API_KEY. Needed for NICE Bus/Suffolk County Transit's real-time feeds (hosted by Swiftly, a third-party provider); not used by LIRR or subway. */
+const swiftlyApiKey = defineSecret('SWIFTLY_API_KEY');
 
 type RouteLiveStatusRequest = { agencyId: AgencyId; routeId: string; direction1StopId: string; direction0StopId: string };
 
@@ -16,12 +18,15 @@ type RouteLiveStatusRequest = { agencyId: AgencyId; routeId: string; direction1S
  * plus departure predictions at a station — padded with the real published timetable when live
  * has nothing upcoming, for agencies where that's reliable (see getStopPredictions). One
  * callable for every agency rather than one per agency; see routes.txt/stops.txt under each
- * agency's static_data directory for valid IDs. No API key needed for any feed used so far.
+ * agency's static_data directory for valid IDs. LIRR and subway need no API key; NICE
+ * Bus/Suffolk County Transit's Swiftly-hosted feeds do — declaring the secret here makes it
+ * available as `process.env.SWIFTLY_API_KEY` wherever this call ends up (gtfsAgencies.ts),
+ * without every other callable needing to know about it.
  * Client call: httpsCallable(functions, 'getRouteLiveStatus')({ agencyId, routeId, direction1StopId, direction0StopId }).
  * (For agencies where one stop_id serves a station regardless of direction, pass the same id
  * for both direction1StopId and direction0StopId.)
  */
-export const getRouteLiveStatus = onCall<RouteLiveStatusRequest>(async (request) => {
+export const getRouteLiveStatus = onCall<RouteLiveStatusRequest>({ secrets: [swiftlyApiKey] }, async (request) => {
   const { agencyId, routeId, direction1StopId, direction0StopId } = request.data ?? {};
   if (!agencyId) throw new HttpsError('invalid-argument', 'agencyId is required');
   if (!routeId) throw new HttpsError('invalid-argument', 'routeId is required');

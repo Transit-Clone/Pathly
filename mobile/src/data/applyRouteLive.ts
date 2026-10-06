@@ -46,18 +46,23 @@ export function applyRouteLive(route: RouteDetail, liveStatus: RouteLiveStatus):
 
   // Whichever stop on this route is actually nearest the rider right now, not the route's
   // hand-picked fallback station — absent (keeping the fallback name, and no stopId) if it
-  // couldn't be resolved this cycle.
-  const stopNameOverride = liveStatus.nearestStop
-    ? { stopName: liveStatus.nearestStop.stopName, stopId: liveStatus.nearestStop.stopId }
+  // couldn't be resolved this cycle. Applied per direction, independently: the two directions
+  // are never assumed to share a station (see nearestRouteStop.ts), so one resolving doesn't
+  // require the other to.
+  const direction1Override = liveStatus.nearestStop?.direction1
+    ? { stopName: liveStatus.nearestStop.direction1.name, stopId: liveStatus.nearestStop.direction1.stopId }
+    : {};
+  const direction0Override = liveStatus.nearestStop?.direction0
+    ? { stopName: liveStatus.nearestStop.direction0.name, stopId: liveStatus.nearestStop.direction0.stopId }
     : {};
 
   const directions = [...route.directions] as [TransitDirection, TransitDirection];
   directions[direction1Index] = direction1First
-    ? { ...directions[direction1Index], ...stopNameOverride, minutes: direction1First.minutes, live: direction1First.live, unavailable: false }
-    : { ...directions[direction1Index], ...stopNameOverride, unavailable: true };
+    ? { ...directions[direction1Index], ...direction1Override, minutes: direction1First.minutes, live: direction1First.live, unavailable: false }
+    : { ...directions[direction1Index], ...direction1Override, unavailable: true };
   directions[direction0Index] = direction0First
-    ? { ...directions[direction0Index], ...stopNameOverride, minutes: direction0First.minutes, live: direction0First.live, unavailable: false }
-    : { ...directions[direction0Index], ...stopNameOverride, unavailable: true };
+    ? { ...directions[direction0Index], ...direction0Override, minutes: direction0First.minutes, live: direction0First.live, unavailable: false }
+    : { ...directions[direction0Index], ...direction0Override, unavailable: true };
 
   return {
     ...route,

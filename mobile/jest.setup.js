@@ -5,7 +5,7 @@ jest.mock('@react-native-async-storage/async-storage', () =>
 // transit.ts has no React Native/Firebase dependencies of its own, so it's safe to pull in here
 // and reuse its real station list/offsets for the Port Jefferson Branch geometry mock below —
 // keeping the mock's data consistent with the app's own data instead of a hand-duplicated copy.
-const { routeById: mockRouteById, stopsForDirection: mockStopsForDirection } = require('./src/data/transit');
+const { routeById: mockRouteById, routes: mockRoutes, stopsForDirection: mockStopsForDirection } = require('./src/data/transit');
 
 // Firebase needs real project config (unavailable in Jest) and hits the network on init;
 // stub it so existing screens still render as if a user is already signed in.
@@ -46,18 +46,39 @@ jest.mock('firebase/firestore', () => ({
 jest.mock('firebase/functions', () => ({
   getFunctions: jest.fn(() => ({})),
   httpsCallable: jest.fn((_functions, name) => {
+    if (name === 'findNearbyTransit') {
+      // Mirrors every demo-catalog live route as a "discovered" result, so tests can open a
+      // route through the real dynamic-discovery path, not just a pinned one. Which of these
+      // actually show up in the Nearby list is production code's job (HomeScreen.tsx's
+      // filterOutPinnedDuplicates), not this mock's — a pinned route's real line (e.g.
+      // ronkonkoma/LIRR route 10) is correctly excluded only while it's actually pinned.
+      return jest.fn(() => Promise.resolve({
+        data: {
+          routes: mockRoutes
+            .filter((route) => route.liveSource)
+            .map((route) => ({
+              agencyId: route.liveSource.agencyId,
+              agencyDisplayName: route.agency,
+              routeId: route.liveSource.routeId,
+              routeName: route.routeName,
+              shortName: route.shortName,
+              color: route.color,
+              distanceMeters: 500,
+              direction1: { stopId: route.liveSource.direction1StopId, name: route.directions[0].stopName, headsign: route.directions[0].direction },
+              direction0: { stopId: route.liveSource.direction0StopId, name: route.directions[1].stopName, headsign: route.directions[1].direction },
+            })),
+        },
+      }));
+    }
     if (name === 'getNearestRouteStop') {
-      // Echoes back a stop distinct from any route's hardcoded fallback (see transit.ts) so
-      // tests can tell the dynamic nearest-stop lookup actually overrode it.
+      // Echoes back stops distinct from any route's hardcoded fallback (see transit.ts) so
+      // tests can tell the dynamic nearest-stop lookup actually overrode it. Each direction
+      // gets its own stop/name, matching the real backend never assuming they share a station.
       return jest.fn((request) => Promise.resolve({
         data: {
-          stopId: 'mock-nearest',
-          name: `Mock Nearest Stop for ${request?.routeId ?? ''}`,
-          lat: 40.85,
-          lon: -73.42,
           distanceMeters: 321,
-          direction1: { headsign: 'Mock Headsign 1', stopId: 'mock-nearest-1' },
-          direction0: { headsign: 'Mock Headsign 0', stopId: 'mock-nearest-0' },
+          direction1: { stopId: 'mock-nearest-1', name: `Mock Nearest Stop 1 for ${request?.routeId ?? ''}`, headsign: 'Mock Headsign 1' },
+          direction0: { stopId: 'mock-nearest-0', name: `Mock Nearest Stop 0 for ${request?.routeId ?? ''}`, headsign: 'Mock Headsign 0' },
         },
       }));
     }

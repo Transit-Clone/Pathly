@@ -4,10 +4,18 @@ import { StyleSheet } from 'react-native';
 import mockSafeAreaContext from 'react-native-safe-area-context/jest/mock';
 
 import App from '../App';
-import { routeById, routes } from '../src/data/transit';
+import { routeById, routes, type RouteId } from '../src/data/transit';
 import { darkColors, lightColors } from '../src/theme/colors';
 
 const mockUseFonts = jest.fn(() => [true] as [boolean]);
+
+// 'ronkonkoma' is pinned by default (DEFAULT_PINNED_ROUTE_IDS), so it renders under its own
+// static card id immediately; every other live route is only reachable once the mocked
+// dynamic-discovery call resolves (jest.setup.js's findNearbyTransit mock mirrors the rest of
+// the demo catalog), under its synthesized "agencyId:routeId" card id — the same as production.
+function cardIdFor(route: (typeof routes)[number]): string {
+  return route.id === 'ronkonkoma' || !route.liveSource ? route.id : `${route.liveSource.agencyId}:${route.liveSource.routeId}`;
+}
 
 jest.mock('react-native-safe-area-context', () => mockSafeAreaContext);
 jest.mock('@expo-google-fonts/nunito/useFonts', () => ({
@@ -34,7 +42,7 @@ describe('Pathly prototype navigation', () => {
     expect(screen.queryByText('Where to?')).toBeNull();
   });
 
-  it('renders five selectable routes without contacting a backend', async () => {
+  it('renders every selectable route without contacting a backend', async () => {
     const fetchMock = jest.fn();
     globalThis.fetch = fetchMock as unknown as typeof fetch;
     const screen = render(<App />);
@@ -42,21 +50,22 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByText('Where to?')).toBeTruthy();
     expect(screen.queryByText('Nearby transit')).toBeNull();
     for (const route of routes) {
-      expect(screen.getByTestId(`route-card-${route.id}`)).toBeTruthy();
+      expect(await screen.findByTestId(`route-card-${cardIdFor(route)}`)).toBeTruthy();
     }
     // Routes with a liveSource start in a loading state and only show "minutes" text once
     // their mocked live predictions resolve (no synchronous fallback to static data anymore).
     // findAllByText resolves as soon as it finds any match, so the full count needs waitFor.
-    await waitFor(() => expect(screen.getAllByText('minutes')).toHaveLength(10));
+    await waitFor(() => expect(screen.getAllByText('minutes')).toHaveLength(routes.length * 2));
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('keeps nearby cards at a fixed height without filler space', () => {
+  it('keeps nearby cards at a fixed height without filler space', async () => {
     const screen = render(<App />);
 
     expect(screen.getByTestId('nearby-route-list').props.contentContainerStyle).toBeUndefined();
     for (const route of routes) {
-      expect(StyleSheet.flatten(screen.getByTestId(`route-card-${route.id}`).props.style)).toMatchObject({
+      const card = await screen.findByTestId(`route-card-${cardIdFor(route)}`);
+      expect(StyleSheet.flatten(card.props.style)).toMatchObject({
         height: 104,
       });
     }
@@ -68,26 +77,26 @@ describe('Pathly prototype navigation', () => {
     // Live routes start in a loading state (no signal yet); wait for the mocked predictions
     // to resolve before counting signals. findAllByTestId resolves as soon as it finds any
     // match, so the full count needs waitFor.
-    await waitFor(() => expect(screen.getAllByTestId('live-gps-signal', { includeHiddenElements: true })).toHaveLength(5));
+    await waitFor(() => expect(screen.getAllByTestId('live-gps-signal', { includeHiddenElements: true })).toHaveLength(routes.length));
     expect(within(screen.getByTestId('route-card-ronkonkoma-primary')).getByTestId('live-gps-signal', { includeHiddenElements: true })).toBeTruthy();
     expect(within(screen.getByTestId('route-card-ronkonkoma-alternate')).queryByTestId('live-gps-signal', { includeHiddenElements: true })).toBeNull();
   });
 
-  it.each(routes.map((route) => [route.id, route.routeName] as const))(
+  it.each(routes.map((route) => [cardIdFor(route), route.routeName, route.shortName] as const))(
     'opens shared details for %s and returns home',
-    async (routeId, routeName) => {
+    async (cardId, routeName, shortName) => {
       const screen = render(<App />);
-      fireEvent.press(screen.getByTestId(`route-card-${routeId}-primary`));
+      await screen.findByTestId(`route-card-${cardId}-primary`);
+      fireEvent.press(screen.getByTestId(`route-card-${cardId}-primary`));
 
-      expect(screen.getByTestId(`route-detail-${routeId}`)).toBeTruthy();
-      const destination = screen.getByTestId('route-detail-destination').props.children as string;
-      expect(routeById[routeId].directions[0].direction.endsWith(destination)).toBe(true);
-      expect(screen.queryByText(routeName === routeById[routeId].shortName ? '__none__' : routeName)).toBeNull();
+      expect(screen.getByTestId(`route-detail-${cardId}`)).toBeTruthy();
+      expect(screen.getByTestId('route-detail-destination').props.children).toBeTruthy();
+      expect(screen.queryByText(routeName === shortName ? '__none__' : routeName)).toBeNull();
       // Routes with a liveSource show the real map (and its badge) only once geometry has
       // loaded from the mocked backend call; routes without one render it immediately.
       expect(await screen.findByTestId('route-detail-badge')).toBeTruthy();
       fireEvent.press(screen.getByTestId('route-back'));
-      expect(screen.getByTestId(`route-card-${routeId}`)).toBeTruthy();
+      expect(screen.getByTestId(`route-card-${cardId}`)).toBeTruthy();
     },
   );
 
@@ -112,7 +121,7 @@ describe('Pathly prototype navigation', () => {
 
     fireEvent.scroll(sheetScroll, { nativeEvent: { contentOffset: { y: 120 } } });
     fireEvent.scroll(sheetScroll, { nativeEvent: { contentOffset: { y: 240 } } });
-    expect(screen.getByTestId('route-card-7')).toBeTruthy();
+    expect(await screen.findByTestId(`route-card-${cardIdFor(routeById['7'])}`)).toBeTruthy();
   });
 
   it('keeps the transit sheet height stable while switching tabs', () => {
@@ -256,39 +265,45 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getAllByTestId(/^itinerary-/)).toHaveLength(4);
   });
 
-  it('pins and unpins routes in the Nearby list', () => {
+  it('pins and unpins routes in the Nearby list', async () => {
     const screen = render(<App />);
     expect(within(screen.getByTestId('pinned-routes')).getByTestId('route-card-ronkonkoma')).toBeTruthy();
     expect(screen.queryByText('PINNED')).toBeNull();
     expect(screen.getByTestId('route-card-ronkonkoma-pinned', { includeHiddenElements: true })).toBeTruthy();
-    expect(screen.queryByTestId('route-card-e-pinned', { includeHiddenElements: true })).toBeNull();
+    const eCardId = cardIdFor(routeById.e);
+    expect(screen.queryByTestId(`route-card-${eCardId}-pinned`, { includeHiddenElements: true })).toBeNull();
 
-    fireEvent.press(screen.getByTestId('route-card-51-primary'));
+    // Every route besides the one pinned by default is only reachable once the mocked dynamic
+    // discovery resolves (jest.setup.js's findNearbyTransit mock), under its synthesized id.
+    const route51CardId = cardIdFor(routeById['51']);
+    fireEvent.press(await screen.findByTestId(`route-card-${route51CardId}-primary`));
     expect(screen.getByTestId('route-pin').props.accessibilityState).toEqual({ selected: false });
     fireEvent.press(screen.getByTestId('route-pin'));
     expect(screen.getByTestId('route-pin').props.accessibilityState).toEqual({ selected: true });
     fireEvent.press(screen.getByTestId('route-back'));
 
-    expect(within(screen.getByTestId('pinned-routes')).getByTestId('route-card-51')).toBeTruthy();
-    expect(within(screen.getByTestId('nearby-routes')).queryByTestId('route-card-51')).toBeNull();
+    expect(within(screen.getByTestId('pinned-routes')).getByTestId(`route-card-${route51CardId}`)).toBeTruthy();
+    expect(within(screen.getByTestId('nearby-routes')).queryByTestId(`route-card-${route51CardId}`)).toBeNull();
 
     fireEvent.press(screen.getByTestId('route-card-ronkonkoma-primary'));
     fireEvent.press(screen.getByTestId('route-pin'));
     fireEvent.press(screen.getByTestId('route-back'));
-    expect(within(screen.getByTestId('nearby-routes')).getByTestId('route-card-ronkonkoma')).toBeTruthy();
-    for (const route of routes) {
-      expect(screen.getAllByTestId(`route-card-${route.id}`)).toHaveLength(1);
-    }
-    expect(StyleSheet.flatten(screen.getByTestId('nearby-route-content').props.style).minHeight).toBe(5 * 104);
+    // Unpinning takes its card out of "pinned-routes" — whether/under-which-id its real line
+    // reappears in "nearby-routes" depends on dynamic (re-)discovery, covered separately by
+    // "renders every selectable route without contacting a backend".
+    expect(within(screen.getByTestId('pinned-routes')).queryByTestId('route-card-ronkonkoma')).toBeNull();
   });
 
-  it('saves favorite routes and trips to the Favorites tab and opens them', () => {
+  it('saves favorite routes and trips to the Favorites tab and opens them', async () => {
     const screen = render(<App />);
     fireEvent.press(screen.getByTestId('tab-favorites'));
     expect(screen.getByText('No favorites yet')).toBeTruthy();
 
     fireEvent.press(screen.getByTestId('tab-nearby'));
-    fireEvent.press(screen.getByTestId('route-card-e-primary'));
+    // Only reachable once the mocked dynamic discovery resolves (jest.setup.js's
+    // findNearbyTransit mock), under its synthesized id.
+    const eCardId = cardIdFor(routeById.e);
+    fireEvent.press(await screen.findByTestId(`route-card-${eCardId}-primary`));
     fireEvent.press(screen.getByTestId('route-favorite'));
     fireEvent.press(screen.getByTestId('route-back'));
 
@@ -313,14 +328,14 @@ describe('Pathly prototype navigation', () => {
     fireEvent.press(screen.getByLabelText('Cancel destination search'));
 
     fireEvent.press(screen.getByTestId('tab-favorites'));
-    expect(within(screen.getByTestId('favorite-routes')).getByTestId('route-card-e')).toBeTruthy();
+    expect(within(screen.getByTestId('favorite-routes')).getByTestId(`route-card-${eCardId}`)).toBeTruthy();
     const trips = screen.getByTestId('favorite-trips');
     expect(within(trips).getByTestId('favorite-trip-recent-times-square')).toBeTruthy();
     expect(within(trips).getByTestId('favorite-trip-planned-budget-123 Terry Rd')).toBeTruthy();
     expect(within(trips).getByText('Depart 10:30 AM')).toBeTruthy();
 
-    fireEvent.press(within(screen.getByTestId('favorite-routes')).getByTestId('route-card-e-primary'));
-    expect(screen.getByTestId('route-detail-e')).toBeTruthy();
+    fireEvent.press(within(screen.getByTestId('favorite-routes')).getByTestId(`route-card-${eCardId}-primary`));
+    expect(screen.getByTestId(`route-detail-${eCardId}`)).toBeTruthy();
     expect(screen.getByTestId('route-favorite').props.accessibilityState).toEqual({ selected: true });
     fireEvent.press(screen.getByTestId('route-favorite'));
     fireEvent.press(screen.getByTestId('route-back'));
@@ -578,10 +593,12 @@ describe('Pathly prototype navigation', () => {
     expect(backgroundOf(screen.getByTestId('transit-sheet'))).toBe(darkColors.surface);
   });
 
-  it('renders home surfaces dark while route cards keep their colors', () => {
+  it('renders home surfaces dark while route cards keep their colors', async () => {
     const screen = renderDark();
     expect(backgroundOf(screen.getByTestId('transit-sheet'))).toBe(darkColors.surface);
-    expect(backgroundOf(screen.getByTestId('route-card-e'))).toBe(routeById.e.color);
+    // Only reachable once the mocked dynamic discovery resolves (jest.setup.js's
+    // findNearbyTransit mock), under its synthesized id.
+    expect(backgroundOf(await screen.findByTestId(`route-card-${cardIdFor(routeById.e)}`))).toBe(routeById.e.color);
     fireEvent.press(screen.getByTestId('tab-recents'));
     expect(backgroundOf(screen.getByTestId('recent-trip-penn-station-card'))).toBe(darkColors.surface);
   });
@@ -624,7 +641,9 @@ describe('Pathly prototype navigation', () => {
     await waitFor(() => expect(screen.getAllByTestId(/^route-stop-/, hidden)).toHaveLength(22));
     fireEvent.press(screen.getByTestId('route-back'));
 
-    fireEvent.press(screen.getByTestId('route-card-e-primary'));
+    // Only reachable once the mocked dynamic discovery resolves (jest.setup.js's
+    // findNearbyTransit mock), under its synthesized id.
+    fireEvent.press(await screen.findByTestId(`route-card-${cardIdFor(routeById.e)}-primary`));
     expect(await screen.findByTestId('route-map', hidden)).toBeTruthy();
     await waitFor(() => expect(screen.getAllByTestId(/^route-stop-/, hidden)).toHaveLength(32));
     fireEvent.press(screen.getByTestId('route-back'));

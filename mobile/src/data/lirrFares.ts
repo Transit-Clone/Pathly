@@ -1,4 +1,4 @@
-import type { Itinerary, RecentTrip, RouteDetail, RouteId } from './transit';
+import type { Itinerary, RecentTrip, RouteDetail } from './transit';
 
 /**
  * Real MTA fares — source: official LIRR station fare chart, effective January 4, 2026
@@ -28,7 +28,7 @@ export function isLirrPeakFare(now: Date = new Date()): boolean {
   return (hour >= 6 && hour < 10) || (hour >= 16 && hour < 20);
 }
 
-export type FareLeg = { routeId: RouteId; lirrDestination?: keyof typeof ZONE_10_FARES };
+export type FareLeg = { routeId: string; lirrDestination?: keyof typeof ZONE_10_FARES };
 
 /**
  * Real fare for a trip's legs: real Zone 10 LIRR pricing (peak vs. off-peak picked from the

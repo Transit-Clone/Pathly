@@ -1,6 +1,7 @@
 import type { Point } from './mapGeometry';
 
-export type RouteId = 'ronkonkoma' | 's1' | 'e' | '51' | '7';
+/** The fixed demo catalog's own ids, used by Recents/Favorites/the trip-planner's illustrative scenarios and kept as an exhaustive union so `routeById`/`routeColors` stay safely indexable. A dynamically-discovered nearby route (nearbyTransit.ts) is a different, wider id shape — see `RouteDetail.id`. */
+export type RouteId = 'ronkonkoma' | 's1' | 'e' | '51' | '7' | 'n4';
 
 export const routeColors: Record<RouteId, string> = {
   ronkonkoma: '#a625a9',
@@ -8,6 +9,8 @@ export const routeColors: Record<RouteId, string> = {
   e: '#0139a6',
   '51': '#ff0011',
   '7': '#a625a9',
+  // Real NICE Bus route color (routes.txt route_color for n4).
+  n4: '#ef853f',
 };
 
 export type TransitDirection = {
@@ -61,11 +64,12 @@ export type RouteStop = {
  * `direction1StopId`/`direction0StopId` here are only the *fallback* station — used for the
  * very first poll and if the nearest-stop lookup ever fails — not a fixed station. Every poll,
  * TransitLiveContext resolves whichever stop on this route is actually nearest the rider's
- * current location (getNearestRouteStop) and fetches live data for that one instead, so the
- * card follows the rider as they move rather than always anchoring here.
+ * current location, independently for each direction (getNearestRouteStop), and fetches live
+ * data for those instead, so the card follows the rider as they move rather than always
+ * anchoring here.
  */
 export type LiveSource = {
-  agencyId: 'lirr' | 'subway';
+  agencyId: 'lirr' | 'subway' | 'nice' | 'suffolk';
   routeId: string;
   direction1StopId: string;
   direction0StopId: string;
@@ -80,22 +84,32 @@ export type RouteDetail = {
   destination: string;
   direction: string;
   directions: readonly [TransitDirection, TransitDirection];
-  id: RouteId;
+  /** A demo-catalog `RouteId` for the entries below, or a dynamically-discovered route's synthesized `${agencyId}:${routeId}` (nearbyTransit.ts) — anywhere this flows into a pinned/favorited id list or a live-status lookup key, the wider `string` type is used instead of `RouteId` specifically so both kinds work the same way. */
+  id: string;
   /** See routes.txt/stops.txt in firebase/functions/static_data/{lirr,subway} for valid IDs. */
   liveSource?: LiveSource;
   /** Set by applyRouteLive for routes with a `liveSource`: whether real data has loaded, is still loading, or failed. Absent for routes with no `liveSource` (always static, nothing to load). */
   liveStatus?: 'loading' | 'loaded' | 'error';
-  mapLabels: readonly string[];
+  /**
+   * `mapLabels`/`mapPath`/`mapStops`/`stops`/`stopsDirectionIndex` are the hand-authored
+   * illustrative map/timeline — only ever actually rendered for a route with no `liveSource`
+   * (RouteDetailView falls through to the real backend-derived map/geometry otherwise). Set on
+   * every entry in the demo catalog below (even ones with a `liveSource`, as leftover
+   * placeholder data from before real geometry existed); omitted for dynamically-discovered
+   * nearby routes (nearbyTransit.ts), which have no hand-authored illustrative data at all —
+   * they always have a `liveSource`, so it's never actually needed.
+   */
+  mapLabels?: readonly string[];
   /** Route line in map world coordinates. */
-  mapPath: readonly Point[];
+  mapPath?: readonly Point[];
   /** Index into `mapPath` for each entry of `mapLabels`. */
-  mapStops: readonly number[];
+  mapStops?: readonly number[];
   predictions: readonly RoutePrediction[];
   /** Real live predictions for the reverse direction (directions[1]). Routes with a `liveSource` always set this (possibly to an empty array — see applyRouteLive), so the illustrative synthetic estimate is only ever used for routes with no `liveSource` at all. */
   reversePredictions?: readonly RoutePrediction[];
   routeName: string;
   shortName: string;
-  stops: readonly RouteStop[];
+  stops?: readonly RouteStop[];
   /** Which `directions` index `stops` is authored in chronological (departs-first) order for — the other direction's "Route stops" list is shown reversed, re-anchored from its own end. Defaults to 0. */
   stopsDirectionIndex?: 0 | 1;
 };
@@ -171,9 +185,14 @@ export const routes: readonly RouteDetail[] = [
     color: routeColors.s1,
     direction: 'Northbound',
     destination: 'Halesite',
+    // route_id "6859" ("01 - Amityville RR to Halesite"); direction_id 1 = toward Halesite =
+    // directions[0]. Stop pair is Huntington LIRR's two direction-specific stop_ids (this
+    // agency has no parent_station linking a stop to its opposite-direction twin, so the
+    // dynamic nearest-stop lookup always falls back to this fixed pair — see gtfsAgencies.ts).
+    liveSource: { agencyId: 'suffolk', routeId: '6859', direction1StopId: '11420858', direction0StopId: '11259869', direction1Index: 0 },
     directions: [
-      { direction: 'Northbound to Halesite', stopName: 'Deer Park Ave at Main St', minutes: 6, live: true },
-      { direction: 'Southbound to Amityville', stopName: 'Deer Park Ave at Main St', minutes: 14, live: false },
+      { direction: 'Northbound to Halesite', stopName: 'Huntington LIRR', minutes: 6, live: true },
+      { direction: 'Southbound to Amityville', stopName: 'Huntington LIRR', minutes: 14, live: false },
     ],
     predictions: [
       { minutes: 6, live: true },
@@ -233,9 +252,13 @@ export const routes: readonly RouteDetail[] = [
     color: routeColors['51'],
     direction: 'Eastbound',
     destination: 'Patchogue',
+    // route_id "6868" ("51 - Patchogue RR to Port Jefferson Station"); direction_id 1 = toward
+    // Patchogue = directions[0]. Stop pair is Stony Brook LIRR's two direction-specific
+    // stop_ids (see s1's liveSource comment above for why this is a fixed pair, not dynamic).
+    liveSource: { agencyId: 'suffolk', routeId: '6868', direction1StopId: '11283786', direction0StopId: '11283946', direction1Index: 0 },
     directions: [
-      { direction: 'Eastbound to Patchogue', stopName: 'Stony Brook University', minutes: 9, live: true },
-      { direction: 'Westbound to Port Jefferson', stopName: 'Stony Brook University', minutes: 22, live: false },
+      { direction: 'Eastbound to Patchogue', stopName: 'Stony Brook LIRR', minutes: 9, live: true },
+      { direction: 'Westbound to Port Jefferson', stopName: 'Stony Brook LIRR', minutes: 22, live: false },
     ],
     predictions: [
       { minutes: 9, live: true },
@@ -290,6 +313,42 @@ export const routes: readonly RouteDetail[] = [
     ],
     alert: 'No delays reported on this route.',
   },
+  {
+    id: 'n4',
+    agency: 'NICE Bus',
+    shortName: 'N4',
+    routeName: 'N4 Merrick Rd Local',
+    color: routeColors.n4,
+    direction: 'Eastbound',
+    destination: 'Freeport',
+    // route_id "n4" ("Merrick Rd Local"); direction_id 1 = toward Freeport = directions[0].
+    // Stop pair is Central Av/Merrick's two direction-specific stop_ids (this agency has no
+    // parent_station linking a stop to its opposite-direction twin, so the dynamic
+    // nearest-stop lookup always falls back to this fixed pair — see gtfsAgencies.ts).
+    liveSource: { agencyId: 'nice', routeId: 'n4', direction1StopId: '2004', direction0StopId: '4538', direction1Index: 0 },
+    directions: [
+      { direction: 'Eastbound to Freeport', stopName: 'Central Av / Merrick', minutes: 8, live: true },
+      { direction: 'Westbound to Jamaica', stopName: 'Central Av / Merrick', minutes: 19, live: false },
+    ],
+    predictions: [
+      { minutes: 8, live: true },
+      { minutes: 19, live: false },
+      { minutes: 34, live: true },
+    ],
+    // Real stops along the real route (gtfsDiscovery.ts's getRouteGeometry), not a separate
+    // hand-picked illustrative list — offsetMinutes are the real GTFS-derived durations.
+    mapLabels: ['158 St / Archer Bus Term', 'Springfield Bl / Merrick', 'Central Av / Merrick', 'Long Beach Rd / Merrick', 'Freeport Sta / North'],
+    mapPath: [[980, 500], [820, 560], [660, 620], [480, 700], [300, 780]],
+    mapStops: [0, 1, 2, 3, 4],
+    stops: [
+      { name: '158 St / Archer Bus Term', offsetMinutes: 0 },
+      { name: 'Springfield Bl / Merrick', offsetMinutes: 16 },
+      { name: 'Central Av / Merrick', offsetMinutes: 28 },
+      { name: 'Long Beach Rd / Merrick', offsetMinutes: 43 },
+      { name: 'Freeport Sta / North', offsetMinutes: 57 },
+    ],
+    alert: 'No delays reported on this route.',
+  },
 ] as const;
 
 export const routeById = Object.fromEntries(
@@ -302,6 +361,7 @@ export const allNearbyRoutes = [
   routeById.s1,
   routeById['7'],
   routeById['51'],
+  routeById.n4,
 ] as const;
 
 export const DEFAULT_PINNED_ROUTE_IDS: readonly RouteId[] = ['ronkonkoma'];
@@ -310,7 +370,7 @@ export type RecentTripId = 'penn-station' | 'times-square' | 'patchogue';
 
 export type RecentTripLeg = {
   agency: string;
-  routeId: RouteId;
+  routeId: string;
   alightStop: string;
   alightTime: string;
   boardStop: string;
@@ -524,10 +584,11 @@ export function stopsForDirection(
   route: Pick<RouteDetail, 'stops' | 'stopsDirectionIndex'>,
   directionIndex: number,
 ): readonly RouteStop[] {
+  const stops = route.stops ?? [];
   const naturalIndex = route.stopsDirectionIndex ?? 0;
-  if (directionIndex === naturalIndex) return route.stops;
-  const total = route.stops[route.stops.length - 1]?.offsetMinutes ?? 0;
-  return [...route.stops].reverse().map((stop) => ({ name: stop.name, offsetMinutes: total - stop.offsetMinutes }));
+  if (directionIndex === naturalIndex) return stops;
+  const total = stops[stops.length - 1]?.offsetMinutes ?? 0;
+  return [...stops].reverse().map((stop) => ({ name: stop.name, offsetMinutes: total - stop.offsetMinutes }));
 }
 
 /**

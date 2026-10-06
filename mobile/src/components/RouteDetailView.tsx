@@ -233,10 +233,16 @@ export function RouteDetailView({ isFavorite, isPinned, onBack, onToggleFavorite
   const vehicleIcon = transitModeForAgency(route.agency);
   const hasDelay = !route.alert.startsWith('No delays');
 
+  // Only ever rendered below for a route with no `liveSource` — every entry in the static demo
+  // catalog has real values here; a dynamically-discovered route always has a `liveSource`
+  // instead (and so never reaches this branch), which is why these can be optional on
+  // `RouteDetail` at all. The `?? []` fallbacks are therefore just to satisfy that optionality,
+  // not a real fallback path.
+  const illustrativeMapPath = route.mapPath ?? [];
   const routeLeg: MapLeg = {
     color: route.color,
-    path: route.mapPath,
-    stops: route.mapStops.map((pathIndex, index) => ({ label: route.mapLabels[index], point: route.mapPath[pathIndex]! })),
+    path: illustrativeMapPath,
+    stops: (route.mapStops ?? []).map((pathIndex, index) => ({ label: (route.mapLabels ?? [])[index] ?? '', point: illustrativeMapPath[pathIndex] ?? [0, 0] })),
   };
 
   // Routes with a `liveSource` get the real map (once its geometry has loaded); every other
@@ -244,11 +250,11 @@ export function RouteDetailView({ isFavorite, isPinned, onBack, onToggleFavorite
   const map = !route.liveSource ? (
     <>
       <MapBackdrop
-        focus={routeFocus([route.mapPath])}
+        focus={routeFocus([illustrativeMapPath])}
         initialSize={{ width: Math.min(width, 540), height: mapHeight }}
         padding={{ top: 76, right: 64, bottom: 44, left: 16 }}
         renderMarkers={(projection) => (
-          <VehicleMarker color={route.color} minutes={activeDirection.minutes} mode={vehicleIcon} point={pointAlong(route.mapPath, activeDirectionIndex === 0 ? 0.3 : 0.7)} projection={projection} />
+          <VehicleMarker color={route.color} minutes={activeDirection.minutes} mode={vehicleIcon} point={pointAlong(illustrativeMapPath, activeDirectionIndex === 0 ? 0.3 : 0.7)} projection={projection} />
         )}
         renderOverlay={({ scale }) => <RouteLines legs={[routeLeg]} scale={scale} />}
         showUserLocation={true}

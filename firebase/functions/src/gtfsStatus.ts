@@ -39,18 +39,23 @@ export type GtfsRouteStatus = {
 /**
  * Live trip updates and vehicle positions for one route on any configured agency (stop
  * names/coordinates resolved via that agency's static GTFS data, delays from its real-time
- * feed) — the same logic regardless of agency; only the feed URL and static data directory
- * differ, both read from gtfsAgencies.ts. Some agencies' realtime vehicle entities carry
- * route_id directly on the trip descriptor (NYC Subway); others don't and it's resolved via
- * trips.txt instead (LIRR) — both are tried here rather than assuming either.
+ * feed) — the same logic regardless of agency; only the feed request(s) and static data
+ * directory differ, both read from gtfsAgencies.ts. Most agencies publish one feed that
+ * already bundles trip updates and vehicle positions together (LIRR, subway); Swiftly-hosted
+ * agencies (NICE Bus, Suffolk County Transit) split those into two feeds instead, fetched in
+ * parallel and merged here — downstream code still just sees one flat entity list either way.
+ * Some agencies' realtime vehicle entities carry route_id directly on the trip descriptor (NYC
+ * Subway); others don't and it's resolved via trips.txt instead (LIRR) — both are tried here
+ * rather than assuming either.
  */
 export async function getRouteStatus(agencyId: AgencyId, routeId: string): Promise<GtfsRouteStatus> {
   const { routesById, stopsById, tripsById } = loadAgencyStaticData(agencyId);
   const route = routesById.get(routeId);
   if (!route) throw new Error(`Unknown ${agencyId} route_id "${routeId}"`);
 
-  const feedUrl = agencyConfig(agencyId).feedUrlForRoute(routeId);
-  const entities = await fetchFeedEntities(feedUrl);
+  const feedRequests = agencyConfig(agencyId).feedRequestsForRoute(routeId);
+  const entityLists = await Promise.all(feedRequests.map((request) => fetchFeedEntities(request.url, request.headers)));
+  const entities = entityLists.flat();
   const trips: GtfsTripStatus[] = [];
   const vehicles: GtfsVehicleStatus[] = [];
 
