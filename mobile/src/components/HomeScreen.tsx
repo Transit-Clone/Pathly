@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { Animated, BackHandler, Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Animated, BackHandler, Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { applyLirrLive } from '../data/applyLirrLive';
+import { applyRouteLive } from '../data/applyRouteLive';
 import { favoriteTripKey, type FavoriteTrip } from '../data/favorites';
-import { LirrLiveProvider, useLirrLive } from '../data/LirrLiveContext';
+import { TransitLiveProvider, useTransitLive } from '../data/TransitLiveContext';
 import {
   DEFAULT_PINNED_ROUTE_IDS,
   recentTripById,
@@ -60,9 +60,9 @@ type RouteDetailScreenProps = {
   routeId: RouteId;
 };
 
-/** Reads live LIRR data itself — must render under LirrLiveProvider, which HomeScreen itself can't consume. */
+/** Reads live transit data itself — must render under TransitLiveProvider, which HomeScreen itself can't consume. */
 function RouteDetailScreen({ isFavorite, isPinned, onBack, onToggleFavorite, onTogglePin, routeId }: RouteDetailScreenProps) {
-  const lirrLive = useLirrLive();
+  const live = useTransitLive(routeId);
   return (
     <RouteDetailView
       isFavorite={isFavorite}
@@ -70,7 +70,7 @@ function RouteDetailScreen({ isFavorite, isPinned, onBack, onToggleFavorite, onT
       onBack={onBack}
       onToggleFavorite={onToggleFavorite}
       onTogglePin={onTogglePin}
-      route={applyLirrLive(routeById[routeId], lirrLive)}
+      route={applyRouteLive(routeById[routeId], live)}
     />
   );
 }
@@ -86,7 +86,7 @@ export function HomeScreen() {
   const [favoriteRouteIds, setFavoriteRouteIds] = useState<readonly RouteId[]>([]);
   const [favoriteTrips, setFavoriteTrips] = useState<readonly FavoriteTrip[]>([]);
   const { height } = useWindowDimensions();
-  const { location, refresh: refreshLocation } = useCurrentLocation();
+  const { location, refresh: refreshLocation, status: locationStatus } = useCurrentLocation();
   const [isLocationCentered, setIsLocationCentered] = useState(false);
   const [sheetExpanded, setSheetExpanded] = useState(false);
   const [locationButtonOpacity] = useState(() => new Animated.Value(1));
@@ -224,13 +224,10 @@ export function HomeScreen() {
     : activeView.name === 'recentTrip'
       ? `recent-${activeView.tripId}`
       : activeView.name;
-  // Only the Port Jefferson Branch has a live feed wired up today; this is the one place that
-  // decides which branch's data the rest of the screen tree sees via useLirrLive().
-  const liveSource = routeById.ronkonkoma.liveSource;
   const screen = (node: ReactNode) => (
-    <LirrLiveProvider routeId={liveSource?.routeId ?? ''} stopId={liveSource?.stopId ?? ''}>
+    <TransitLiveProvider location={location}>
       <ScreenTransition key={transitionKey}>{node}</ScreenTransition>
-    </LirrLiveProvider>
+    </TransitLiveProvider>
   );
 
   if (activeView.name === 'search') {
@@ -302,11 +299,22 @@ export function HomeScreen() {
           onUserPan={() => setIsLocationCentered(false)}
           padding={{ top: 80, bottom: height - mapHeight }}
         />
+        {locationStatus !== 'located' ? (
+          <View pointerEvents="none" style={[styles.locationStatusPill, { top: 80 }]}>
+            <View style={styles.locationStatusBadge}>
+              {locationStatus === 'loading' ? <ActivityIndicator color="#FFFFFF" size="small" /> : null}
+              <Text style={styles.locationStatusText}>
+                {locationStatus === 'loading' ? 'Finding your location…' : 'Location unavailable — showing Stony Brook'}
+              </Text>
+            </View>
+          </View>
+        ) : null}
         <Animated.View
           pointerEvents={sheetExpanded ? 'none' : 'auto'}
           style={[styles.locationButton, { bottom: height - mapHeight + 16, opacity: locationButtonOpacity }]}
         >
           <CurrentLocationButton
+            loading={locationStatus === 'loading'}
             onPress={() => {
               setIsLocationCentered(true);
               void refreshLocation();
@@ -359,5 +367,30 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     right: 16,
     zIndex: 4,
     elevation: 4,
+  },
+  locationStatusPill: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  locationStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    maxWidth: '100%',
+  },
+  locationStatusText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
   },
 });

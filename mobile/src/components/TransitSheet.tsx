@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, PanResponder, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { applyLirrLive } from '../data/applyLirrLive';
+import { applyRouteLive } from '../data/applyRouteLive';
 import { favoriteTripKey, plannedTripCardData, type FavoriteTrip } from '../data/favorites';
-import { useLirrLive } from '../data/LirrLiveContext';
+import { realFareForRecentTrip } from '../data/lirrFares';
+import { useTransitLiveMap } from '../data/TransitLiveContext';
 import {
   allNearbyRoutes,
   recentTripById,
@@ -73,9 +74,9 @@ export function TransitSheet({
   pinnedRouteIds,
 }: TransitSheetProps) {
   const styles = useThemedStyles(createStyles);
-  const lirrLive = useLirrLive();
-  const pinnedRoutes = pinnedRouteIds.map((id) => applyLirrLive(routeById[id], lirrLive));
-  const nearbyRoutes = allNearbyRoutes.filter((route) => !pinnedRouteIds.includes(route.id)).map((route) => applyLirrLive(route, lirrLive));
+  const liveMap = useTransitLiveMap();
+  const pinnedRoutes = pinnedRouteIds.map((id) => applyRouteLive(routeById[id], liveMap.get(id) ?? { status: 'error' }));
+  const nearbyRoutes = allNearbyRoutes.filter((route) => !pinnedRouteIds.includes(route.id)).map((route) => applyRouteLive(route, liveMap.get(route.id) ?? { status: 'error' }));
   const hasFavorites = favoriteRouteIds.length > 0 || favoriteTrips.length > 0;
   const ease = useLayoutEase();
   const { reducedMotionActive } = useAppSettings();
@@ -224,7 +225,7 @@ export function TransitSheet({
                     onAction={isActive ? onEndTrip : () => onStartTrip(trip.id)}
                     onOpen={() => onOpenTrip(trip.id)}
                     testID={`recent-trip-${trip.id}`}
-                    trip={trip}
+                    trip={{ ...trip, fare: realFareForRecentTrip(trip) }}
                   />
                 );
               })}
@@ -237,7 +238,7 @@ export function TransitSheet({
                     <Text style={[styles.sectionLabel, styles.sectionHeading]}>ROUTES</Text>
                     {favoriteRouteIds.map((id) => (
                       <View key={id} testID={`favorite-route-${id}`}>
-                        <TransitCard onPress={() => onOpenRoute(id)} route={applyLirrLive(routeById[id], lirrLive)} />
+                        <TransitCard onPress={() => onOpenRoute(id)} route={applyRouteLive(routeById[id], liveMap.get(id) ?? { status: 'error' })} />
                       </View>
                     ))}
                   </View>
@@ -247,7 +248,9 @@ export function TransitSheet({
                     <Text style={[styles.sectionLabel, styles.sectionHeading, styles.flushHeading]}>TRIPS</Text>
                     {favoriteTrips.map((trip) => {
                       const key = favoriteTripKey(trip);
-                      const data = trip.kind === 'recent' ? recentTripById[trip.tripId] : plannedTripCardData(trip);
+                      const data = trip.kind === 'recent'
+                        ? { ...recentTripById[trip.tripId], fare: realFareForRecentTrip(recentTripById[trip.tripId]) }
+                        : plannedTripCardData(trip);
                       return (
                         <TripCard
                           key={key}

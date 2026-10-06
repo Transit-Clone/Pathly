@@ -7,6 +7,8 @@ import {
   routeColors,
   routes,
   scheduleItinerary,
+  scheduleStopsFromNow,
+  stopsForDirection,
   formatTripTimeChoice,
   MOCK_NOW_MINUTES,
 } from '../src/data/transit';
@@ -94,6 +96,29 @@ describe('transit prototype data', () => {
     expect(formatTripTimeChoice({ mode: 'now' })).toBe('Leave now');
     expect(formatTripTimeChoice({ mode: 'depart', minutes: 630 })).toBe('Depart 10:30 AM');
     expect(formatTripTimeChoice({ mode: 'arrive', minutes: 720 })).toBe('Arrive by 12:00 PM');
+  });
+
+  it('anchors the live stop schedule at the rider\'s actual nearest stop, not always the route\'s first stop', () => {
+    // Huntington is partway down the Port Jefferson Branch (offsetMinutes 70 of 123 from Penn
+    // Station in the route's authored, eastbound order) — a rider there sees a train reach
+    // Huntington in `leadMinutes`, not Penn Station in `leadMinutes`.
+    const westboundStops = stopsForDirection(routeById.ronkonkoma, 0);
+    const leadMinutes = 10;
+
+    const anchoredAtHuntington = scheduleStopsFromNow(westboundStops, MOCK_NOW_MINUTES, leadMinutes, 'Huntington');
+    const huntington = anchoredAtHuntington.find((stop) => stop.name === 'Huntington');
+    const pennAfterHuntington = anchoredAtHuntington.find((stop) => stop.name === 'Penn Station');
+    expect(huntington?.time).toBe('10:10 AM');
+    // Westbound, Huntington's offset from Port Jefferson (the westbound list's first stop) is
+    // 53 (123 - 70); Penn Station's is 123 — 70 minutes further than Huntington's, so it's
+    // reached 70 minutes after Huntington.
+    expect(pennAfterHuntington?.time).toBe('11:20 AM');
+
+    // Falling back to the first stop (no anchor given, or one that doesn't match) reproduces
+    // the old, wrong behavior — included here only to document the contrast, not as a goal.
+    const anchoredAtFirstStop = scheduleStopsFromNow(westboundStops, MOCK_NOW_MINUTES, leadMinutes);
+    const pennWithoutAnchor = anchoredAtFirstStop.find((stop) => stop.name === 'Penn Station');
+    expect(pennWithoutAnchor?.time).not.toBe(pennAfterHuntington?.time);
   });
 
   it('gives every route a map path with in-range stops and every leg a known route', () => {

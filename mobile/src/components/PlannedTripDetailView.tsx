@@ -1,3 +1,4 @@
+import { realFareForItinerary } from '../data/lirrFares';
 import { formatClockTime, type Itinerary, type ItinerarySchedule } from '../data/transit';
 import { SharedTripDetailView, type TripDetailModel } from './SharedTripDetailView';
 
@@ -19,7 +20,7 @@ function toTripDetailModel(destination: string, itinerary: Itinerary, schedule: 
     id: itinerary.id,
     destination,
     origin: 'Current location',
-    fare: itinerary.fare,
+    fare: realFareForItinerary(itinerary),
     durationMinutes: itinerary.durationMinutes,
     detailNote: schedule.label,
     transferCount: itinerary.transfers,

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Platform,
   ScrollView,
   StyleSheet,
@@ -11,7 +12,7 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 
-import { minuteLabel, type RouteDetail, type TransitDirection } from '../data/transit';
+import { isDueNow, minuteLabel, type RouteDetail, type TransitDirection } from '../data/transit';
 import { useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { typography } from '../theme/typography';
@@ -45,16 +46,31 @@ function PageBody({ index, item, route, styles }: {
         <Text numberOfLines={1} style={styles.stopName}>{item.stopName}</Text>
       </View>
 
-      <View style={[styles.timing, !item.live && styles.scheduledTiming]}>
-        <View style={styles.timeRow}>
-          {item.live ? <View style={styles.signalSpacer} /> : null}
-          <Text style={styles.minutes} testID={`transit-${route.id}-arrival-${index}`}>
-            {item.minutes}
-          </Text>
-          {item.live ? <LiveSignal style={styles.signal} /> : null}
+      {item.unavailable ? (
+        <View style={styles.timing} testID={`transit-${route.id}-arrival-${index}`}>
+          {route.liveStatus === 'loading' ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.unavailableText}>{'—'}</Text>}
         </View>
-        <Text style={styles.minuteUnit}>{minuteLabel(item.minutes)}</Text>
-      </View>
+      ) : isDueNow(item.minutes) ? (
+        <View style={[styles.timing, !item.live && styles.scheduledTiming]}>
+          <View style={styles.timeRow}>
+            {item.live ? <View style={styles.signalSpacer} /> : null}
+            <Text style={styles.dueText} testID={`transit-${route.id}-arrival-${index}`}>Due</Text>
+            {item.live ? <LiveSignal style={styles.signal} /> : null}
+          </View>
+          <Text style={styles.minuteUnit}>now</Text>
+        </View>
+      ) : (
+        <View style={[styles.timing, !item.live && styles.scheduledTiming]}>
+          <View style={styles.timeRow}>
+            {item.live ? <View style={styles.signalSpacer} /> : null}
+            <Text style={styles.minutes} testID={`transit-${route.id}-arrival-${index}`}>
+              {item.minutes}
+            </Text>
+            {item.live ? <LiveSignal style={styles.signal} /> : null}
+          </View>
+          <Text style={styles.minuteUnit}>{minuteLabel(item.minutes)}</Text>
+        </View>
+      )}
     </>
   );
 }
@@ -79,7 +95,7 @@ export function TransitCard({ onPress, pinned = false, route }: TransitCardProps
   const [hasAutoSelectedPage, setHasAutoSelectedPage] = useState(false);
   if (!hasAutoSelectedPage) {
     const [first, second] = route.directions;
-    if (first.live && second.live) {
+    if (first.live && second.live && !first.unavailable && !second.unavailable) {
       setHasAutoSelectedPage(true);
       if (second.minutes < first.minutes) setActivePage(1);
     }
@@ -92,8 +108,13 @@ export function TransitCard({ onPress, pinned = false, route }: TransitCardProps
     scrollRef.current?.scrollTo({ x: activePage * pageWidth, animated: false });
   }, [activePage, pageWidth]);
 
-  const accessibilityLabelFor = (item: TransitDirection) =>
-    `${route.agency} ${route.routeName}. ${item.direction}. ${item.stopName}. ${item.minutes} ${minuteLabel(item.minutes)}, ${item.live ? 'live GPS prediction' : 'scheduled time'}.`;
+  const accessibilityLabelFor = (item: TransitDirection) => {
+    if (item.unavailable) {
+      return `${route.agency} ${route.routeName}. ${item.direction}. ${item.stopName}. ${route.liveStatus === 'loading' ? 'Loading live data.' : 'Live data unavailable.'}`;
+    }
+    const timing = isDueNow(item.minutes) ? 'due now' : `${item.minutes} ${minuteLabel(item.minutes)}`;
+    return `${route.agency} ${route.routeName}. ${item.direction}. ${item.stopName}. ${timing}, ${item.live ? 'live GPS prediction' : 'scheduled time'}.`;
+  };
 
   // react-native-web doesn't reliably hand a drag off from a nested Pressable to its parent
   // ScrollView (the same class of gesture conflict already hit with the bottom sheet's drag
@@ -209,8 +230,20 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     ...typography.metadata,
     opacity: 0.84,
   },
-  timing: { minWidth: 56, alignItems: 'center' },
+  timing: { minWidth: 56, alignItems: 'center', justifyContent: 'center' },
   scheduledTiming: { opacity: 0.68 },
+  unavailableText: {
+    color: colors.white,
+    opacity: 0.68,
+    ...typography.displayTime,
+    fontSize: 24,
+  },
+  dueText: {
+    color: colors.white,
+    ...typography.displayTime,
+    fontSize: 22,
+    lineHeight: 34,
+  },
   timeRow: {
     minHeight: 30,
     flexDirection: 'row',

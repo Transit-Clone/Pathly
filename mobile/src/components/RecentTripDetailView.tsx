@@ -1,3 +1,4 @@
+import { realFareForRecentTrip } from '../data/lirrFares';
 import type { RecentTrip } from '../data/transit';
 import { SharedTripDetailView, type TripDetailModel } from './SharedTripDetailView';
 
@@ -31,7 +32,7 @@ function toTripDetailModel(trip: RecentTrip, isActive: boolean): TripDetailModel
     id: trip.id,
     destination: trip.destination,
     origin: trip.origin,
-    fare: trip.fare,
+    fare: realFareForRecentTrip(trip),
     durationMinutes: trip.durationMinutes,
     detailNote: isActive ? 'Started now' : trip.recency,
     transferCount: Math.max(0, trip.legs.length - 1),

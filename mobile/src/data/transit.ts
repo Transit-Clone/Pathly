@@ -14,22 +14,63 @@ export type TransitDirection = {
   direction: string;
   live: boolean;
   minutes: number;
+  /** Fallback station for routes with no `liveSource` (always static), or before a `liveSource` route's first successful poll. Routes with a `liveSource` get this overwritten with whichever real stop is actually nearest the rider right now (applyRouteLive, via TransitLiveContext's nearest-stop lookup) — not fixed to this hand-picked station. */
   stopName: string;
+  /** The real nearest stop's own id (matches a RouteGeometry stop's `stopId`) — set alongside `stopName` once a `liveSource` route's nearest-stop lookup resolves, so callers can match it against real route geometry by id rather than by display name. Absent for routes with no `liveSource`, or before the first successful lookup. */
+  stopId?: string;
+  /** True when this route has a `liveSource` but real data hasn't loaded (or failed to) — `minutes`/`live` are stale placeholders in that case and shouldn't be shown; UI should show a loading/unavailable state instead. Absent for routes with no `liveSource` (always-static, `minutes` is legitimate illustrative data). */
+  unavailable?: boolean;
 };
 
 export type RoutePrediction = {
   live: boolean;
   minutes: number;
+  /** This specific trip's real LIRR peak/off-peak classification, when live data provided one — absent for the static mock predictions and for agencies without fare tiers. */
+  peakOffpeak?: boolean | null;
 };
 
 export function minuteLabel(minutes: number): string {
   return minutes === 1 ? 'minute' : 'minutes';
 }
 
+/**
+ * True once a countdown has reached (or passed) zero. A live prediction can briefly sit at 0
+ * between the train's actual arrival and the next poll replacing it with the following trip —
+ * showing a literal "0 minutes" there reads as broken, so callers should show a "due/arriving"
+ * state instead.
+ */
+export function isDueNow(minutes: number): boolean {
+  return minutes <= 0;
+}
+
 export type RouteStop = {
   name: string;
   /** Minutes after the route's first stop — real GTFS hop durations for the LIRR branch, approximate for the mock bus/subway routes. */
   offsetMinutes: number;
+};
+
+/**
+ * Where a route's live data comes from, and which `directions` index corresponds to GTFS
+ * direction_id 1 (the other index is implicitly direction_id 0) — a discriminated union
+ * One shape for every agency — the backend's gtfsAgencies.ts is what actually knows that LIRR
+ * has one stop_id per physical station while subway gives each direction its own
+ * platform-level stop_id; the client doesn't need to care, it just always passes two stop ids
+ * (the same one twice for agencies like LIRR where direction doesn't change the stop_id).
+ * Routes with no live feed wired up omit this entirely.
+ *
+ * `direction1StopId`/`direction0StopId` here are only the *fallback* station — used for the
+ * very first poll and if the nearest-stop lookup ever fails — not a fixed station. Every poll,
+ * TransitLiveContext resolves whichever stop on this route is actually nearest the rider's
+ * current location (getNearestRouteStop) and fetches live data for that one instead, so the
+ * card follows the rider as they move rather than always anchoring here.
+ */
+export type LiveSource = {
+  agencyId: 'lirr' | 'subway';
+  routeId: string;
+  direction1StopId: string;
+  direction0StopId: string;
+  /** Which `directions` index is GTFS direction_id 1 (the other index is implicitly direction_id 0). */
+  direction1Index: 0 | 1;
 };
 
 export type RouteDetail = {
@@ -40,20 +81,17 @@ export type RouteDetail = {
   direction: string;
   directions: readonly [TransitDirection, TransitDirection];
   id: RouteId;
-  /**
-   * The real LIRR route_id/stop_id to poll for live data, and which `directions` index
-   * corresponds to GTFS direction_id 1 (the other index is implicitly direction_id 0). Omit
-   * for routes with no live feed (everything except the Port Jefferson Branch, for now) — see
-   * routes.txt/stops.txt in firebase/functions/static_data/lirr for valid IDs.
-   */
-  liveSource?: { routeId: string; stopId: string; direction1Index: 0 | 1 };
+  /** See routes.txt/stops.txt in firebase/functions/static_data/{lirr,subway} for valid IDs. */
+  liveSource?: LiveSource;
+  /** Set by applyRouteLive for routes with a `liveSource`: whether real data has loaded, is still loading, or failed. Absent for routes with no `liveSource` (always static, nothing to load). */
+  liveStatus?: 'loading' | 'loaded' | 'error';
   mapLabels: readonly string[];
   /** Route line in map world coordinates. */
   mapPath: readonly Point[];
   /** Index into `mapPath` for each entry of `mapLabels`. */
   mapStops: readonly number[];
   predictions: readonly RoutePrediction[];
-  /** Real live predictions for the reverse direction (directions[1]), when a live feed has any; falls back to a synthetic estimate otherwise. */
+  /** Real live predictions for the reverse direction (directions[1]). Routes with a `liveSource` always set this (possibly to an empty array — see applyRouteLive), so the illustrative synthetic estimate is only ever used for routes with no `liveSource` at all. */
   reversePredictions?: readonly RoutePrediction[];
   routeName: string;
   shortName: string;
@@ -74,7 +112,7 @@ export const routes: readonly RouteDetail[] = [
     direction: 'Westbound',
     destination: 'Penn Station',
     // route_id "10", stop_id "14" (Stony Brook); direction_id 1 = toward Penn Station = directions[0].
-    liveSource: { routeId: '10', stopId: '14', direction1Index: 0 },
+    liveSource: { agencyId: 'lirr', routeId: '10', direction1StopId: '14', direction0StopId: '14', direction1Index: 0 },
     directions: [
       { direction: 'Westbound to Penn Station', stopName: 'Stony Brook Station', minutes: 18, live: true },
       { direction: 'Eastbound to Port Jefferson', stopName: 'Stony Brook Station', minutes: 26, live: false },
@@ -120,8 +158,8 @@ export const routes: readonly RouteDetail[] = [
       { name: 'Port Jefferson', offsetMinutes: 123 },
     ],
     // These stops are authored Penn Station -> Port Jefferson, matching real GTFS order and
-    // the real map's geometry (portJeffersonGeometry.ts) — that's directions[1] (Eastbound to
-    // Port Jefferson), not directions[0] like every other route here.
+    // the real map's dynamically-fetched geometry (see routeGeometry.ts) — that's
+    // directions[1] (Eastbound to Port Jefferson), not directions[0] like every other route here.
     stopsDirectionIndex: 1,
     alert: 'No delays reported on this route.',
   },
@@ -162,6 +200,10 @@ export const routes: readonly RouteDetail[] = [
     color: routeColors.e,
     direction: 'Downtown',
     destination: 'World Trade Center',
+    // route_id "E"; G06S/G06N are Sutphin Blvd-Archer Av's two platform-level stop_ids
+    // (direction is read from which platform a trip stops at, not GTFS direction_id — see
+    // firebase/functions/src/subwaySchedule.ts).
+    liveSource: { agencyId: 'subway', routeId: 'E', direction1StopId: 'G06S', direction0StopId: 'G06N', direction1Index: 0 },
     directions: [
       { direction: 'Downtown to World Trade Center', stopName: 'Sutphin Blvd–Archer Av', minutes: 4, live: true },
       { direction: 'Uptown to Jamaica Center', stopName: 'Sutphin Blvd–Archer Av', minutes: 11, live: false },
@@ -220,9 +262,16 @@ export const routes: readonly RouteDetail[] = [
     color: routeColors['7'],
     direction: 'Westbound',
     destination: '34 St–Hudson Yards',
+    // route_id "7"; 701S/701N are Flushing-Main St's two platform-level stop_ids. 701N trips
+    // are arrivals terminating at Flushing (there's no "departing toward Flushing" from
+    // Flushing itself), so the eastbound tab's live predictions are really "next train
+    // arriving" rather than "next train departing" — see firebase/functions/src/subwaySchedule.ts.
+    liveSource: { agencyId: 'subway', routeId: '7', direction1StopId: '701S', direction0StopId: '701N', direction1Index: 0 },
     directions: [
       { direction: 'Westbound to Hudson Yards', stopName: 'Flushing–Main St', minutes: 3, live: true },
-      { direction: 'Eastbound to Flushing', stopName: 'Times Sq–42 St', minutes: 8, live: false },
+      // Was "Times Sq–42 St" — corrected to match the live feed, which is for Flushing-Main
+      // St specifically (both directions share one representative stop, same as the e route).
+      { direction: 'Eastbound to Flushing', stopName: 'Flushing–Main St', minutes: 8, live: false },
     ],
     predictions: [
       { minutes: 3, live: true },
@@ -483,15 +532,25 @@ export function stopsForDirection(
 
 /**
  * Projects a (direction-ordered) stop list's relative offsets onto actual wall-clock time,
- * anchored so the first stop departs `leadMinutes` from now. This is what makes "Route stops"
- * track real time — matching what a real transit app shows — instead of a fixed baked-in schedule.
+ * anchored so `anchorStopName` (the rider's actual nearest station — not necessarily the
+ * route's first stop) is reached `leadMinutes` from now, the same countdown already shown on
+ * the card. Every other stop's time is derived from its own static offset relative to that
+ * anchor. Anchoring at `stops[0]` instead (the old behavior) was wrong for any rider not at the
+ * route's origin terminal — e.g. a rider near Huntington on the Port Jefferson Branch would see
+ * the whole schedule shifted by Huntington's ~70-minute offset from Penn Station, since
+ * `leadMinutes` (time to Huntington) was being applied as if it were time to Penn Station
+ * instead. Falls back to `stops[0]` if `anchorStopName` doesn't match any stop (e.g. it hasn't
+ * resolved yet, or this route has no dynamic stop at all) — functionally the old behavior.
  */
 export function scheduleStopsFromNow(
   stops: readonly RouteStop[],
   nowMinutes: number,
   leadMinutes: number,
+  anchorStopName?: string,
 ): readonly ScheduledStop[] {
-  const anchor = nowMinutes + leadMinutes;
+  const anchorStop = (anchorStopName ? stops.find((stop) => stop.name === anchorStopName) : undefined) ?? stops[0];
+  const anchorOffset = anchorStop?.offsetMinutes ?? 0;
+  const anchor = nowMinutes + leadMinutes - anchorOffset;
   return stops.map((stop) => ({ name: stop.name, time: formatClockTime(anchor + stop.offsetMinutes) }));
 }
 

@@ -1,4 +1,4 @@
-import { fireEvent, render, within } from '@testing-library/react-native';
+import { fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import { signOut } from 'firebase/auth';
 import { StyleSheet } from 'react-native';
 import mockSafeAreaContext from 'react-native-safe-area-context/jest/mock';
@@ -34,7 +34,7 @@ describe('Pathly prototype navigation', () => {
     expect(screen.queryByText('Where to?')).toBeNull();
   });
 
-  it('renders five selectable routes without contacting a backend', () => {
+  it('renders five selectable routes without contacting a backend', async () => {
     const fetchMock = jest.fn();
     globalThis.fetch = fetchMock as unknown as typeof fetch;
     const screen = render(<App />);
@@ -44,7 +44,10 @@ describe('Pathly prototype navigation', () => {
     for (const route of routes) {
       expect(screen.getByTestId(`route-card-${route.id}`)).toBeTruthy();
     }
-    expect(screen.getAllByText('minutes')).toHaveLength(10);
+    // Routes with a liveSource start in a loading state and only show "minutes" text once
+    // their mocked live predictions resolve (no synchronous fallback to static data anymore).
+    // findAllByText resolves as soon as it finds any match, so the full count needs waitFor.
+    await waitFor(() => expect(screen.getAllByText('minutes')).toHaveLength(10));
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -59,17 +62,20 @@ describe('Pathly prototype navigation', () => {
     }
   });
 
-  it('shows the two-arc live signal only on live predictions', () => {
+  it('shows the two-arc live signal only on live predictions', async () => {
     const screen = render(<App />);
 
-    expect(screen.getAllByTestId('live-gps-signal', { includeHiddenElements: true })).toHaveLength(5);
+    // Live routes start in a loading state (no signal yet); wait for the mocked predictions
+    // to resolve before counting signals. findAllByTestId resolves as soon as it finds any
+    // match, so the full count needs waitFor.
+    await waitFor(() => expect(screen.getAllByTestId('live-gps-signal', { includeHiddenElements: true })).toHaveLength(5));
     expect(within(screen.getByTestId('route-card-ronkonkoma-primary')).getByTestId('live-gps-signal', { includeHiddenElements: true })).toBeTruthy();
     expect(within(screen.getByTestId('route-card-ronkonkoma-alternate')).queryByTestId('live-gps-signal', { includeHiddenElements: true })).toBeNull();
   });
 
   it.each(routes.map((route) => [route.id, route.routeName] as const))(
     'opens shared details for %s and returns home',
-    (routeId, routeName) => {
+    async (routeId, routeName) => {
       const screen = render(<App />);
       fireEvent.press(screen.getByTestId(`route-card-${routeId}-primary`));
 
@@ -77,13 +83,15 @@ describe('Pathly prototype navigation', () => {
       const destination = screen.getByTestId('route-detail-destination').props.children as string;
       expect(routeById[routeId].directions[0].direction.endsWith(destination)).toBe(true);
       expect(screen.queryByText(routeName === routeById[routeId].shortName ? '__none__' : routeName)).toBeNull();
-      expect(screen.getByTestId('route-detail-badge')).toBeTruthy();
+      // Routes with a liveSource show the real map (and its badge) only once geometry has
+      // loaded from the mocked backend call; routes without one render it immediately.
+      expect(await screen.findByTestId('route-detail-badge')).toBeTruthy();
       fireEvent.press(screen.getByTestId('route-back'));
       expect(screen.getByTestId(`route-card-${routeId}`)).toBeTruthy();
     },
   );
 
-  it('keeps the transit list scrolling natural, with a drag handle and a route visible at rest', () => {
+  it('keeps the transit list scrolling natural, with a drag handle and a route visible at rest', async () => {
     const screen = render(<App />);
     const sheetScroll = screen.getByTestId('nearby-route-list');
 
@@ -98,7 +106,9 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByTestId('tab-nearby')).toBeTruthy();
     expect(screen.getByTestId('tab-recents')).toBeTruthy();
     expect(screen.getByTestId('tab-favorites')).toBeTruthy();
-    expect(screen.getByLabelText('Center on current location')).toBeTruthy();
+    // Starts in a "finding your location" loading state (denied permission in this test
+    // environment resolves it almost immediately).
+    expect(await screen.findByLabelText('Center on current location')).toBeTruthy();
 
     fireEvent.scroll(sheetScroll, { nativeEvent: { contentOffset: { y: 120 } } });
     fireEvent.scroll(sheetScroll, { nativeEvent: { contentOffset: { y: 240 } } });
@@ -331,12 +341,16 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByText('No favorites yet')).toBeTruthy();
   });
 
-  it('shows a selected state on home and results location buttons', () => {
+  it('shows a selected state on home and results location buttons', async () => {
     const screen = render(<App />);
-    const homeLocation = screen.getByLabelText('Center on current location');
+    // The home locate button starts in a "finding your location" loading state (denied
+    // permission in this test environment resolves it almost immediately).
+    const homeLocation = await screen.findByLabelText('Center on current location');
     expect(homeLocation.props.accessibilityState).toEqual({ selected: false });
     fireEvent.press(homeLocation);
-    expect(screen.getByLabelText('Center on current location').props.accessibilityState).toEqual({ selected: true });
+    // Pressing refreshes the location (briefly back to the "finding your location" label) before
+    // settling again once the mocked permission lookup resolves.
+    await waitFor(() => expect(screen.getByLabelText('Center on current location').props.accessibilityState).toEqual({ selected: true }));
 
     fireEvent.press(screen.getByTestId('search-trigger'));
     fireEvent.changeText(screen.getByTestId('search-input'), '123 Terry Rd');
@@ -412,17 +426,26 @@ describe('Pathly prototype navigation', () => {
   });
 
   it('shows route badges, time range, duration, fare, and recency on recent-trip cards', () => {
-    const screen = render(<App />);
-    fireEvent.press(screen.getByTestId('tab-recents'));
-    const card = screen.getByTestId('recent-trip-times-square');
+    // Fare is the real, computed Zone 10 LIRR + subway fare (see lirrFares.ts), which depends
+    // on whether it's currently LIRR peak or off-peak — pinned here (a weekday 10am, off-peak)
+    // so the expected dollar amount is deterministic.
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date(2024, 0, 1, 10, 0, 0));
+    try {
+      const screen = render(<App />);
+      fireEvent.press(screen.getByTestId('tab-recents'));
+      const card = screen.getByTestId('recent-trip-times-square');
 
-    expect(within(card).getByLabelText('PJ rail')).toBeTruthy();
-    expect(within(card).getByLabelText('E train')).toBeTruthy();
-    expect(within(card).getByText('8:42 AM – 10:16 AM')).toBeTruthy();
-    expect(within(card).getByText('94 min')).toBeTruthy();
-    expect(within(card).getByText('$17.15')).toBeTruthy();
-    expect(within(card).getByText('3 days ago')).toBeTruthy();
-    expect(within(card).getByText('From Stony Brook University')).toBeTruthy();
+      expect(within(card).getByLabelText('PJ rail')).toBeTruthy();
+      expect(within(card).getByLabelText('E train')).toBeTruthy();
+      expect(within(card).getByText('8:42 AM – 10:16 AM')).toBeTruthy();
+      expect(within(card).getByText('94 min')).toBeTruthy();
+      expect(within(card).getByText('$15.15')).toBeTruthy();
+      expect(within(card).getByText('3 days ago')).toBeTruthy();
+      expect(within(card).getByText('From Stony Brook University')).toBeTruthy();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('highlights an in-progress recent trip and swaps Go for End', () => {
@@ -590,14 +613,20 @@ describe('Pathly prototype navigation', () => {
     expect(backgroundOf(screen.getByTestId('settings-accessibility'))).toBe(darkColors.background);
   });
 
-  it('draws route and trip overlays on the illustrated map', () => {
+  it('draws route and trip overlays on the illustrated map', async () => {
     const hidden = { includeHiddenElements: true };
     const screen = render(<App />);
-    // Port Jefferson Branch (ronkonkoma) has a real live feed, so it renders the real map
-    // instead of the illustrated overlay the other routes still use.
+    // Routes with real, complete station geometry (Port Jefferson Branch, E, 7) render the
+    // real map once it's fetched from the (mocked) backend; every other route still uses the
+    // illustrated overlay immediately.
     fireEvent.press(screen.getByTestId('route-card-ronkonkoma-primary'));
-    expect(screen.getByTestId('lirr-route-map', hidden)).toBeTruthy();
-    expect(screen.getAllByTestId(/^lirr-stop-/, hidden)).toHaveLength(22);
+    expect(await screen.findByTestId('route-map', hidden)).toBeTruthy();
+    await waitFor(() => expect(screen.getAllByTestId(/^route-stop-/, hidden)).toHaveLength(22));
+    fireEvent.press(screen.getByTestId('route-back'));
+
+    fireEvent.press(screen.getByTestId('route-card-e-primary'));
+    expect(await screen.findByTestId('route-map', hidden)).toBeTruthy();
+    await waitFor(() => expect(screen.getAllByTestId(/^route-stop-/, hidden)).toHaveLength(32));
     fireEvent.press(screen.getByTestId('route-back'));
 
     fireEvent.press(screen.getByTestId('tab-recents'));
@@ -659,7 +688,7 @@ describe('Pathly prototype navigation', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('keeps route stop timing and live provenance accessible', () => {
+  it('keeps route stop timing and live provenance accessible', async () => {
     // Route stops are projected onto the actual current time (see scheduleStopsFromNow in
     // transit.ts), so the clock is pinned here to make the rendered times deterministic.
     jest.useFakeTimers();
@@ -668,7 +697,9 @@ describe('Pathly prototype navigation', () => {
       const screen = render(<App />);
       fireEvent.press(screen.getByTestId('route-card-ronkonkoma-primary'));
 
-      expect(screen.getByLabelText('4 minutes, live GPS prediction')).toBeTruthy();
+      // Live predictions start as a loading state and only show once the mocked backend call
+      // resolves.
+      expect(await screen.findByLabelText('4 minutes, live GPS prediction')).toBeTruthy();
       expect(screen.getByLabelText('18 minutes, scheduled time')).toBeTruthy();
       // Westbound (the default tab) travels Port Jefferson -> Penn Station, the reverse of how
       // `stops` is authored (Penn -> Port Jefferson, see stopsDirectionIndex), so the "Route

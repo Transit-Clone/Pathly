@@ -1,26 +1,29 @@
 import { useState } from 'react';
-import { StyleSheet } from 'react-native';
+import { ActivityIndicator, StyleSheet } from 'react-native';
 
-import { useThemedStyles } from '../theme/AppSettings';
+import { useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { Icon } from './Icon';
 import { PressableScale } from './PressableScale';
 
 type CurrentLocationButtonProps = {
+  /** True while the user's real location is still being looked up — shows a spinner instead of the locate icon. */
+  loading?: boolean;
   onPress?: () => void;
   selected?: boolean;
   testID?: string;
 };
 
-export function CurrentLocationButton({ onPress, selected, testID }: CurrentLocationButtonProps) {
+export function CurrentLocationButton({ loading = false, onPress, selected, testID }: CurrentLocationButtonProps) {
   const styles = useThemedStyles(createStyles);
+  const { colors } = useTheme();
   const [centered, setCentered] = useState(false);
   const isSelected = selected ?? centered;
 
   return (
     <PressableScale
       accessibilityHint="Centers the map on your location"
-      accessibilityLabel="Center on current location"
+      accessibilityLabel={loading ? 'Finding your location' : 'Center on current location'}
       accessibilityRole="button"
       accessibilityState={{ selected: isSelected }}
       onPress={() => {
@@ -30,7 +33,7 @@ export function CurrentLocationButton({ onPress, selected, testID }: CurrentLoca
       style={[styles.button, isSelected && styles.selected]}
       testID={testID}
     >
-      <Icon filled={isSelected} name="locate" size={22} />
+      {loading ? <ActivityIndicator color={colors.primary} size="small" /> : <Icon filled={isSelected} name="locate" size={22} />}
     </PressableScale>
   );
 }
