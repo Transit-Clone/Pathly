@@ -1,15 +1,68 @@
 import { defineSecret } from 'firebase-functions/params';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 
+import { enforceCallableSecurity, type CallableRateLimit } from './callableSecurity';
 import { findNearbyTransit as findNearbyTransitDiscovery, getNearestStopForRoute, getRouteGeometry as getRouteGeometryDiscovery } from './gtfsDiscovery';
-import type { AgencyId } from './gtfsAgencies';
+import { AGENCY_CONFIGS, type AgencyId } from './gtfsAgencies';
 import { getStopPredictions } from './gtfsSchedule';
+import { loadAgencyStaticData } from './gtfsStaticData';
 import { getRouteStatus } from './gtfsStatus';
 
 /** Set once with: firebase functions:secrets:set GOOGLE_MAPS_API_KEY */
 const googleMapsApiKey = defineSecret('GOOGLE_MAPS_API_KEY');
 /** Set once with: firebase functions:secrets:set SWIFTLY_API_KEY. Needed for NICE Bus/Suffolk County Transit's real-time feeds (hosted by Swiftly, a third-party provider); not used by LIRR or subway. */
 const swiftlyApiKey = defineSecret('SWIFTLY_API_KEY');
+
+// Keep false until web and native releases are producing valid App Check tokens. This is
+// version-controlled deliberately so a deploy from a machine missing local config cannot
+// silently change enforcement.
+const enforceTransitAppCheck = false;
+const protectedCallableOptions = { enforceAppCheck: enforceTransitAppCheck, maxInstances: 1 } as const;
+const RATE_LIMITS = {
+  // Live/nearest calls run per visible route every 30 seconds and after meaningful GPS updates.
+  getRouteLiveStatus: { userPerMinute: 600 },
+  findNearbyTransit: { userPerMinute: 30 },
+  getNearestRouteStop: { userPerMinute: 600 },
+  getRouteGeometry: { userPerMinute: 120 },
+  geocodeAddress: { userPerMinute: 10 },
+} satisfies Record<string, CallableRateLimit>;
+
+function requiredString(value: unknown, name: string, maxLength = 128): string {
+  if (typeof value !== 'string' || !value.trim() || value.length > maxLength) {
+    throw new HttpsError('invalid-argument', `${name} is required and must be at most ${maxLength} characters`);
+  }
+  return value.trim();
+}
+
+function requiredAgencyId(value: unknown): AgencyId {
+  const agencyId = requiredString(value, 'agencyId', 32);
+  if (!Object.hasOwn(AGENCY_CONFIGS, agencyId)) throw new HttpsError('invalid-argument', 'agencyId is not supported');
+  return agencyId as AgencyId;
+}
+
+function requiredRouteId(agencyId: AgencyId, value: unknown): string {
+  const routeId = requiredString(value, 'routeId');
+  if (!loadAgencyStaticData(agencyId).routesById.has(routeId)) {
+    throw new HttpsError('invalid-argument', `routeId is not supported for agencyId "${agencyId}"`);
+  }
+  return routeId;
+}
+
+function requiredCoordinates(lat: unknown, lon: unknown): { lat: number; lon: number } {
+  if (
+    typeof lat !== 'number' ||
+    typeof lon !== 'number' ||
+    !Number.isFinite(lat) ||
+    !Number.isFinite(lon) ||
+    lat < -90 ||
+    lat > 90 ||
+    lon < -180 ||
+    lon > 180
+  ) {
+    throw new HttpsError('invalid-argument', 'lat and lon must be valid coordinates');
+  }
+  return { lat, lon };
+}
 
 type RouteLiveStatusRequest = { agencyId: AgencyId; routeId: string; direction1StopId: string; direction0StopId: string };
 
@@ -26,12 +79,13 @@ type RouteLiveStatusRequest = { agencyId: AgencyId; routeId: string; direction1S
  * (For agencies where one stop_id serves a station regardless of direction, pass the same id
  * for both direction1StopId and direction0StopId.)
  */
-export const getRouteLiveStatus = onCall<RouteLiveStatusRequest>({ secrets: [swiftlyApiKey] }, async (request) => {
-  const { agencyId, routeId, direction1StopId, direction0StopId } = request.data ?? {};
-  if (!agencyId) throw new HttpsError('invalid-argument', 'agencyId is required');
-  if (!routeId) throw new HttpsError('invalid-argument', 'routeId is required');
-  if (!direction1StopId) throw new HttpsError('invalid-argument', 'direction1StopId is required');
-  if (!direction0StopId) throw new HttpsError('invalid-argument', 'direction0StopId is required');
+export const getRouteLiveStatus = onCall<RouteLiveStatusRequest>({ ...protectedCallableOptions, secrets: [swiftlyApiKey] }, async (request) => {
+  enforceCallableSecurity(request, 'getRouteLiveStatus', RATE_LIMITS.getRouteLiveStatus);
+  const data = request.data ?? ({} as RouteLiveStatusRequest);
+  const agencyId = requiredAgencyId(data.agencyId);
+  const routeId = requiredString(data.routeId, 'routeId');
+  const direction1StopId = requiredString(data.direction1StopId, 'direction1StopId');
+  const direction0StopId = requiredString(data.direction0StopId, 'direction0StopId');
 
   const status = await getRouteStatus(agencyId, routeId);
   const stopPredictions = await getStopPredictions(agencyId, routeId, direction1StopId, direction0StopId, status.trips);
@@ -47,9 +101,9 @@ type FindNearbyTransitRequest = { lat: number; lon: number };
  * live predictions, or getRouteGeometry for a real map.
  * Client call: httpsCallable(functions, 'findNearbyTransit')({ lat, lon }).
  */
-export const findNearbyTransit = onCall<FindNearbyTransitRequest>(async (request) => {
-  const { lat, lon } = request.data ?? {};
-  if (typeof lat !== 'number' || typeof lon !== 'number') throw new HttpsError('invalid-argument', 'lat and lon are required');
+export const findNearbyTransit = onCall<FindNearbyTransitRequest>(protectedCallableOptions, async (request) => {
+  enforceCallableSecurity(request, 'findNearbyTransit', RATE_LIMITS.findNearbyTransit);
+  const { lat, lon } = requiredCoordinates(request.data?.lat, request.data?.lon);
   const routes = await findNearbyTransitDiscovery(lat, lon);
   return { routes };
 });
@@ -63,11 +117,12 @@ type NearestRouteStopRequest = { agencyId: AgencyId; routeId: string; lat: numbe
  * stations for originally.
  * Client call: httpsCallable(functions, 'getNearestRouteStop')({ agencyId, routeId, lat, lon }).
  */
-export const getNearestRouteStop = onCall<NearestRouteStopRequest>(async (request) => {
-  const { agencyId, routeId, lat, lon } = request.data ?? {};
-  if (!agencyId) throw new HttpsError('invalid-argument', 'agencyId is required');
-  if (!routeId) throw new HttpsError('invalid-argument', 'routeId is required');
-  if (typeof lat !== 'number' || typeof lon !== 'number') throw new HttpsError('invalid-argument', 'lat and lon are required');
+export const getNearestRouteStop = onCall<NearestRouteStopRequest>(protectedCallableOptions, async (request) => {
+  enforceCallableSecurity(request, 'getNearestRouteStop', RATE_LIMITS.getNearestRouteStop);
+  const data = request.data ?? ({} as NearestRouteStopRequest);
+  const agencyId = requiredAgencyId(data.agencyId);
+  const routeId = requiredRouteId(agencyId, data.routeId);
+  const { lat, lon } = requiredCoordinates(data.lat, data.lon);
 
   const stop = await getNearestStopForRoute(agencyId, routeId, lat, lon);
   if (!stop) throw new HttpsError('not-found', `No stops found for ${agencyId} route "${routeId}"`);
@@ -83,10 +138,12 @@ type RouteGeometryRequest = { agencyId: AgencyId; routeId: string; directionId: 
  * (e.g. LIRR's Port Jefferson Branch at Huntington).
  * Client call: httpsCallable(functions, 'getRouteGeometry')({ agencyId, routeId, directionId }).
  */
-export const getRouteGeometry = onCall<RouteGeometryRequest>(async (request) => {
-  const { agencyId, routeId, directionId } = request.data ?? {};
-  if (!agencyId) throw new HttpsError('invalid-argument', 'agencyId is required');
-  if (!routeId) throw new HttpsError('invalid-argument', 'routeId is required');
+export const getRouteGeometry = onCall<RouteGeometryRequest>(protectedCallableOptions, async (request) => {
+  enforceCallableSecurity(request, 'getRouteGeometry', RATE_LIMITS.getRouteGeometry);
+  const data = request.data ?? ({} as RouteGeometryRequest);
+  const agencyId = requiredAgencyId(data.agencyId);
+  const routeId = requiredRouteId(agencyId, data.routeId);
+  const { directionId } = data;
   if (directionId !== 0 && directionId !== 1) throw new HttpsError('invalid-argument', 'directionId must be 0 or 1');
 
   const geometry = await getRouteGeometryDiscovery(agencyId, routeId, directionId);
@@ -106,10 +163,11 @@ type GeocodingApiResponse = {
  * Client call: httpsCallable(functions, 'geocodeAddress')({ address }).
  */
 export const geocodeAddress = onCall<GeocodeRequest, Promise<GeocodeResult>>(
-  { secrets: [googleMapsApiKey] },
+  // No current client calls this billable proxy, so it is safe to require App Check now.
+  { enforceAppCheck: true, maxInstances: 1, secrets: [googleMapsApiKey] },
   async (request) => {
-    const address = request.data.address?.trim();
-    if (!address) throw new HttpsError('invalid-argument', 'address is required');
+    enforceCallableSecurity(request, 'geocodeAddress', RATE_LIMITS.geocodeAddress);
+    const address = requiredString(request.data?.address, 'address', 200);
 
     const url = new URL('https://maps.googleapis.com/maps/api/geocode/json');
     url.searchParams.set('address', address);

@@ -20,10 +20,11 @@
     "dev:ios": "npm run ios --workspace @pathly/mobile",
     "dev:android": "npm run android --workspace @pathly/mobile",
     "lint": "npm run lint --workspace @pathly/mobile",
-    "test": "npm run test --workspace @pathly/mobile",
+    "test": "npm run test --workspace @pathly/mobile && npm run test --workspace functions",
     "build": "npm run build --workspace @pathly/mobile",
     "typecheck": "npm run typecheck --workspace @pathly/mobile",
     "functions:build": "npm run build --workspace functions",
+    "functions:test": "npm run test --workspace functions",
     "functions:shell": "npm run shell --workspace functions",
     "deploy:functions": "npm run build --workspace functions && firebase deploy --only functions"
   },
