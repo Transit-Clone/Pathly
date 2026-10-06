@@ -2,7 +2,8 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 
 import { fetchLirrBranchLiveData, type LirrBranchLiveData } from './lirrLive';
 
-const POLL_INTERVAL_MS = 30_000;
+// Frequent enough that live trains visibly move; the LIRR feed itself updates every few seconds.
+const POLL_INTERVAL_MS = 15_000;
 
 const LirrLiveContext = createContext<LirrBranchLiveData | null>(null);
 

@@ -1,9 +1,15 @@
-import { fireEvent, render, within } from '@testing-library/react-native';
+import { act, fireEvent, render, within, type RenderResult } from '@testing-library/react-native';
 import { signOut } from 'firebase/auth';
-import { StyleSheet } from 'react-native';
+import { httpsCallable } from 'firebase/functions';
+import * as Location from 'expo-location';
+import { ScrollView, StyleSheet } from 'react-native';
 import mockSafeAreaContext from 'react-native-safe-area-context/jest/mock';
 
 import App from '../App';
+import { autocompletePlaces, fetchPlaceDetails, getPlacesApiKey } from '../src/data/placesSearch';
+import { clearSessionRecents } from '../src/data/sessionRecents';
+import { PORT_JEFFERSON_SHAPE } from '../src/data/portJeffersonShape';
+import { STATION_TRANSFERS } from '../src/data/stationTransfers';
 import { routeById, routes } from '../src/data/transit';
 import { darkColors, lightColors } from '../src/theme/colors';
 
@@ -14,8 +20,49 @@ jest.mock('@expo-google-fonts/nunito/useFonts', () => ({
   useFonts: () => mockUseFonts(),
 }));
 
+// Deterministic Google Places fixtures; no network in tests.
+jest.mock('../src/data/placesSearch', () => {
+  const places = {
+    'terry-road-smithtown': { id: 'terry-road-smithtown', title: '123 Terry Rd', subtitle: 'Smithtown, NY, USA' },
+    'stony-brook-university': { id: 'stony-brook-university', title: 'Stony Brook University', subtitle: 'Stony Brook, NY, USA' },
+  };
+  const details = {
+    'terry-road-smithtown': { ...places['terry-road-smithtown'], subtitle: '123 Terry Rd, Smithtown, NY 11787, USA' },
+    'stony-brook-university': { id: 'stony-brook-university', title: 'Stony Brook University Main Campus', subtitle: '100 Nicolls Rd, Stony Brook, NY 11794, USA' },
+  };
+  return {
+    ...jest.requireActual('../src/data/placesSearch'),
+    getPlacesApiKey: jest.fn(() => 'test-key'),
+    autocompletePlaces: jest.fn(async ({ input }: { input: string }) => {
+      const text = input.toLowerCase();
+      if (text.includes('terry')) return [places['terry-road-smithtown']];
+      if (text.includes('stony')) return [places['stony-brook-university']];
+      return [];
+    }),
+    fetchPlaceDetails: jest.fn(async ({ placeId }: { placeId: keyof typeof details }) => details[placeId]),
+  };
+});
+
+const mockAutocompletePlaces = autocompletePlaces as jest.MockedFunction<typeof autocompletePlaces>;
+const mockFetchPlaceDetails = fetchPlaceDetails as jest.MockedFunction<typeof fetchPlaceDetails>;
+const mockGetPlacesApiKey = getPlacesApiKey as jest.MockedFunction<typeof getPlacesApiKey>;
+
+/** Types a query on the open search screen, waits for the suggestion, and opens Route Results. */
+async function pickPlace(screen: RenderResult, query: string, placeId: string) {
+  fireEvent.changeText(screen.getByTestId('search-input'), query);
+  fireEvent.press(await screen.findByTestId(`search-result-${placeId}`));
+  await screen.findByTestId('route-results-view');
+}
+
 describe('Pathly prototype navigation', () => {
   const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    clearSessionRecents();
+    mockAutocompletePlaces.mockClear();
+    mockFetchPlaceDetails.mockClear();
+    mockGetPlacesApiKey.mockReturnValue('test-key');
+  });
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
@@ -51,7 +98,9 @@ describe('Pathly prototype navigation', () => {
   it('keeps nearby cards at a fixed height without filler space', () => {
     const screen = render(<App />);
 
-    expect(screen.getByTestId('nearby-route-list').props.contentContainerStyle).toBeUndefined();
+    const listContentStyle = StyleSheet.flatten(screen.getByTestId('nearby-route-list').props.contentContainerStyle) ?? {};
+    expect(listContentStyle.minHeight).toBeUndefined();
+    expect(listContentStyle.flexGrow).toBeUndefined();
     for (const route of routes) {
       expect(StyleSheet.flatten(screen.getByTestId(`route-card-${route.id}`).props.style)).toMatchObject({
         height: 104,
@@ -83,6 +132,21 @@ describe('Pathly prototype navigation', () => {
     },
   );
 
+  it('expands the transit menu on the first handle tap and resets it on the second', () => {
+    const scrollTo = jest.spyOn(ScrollView.prototype, 'scrollTo');
+    const screen = render(<App />);
+    const list = screen.getByTestId('nearby-route-list');
+
+    fireEvent.press(screen.getByTestId('transit-sheet-handle'));
+    const expandedY = (scrollTo.mock.calls.at(-1)?.[0] as { y: number }).y;
+    expect(expandedY).toBeGreaterThan(0);
+
+    // The page may stop short of the expanded offset when the list is short; any offset off rest still resets.
+    fireEvent.scroll(list, { nativeEvent: { contentOffset: { x: 0, y: Math.min(expandedY, 120) } } });
+    fireEvent.press(screen.getByTestId('transit-sheet-handle'));
+    expect(scrollTo.mock.calls.at(-1)?.[0]).toMatchObject({ y: 0 });
+  });
+
   it('keeps the transit list scrolling natural, with a drag handle and a route visible at rest', () => {
     const screen = render(<App />);
     const sheetScroll = screen.getByTestId('nearby-route-list');
@@ -92,7 +156,8 @@ describe('Pathly prototype navigation', () => {
     expect(sheetScroll.props.onResponderMove).toBeUndefined();
     expect(sheetScroll.props.bounces).toBe(false);
     expect(sheetScroll.props.overScrollMode).toBe('never');
-    expect(StyleSheet.flatten(screen.getByTestId('transit-sheet').props.style).top).toBeGreaterThan(0);
+    // Single-scroll page: the sheet rests below a transparent map window inside the same scroll.
+    expect(StyleSheet.flatten(screen.getByTestId('transit-map-window').props.style).height).toBeGreaterThan(0);
     expect(screen.getByTestId('transit-sheet')).toBeTruthy();
     expect(screen.getByTestId('route-card-ronkonkoma')).toBeTruthy();
     expect(screen.getByTestId('tab-nearby')).toBeTruthy();
@@ -128,24 +193,112 @@ describe('Pathly prototype navigation', () => {
     ).toBe(nearbyHeight);
   });
 
-  it('searches recent addresses with flexible punctuation and keeps results above the keyboard', () => {
+  it('shows search as a full-screen list with no map, pins, or match count', () => {
     const screen = render(<App />);
     fireEvent.press(screen.getByTestId('search-trigger'));
     expect(screen.getByText('Recent')).toBeTruthy();
+    expect(screen.getByTestId('search-results')).toBeTruthy();
     fireEvent.changeText(screen.getByTestId('search-input'), '142 christian ave');
-    expect(screen.getByText('Matches')).toBeTruthy();
-    expect(screen.getByTestId('search-match-count').props.children).toMatch(/^\d+ places?$/);
 
-    expect(screen.getByTestId('search-result-recent-christian-avenue')).toBeTruthy();
-    fireEvent.changeText(screen.getByTestId('search-input'), 'ronkonkoma lirr');
-    expect(screen.getByTestId('search-result-ronkonkoma-station')).toBeTruthy();
+    expect(screen.queryByText('Recent')).toBeNull();
+    expect(screen.queryByText('Matches')).toBeNull();
+    expect(screen.queryByTestId('search-match-count')).toBeNull();
+    expect(screen.queryByTestId('map-backdrop', { includeHiddenElements: true })).toBeNull();
+    expect(screen.queryByLabelText(/^Map result/)).toBeNull();
   });
 
-  it('opens route results from search and preserves editable criteria across controls', () => {
+  it('shows Google place suggestions with a pin icon, bold name, and address', async () => {
     const screen = render(<App />);
     fireEvent.press(screen.getByTestId('search-trigger'));
-    fireEvent.changeText(screen.getByTestId('search-input'), '123 Terry Rd');
-    fireEvent.press(screen.getByTestId('search-result-terry-road-smithtown'));
+    fireEvent.changeText(screen.getByTestId('search-input'), 'Stony Brook');
+    expect(screen.getByTestId('search-loading')).toBeTruthy();
+
+    const row = await screen.findByTestId('search-result-stony-brook-university');
+    expect(within(row).getByText('location-outline', { includeHiddenElements: true })).toBeTruthy();
+    expect(within(row).getByText('Stony Brook University')).toBeTruthy();
+    expect(within(row).getByText('Stony Brook, NY, USA')).toBeTruthy();
+    expect(mockAutocompletePlaces).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the empty state when Google finds no places', async () => {
+    const screen = render(<App />);
+    fireEvent.press(screen.getByTestId('search-trigger'));
+    fireEvent.changeText(screen.getByTestId('search-input'), 'zzzz');
+    expect(await screen.findByText('No places found')).toBeTruthy();
+  });
+
+  it('shows a retryable error when place search fails', async () => {
+    mockAutocompletePlaces.mockRejectedValueOnce(new Error('offline'));
+    const screen = render(<App />);
+    fireEvent.press(screen.getByTestId('search-trigger'));
+    fireEvent.changeText(screen.getByTestId('search-input'), 'Stony Brook');
+
+    expect(await screen.findByText("Couldn't load places")).toBeTruthy();
+    expect(screen.queryByText(/offline/)).toBeNull();
+    fireEvent.press(screen.getByTestId('search-retry'));
+    expect(await screen.findByTestId('search-result-stony-brook-university')).toBeTruthy();
+  });
+
+  it('explains when place search is not configured', async () => {
+    mockGetPlacesApiKey.mockReturnValue('');
+    const screen = render(<App />);
+    fireEvent.press(screen.getByTestId('search-trigger'));
+    fireEvent.changeText(screen.getByTestId('search-input'), 'Stony Brook');
+
+    expect(screen.getByText('Place search is unavailable')).toBeTruthy();
+    expect(mockAutocompletePlaces).not.toHaveBeenCalled();
+    fireEvent.changeText(screen.getByTestId('search-input'), '');
+    fireEvent.press(screen.getByTestId('search-result-recent-penn-station'));
+    expect(screen.getByDisplayValue('Penn Station')).toBeTruthy();
+  });
+
+  it('opens route results with the resolved place name', async () => {
+    const screen = render(<App />);
+    fireEvent.press(screen.getByTestId('search-trigger'));
+    fireEvent.changeText(screen.getByTestId('search-input'), 'Stony Brook');
+    fireEvent.press(await screen.findByTestId('search-result-stony-brook-university'));
+
+    expect(await screen.findByTestId('route-results-view')).toBeTruthy();
+    expect(screen.getByDisplayValue('Stony Brook University Main Campus')).toBeTruthy();
+    expect(mockFetchPlaceDetails).toHaveBeenCalledWith(expect.objectContaining({ placeId: 'stony-brook-university' }));
+  });
+
+  it('stays on search with an error when place details fail', async () => {
+    mockFetchPlaceDetails.mockRejectedValueOnce(new Error('500'));
+    const screen = render(<App />);
+    fireEvent.press(screen.getByTestId('search-trigger'));
+    fireEvent.changeText(screen.getByTestId('search-input'), 'Stony Brook');
+    fireEvent.press(await screen.findByTestId('search-result-stony-brook-university'));
+
+    expect(await screen.findByTestId('search-selection-error')).toBeTruthy();
+    expect(screen.getByTestId('search-view')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('search-result-stony-brook-university'));
+    expect(await screen.findByTestId('route-results-view')).toBeTruthy();
+  });
+
+  it('lists picked places first under Recent and reopens them without a Places request', async () => {
+    const screen = render(<App />);
+    fireEvent.press(screen.getByTestId('search-trigger'));
+    await pickPlace(screen, '123 Terry Rd', 'terry-road-smithtown');
+    fireEvent.press(screen.getByTestId('results-back'));
+    fireEvent.press(screen.getByLabelText('Cancel destination search'));
+    fireEvent.press(screen.getByTestId('search-trigger'));
+
+    const recentRows = screen.getAllByTestId(/^search-result-/);
+    expect(recentRows[0].props.testID).toBe('search-result-terry-road-smithtown');
+    expect(within(recentRows[0]).getByText('time-outline', { includeHiddenElements: true })).toBeTruthy();
+    mockAutocompletePlaces.mockClear();
+    mockFetchPlaceDetails.mockClear();
+    fireEvent.press(recentRows[0]);
+    expect(screen.getByDisplayValue('123 Terry Rd')).toBeTruthy();
+    expect(mockAutocompletePlaces).not.toHaveBeenCalled();
+    expect(mockFetchPlaceDetails).not.toHaveBeenCalled();
+  });
+
+  it('opens route results from search and preserves editable criteria across controls', async () => {
+    const screen = render(<App />);
+    fireEvent.press(screen.getByTestId('search-trigger'));
+    await pickPlace(screen, '123 Terry Rd', 'terry-road-smithtown');
 
     expect(screen.getByTestId('route-results-view')).toBeTruthy();
     expect(screen.getByDisplayValue('123 Terry Rd')).toBeTruthy();
@@ -175,16 +328,15 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByTestId('search-view')).toBeTruthy();
   });
 
-  const openResults = () => {
+  const openResults = async () => {
     const screen = render(<App />);
     fireEvent.press(screen.getByTestId('search-trigger'));
-    fireEvent.changeText(screen.getByTestId('search-input'), '123 Terry Rd');
-    fireEvent.press(screen.getByTestId('search-result-terry-road-smithtown'));
+    await pickPlace(screen, '123 Terry Rd', 'terry-road-smithtown');
     return screen;
   };
 
-  it('picks a departure time from the wheel and reschedules every itinerary', () => {
-    const screen = openResults();
+  it('picks a departure time from the wheel and reschedules every itinerary', async () => {
+    const screen = await openResults();
     expect(screen.getByTestId('leave-time-label').props.children).toBe('Leave now');
     expect(screen.getByTestId('schedule-rail-fast').props.children).toBe('Leaves in 4 min · 10:04 AM');
 
@@ -206,8 +358,8 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByTestId('search-trip-arrive-time').props.children).toBe('3:31 PM');
   });
 
-  it('keeps arrive-by itineraries on time and discards a cancelled pick', () => {
-    const screen = openResults();
+  it('keeps arrive-by itineraries on time and discards a cancelled pick', async () => {
+    const screen = await openResults();
     fireEvent.press(screen.getByTestId('leave-time-control'));
     fireEvent.press(screen.getByTestId('leave-mode-arrive'));
     fireEvent.press(screen.getByTestId('leave-time-done'));
@@ -220,8 +372,8 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByTestId('leave-time-label').props.children).toBe('Arrive by 12:00 PM');
   });
 
-  it('filters itineraries by mode separately from sort preferences', () => {
-    const screen = openResults();
+  it('filters itineraries by mode separately from sort preferences', async () => {
+    const screen = await openResults();
     fireEvent.press(screen.getByTestId('modes-control'));
     expect(screen.getByTestId('modes-panel')).toBeTruthy();
     expect(screen.queryByTestId('filter-panel')).toBeNull();
@@ -272,7 +424,7 @@ describe('Pathly prototype navigation', () => {
     expect(StyleSheet.flatten(screen.getByTestId('nearby-route-content').props.style).minHeight).toBe(5 * 104);
   });
 
-  it('saves favorite routes and trips to the Favorites tab and opens them', () => {
+  it('saves favorite routes and trips to the Favorites tab and opens them', async () => {
     const screen = render(<App />);
     fireEvent.press(screen.getByTestId('tab-favorites'));
     expect(screen.getByText('No favorites yet')).toBeTruthy();
@@ -291,8 +443,7 @@ describe('Pathly prototype navigation', () => {
     fireEvent.press(screen.getByTestId('recent-trip-back'));
 
     fireEvent.press(screen.getByTestId('search-trigger'));
-    fireEvent.changeText(screen.getByTestId('search-input'), '123 Terry Rd');
-    fireEvent.press(screen.getByTestId('search-result-terry-road-smithtown'));
+    await pickPlace(screen, '123 Terry Rd', 'terry-road-smithtown');
     fireEvent.press(screen.getByTestId('leave-time-control'));
     fireEvent.press(screen.getByTestId('leave-mode-depart'));
     fireEvent.press(screen.getByTestId('leave-time-done'));
@@ -331,7 +482,7 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByText('No favorites yet')).toBeTruthy();
   });
 
-  it('shows a selected state on home and results location buttons', () => {
+  it('shows a selected state on home and results location buttons', async () => {
     const screen = render(<App />);
     const homeLocation = screen.getByLabelText('Center on current location');
     expect(homeLocation.props.accessibilityState).toEqual({ selected: false });
@@ -339,18 +490,16 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByLabelText('Center on current location').props.accessibilityState).toEqual({ selected: true });
 
     fireEvent.press(screen.getByTestId('search-trigger'));
-    fireEvent.changeText(screen.getByTestId('search-input'), '123 Terry Rd');
-    fireEvent.press(screen.getByTestId('search-result-terry-road-smithtown'));
+    await pickPlace(screen, '123 Terry Rd', 'terry-road-smithtown');
     expect(screen.getByTestId('results-location').props.accessibilityState).toEqual({ selected: false });
     fireEvent.press(screen.getByTestId('results-location'));
     expect(screen.getByTestId('results-location').props.accessibilityState).toEqual({ selected: true });
   });
 
-  it('starts and ends a searched trip from its detail screen, with no Go buttons on result cards', () => {
+  it('starts and ends a searched trip from its detail screen, with no Go buttons on result cards', async () => {
     const screen = render(<App />);
     fireEvent.press(screen.getByTestId('search-trigger'));
-    fireEvent.changeText(screen.getByTestId('search-input'), '123 Terry Rd');
-    fireEvent.press(screen.getByTestId('search-result-terry-road-smithtown'));
+    await pickPlace(screen, '123 Terry Rd', 'terry-road-smithtown');
     fireEvent.changeText(screen.getByTestId('destination-input'), 'Times Square');
 
     fireEvent.press(screen.getByTestId('search-result-view-rail-fast'));
@@ -480,11 +629,10 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByTestId('profile-trigger')).toBeTruthy();
   });
 
-  it('keeps the trip map fixed while details scroll over it', () => {
+  it('keeps the trip map fixed while details scroll over it', async () => {
     const screen = render(<App />);
     fireEvent.press(screen.getByTestId('search-trigger'));
-    fireEvent.changeText(screen.getByTestId('search-input'), '123 Terry Rd');
-    fireEvent.press(screen.getByTestId('search-result-terry-road-smithtown'));
+    await pickPlace(screen, '123 Terry Rd', 'terry-road-smithtown');
     fireEvent.press(screen.getByTestId('search-result-view-rail-fast'));
 
     const plannedScroll = screen.getByTestId('search-trip-scroll');
@@ -563,11 +711,10 @@ describe('Pathly prototype navigation', () => {
     expect(backgroundOf(screen.getByTestId('recent-trip-penn-station-card'))).toBe(darkColors.surface);
   });
 
-  it('renders results and the time picker dark', () => {
+  it('renders results and the time picker dark', async () => {
     const screen = renderDark();
     fireEvent.press(screen.getByTestId('search-trigger'));
-    fireEvent.changeText(screen.getByTestId('search-input'), '123 Terry Rd');
-    fireEvent.press(screen.getByTestId('search-result-terry-road-smithtown'));
+    await pickPlace(screen, '123 Terry Rd', 'terry-road-smithtown');
     expect(backgroundOf(screen.getByTestId('route-results-view'))).toBe(darkColors.canvas);
     fireEvent.press(screen.getByTestId('leave-time-control'));
     expect(backgroundOf(screen.getByTestId('leave-time-sheet'))).toBe(darkColors.surface);
@@ -659,6 +806,196 @@ describe('Pathly prototype navigation', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it('shows service alerts only for routes with an advisory', () => {
+    const screen = render(<App />);
+    fireEvent.press(screen.getByTestId('route-card-ronkonkoma-primary'));
+    expect(screen.queryByTestId('service-alerts')).toBeNull();
+    expect(screen.queryByText('No delays')).toBeNull();
+    fireEvent.press(screen.getByTestId('route-back'));
+
+    fireEvent.press(screen.getByTestId('route-card-s1-primary'));
+    expect(screen.getByText('Advisory')).toBeTruthy();
+    expect(screen.queryByText(routeById.s1.alert)).toBeNull();
+    fireEvent.press(screen.getByTestId('service-alerts'));
+    expect(screen.getByText(routeById.s1.alert)).toBeTruthy();
+  });
+
+  it('lists route stops by name and time only, with a filled Scheduled pill', () => {
+    const screen = render(<App />);
+    fireEvent.press(screen.getByTestId('route-card-ronkonkoma-primary'));
+
+    for (const caption of ['Departs', 'Scheduled stop', 'Final stop']) {
+      expect(screen.queryByText(caption)).toBeNull();
+    }
+    expect(screen.getByText('Stony Brook', { exact: true, includeHiddenElements: true })).toBeTruthy();
+    expect(screen.getByLabelText(/^Stony Brook, departs /)).toBeTruthy();
+    expect(screen.getByLabelText(/^Penn Station, arrives /)).toBeTruthy();
+    // The divider runs under the name and the time together.
+    const pennRow = screen.getByLabelText(/^Penn Station, arrives /);
+    const pennBody = within(pennRow).getByTestId('route-stop-body-Penn Station', { includeHiddenElements: true });
+    expect(StyleSheet.flatten(pennBody.props.style)).toMatchObject({ borderBottomWidth: 1, flexDirection: 'row' });
+    expect(within(pennBody).getByText('Penn Station', { includeHiddenElements: true })).toBeTruthy();
+    expect(within(pennBody).getByText(/^\d{1,2}:\d{2} [AP]M$/, { includeHiddenElements: true })).toBeTruthy();
+
+    const pill = StyleSheet.flatten(screen.getAllByTestId('route-prediction-scheduled', { includeHiddenElements: true })[0].props.style);
+    expect(pill.backgroundColor).toBe(lightColors.mutedInk);
+    expect(pill.color).toBe(lightColors.surface);
+    expect(pill.borderRadius).toBeGreaterThan(0);
+  });
+
+  it('marks live route stops with white dots in the route color that show their names', () => {
+    const hidden = { includeHiddenElements: true };
+    const screen = render(<App />);
+    fireEvent.press(screen.getByTestId('route-card-ronkonkoma-primary'));
+
+    const routeLine = screen.getByTestId('lirr-route-line', hidden);
+    expect(routeLine.props.strokeColor).toBe(routeById.ronkonkoma.color);
+    // Follows the real track shape, not one straight segment per station pair.
+    expect(routeLine.props.coordinates).toHaveLength(PORT_JEFFERSON_SHAPE.length);
+    expect(PORT_JEFFERSON_SHAPE.length).toBeGreaterThan(routeById.ronkonkoma.stops.length * 5);
+    const stops = screen.getAllByTestId(/^lirr-stop-/, hidden);
+    expect(stops).toHaveLength(22);
+    for (const stop of stops) {
+      const name = stop.props.testID.replace('lirr-stop-', '');
+      expect(stop.props.title).toBe(name);
+      expect(stop.props.anchor).toEqual({ x: 0.5, y: 0.5 });
+      const dot = StyleSheet.flatten(within(stop).getByTestId(`lirr-dot-${name}`, hidden).props.style);
+      // The rider's nearest station (Stony Brook under the test location fallback) is emphasized.
+      expect(dot).toMatchObject(name === 'Stony Brook'
+        ? { backgroundColor: routeById.ronkonkoma.color, borderColor: '#FFFFFF', width: 20 }
+        : { backgroundColor: '#FFFFFF', borderColor: routeById.ronkonkoma.color, width: 14 });
+    }
+  });
+
+  it('lets only the live route map take gestures through the scrolling page', () => {
+    const screen = render(<App />);
+    fireEvent.press(screen.getByTestId('route-card-ronkonkoma-primary'));
+    expect(screen.getByTestId('route-detail-map').props.pointerEvents).toBe('auto');
+    const routeScroll = screen.getByTestId('route-detail-scroll');
+    expect(routeScroll.props.pointerEvents).toBe('box-none');
+    expect(StyleSheet.flatten(routeScroll.props.contentContainerStyle)).toMatchObject({ pointerEvents: 'box-none' });
+    fireEvent.press(screen.getByTestId('route-back'));
+
+    fireEvent.press(screen.getByTestId('route-card-s1-primary'));
+    expect(screen.getByTestId('route-detail-map').props.pointerEvents).toBe('none');
+    expect(screen.getByTestId('route-detail-scroll').props.pointerEvents).toBe('auto');
+    fireEvent.press(screen.getByTestId('route-back'));
+
+    fireEvent.press(screen.getByTestId('tab-recents'));
+    fireEvent.press(screen.getByTestId('recent-trip-penn-station'));
+    expect(screen.getByTestId('recent-trip-map').props.pointerEvents).toBe('none');
+  });
+
+  describe('live trains on the route map', () => {
+    const hidden = { includeHiddenElements: true };
+    const NOW = new Date(2024, 0, 1, 10, 0, 0).getTime();
+    // lirrLive.ts creates its callable once at import time; this is that mocked callable.
+    const liveCallable = () => (httpsCallable as jest.Mock).mock.results[0]!.value as jest.Mock;
+    const vehicle = (tripId: string, directionId: number, ageSeconds: number) => ({
+      tripId, directionId, lat: 40.92, lon: -73.13, timestamp: (NOW - ageSeconds * 1000) / 1000,
+    });
+    const respondWith = (vehicles: ReturnType<typeof vehicle>[]) => {
+      liveCallable().mockResolvedValue({
+        data: { routeId: '10', routeName: 'Port Jefferson Branch', vehicles, stopPredictions: { towardDirection1: [], towardDirection0: [] } },
+      });
+    };
+
+    beforeEach(() => {
+      jest.useFakeTimers();
+      jest.setSystemTime(NOW);
+    });
+
+    afterEach(() => {
+      liveCallable().mockReset();
+      liveCallable().mockResolvedValue({
+        data: { routeId: '10', routeName: 'Port Jefferson Branch', vehicles: [], stopPredictions: { towardDirection1: [], towardDirection0: [] } },
+      });
+    });
+
+    const openLiveRoute = async () => {
+      const screen = render(<App />);
+      fireEvent.press(screen.getByTestId('route-card-ronkonkoma-primary'));
+      await act(async () => {}); // let the live fetch resolve
+      return screen;
+    };
+
+    it('asks for departures from the nearest station and opens the map on it', async () => {
+      respondWith([]);
+      const screen = await openLiveRoute();
+      expect(liveCallable()).toHaveBeenCalledWith({ routeId: '10', stopId: '14' });
+      expect(screen.getByTestId('lirr-route-map', hidden).props.initialRegion).toMatchObject({ latitude: 40.92032252, longitude: -73.12854943, latitudeDelta: 0.06 });
+    });
+
+    it('shows only trains going the selected direction', async () => {
+      // ronkonkoma's directions[0] is GTFS direction_id 1 (liveSource.direction1Index = 0).
+      respondWith([vehicle('west', 1, 5), vehicle('east', 0, 5)]);
+      const screen = await openLiveRoute();
+      expect(screen.getByTestId('lirr-vehicle-west', hidden)).toBeTruthy();
+      expect(screen.queryByTestId('lirr-vehicle-east', hidden)).toBeNull();
+
+      fireEvent.press(screen.getAllByLabelText(/^Show .* predictions$/)[1]);
+      expect(screen.queryByTestId('lirr-vehicle-west', hidden)).toBeNull();
+      expect(screen.getByTestId('lirr-vehicle-east', hidden)).toBeTruthy();
+    });
+
+    it("counts each train's GPS age up every second and hides stale trains", async () => {
+      respondWith([vehicle('fresh', 1, 3), vehicle('stale', 1, 6 * 60)]);
+      const screen = await openLiveRoute();
+      expect(screen.getByTestId('lirr-train-age-fresh', hidden).props.children).toBe('3s');
+      expect(screen.queryByTestId('lirr-vehicle-stale', hidden)).toBeNull();
+
+      act(() => jest.advanceTimersByTime(2000));
+      expect(screen.getByTestId('lirr-train-age-fresh', hidden).props.children).toBe('5s');
+      act(() => jest.advanceTimersByTime(60_000));
+      expect(screen.getByTestId('lirr-train-age-fresh', hidden).props.children).toBe('1m');
+    });
+  });
+
+  it("starts the stop list at the rider's station and runs to the end of the selected direction", () => {
+    const screen = render(<App />);
+    fireEvent.press(screen.getByTestId('route-card-ronkonkoma-primary'));
+    const rows = () => screen.getAllByLabelText(/, (departs|arrives) /).map((row) => row.props.accessibilityLabel.split(',')[0]);
+
+    expect(rows()[0]).toBe('Stony Brook');
+    expect(rows().at(-1)).toBe('Penn Station');
+    expect(rows()).not.toContain('Port Jefferson');
+    expect(rows()).toHaveLength(21);
+
+    fireEvent.press(screen.getAllByLabelText(/^Show .* predictions$/)[1]);
+    expect(rows()).toEqual(['Stony Brook', 'Port Jefferson']);
+  });
+
+  it('shows transfer chips per station, capped with a +N count', () => {
+    const hidden = { includeHiddenElements: true };
+    const screen = render(<App />);
+    fireEvent.press(screen.getByTestId('route-card-ronkonkoma-primary'));
+
+    const smithtown = screen.getByTestId('route-transfer-Smithtown-56', hidden);
+    expect(within(smithtown).getByText('56', hidden)).toBeTruthy();
+    expect(screen.getByLabelText(/^Smithtown, arrives .*, transfers: (.*, )?56(,|$)/)).toBeTruthy();
+
+    const jamaica = within(screen.getByTestId('route-stop-transfers-Jamaica', hidden));
+    expect(jamaica.getAllByTestId(/^route-transfer-Jamaica-/, hidden)).toHaveLength(8);
+    expect(screen.getByTestId('route-stop-transfers-more-Jamaica', hidden).props.children).toEqual(['+', STATION_TRANSFERS.Jamaica!.length - 8]);
+    expect(screen.queryByTestId('route-stop-transfers-St. James', hidden)).toBeNull();
+  });
+
+  it('centers the live map on the rider from the location button', async () => {
+    const screen = render(<App />);
+    fireEvent.press(screen.getByTestId('route-card-ronkonkoma-primary'));
+    const map = () => screen.getByTestId('lirr-route-map', { includeHiddenElements: true });
+    expect(map().props.showsUserLocation).toBe(true);
+
+    const permissionRequests = (Location.requestForegroundPermissionsAsync as jest.Mock).mock.calls.length;
+    fireEvent.press(screen.getByTestId('route-location'));
+    // Pressing refreshes the rider's location (a fresh permission check + fix), like the home button.
+    expect((Location.requestForegroundPermissionsAsync as jest.Mock).mock.calls.length).toBe(permissionRequests + 1);
+    expect(screen.getByTestId('route-location').props.accessibilityState).toEqual({ selected: true });
+    fireEvent(map(), 'panDrag');
+    expect(screen.getByTestId('route-location').props.accessibilityState).toEqual({ selected: false });
+    await act(async () => {}); // settle the location refresh
+  });
+
   it('keeps route stop timing and live provenance accessible', () => {
     // Route stops are projected onto the actual current time (see scheduleStopsFromNow in
     // transit.ts), so the clock is pinned here to make the rendered times deterministic.
@@ -671,10 +1008,11 @@ describe('Pathly prototype navigation', () => {
       expect(screen.getByLabelText('4 minutes, live GPS prediction')).toBeTruthy();
       expect(screen.getByLabelText('18 minutes, scheduled time')).toBeTruthy();
       // Westbound (the default tab) travels Port Jefferson -> Penn Station, the reverse of how
-      // `stops` is authored (Penn -> Port Jefferson, see stopsDirectionIndex), so the "Route
-      // stops" list is shown reversed here — Port Jefferson departs, Penn Station is the final stop.
-      expect(screen.getByLabelText('Port Jefferson, departs 10:04 AM')).toBeTruthy();
-      expect(screen.getByLabelText('Penn Station, arrives 12:07 PM')).toBeTruthy();
+      // `stops` is authored (Penn -> Port Jefferson, see stopsDirectionIndex). The list starts at
+      // the rider's nearest station (Stony Brook under the test location fallback), which leaves
+      // in the first prediction's 4 min, and ends at Penn Station.
+      expect(screen.getByLabelText(/^Stony Brook, departs 10:04 AM, transfers: /)).toBeTruthy();
+      expect(screen.getByLabelText(/^Penn Station, arrives 11:55 AM, transfers: /)).toBeTruthy();
       expect(routeById.ronkonkoma.stops).toHaveLength(22);
     } finally {
       jest.useRealTimers();

@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { Platform, ScrollView, StyleSheet, Text, useWindowDimensions, View, type GestureResponderEvent, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 
 import { useLirrLive } from '../data/LirrLiveContext';
+import type { LiveStop } from '../data/nearestStop';
+import { STATION_TRANSFERS, type StationTransfer } from '../data/stationTransfers';
+import type { Coordinates } from '../hooks/useCurrentLocation';
 import { minuteLabel, scheduleStopsFromNow, stopsForDirection, type RouteDetail, type RoutePrediction } from '../data/transit';
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
 import { useLayoutEase } from '../theme/motion';
@@ -20,7 +23,13 @@ import { PressableScale } from './PressableScale';
 type RouteDetailViewProps = {
   isFavorite: boolean;
   isPinned: boolean;
+  /** Live-data station nearest the rider: anchors the stop timeline and focuses the live map. */
+  liveStop?: LiveStop;
+  /** Rider's location for the live map; `locationKnown` is false while it's only the fallback. */
+  location?: Coordinates;
+  locationKnown?: boolean;
   onBack: () => void;
+  onRefreshLocation?: () => void;
   onToggleFavorite: () => void;
   onTogglePin: () => void;
   route: RouteDetail;
@@ -41,7 +50,31 @@ function destinationForDirection(direction: string) {
   return direction.replace(/^(?:westbound|eastbound|northbound|southbound|uptown|downtown)\s+(?:to|toward)\s+/i, '');
 }
 
-export function RouteDetailView({ isFavorite, isPinned, onBack, onToggleFavorite, onTogglePin, route }: RouteDetailViewProps) {
+const MAX_TRANSFER_CHIPS = 8;
+
+/** Connecting lines at a station: rail, then subway (circles), then bus, in each agency's colors. */
+function TransferChips({ stopName, transfers }: { stopName: string; transfers: readonly StationTransfer[] }) {
+  const styles = useThemedStyles(createStyles);
+  const { colors } = useTheme();
+  const shown = transfers.slice(0, MAX_TRANSFER_CHIPS);
+  const hidden = transfers.length - shown.length;
+  return (
+    <View style={styles.transfers} testID={`route-stop-transfers-${stopName}`}>
+      {shown.map((transfer) => (
+        <View
+          key={`${transfer.agency}-${transfer.name}`}
+          style={[styles.transferChip, transfer.mode === 'subway' && styles.subwayChip, { backgroundColor: transfer.color ?? colors.surfaceMuted }]}
+          testID={`route-transfer-${stopName}-${transfer.name}`}
+        >
+          <Text numberOfLines={1} style={[styles.transferText, { color: transfer.color ? transfer.textColor ?? colors.white : colors.ink }]}>{transfer.name}</Text>
+        </View>
+      ))}
+      {hidden > 0 ? <Text style={styles.transferMore} testID={`route-stop-transfers-more-${stopName}`}>+{hidden}</Text> : null}
+    </View>
+  );
+}
+
+export function RouteDetailView({ isFavorite, isPinned, liveStop, location, locationKnown = false, onBack, onRefreshLocation, onToggleFavorite, onTogglePin, route }: RouteDetailViewProps) {
   const styles = useThemedStyles(createStyles);
   const { colors, isDark } = useTheme();
   // Route colors stay exact on fills; text and icons are lightened in dark mode to stay readable.
@@ -51,6 +84,8 @@ export function RouteDetailView({ isFavorite, isPinned, onBack, onToggleFavorite
   const ease = useLayoutEase();
   const lirrLive = useLirrLive();
   const [isLocationCentered, setIsLocationCentered] = useState(false);
+  // Bumped on each location-button press; the live map re-centers on the rider whenever it changes.
+  const [centerOnUserRequest, setCenterOnUserRequest] = useState(0);
   const [activeDirectionIndex, setActiveDirectionIndex] = useState(0);
   const mapHeight = Math.max(280, Math.min(390, height * 0.58));
   const pageWidth = Math.min(width, 540) - 36;
@@ -114,7 +149,17 @@ export function RouteDetailView({ isFavorite, isPinned, onBack, onToggleFavorite
   const now = new Date();
   const nowMinutes = now.getHours() * 60 + now.getMinutes();
   const leadMinutes = predictionsForDirection(route, activeDirectionIndex)[0]?.minutes ?? 0;
-  const liveStops = scheduleStopsFromNow(stopsForDirection(route, activeDirectionIndex), nowMinutes, leadMinutes);
+  const directionStops = stopsForDirection(route, activeDirectionIndex);
+  // Live predictions are for the rider's nearest station, so the list starts there (it's the
+  // stop leaving in `leadMinutes`) and runs to the end of the line in this direction; stations
+  // behind the rider are dropped and offsets rebased to it.
+  const riderIndex = route.liveSource && liveStop ? directionStops.findIndex((stop) => stop.name === liveStop.name) : -1;
+  const stopsAhead = riderIndex > 0
+    ? directionStops.slice(riderIndex).map((stop) => ({ ...stop, offsetMinutes: stop.offsetMinutes - directionStops[riderIndex]!.offsetMinutes }))
+    : directionStops;
+  const liveStops = scheduleStopsFromNow(stopsAhead, nowMinutes, leadMinutes);
+  // GTFS direction_id of the selected direction, so the live map shows only trains going this way.
+  const gtfsDirectionId = route.liveSource ? (activeDirectionIndex === route.liveSource.direction1Index ? 1 : 0) : undefined;
 
   const vehicleIcon = transitModeForAgency(route.agency);
   const hasDelay = !route.alert.startsWith('No delays');
@@ -128,8 +173,11 @@ export function RouteDetailView({ isFavorite, isPinned, onBack, onToggleFavorite
   // Port Jefferson Branch has a real live feed; every other route still uses the illustrative map.
   const map = route.id === 'ronkonkoma' ? (
     <>
-      <LirrRouteMap vehicles={lirrLive?.vehicles ?? []} />
-      <RouteBadge agency={route.agency} color={route.color} shortName={route.shortName} size="large" style={styles.mapRouteBadge} testID="route-detail-badge" withModeIcon={true} />
+      <LirrRouteMap centerOnUserRequest={centerOnUserRequest} color={route.color} directionId={gtfsDirectionId} focusStop={liveStop} onUserPan={() => setIsLocationCentered(false)} userLocation={locationKnown ? location : undefined} vehicles={lirrLive?.vehicles ?? []} />
+      {/* Overlay that ignores touches, so the badge never blocks panning the live map under it. */}
+      <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+        <RouteBadge agency={route.agency} color={route.color} shortName={route.shortName} size="large" style={styles.mapRouteBadge} testID="route-detail-badge" withModeIcon={true} />
+      </View>
     </>
   ) : (
     <>
@@ -151,7 +199,11 @@ export function RouteDetailView({ isFavorite, isPinned, onBack, onToggleFavorite
     <View pointerEvents="box-none" style={styles.topBar}>
       <PressableScale accessibilityLabel="Back" accessibilityRole="button" onPress={onBack} style={styles.iconButton} testID="route-back"><Icon name="back" size={26} /></PressableScale>
       <View style={styles.topActions}>
-        <PressableScale accessibilityLabel="Show current location" accessibilityRole="button" accessibilityState={{ selected: isLocationCentered }} onPress={() => setIsLocationCentered(true)} style={[styles.iconButton, isLocationCentered && styles.selectedButton]} testID="route-location"><Icon filled={isLocationCentered} name="locate" /></PressableScale>
+        <PressableScale accessibilityLabel="Show current location" accessibilityRole="button" accessibilityState={{ selected: isLocationCentered }} onPress={() => {
+          setIsLocationCentered(true);
+          onRefreshLocation?.();
+          setCenterOnUserRequest((count) => count + 1);
+        }} style={[styles.iconButton, isLocationCentered && styles.selectedButton]} testID="route-location"><Icon filled={isLocationCentered} name="locate" /></PressableScale>
         <PressableScale accessibilityLabel={isFavorite ? 'Remove route from favorites' : 'Add route to favorites'} accessibilityRole="button" accessibilityState={{ selected: isFavorite }} onPress={onToggleFavorite} style={[styles.iconButton, isFavorite && styles.selectedButton]} testID="route-favorite"><Icon color={isFavorite ? colors.warning : colors.primary} filled={isFavorite} name="favorite" /></PressableScale>
         <PressableScale accessibilityLabel={isPinned ? 'Unpin route' : 'Pin route'} accessibilityRole="button" accessibilityState={{ selected: isPinned }} onPress={onTogglePin} style={[styles.iconButton, isPinned && { backgroundColor: route.color }]} testID="route-pin"><Icon color={isPinned ? colors.white : routeText} filled={isPinned} name="pin" /></PressableScale>
       </View>
@@ -161,6 +213,8 @@ export function RouteDetailView({ isFavorite, isPinned, onBack, onToggleFavorite
   return (
     <DetailMapPage
       controlsScrollWithMap={true}
+      // Only the real Google map is pannable/zoomable; illustrated maps stay a static backdrop.
+      interactiveMap={route.id === 'ronkonkoma'}
       contentStyle={styles.content}
       contentTestID="route-detail-content"
       controls={controls}
@@ -191,7 +245,7 @@ export function RouteDetailView({ isFavorite, isPinned, onBack, onToggleFavorite
                 <View key={`${activeDirectionIndex}-${prediction.minutes}-${prediction.live}`} accessibilityLabel={`${prediction.minutes} ${minuteLabel(prediction.minutes)}, ${prediction.live ? 'live GPS prediction' : 'scheduled time'}`} accessible={true} style={[styles.prediction, { borderColor: route.color }, highlighted && { backgroundColor: route.color }, !prediction.live && styles.scheduled]} testID={`route-prediction-${activeDirectionIndex}-${prediction.minutes}`}>
                   <View style={styles.predictionRow}>{prediction.live ? <View style={styles.predictionSignalSpacer} /> : null}<Text style={[styles.predictionTime, { color: predictionColor }]}>{prediction.minutes}</Text>{prediction.live ? <LiveSignal color={predictionColor} style={styles.predictionSignal} /> : null}</View>
                   <Text style={[styles.predictionUnit, { color: predictionColor }]}>{minuteLabel(prediction.minutes)}</Text>
-                  {!prediction.live ? <Text style={styles.predictionSource}>SCHEDULED</Text> : null}
+                  {!prediction.live ? <Text style={styles.predictionSource} testID="route-prediction-scheduled">SCHEDULED</Text> : null}
                 </View>
               );
             })}
@@ -209,7 +263,7 @@ export function RouteDetailView({ isFavorite, isPinned, onBack, onToggleFavorite
                     <View key={`${directionIndex}-${prediction.minutes}-${prediction.live}`} accessibilityLabel={`${prediction.minutes} ${minuteLabel(prediction.minutes)}, ${prediction.live ? 'live GPS prediction' : 'scheduled time'}`} accessible={true} style={[styles.prediction, { borderColor: route.color }, highlighted && { backgroundColor: route.color }, !prediction.live && styles.scheduled]} testID={`route-prediction-${directionIndex}-${prediction.minutes}`}>
                       <View style={styles.predictionRow}>{prediction.live ? <View style={styles.predictionSignalSpacer} /> : null}<Text style={[styles.predictionTime, { color: predictionColor }]}>{prediction.minutes}</Text>{prediction.live ? <LiveSignal color={predictionColor} style={styles.predictionSignal} /> : null}</View>
                       <Text style={[styles.predictionUnit, { color: predictionColor }]}>{minuteLabel(prediction.minutes)}</Text>
-                      {!prediction.live ? <Text style={styles.predictionSource}>SCHEDULED</Text> : null}
+                      {!prediction.live ? <Text style={styles.predictionSource} testID="route-prediction-scheduled">SCHEDULED</Text> : null}
                     </View>
                   );
                 })}
@@ -234,24 +288,34 @@ export function RouteDetailView({ isFavorite, isPinned, onBack, onToggleFavorite
         ))}
       </View>
 
-      <PressableScale accessibilityLabel="Service alerts" accessibilityRole="button" accessibilityState={{ expanded: alertsOpen }} onPress={() => {
-        ease();
-        setAlertsOpen((value) => !value);
-      }} style={styles.alertButton} testID="service-alerts">
-        <Icon color={hasDelay ? colors.warning : colors.success} filled={true} name={hasDelay ? 'alert' : 'ok'} size={18} style={styles.alertIcon} /><Text style={styles.alertText}>Service alerts</Text><Text style={[styles.alertStatus, hasDelay && { color: colors.warning }]}>{hasDelay ? 'Advisory' : 'No delays'}</Text><Icon color={colors.mutedInk} name={alertsOpen ? 'collapse' : 'expand'} size={18} style={styles.chevron} />
-      </PressableScale>
-      {alertsOpen ? <Text style={styles.alertBody}>{route.alert}</Text> : null}
+      {/* Only routes with an advisory get an alert row; "No delays" needs no dropdown. */}
+      {hasDelay ? (
+        <>
+          <PressableScale accessibilityLabel="Service alerts" accessibilityRole="button" accessibilityState={{ expanded: alertsOpen }} onPress={() => {
+            ease();
+            setAlertsOpen((value) => !value);
+          }} style={styles.alertButton} testID="service-alerts">
+            <Icon color={colors.warning} filled={true} name="alert" size={18} style={styles.alertIcon} /><Text style={styles.alertText}>Service alerts</Text><Text style={[styles.alertStatus, { color: colors.warning }]}>Advisory</Text><Icon color={colors.mutedInk} name={alertsOpen ? 'collapse' : 'expand'} size={18} style={styles.chevron} />
+          </PressableScale>
+          {alertsOpen ? <Text style={styles.alertBody}>{route.alert}</Text> : null}
+        </>
+      ) : null}
 
       <View style={styles.timelineHeading}><Text style={styles.timelineTitle}>Route stops</Text><View style={styles.onTimeChip}><View style={styles.onTimeDot} /><Text style={styles.onTimeText}>On time</Text></View></View>
       <View accessibilityLabel="Stops for the next departure">
         {liveStops.map((stop, index) => {
           const isFirst = index === 0;
           const isLast = index === liveStops.length - 1;
+          const transfers = route.liveSource ? STATION_TRANSFERS[stop.name] ?? [] : [];
+          const transferLabel = transfers.length > 0 ? `, transfers: ${transfers.map((transfer) => transfer.name).join(', ')}` : '';
           return (
-            <View key={stop.name} accessibilityLabel={`${stop.name}, ${isFirst ? 'departs' : 'arrives'} ${stop.time}`} accessible={true} style={styles.stopRow}>
+            <View key={stop.name} accessibilityLabel={`${stop.name}, ${isFirst ? 'departs' : 'arrives'} ${stop.time}${transferLabel}`} accessible={true} style={styles.stopRow}>
               <View style={styles.timelineRail}>{!isFirst ? <View style={[styles.rail, styles.railTop, { backgroundColor: route.color }]} /> : null}<View style={[styles.stopDot, { borderColor: route.color }, isFirst && { backgroundColor: route.color }]} />{!isLast ? <View style={[styles.rail, styles.railBottom, { backgroundColor: route.color }]} /> : null}</View>
-              <View style={styles.stopCopy}><Text style={styles.stopName}>{stop.name}</Text><Text style={styles.stopMeta}>{isFirst ? 'Departs' : isLast ? 'Final stop' : 'Scheduled stop'}</Text></View>
-              <Text style={styles.stopTime}>{stop.time}</Text>
+              {/* One divider spans the name and the time, not just the name. */}
+              <View style={styles.stopBody} testID={`route-stop-body-${stop.name}`}>
+                <View style={styles.stopCopy}><Text style={styles.stopName}>{stop.name}</Text>{transfers.length > 0 ? <TransferChips stopName={stop.name} transfers={transfers} /> : null}</View>
+                <Text style={styles.stopTime}>{stop.time}</Text>
+              </View>
             </View>
           );
         })}
@@ -323,12 +387,15 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     gap: 8,
     paddingTop: 10,
   },
+  // Bottom padding on every tile (live too) reserves room for the Scheduled pill without
+  // shifting numbers, so live and scheduled tiles stay aligned.
   prediction: {
     minWidth: 0,
-    minHeight: 112,
+    minHeight: 126,
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingBottom: 22,
     borderWidth: 2,
     borderRadius: 20,
     backgroundColor: colors.surface,
@@ -359,10 +426,16 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     fontSize: 11,
   },
   // Positioned so scheduled tiles keep the same number and label placement as live ones.
+  // Filled pill so timetable tiles read clearly on both plain and route-colored tiles.
   predictionSource: {
     position: 'absolute',
-    bottom: 12,
-    color: colors.mutedInk,
+    bottom: 11,
+    overflow: 'hidden',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+    backgroundColor: colors.mutedInk,
+    color: colors.surface,
     ...typography.label,
     fontSize: 8,
   },
@@ -473,23 +546,56 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     borderRadius: 8,
     backgroundColor: colors.surface,
   },
+  stopBody: {
+    minWidth: 0,
+    flex: 1,
+    alignSelf: 'stretch',
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
   stopCopy: {
     minWidth: 0,
     flex: 1,
     paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+  },
+  transfers: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 6,
+  },
+  transferChip: {
+    minWidth: 22,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    borderRadius: 5,
+  },
+  // Subway bullets are round, as on MTA signage.
+  subwayChip: {
+    width: 20,
+    minWidth: 20,
+    paddingHorizontal: 0,
+    borderRadius: 10,
+  },
+  transferText: {
+    fontFamily: fontFamilies.extraBold,
+    fontSize: 10,
+  },
+  transferMore: {
+    marginLeft: 2,
+    color: colors.mutedInk,
+    fontFamily: fontFamilies.bold,
+    fontSize: 11,
   },
   stopName: {
     color: colors.ink,
     fontFamily: fontFamilies.bold,
     fontSize: 16,
-  },
-  stopMeta: {
-    marginTop: 3,
-    color: colors.mutedInk,
-    ...typography.metadata,
-    fontSize: 11,
   },
   stopTime: {
     paddingLeft: 10,

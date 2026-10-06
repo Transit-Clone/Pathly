@@ -17,6 +17,11 @@ type DetailMapPageProps = {
   controls: ReactNode;
   /** When true, controls sit on the map and scroll away with it instead of staying fixed. */
   controlsScrollWithMap?: boolean;
+  /**
+   * When true, the uncovered map area takes pan/zoom gestures directly: the scroll view and its
+   * content wrapper pass touches through outside the content sheet, which still scrolls the page.
+   */
+  interactiveMap?: boolean;
   map: ReactNode;
   mapHeight: number;
   mapTestID: string;
@@ -38,6 +43,7 @@ export function DetailMapPage({
   contentTestID,
   controls,
   controlsScrollWithMap = false,
+  interactiveMap = false,
   map,
   mapHeight,
   mapTestID,
@@ -67,16 +73,18 @@ export function DetailMapPage({
   return (
     <View style={styles.viewport}>
       <View style={styles.screen} testID={testID}>
-        <View pointerEvents="none" style={[styles.map, { height: mapHeight }]} testID={mapTestID}>
+        <View pointerEvents={interactiveMap ? 'auto' : 'none'} style={[styles.map, { height: mapHeight }]} testID={mapTestID}>
           {map}
         </View>
 
         <Animated.ScrollView
           bounces={false}
+          contentContainerStyle={interactiveMap ? styles.passThrough : undefined}
           onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
             useNativeDriver: Platform.OS !== 'web',
           })}
           overScrollMode="never"
+          pointerEvents={interactiveMap ? 'box-none' : 'auto'}
           scrollEventThrottle={16}
           showsVerticalScrollIndicator={false}
           style={styles.scroll}
@@ -113,6 +121,9 @@ export function DetailMapPage({
 }
 
 const createStyles = (colors: Palette) => StyleSheet.create({
+  passThrough: {
+    pointerEvents: 'box-none',
+  },
   viewport: { flex: 1, alignItems: 'center', backgroundColor: colors.background },
   screen: { width: '100%', maxWidth: 540, flex: 1, overflow: 'hidden', backgroundColor: colors.canvas },
   map: { position: 'absolute', top: 0, right: 0, left: 0, overflow: 'hidden', backgroundColor: colors.blueSoft },

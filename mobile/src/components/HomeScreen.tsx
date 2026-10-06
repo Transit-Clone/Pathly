@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { applyLirrLive } from '../data/applyLirrLive';
 import { favoriteTripKey, type FavoriteTrip } from '../data/favorites';
 import { LirrLiveProvider, useLirrLive } from '../data/LirrLiveContext';
+import { nearestPortJeffersonStop, type LiveStop } from '../data/nearestStop';
 import {
   DEFAULT_PINNED_ROUTE_IDS,
   recentTripById,
@@ -14,9 +15,9 @@ import {
   type RouteId,
   type TripTimeChoice,
 } from '../data/transit';
-import { useCurrentLocation } from '../hooks/useCurrentLocation';
+import { useCurrentLocation, type Coordinates } from '../hooks/useCurrentLocation';
 import { ThemedStatusBar, useThemedStyles } from '../theme/AppSettings';
-import { ScreenTransition, useNativeDriver } from '../theme/motion';
+import { ScreenTransition } from '../theme/motion';
 import type { Palette } from '../theme/colors';
 import { CurrentLocationButton } from './CurrentLocationButton';
 import { GoogleMapView } from './GoogleMapView';
@@ -58,16 +59,24 @@ type RouteDetailScreenProps = {
   onToggleFavorite: () => void;
   onTogglePin: () => void;
   routeId: RouteId;
+  liveStop: LiveStop;
+  location: Coordinates;
+  locationKnown: boolean;
+  onRefreshLocation: () => void;
 };
 
 /** Reads live LIRR data itself — must render under LirrLiveProvider, which HomeScreen itself can't consume. */
-function RouteDetailScreen({ isFavorite, isPinned, onBack, onToggleFavorite, onTogglePin, routeId }: RouteDetailScreenProps) {
+function RouteDetailScreen({ isFavorite, isPinned, liveStop, location, locationKnown, onBack, onRefreshLocation, onToggleFavorite, onTogglePin, routeId }: RouteDetailScreenProps) {
   const lirrLive = useLirrLive();
   return (
     <RouteDetailView
       isFavorite={isFavorite}
       isPinned={isPinned}
+      liveStop={liveStop}
+      location={location}
+      locationKnown={locationKnown}
       onBack={onBack}
+      onRefreshLocation={onRefreshLocation}
       onToggleFavorite={onToggleFavorite}
       onTogglePin={onTogglePin}
       route={applyLirrLive(routeById[routeId], lirrLive)}
@@ -86,15 +95,8 @@ export function HomeScreen() {
   const [favoriteRouteIds, setFavoriteRouteIds] = useState<readonly RouteId[]>([]);
   const [favoriteTrips, setFavoriteTrips] = useState<readonly FavoriteTrip[]>([]);
   const { height } = useWindowDimensions();
-  const { location, refresh: refreshLocation } = useCurrentLocation();
+  const { location, known: locationKnown, refresh: refreshLocation } = useCurrentLocation();
   const [isLocationCentered, setIsLocationCentered] = useState(false);
-  const [sheetExpanded, setSheetExpanded] = useState(false);
-  const [locationButtonOpacity] = useState(() => new Animated.Value(1));
-
-  const handleSheetExpandChange = useCallback((expanded: boolean) => {
-    setSheetExpanded(expanded);
-    Animated.timing(locationButtonOpacity, { toValue: expanded ? 0 : 1, duration: 200, useNativeDriver }).start();
-  }, [locationButtonOpacity]);
   const mapHeight = Math.max(
     MINIMUM_MAP_HEIGHT,
     height
@@ -102,6 +104,17 @@ export function HomeScreen() {
       - TRANSIT_CARD_HEIGHT * VISIBLE_TRANSIT_CARDS
       - VISIBLE_CARD_GUTTER,
   );
+  const [homeScrollY] = useState(() => new Animated.Value(0));
+  const locationButtonOpacity = homeScrollY.interpolate({
+    inputRange: [0, 48],
+    outputRange: [1, 0],
+    extrapolate: 'clamp',
+  });
+  const locationButtonTranslateY = homeScrollY.interpolate({
+    inputRange: [0, mapHeight],
+    outputRange: [0, -mapHeight],
+    extrapolate: 'clamp',
+  });
 
   const showHome = useCallback(() => setActiveView({ name: 'home' }), []);
   const showSearch = useCallback(() => {
@@ -227,8 +240,11 @@ export function HomeScreen() {
   // Only the Port Jefferson Branch has a live feed wired up today; this is the one place that
   // decides which branch's data the rest of the screen tree sees via useLirrLive().
   const liveSource = routeById.ronkonkoma.liveSource;
+  // Live departures come from the branch station nearest the rider; `location` starts as (and,
+  // with permission denied, stays) the Stony Brook-area fallback, so this defaults to Stony Brook.
+  const liveStop = nearestPortJeffersonStop(location);
   const screen = (node: ReactNode) => (
-    <LirrLiveProvider routeId={liveSource?.routeId ?? ''} stopId={liveSource?.stopId ?? ''}>
+    <LirrLiveProvider routeId={liveSource?.routeId ?? ''} stopId={liveSource ? liveStop.stopId : ''}>
       <ScreenTransition key={transitionKey}>{node}</ScreenTransition>
     </LirrLiveProvider>
   );
@@ -248,7 +264,11 @@ export function HomeScreen() {
       <RouteDetailScreen
         isFavorite={favoriteRouteIds.includes(routeId)}
         isPinned={pinnedRouteIds.includes(routeId)}
+        liveStop={liveStop}
+        location={location}
+        locationKnown={locationKnown}
         onBack={showHome}
+        onRefreshLocation={() => void refreshLocation()}
         onToggleFavorite={() => setFavoriteRouteIds((current) => toggleItem(current, routeId))}
         onTogglePin={() => setPinnedRouteIds((current) => toggleItem(current, routeId))}
         routeId={routeId}
@@ -303,8 +323,14 @@ export function HomeScreen() {
           padding={{ top: 80, bottom: height - mapHeight }}
         />
         <Animated.View
-          pointerEvents={sheetExpanded ? 'none' : 'auto'}
-          style={[styles.locationButton, { bottom: height - mapHeight + 16, opacity: locationButtonOpacity }]}
+          style={[
+            styles.locationButton,
+            {
+              bottom: height - mapHeight + 16,
+              opacity: locationButtonOpacity,
+              transform: [{ translateY: locationButtonTranslateY }],
+            },
+          ]}
         >
           <CurrentLocationButton
             onPress={() => {
@@ -333,10 +359,10 @@ export function HomeScreen() {
           onOpenRoute={(routeId) => setActiveView({ name: 'route', routeId })}
           onOpenTrip={showRecentTrip}
           onEndTrip={endRecentTrip}
-          onExpandChange={handleSheetExpandChange}
           onStartTrip={startRecentTrip}
           onTabChange={setHomeTab}
           pinnedRouteIds={pinnedRouteIds}
+          scrollY={homeScrollY}
         />
       </View>
     </View>

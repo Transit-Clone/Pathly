@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, PanResponder, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Platform, StyleSheet, Text, View, type ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { applyLirrLive } from '../data/applyLirrLive';
@@ -34,10 +34,10 @@ type TransitSheetProps = {
   onOpenRoute: (routeId: RouteId) => void;
   onOpenTrip: (tripId: RecentTripId) => void;
   onEndTrip: () => void;
-  onExpandChange?: (expanded: boolean) => void;
   onStartTrip: (tripId: RecentTripId) => void;
   onTabChange: (tab: TransitTabId) => void;
   pinnedRouteIds: readonly RouteId[];
+  scrollY: Animated.Value;
 };
 
 const TAB_ROW_HEIGHT = 44;
@@ -45,11 +45,11 @@ const TAB_ROW_PADDING = 16;
 const TAB_GAP = 4;
 const TRANSIT_CARD_HEIGHT = 104;
 const TAB_CONTENT_MIN_HEIGHT = allNearbyRoutes.length * TRANSIT_CARD_HEIGHT;
-// Must stay below the header's own reserved height (HomeScreen's `padding.top`) — the
-// handle lives at the top of the sheet's content, so if the sheet went all the way to 0
-// the handle would end up hidden under the (higher zIndex) header and become undraggable.
+// Expanded = sheet scrolled up to just below the fixed search header (HomeScreen's 80pt top inset).
 const EXPANDED_TOP = 80;
 const DRAG_HANDLE_HEIGHT = 28;
+// Any scroll beyond this counts as "moved off rest", so a handle tap collapses instead of expanding.
+const AT_REST_TOLERANCE = 8;
 
 const tabs: { id: TransitTabId; label: string }[] = [
   { id: 'nearby', label: 'Nearby' },
@@ -67,10 +67,10 @@ export function TransitSheet({
   onOpenRoute,
   onOpenTrip,
   onEndTrip,
-  onExpandChange,
   onStartTrip,
   onTabChange,
   pinnedRouteIds,
+  scrollY,
 }: TransitSheetProps) {
   const styles = useThemedStyles(createStyles);
   const lirrLive = useLirrLive();
@@ -93,69 +93,57 @@ export function TransitSheet({
     Animated.spring(indicatorX, { toValue, speed: 18, bounciness: 4, useNativeDriver }).start();
   }, [activeIndex, indicatorX, reducedMotionActive, tabWidth]);
 
-  // Drag-to-expand: a dedicated handle (not the whole screen, and not the tab buttons
-  // themselves) moves the sheet between its resting height and the top of the screen,
-  // so the map underneath stays freely pannable everywhere outside the handle.
-  const [sheetTop] = useState(() => new Animated.Value(mapHeight));
-  const dragStartTop = useRef(mapHeight);
-  const isExpanded = useRef(false);
-
+  // The handle sits inside the page scroll, so dragging it on native already scrolls the
+  // sheet up and down like the rest of the page; tapping it (and clicking on web, where mouse
+  // drags don't scroll) jumps between the resting and expanded positions.
+  const pageScrollRef = useRef<ScrollView>(null);
+  const scrollOffset = useRef(0);
+  const expandedOffset = Math.max(0, mapHeight - EXPANDED_TOP);
   useEffect(() => {
-    if (!isExpanded.current) sheetTop.setValue(mapHeight);
-  }, [mapHeight, sheetTop]);
-
-  const animateTo = (target: number) => {
-    const expanded = target === EXPANDED_TOP;
-    isExpanded.current = expanded;
-    onExpandChange?.(expanded);
-    if (reducedMotionActive) {
-      sheetTop.setValue(target);
-      return;
-    }
-    Animated.spring(sheetTop, { toValue: target, speed: 14, bounciness: 6, useNativeDriver: false }).start();
+    const id = scrollY.addListener(({ value }) => {
+      scrollOffset.current = value;
+    });
+    return () => scrollY.removeListener(id);
+  }, [scrollY]);
+  const toggleExpanded = () => {
+    const target = scrollOffset.current <= AT_REST_TOLERANCE ? expandedOffset : 0;
+    // Recorded up front: the scrollY listener can't be relied on for natively driven scroll
+    // values, and on short lists the page stops short of `target` anyway (still off rest).
+    scrollOffset.current = target;
+    pageScrollRef.current?.scrollTo({ y: target, animated: !reducedMotionActive });
   };
 
-  // PanResponder (react-native's native gesture-responder system) has long-standing
-  // compatibility problems on react-native-web — attaching it can break unrelated touch/
-  // scroll handling on the page. It only drives real drag-to-expand on native; web gets a
-  // plain tap-to-toggle instead, which never touches the responder system at all.
-  // PanResponder's callbacks only ever run from real touch events, never during render,
-  // but the lint rule can't see that far through PanResponder.create's closures.
-  // eslint-disable-next-line react-hooks/refs
-  const [panResponder] = useState(() =>
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onPanResponderGrant: () => {
-        sheetTop.stopAnimation((value) => {
-          dragStartTop.current = value;
-        });
-      },
-      onPanResponderMove: (_event, gestureState) => {
-        const next = Math.min(mapHeight, Math.max(EXPANDED_TOP, dragStartTop.current + gestureState.dy));
-        sheetTop.setValue(next);
-      },
-      onPanResponderRelease: (_event, gestureState) => {
-        const current = dragStartTop.current + gestureState.dy;
-        animateTo(current < mapHeight / 2 ? EXPANDED_TOP : mapHeight);
-      },
-    }),
-  );
-
-  const toggleExpanded = () => animateTo(isExpanded.current ? mapHeight : EXPANDED_TOP);
-
   return (
-    <Animated.View style={[styles.sheet, { top: sheetTop }]} testID="transit-sheet">
-      <SafeAreaView edges={['bottom']} style={styles.sheetInner}>
-        {Platform.OS === 'web' ? (
-          <PressableScale accessibilityRole="button" onPress={toggleExpanded} style={styles.dragHandle} testID="transit-sheet-handle">
-            <View style={styles.dragHandleGrip} />
-          </PressableScale>
-        ) : (
-          <View {...panResponder.panHandlers} style={styles.dragHandle} testID="transit-sheet-handle">
-            <View style={styles.dragHandleGrip} />
-          </View>
-        )}
-
+    <Animated.ScrollView
+      automaticallyAdjustContentInsets={false}
+      bounces={false}
+      // The scroll view's own content wrapper spans the transparent map window too; without
+      // box-none it swallows drags there (always on web) and the map underneath can't pan.
+      contentContainerStyle={styles.pageContent}
+      contentInsetAdjustmentBehavior="never"
+      onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
+        useNativeDriver: Platform.OS !== 'web',
+      })}
+      overScrollMode="never"
+      pointerEvents="box-none"
+      ref={pageScrollRef}
+      scrollEventThrottle={16}
+      showsVerticalScrollIndicator={false}
+      style={styles.pageScroll}
+      testID={`${activeTab}-route-list`}
+    >
+      <View pointerEvents="box-none" style={{ height: mapHeight }} testID="transit-map-window" />
+      <SafeAreaView edges={['bottom']} style={styles.sheet} testID="transit-sheet">
+        <PressableScale
+          accessibilityHint="Expands or collapses the transit list."
+          accessibilityLabel="Transit list handle"
+          accessibilityRole="button"
+          onPress={toggleExpanded}
+          style={styles.dragHandle}
+          testID="transit-sheet-handle"
+        >
+          <View style={styles.dragHandleGrip} />
+        </PressableScale>
         <View accessibilityRole="tablist" onLayout={(event) => setTabsWidth(event.nativeEvent.layout.width)} style={styles.tabs}>
           <Animated.View pointerEvents="none" style={[styles.tabIndicator, { width: tabWidth, transform: [{ translateX: indicatorX }] }]} testID="tab-indicator" />
           {tabs.map((tab) => {
@@ -180,14 +168,7 @@ export function TransitSheet({
           })}
         </View>
 
-        <ScrollView
-          bounces={false}
-          overScrollMode="never"
-          showsVerticalScrollIndicator={false}
-          style={styles.tabScroll}
-          testID={`${activeTab}-route-list`}
-        >
-          {activeTab === 'nearby' ? (
+        {activeTab === 'nearby' ? (
             <View style={styles.tabContent} testID="nearby-route-content">
               {pinnedRoutes.length > 0 ? (
                 <View testID="pinned-routes">
@@ -269,19 +250,13 @@ export function TransitSheet({
               </View>
             )
           )}
-        </ScrollView>
       </SafeAreaView>
-    </Animated.View>
+    </Animated.ScrollView>
   );
 }
 
 const createStyles = (colors: Palette) => StyleSheet.create({
   sheet: {
-    position: 'absolute',
-    right: 0,
-    bottom: 0,
-    left: 0,
-    zIndex: 3,
     overflow: 'hidden',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
@@ -292,22 +267,17 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     shadowRadius: 18,
     elevation: 14,
   },
-  sheetInner: {
-    flex: 1,
+  pageScroll: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    zIndex: 3,
+    backgroundColor: 'transparent',
   },
-  dragHandle: {
-    height: DRAG_HANDLE_HEIGHT,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dragHandleGrip: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.border,
-  },
-  tabScroll: {
-    flex: 1,
+  pageContent: {
+    pointerEvents: 'box-none',
   },
   tabs: {
     paddingTop: 12,
@@ -329,6 +299,17 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   tabLabel: { color: colors.mutedInk, ...typography.bodyStrong, fontSize: 13 },
   selectedTabLabel: { color: colors.primary, fontFamily: fontFamilies.extraBold },
   tabContent: { minHeight: TAB_CONTENT_MIN_HEIGHT },
+  dragHandle: {
+    height: DRAG_HANDLE_HEIGHT,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dragHandleGrip: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+  },
   cardStack: { gap: 0 },
   sectionHeading: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 },
   sectionLabel: { color: colors.mutedInk, ...typography.label },

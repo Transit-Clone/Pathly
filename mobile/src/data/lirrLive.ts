@@ -7,6 +7,8 @@ export type LirrVehicle = {
   directionId: number;
   lat: number;
   lon: number;
+  /** When the train's GPS position was measured (epoch ms); null if the backend didn't say. */
+  updatedAt: number | null;
 };
 
 export type DirectionPrediction = { minutes: number; live: boolean };
@@ -18,10 +20,19 @@ type StopPredictions = {
   towardDirection0: readonly DirectionPrediction[];
 };
 
+type LirrVehicleResponse = {
+  tripId: string;
+  directionId: number;
+  lat: number;
+  lon: number;
+  /** Epoch seconds; absent from functions deployed before this field was added. */
+  timestamp?: number | null;
+};
+
 type LirrBranchLiveStatusResponse = {
   routeId: string;
   routeName: string;
-  vehicles: LirrVehicle[];
+  vehicles: LirrVehicleResponse[];
   stopPredictions: StopPredictions;
 };
 
@@ -60,6 +71,7 @@ export async function fetchLirrBranchLiveData(routeId: string, stopId: string): 
       directionId: vehicle.directionId,
       lat: vehicle.lat,
       lon: vehicle.lon,
+      updatedAt: vehicle.timestamp != null ? vehicle.timestamp * 1000 : null,
     })),
   };
 }

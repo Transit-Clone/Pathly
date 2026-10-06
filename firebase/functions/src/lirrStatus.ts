@@ -25,6 +25,8 @@ export type LirrVehicleStatus = {
   lon: number;
   currentStatus: string | null;
   stopId: string | null;
+  /** When this position was measured (epoch seconds), or null if the feed omitted it. */
+  timestamp: number | null;
 };
 
 export type LirrBranchStatus = {
@@ -89,11 +91,15 @@ export async function getLirrBranchStatus(routeId: string): Promise<LirrBranchSt
 
     vehicles.push({
       tripId: vehicleTripId,
-      directionId: vehicle.trip?.directionId ?? vehicleTripMeta.directionId,
+      // The feed omits direction on vehicle positions and protobufjs then reports a default 0,
+      // so `??` never falls through; trips.txt is authoritative for which way a trip runs.
+      directionId: vehicleTripMeta.directionId,
       lat: vehicle.position.latitude,
       lon: vehicle.position.longitude,
       currentStatus: vehicle.currentStatus ?? null,
       stopId: vehicle.stopId ?? null,
+      // protobuf uint64 decodes to a Long object; String() + Number() unwraps it safely.
+      timestamp: vehicle.timestamp != null ? Number(String(vehicle.timestamp)) : null,
     });
   }
 

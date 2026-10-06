@@ -69,6 +69,22 @@ No backend environment file or local API process is required.
 
 Keep Expo running while using the app. If the device cannot load the project, confirm both devices are on the same network, allow incoming Node connections through the computer's firewall, or use Expo's tunnel option from the interactive terminal.
 
+## Destination search (Google Places)
+
+Destination search uses Google Places Autocomplete (Places API (New)). Without a key, search still opens and shows recent places, but typed queries show "Place search is unavailable."
+
+1. In the Google Cloud project that holds the Maps keys, enable **Places API (New)** under **APIs & Services → Library**.
+2. Create an API key (or reuse the web Maps key) and restrict it under **API restrictions** to Places API (New). For web, also add an **HTTP referrers** restriction for your dev and production origins.
+3. Add the key to `mobile/.env`:
+
+   ```sh
+   EXPO_PUBLIC_GOOGLE_PLACES_API_KEY=your-key
+   ```
+
+   If this variable is not set, the app falls back to `EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY`. Restart the Expo dev server after editing `.env`.
+
+`EXPO_PUBLIC_` values are bundled into the app, so treat this key as public and rely on its restrictions.
+
 ## Commands
 
 | Command               | Purpose                                   |

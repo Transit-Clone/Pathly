@@ -58,8 +58,9 @@ type GoogleMapViewProps = {
 /**
  * react-native-maps has no web build; this renders the real Google Maps JS API instead.
  * The JS API has no native-SDK-style "mapPadding" (which keeps the map full-bleed but biases
- * where it treats as centered); instead we just size the map's own container to the gap
- * between the header and the sheet, so `center` is already centered in what's visible.
+ * where it treats as centered). The map runs up to the top edge behind the floating header
+ * like native; the bottom is sized to the sheet's top. To keep `center` centered in the
+ * visible gap below the header, the map is panned up by half the top padding.
  */
 export function GoogleMapView({ location, onUserPan, padding, testID = 'google-map-view' }: GoogleMapViewProps) {
   const { isLoaded } = useJsApiLoader({
@@ -103,11 +104,17 @@ export function GoogleMapView({ location, onUserPan, padding, testID = 'google-m
     [],
   );
 
+  // Runs after GoogleMap (a child) applies the new `center`, so the offset is re-applied on every recenter.
+  const topInset = padding?.top ?? 0;
+  useEffect(() => {
+    if (map && topInset) map.panBy(0, -topInset / 2);
+  }, [map, center, topInset]);
+
   return (
     <View
       style={[
         StyleSheet.absoluteFill,
-        { top: padding?.top ?? 0, right: padding?.right ?? 0, bottom: padding?.bottom ?? 0, left: padding?.left ?? 0 },
+        { top: 0, right: padding?.right ?? 0, bottom: padding?.bottom ?? 0, left: padding?.left ?? 0 },
       ]}
       testID={testID}
     >
