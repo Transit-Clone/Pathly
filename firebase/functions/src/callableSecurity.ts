@@ -5,8 +5,6 @@ import { HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
 export type CallableRateLimit = {
   /** Token capacity/refill rate per minute for one authenticated Firebase user. */
   userPerMinute: number;
-  /** A generous secondary token bucket for shared networks. Skipped without a trusted IP. */
-  ipPerMinute: number;
 };
 
 type TokenBucket = { tokens: number; updatedAtMs: number; lastSeenAtMs: number };
@@ -21,28 +19,26 @@ function hashIdentifier(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
-/**
- * Cloud Functions exposes Express' normalized request IP. Avoid parsing a caller-controlled
- * X-Forwarded-For header ourselves; the IP limit is only a secondary control anyway because
- * campuses and carriers legitimately put many riders behind one address.
- */
-function clientIp<T>(request: CallableRequest<T>): string | null {
-  const ip = request.rawRequest.ip?.trim() || request.rawRequest.socket.remoteAddress?.trim();
-  return ip || null;
-}
-
 function pruneBuckets(nowMs: number): void {
   callsSincePrune += 1;
-  if (callsSincePrune < 250 && buckets.size <= MAX_BUCKETS) return;
+  if (callsSincePrune < 250) return;
   callsSincePrune = 0;
 
   for (const [key, bucket] of buckets) {
     if (nowMs - bucket.lastSeenAtMs > IDLE_BUCKET_TTL_MS) buckets.delete(key);
   }
+}
 
-  if (buckets.size <= MAX_BUCKETS) return;
-  const oldest = [...buckets.entries()].sort((a, b) => a[1].lastSeenAtMs - b[1].lastSeenAtMs);
-  for (const [key] of oldest.slice(0, buckets.size - MAX_BUCKETS)) buckets.delete(key);
+function storeBucket(key: string, bucket: TokenBucket): void {
+  // Refresh insertion order so the bounded map acts as an O(1) LRU instead of sorting the
+  // entire map under high-cardinality traffic.
+  buckets.delete(key);
+  buckets.set(key, bucket);
+  while (buckets.size > MAX_BUCKETS) {
+    const oldestKey = buckets.keys().next().value;
+    if (oldestKey === undefined) break;
+    buckets.delete(oldestKey);
+  }
 }
 
 /** Exported for deterministic unit tests; production callers use enforceCallableSecurity. */
@@ -85,10 +81,12 @@ function bucketDecision(key: string, limit: number, nowMs: number) {
 
 /**
  * Fail closed before any transit/provider work starts. Buckets intentionally store only hashes,
- * never raw Firebase UIDs or IP addresses. The limiter is per warm instance, and every callable
- * is capped at one instance to make that boundary coherent; use a shared gateway/Redis limiter
- * before raising the ceiling for production scale. A cold start still resets the buckets, so
- * provider quotas and billing alerts remain the hard cost backstop.
+ * never raw Firebase UIDs. The limiter is per warm instance, and every callable is capped at one
+ * instance to make that boundary coherent; use a managed edge/shared limiter before raising the
+ * ceiling or adding IP limits. Cloud Functions' proxy chain does not expose a fixed trusted IP
+ * hop, so X-Forwarded-For and Express request.ip must not be used as security boundaries here.
+ * A cold start still resets the buckets, so provider quotas and billing alerts remain the hard
+ * cost backstop.
  */
 export function enforceCallableSecurity<T>(
   request: CallableRequest<T>,
@@ -100,22 +98,14 @@ export function enforceCallableSecurity<T>(
   if (!uid) throw new HttpsError('unauthenticated', 'Sign in is required.');
 
   pruneBuckets(nowMs);
-  const decisions = [bucketDecision(`${endpoint}:user:${hashIdentifier(uid)}`, limits.userPerMinute, nowMs)];
-
-  const ip = clientIp(request);
-  if (ip) decisions.push(bucketDecision(`${endpoint}:ip:${hashIdentifier(ip)}`, limits.ipPerMinute, nowMs));
-
-  const blocked = decisions.find(({ result }) => !result.allowed);
-  if (blocked) {
+  const decision = bucketDecision(`${endpoint}:user:${hashIdentifier(uid)}`, limits.userPerMinute, nowMs);
+  if (!decision.result.allowed) {
     throw new HttpsError('resource-exhausted', 'Too many requests. Try again shortly.', {
-      retryAfterSeconds: blocked.result.retryAfterSeconds,
+      retryAfterSeconds: decision.result.retryAfterSeconds,
     });
   }
 
-  // Commit neither quota when either scope rejects the request.
-  for (const { key, result } of decisions) {
-    buckets.set(key, { ...result.next, lastSeenAtMs: nowMs });
-  }
+  storeBucket(decision.key, { ...decision.result.next, lastSeenAtMs: nowMs });
   return uid;
 }
 

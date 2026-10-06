@@ -15,10 +15,10 @@ const {
   getRouteLiveStatus,
 } = require('../lib');
 
-function request(uid, ip = '203.0.113.10') {
+function request(uid) {
   return {
     auth: uid ? { uid } : null,
-    rawRequest: { ip, socket: { remoteAddress: ip } },
+    rawRequest: {},
   };
 }
 
@@ -26,7 +26,7 @@ test.beforeEach(() => resetCallableSecurityForTests());
 
 test('requires an authenticated Firebase user', () => {
   assert.throws(
-    () => enforceCallableSecurity(request(null), 'endpoint', { userPerMinute: 2, ipPerMinute: 10 }, 1_000),
+    () => enforceCallableSecurity(request(null), 'endpoint', { userPerMinute: 2 }, 1_000),
     (error) => error.code === 'unauthenticated',
   );
 });
@@ -41,7 +41,7 @@ test('every callable rejects anonymous traffic before validation or provider wor
 });
 
 test('blocks a user after exhausting the configured token bucket', () => {
-  const limits = { userPerMinute: 2, ipPerMinute: 10 };
+  const limits = { userPerMinute: 2 };
   enforceCallableSecurity(request('user-1'), 'endpoint', limits, 1_000);
   enforceCallableSecurity(request('user-1'), 'endpoint', limits, 2_000);
   assert.throws(
@@ -50,21 +50,18 @@ test('blocks a user after exhausting the configured token bucket', () => {
   );
 });
 
-test('applies the IP ceiling across users without burning rejected user quota', () => {
-  const limits = { userPerMinute: 2, ipPerMinute: 1 };
-  enforceCallableSecurity(request('user-1'), 'endpoint', limits, 1_000);
-  assert.throws(
-    () => enforceCallableSecurity(request('user-2'), 'endpoint', limits, 2_000),
-    (error) => error.code === 'resource-exhausted',
-  );
+test('bounds high-cardinality bucket storage without a full-map sort', () => {
+  const limits = { userPerMinute: 1 };
+  for (let index = 0; index <= 20_000; index += 1) {
+    enforceCallableSecurity(request(`user-${index}`), 'endpoint', limits, 1_000);
+  }
 
-  // A request from a different network still gets user-2's full two-token allowance.
-  enforceCallableSecurity(request('user-2', '198.51.100.20'), 'endpoint', limits, 2_000);
-  assert.doesNotThrow(() => enforceCallableSecurity(request('user-2', '198.51.100.21'), 'endpoint', limits, 2_000));
+  // The oldest entry was evicted at the cap, so it can be admitted again immediately.
+  assert.doesNotThrow(() => enforceCallableSecurity(request('user-0'), 'endpoint', limits, 1_000));
 });
 
 test('keeps endpoint buckets independent and resets after one minute', () => {
-  const limits = { userPerMinute: 1, ipPerMinute: 10 };
+  const limits = { userPerMinute: 1 };
   enforceCallableSecurity(request('user-1'), 'endpoint-a', limits, 1_000);
   enforceCallableSecurity(request('user-1'), 'endpoint-b', limits, 2_000);
   assert.doesNotThrow(() => enforceCallableSecurity(request('user-1'), 'endpoint-a', limits, 61_000));

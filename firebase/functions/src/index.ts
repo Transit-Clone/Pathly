@@ -20,11 +20,11 @@ const enforceTransitAppCheck = false;
 const protectedCallableOptions = { enforceAppCheck: enforceTransitAppCheck, maxInstances: 1 } as const;
 const RATE_LIMITS = {
   // Live/nearest calls run per visible route every 30 seconds and after meaningful GPS updates.
-  getRouteLiveStatus: { userPerMinute: 600, ipPerMinute: 2_400 },
-  findNearbyTransit: { userPerMinute: 30, ipPerMinute: 180 },
-  getNearestRouteStop: { userPerMinute: 600, ipPerMinute: 2_400 },
-  getRouteGeometry: { userPerMinute: 120, ipPerMinute: 600 },
-  geocodeAddress: { userPerMinute: 10, ipPerMinute: 60 },
+  getRouteLiveStatus: { userPerMinute: 600 },
+  findNearbyTransit: { userPerMinute: 30 },
+  getNearestRouteStop: { userPerMinute: 600 },
+  getRouteGeometry: { userPerMinute: 120 },
+  geocodeAddress: { userPerMinute: 10 },
 } satisfies Record<string, CallableRateLimit>;
 
 function requiredString(value: unknown, name: string, maxLength = 128): string {

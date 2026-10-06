@@ -116,7 +116,7 @@ firebase functions:secrets:set SWIFTLY_API_KEY
 
 For the local Functions emulator only, copy `firebase/functions/.secret.local.example` to
 `firebase/functions/.secret.local`. Keep provider quotas and billing alerts enabled; the
-in-process per-user/IP limiter is paired with a low Functions `maxInstances` ceiling and is not
+in-process per-user limiter is paired with a low Functions `maxInstances` ceiling and is not
 a replacement for a shared production rate limiter when the service scales out.
 
 Do not create or share Firebase Admin service-account JSON keys for routine development.
