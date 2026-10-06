@@ -1,0 +1,5 @@
+rider_category_id,rider_category_name,is_default_fare_category,eligibility_url
+WZ_RC_DEFAULT,Full Fare,1,
+WZ_RC_1,Students (5-22 Years Old),0,https://sctbus.org/System-Information#fares
+WZ_RC_2,Children (Under 5),0,https://sctbus.org/System-Information#fares
+WZ_RC_3,"Seniors, Veterans, Persons with Disabilities",0,https://sctbus.org/System-Information#fares

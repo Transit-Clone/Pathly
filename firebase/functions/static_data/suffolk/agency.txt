@@ -1,0 +1,4 @@
+agency_id,agency_name,agency_url,agency_timezone,agency_lang,agency_phone,agency_fare_url,agency_email
+262,"Suffolk County Transit - West",https://sctbus.org/,America/New_York,en-US,631-852-5200,https://sctbus.org/System-Information#fares,buses@suffolkcountyny.gov
+265,"Suffolk County Transit - East",https://sctbus.org/,America/New_York,en-US,631-852-5200,https://sctbus.org/System-Information#fares,buses@suffolkcountyny.gov
+272,"Suffolk County Transit  - Central",https://sctbus.org/,America/New_York,en-US,631-852-5200,https://sctbus.org/System-Information#fares,buses@suffolkcountyny.gov
