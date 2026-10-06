@@ -5,6 +5,7 @@ import { enforceCallableSecurity, type CallableRateLimit } from './callableSecur
 import { findNearbyTransit as findNearbyTransitDiscovery, getNearestStopForRoute, getRouteGeometry as getRouteGeometryDiscovery } from './gtfsDiscovery';
 import { AGENCY_CONFIGS, type AgencyId } from './gtfsAgencies';
 import { getStopPredictions } from './gtfsSchedule';
+import { loadAgencyStaticData } from './gtfsStaticData';
 import { getRouteStatus } from './gtfsStatus';
 
 /** Set once with: firebase functions:secrets:set GOOGLE_MAPS_API_KEY */
@@ -37,6 +38,14 @@ function requiredAgencyId(value: unknown): AgencyId {
   const agencyId = requiredString(value, 'agencyId', 32);
   if (!Object.hasOwn(AGENCY_CONFIGS, agencyId)) throw new HttpsError('invalid-argument', 'agencyId is not supported');
   return agencyId as AgencyId;
+}
+
+function requiredRouteId(agencyId: AgencyId, value: unknown): string {
+  const routeId = requiredString(value, 'routeId');
+  if (!loadAgencyStaticData(agencyId).routesById.has(routeId)) {
+    throw new HttpsError('invalid-argument', `routeId is not supported for agencyId "${agencyId}"`);
+  }
+  return routeId;
 }
 
 function requiredCoordinates(lat: unknown, lon: unknown): { lat: number; lon: number } {
@@ -112,7 +121,7 @@ export const getNearestRouteStop = onCall<NearestRouteStopRequest>(protectedCall
   enforceCallableSecurity(request, 'getNearestRouteStop', RATE_LIMITS.getNearestRouteStop);
   const data = request.data ?? ({} as NearestRouteStopRequest);
   const agencyId = requiredAgencyId(data.agencyId);
-  const routeId = requiredString(data.routeId, 'routeId');
+  const routeId = requiredRouteId(agencyId, data.routeId);
   const { lat, lon } = requiredCoordinates(data.lat, data.lon);
 
   const stop = await getNearestStopForRoute(agencyId, routeId, lat, lon);
@@ -133,7 +142,7 @@ export const getRouteGeometry = onCall<RouteGeometryRequest>(protectedCallableOp
   enforceCallableSecurity(request, 'getRouteGeometry', RATE_LIMITS.getRouteGeometry);
   const data = request.data ?? ({} as RouteGeometryRequest);
   const agencyId = requiredAgencyId(data.agencyId);
-  const routeId = requiredString(data.routeId, 'routeId');
+  const routeId = requiredRouteId(agencyId, data.routeId);
   const { directionId } = data;
   if (directionId !== 0 && directionId !== 1) throw new HttpsError('invalid-argument', 'directionId must be 0 or 1');
 

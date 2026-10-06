@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const test = require('node:test');
 
 const {
@@ -93,4 +94,32 @@ test('rejects object-prototype agency names as invalid arguments', async () => {
       (error) => error.code === 'invalid-argument',
     );
   }
+});
+
+test('rejects route IDs outside the selected agency before scanning stop_times', async () => {
+  const originalCreateReadStream = fs.createReadStream;
+  let stopTimesScans = 0;
+  fs.createReadStream = function (...args) {
+    stopTimesScans += 1;
+    return originalCreateReadStream.apply(this, args);
+  };
+
+  try {
+    const cases = [
+      // n1 is a real NICE route, but it is not a valid route in the selected subway dataset.
+      [getNearestRouteStop, { agencyId: 'subway', routeId: 'n1', lat: 40.7, lon: -73.9 }],
+      [getRouteGeometry, { agencyId: 'subway', routeId: 'n1', directionId: 0 }],
+    ];
+
+    for (const [callable, data] of cases) {
+      await assert.rejects(
+        () => callable.run({ auth: { uid: 'user-1' }, data, rawRequest: request('user-1').rawRequest }),
+        (error) => error.code === 'invalid-argument' && error.message.includes('routeId is not supported'),
+      );
+    }
+  } finally {
+    fs.createReadStream = originalCreateReadStream;
+  }
+
+  assert.equal(stopTimesScans, 0);
 });
