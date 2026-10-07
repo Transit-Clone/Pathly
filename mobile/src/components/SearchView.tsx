@@ -1,39 +1,35 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useEffectEvent, useState, type ReactNode } from 'react';
 import {
-  Keyboard,
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
-  useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import {
-  findMockDestinations,
-  recentSearches,
-  type MockSearchPlace,
-} from '../data/mockSearch';
+import { fetchPlaceDetails, type SearchPlace } from '../data/placesSearch';
+import { addSessionRecent, getRecentPlaces } from '../data/sessionRecents';
+import { usePlacesSearch } from '../hooks/usePlacesSearch';
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
-import { fontFamilies, typography } from '../theme/typography';
+import { typography } from '../theme/typography';
 import { Icon } from './Icon';
-import { MapBackdrop } from './MapBackdrop';
 import { PressableScale } from './PressableScale';
 
 export type SearchViewProps = {
   initialQuery?: string;
   onCancel: () => void;
-  onSelect: (place: MockSearchPlace) => void;
+  onSelect: (place: SearchPlace) => void;
 };
 
 type SearchResultRowProps = {
-  index?: number;
-  place: MockSearchPlace;
+  place: SearchPlace;
   recent?: boolean;
+  resolving?: boolean;
   onPress: () => void;
 };
 
@@ -42,32 +38,23 @@ function SearchIcon() {
   return <Icon color={colors.ink} name="search" size={20} />;
 }
 
-function SearchResultRow({
-  index,
-  onPress,
-  place,
-  recent = false,
-}: SearchResultRowProps) {
+function SearchResultRow({ onPress, place, recent = false, resolving = false }: SearchResultRowProps) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
   return (
     <PressableScale
       accessibilityLabel={`${place.title}, ${place.subtitle}`}
       accessibilityRole="button"
+      accessibilityState={{ busy: resolving }}
       onPress={onPress}
       style={styles.resultRow}
       testID={`search-result-${place.id}`}
     >
-      <View
-        style={[
-          styles.resultIcon,
-          recent ? styles.recentIcon : styles.numberIcon,
-        ]}
-      >
-        {recent ? (
-          <Icon name="recent" size={20} />
+      <View style={styles.resultIcon}>
+        {resolving ? (
+          <ActivityIndicator color={colors.primary} size="small" testID={`search-result-resolving-${place.id}`} />
         ) : (
-          <Text style={styles.resultIconText}>{index}</Text>
+          <Icon color={colors.mutedInk} name={recent ? 'recent' : 'place'} size={20} />
         )}
       </View>
 
@@ -79,45 +66,117 @@ function SearchResultRow({
           {place.subtitle}
         </Text>
       </View>
-
-      <Icon color={colors.mutedInk} name="forward" size={20} style={styles.chevron} />
     </PressableScale>
   );
 }
 
+type MessageProps = {
+  body: string;
+  children?: ReactNode;
+  title: string;
+};
+
+/** Centered empty/error/unavailable state, announced to assistive technology. */
+function Message({ body, children, title }: MessageProps) {
+  const styles = useThemedStyles(createStyles);
+  return (
+    <View accessibilityLiveRegion="polite" style={styles.message} testID="search-message">
+      <Text style={styles.messageTitle}>{title}</Text>
+      <Text style={styles.messageBody}>{body}</Text>
+      {children}
+    </View>
+  );
+}
+
+/** Full-screen destination search: search field pinned on top, a flat result list below. */
 export function SearchView({ initialQuery = '', onCancel, onSelect }: SearchViewProps) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
   const [query, setQuery] = useState(initialQuery);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const { height, width } = useWindowDimensions();
-  const normalizedQuery = query.trim();
-  const isSearching = normalizedQuery.length > 0;
-  const searchResults = useMemo(() => findMockDestinations(query), [query]);
-  const availableHeight = height - keyboardHeight;
-  const sheetHeight = isSearching
-    ? Math.max(160, Math.min(520, height * 0.58, availableHeight - 120))
-    : Math.min(500, Math.max(405, height * 0.55));
-  const mapHeight = height - sheetHeight;
-  const screenWidth = Math.min(width, 540);
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
+  const [selectionFailed, setSelectionFailed] = useState(false);
+  const [recentPlaces] = useState(getRecentPlaces);
+  const { endSession, getSessionToken, retry, status, suggestions } = usePlacesSearch(query);
+  const isSearching = status !== 'idle';
+
+  // Not an effect dependency, so a parent re-render (new onSelect identity) can't restart the request.
+  const finishSelection = useEffectEvent((place: SearchPlace) => {
+    endSession();
+    addSessionRecent(place);
+    onSelect(place);
+  });
+  const getDetailsSessionToken = useEffectEvent(getSessionToken);
+
+  // Resolves the picked suggestion; unmounting (e.g. Cancel) aborts it so a late answer can't navigate.
+  useEffect(() => {
+    if (!resolvingId) return undefined;
+    const controller = new AbortController();
+    fetchPlaceDetails({ placeId: resolvingId, sessionToken: getDetailsSessionToken(), signal: controller.signal })
+      .then((place) => {
+        if (!controller.signal.aborted) finishSelection(place);
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        setResolvingId(null);
+        setSelectionFailed(true);
+      });
+    return () => controller.abort();
+  }, [resolvingId]);
 
   const changeQuery = (value: string) => {
     setQuery(value);
+    setSelectionFailed(false);
   };
 
-  useEffect(() => {
-    const showSubscription = Keyboard.addListener('keyboardDidShow', (event) => {
-      setKeyboardHeight(event.endCoordinates.height);
-    });
-    const hideSubscription = Keyboard.addListener('keyboardDidHide', () => {
-      setKeyboardHeight(0);
-    });
+  const selectRecent = (place: SearchPlace) => {
+    if (resolvingId) return;
+    addSessionRecent(place);
+    onSelect(place);
+  };
 
-    return () => {
-      showSubscription.remove();
-      hideSubscription.remove();
-    };
-  }, []);
+  const selectSuggestion = (suggestion: SearchPlace) => {
+    if (resolvingId) return;
+    setResolvingId(suggestion.id);
+    setSelectionFailed(false);
+  };
+
+  const renderSearchState = () => {
+    if (status === 'unconfigured') {
+      return (
+        <Message
+          body="Place search is not set up for this build yet. Clear the search to pick a recent place."
+          title="Place search is unavailable"
+        />
+      );
+    }
+    if (status === 'error') {
+      return (
+        <Message body="Check your connection and try again." title="Couldn't load places">
+          <PressableScale accessibilityRole="button" onPress={retry} style={styles.retryButton} testID="search-retry">
+            <Text style={styles.retryText}>Retry</Text>
+          </PressableScale>
+        </Message>
+      );
+    }
+    if (status === 'loading') {
+      return (
+        <View accessibilityLabel="Searching places" accessibilityLiveRegion="polite" style={styles.loadingState} testID="search-loading">
+          <ActivityIndicator color={colors.primary} />
+        </View>
+      );
+    }
+    if (suggestions.length === 0) {
+      return <Message body="Try a street address, a business, or a station name." title="No places found" />;
+    }
+    return suggestions.map((place) => (
+      <SearchResultRow
+        key={place.id}
+        onPress={() => selectSuggestion(place)}
+        place={place}
+        resolving={resolvingId === place.id}
+      />
+    ));
+  };
 
   return (
     <View style={styles.viewport}>
@@ -127,7 +186,6 @@ export function SearchView({ initialQuery = '', onCancel, onSelect }: SearchView
         testID="search-view"
       >
         <ThemedStatusBar />
-        <MapBackdrop />
 
         <SafeAreaView edges={['top']} style={styles.searchSafeArea}>
           <View style={styles.searchRow}>
@@ -172,65 +230,30 @@ export function SearchView({ initialQuery = '', onCancel, onSelect }: SearchView
           </View>
         </SafeAreaView>
 
-        {isSearching
-          ? searchResults.map((result, index) => {
-              const top = Math.max(145, mapHeight * result.pin.y);
-              const left = screenWidth * result.pin.x;
-
-              return (
-                <View
-                  key={result.id}
-                  accessibilityLabel={`Map result ${index + 1}: ${result.title}, ${result.subtitle}`}
-                  accessible={true}
-                  style={[styles.mapPin, { left, top }]}
-                >
-                  <Text style={styles.mapPinText}>{index + 1}</Text>
-                  <View style={styles.mapPinTip} />
-                </View>
-              );
-            })
-          : null}
-
-        <SafeAreaView edges={['bottom']} style={[styles.sheet, { height: sheetHeight }]}>
-          <View style={styles.sheetHeading}>
-            <Text accessibilityRole="header" style={styles.heading}>
-              {isSearching ? 'Matches' : 'Recent'}
+        <ScrollView
+          contentContainerStyle={styles.resultList}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          style={styles.results}
+          testID="search-results"
+        >
+          {selectionFailed ? (
+            <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={styles.selectionError} testID="search-selection-error">
+              {"Couldn't open that place. Try selecting it again."}
             </Text>
-            {isSearching ? (
-              <Text accessibilityLiveRegion="polite" style={styles.headingCount} testID="search-match-count">
-                {searchResults.length === 1 ? '1 place' : `${searchResults.length} places`}
-              </Text>
-            ) : null}
-          </View>
+          ) : null}
 
-          {isSearching && searchResults.length === 0 ? (
-            <View accessibilityLiveRegion="polite" style={styles.emptyState}>
-              <View style={styles.emptyIcon}>
-                <SearchIcon />
-              </View>
-              <Text style={styles.emptyTitle}>No places found</Text>
-              <Text style={styles.emptyBody}>
-                Try “123 Terry Rd” or “Ronkonkoma”.
+          {isSearching ? renderSearchState() : (
+            <>
+              <Text accessibilityRole="header" style={styles.heading}>
+                Recent
               </Text>
-            </View>
-          ) : (
-            <ScrollView
-              contentContainerStyle={styles.resultList}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-            >
-              {(isSearching ? searchResults : recentSearches).map((place, index) => (
-                <SearchResultRow
-                  key={place.id}
-                  index={index + 1}
-                  onPress={() => onSelect(place)}
-                  place={place}
-                  recent={!isSearching}
-                />
+              {recentPlaces.map((place) => (
+                <SearchResultRow key={place.id} onPress={() => selectRecent(place)} place={place} recent={true} />
               ))}
-            </ScrollView>
+            </>
           )}
-        </SafeAreaView>
+        </ScrollView>
       </KeyboardAvoidingView>
     </View>
   );
@@ -240,17 +263,19 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   viewport: {
     flex: 1,
     alignItems: 'center',
-    backgroundColor: colors.background,
+    backgroundColor: colors.surface,
   },
   screen: {
     width: '100%',
     maxWidth: 540,
     flex: 1,
-    overflow: 'hidden',
-    backgroundColor: colors.canvas,
+    backgroundColor: colors.surface,
   },
   searchSafeArea: {
-    zIndex: 5,
+    paddingBottom: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+    backgroundColor: colors.surface,
   },
   searchRow: {
     flexDirection: 'row',
@@ -260,29 +285,22 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     paddingHorizontal: 16,
   },
   searchField: {
-    minHeight: 54,
+    minHeight: 50,
     minWidth: 0,
     flex: 1,
     flexShrink: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    paddingLeft: 17,
-    paddingRight: 8,
-    borderWidth: 2,
-    borderColor: colors.primary,
-    borderRadius: 28,
-    backgroundColor: colors.surface,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.16,
-    shadowRadius: 13,
-    elevation: 6,
+    paddingLeft: 16,
+    paddingRight: 6,
+    borderRadius: 25,
+    backgroundColor: colors.surfaceMuted,
   },
   searchInput: {
     minWidth: 0,
     flex: 1,
-    paddingVertical: 13,
+    paddingVertical: 12,
     color: colors.ink,
     ...typography.bodyStrong,
     fontSize: 16,
@@ -292,8 +310,6 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 22,
-    backgroundColor: colors.blueSoft,
   },
   cancelButton: {
     minWidth: 54,
@@ -307,108 +323,42 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     ...typography.bodyStrong,
     fontSize: 15,
   },
-  mapPin: {
-    position: 'absolute',
-    zIndex: 3,
-    width: 38,
-    height: 38,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: -19,
-    marginTop: -19,
-    borderWidth: 3,
-    borderColor: colors.white,
-    borderRadius: 19,
-    backgroundColor: colors.primary,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.22,
-    shadowRadius: 6,
-    elevation: 7,
-  },
-  mapPinText: {
-    zIndex: 2,
-    color: colors.onPrimary,
-    fontFamily: fontFamilies.extraBold,
-    fontSize: 14,
-  },
-  mapPinTip: {
-    position: 'absolute',
-    bottom: -7,
-    width: 15,
-    height: 15,
-    borderRightWidth: 3,
-    borderBottomWidth: 3,
-    borderColor: colors.white,
-    backgroundColor: colors.primary,
-    transform: [{ rotate: '45deg' }],
-  },
-  sheet: {
-    position: 'absolute',
-    right: 0,
-    bottom: 0,
-    left: 0,
-    zIndex: 4,
-    overflow: 'hidden',
-    paddingTop: 22,
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    backgroundColor: colors.surface,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: -5 },
-    shadowOpacity: 0.13,
-    shadowRadius: 18,
-    elevation: 14,
-  },
-  sheetHeading: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingBottom: 12,
-  },
-  heading: {
-    color: colors.ink,
-    ...typography.screenHeading,
-  },
-  headingCount: {
-    color: colors.mutedInk,
-    ...typography.metadata,
+  results: {
+    flex: 1,
   },
   resultList: {
-    paddingHorizontal: 16,
     paddingBottom: 24,
   },
+  heading: {
+    paddingTop: 18,
+    paddingBottom: 6,
+    paddingHorizontal: 20,
+    color: colors.ink,
+    ...typography.sectionHeading,
+  },
   resultRow: {
-    minHeight: 72,
+    minHeight: 68,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 4,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
+    gap: 16,
+    paddingHorizontal: 20,
   },
   resultIcon: {
-    width: 38,
-    height: 38,
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 19,
-  },
-  recentIcon: {
-    backgroundColor: colors.accent,
-  },
-  numberIcon: {
-    backgroundColor: colors.primary,
-  },
-  resultIconText: {
-    color: colors.onPrimary,
-    fontFamily: fontFamilies.extraBold,
-    fontSize: 13,
+    borderRadius: 20,
+    backgroundColor: colors.surfaceMuted,
   },
   resultCopy: {
     minWidth: 0,
     flex: 1,
+    alignSelf: 'stretch',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
   },
   resultTitle: {
     color: colors.ink,
@@ -416,42 +366,51 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     fontSize: 15,
   },
   resultSubtitle: {
-    marginTop: 3,
+    marginTop: 2,
     color: colors.mutedInk,
     ...typography.metadata,
   },
-  chevron: {
-    paddingHorizontal: 4,
-  },
-  emptyState: {
-    flex: 1,
+  loadingState: {
     alignItems: 'center',
-    justifyContent: 'center',
+    paddingTop: 32,
+  },
+  selectionError: {
+    marginTop: 12,
+    marginHorizontal: 20,
+    color: colors.red,
+    ...typography.metadata,
+  },
+  message: {
+    alignItems: 'center',
+    paddingTop: 48,
     paddingHorizontal: 36,
-    paddingBottom: 34,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
   },
-  emptyIcon: {
-    width: 54,
-    height: 54,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 14,
-    borderRadius: 27,
-    backgroundColor: colors.accent,
-  },
-  emptyTitle: {
+  messageTitle: {
     color: colors.ink,
     ...typography.sectionHeading,
     fontSize: 16,
+    textAlign: 'center',
   },
-  emptyBody: {
+  messageBody: {
     maxWidth: 280,
     marginTop: 7,
     color: colors.mutedInk,
     ...typography.metadata,
     lineHeight: 18,
     textAlign: 'center',
+  },
+  retryButton: {
+    minWidth: 96,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+    paddingHorizontal: 20,
+    borderRadius: 22,
+    backgroundColor: colors.primary,
+  },
+  retryText: {
+    color: colors.onPrimary,
+    ...typography.bodyStrong,
   },
 });

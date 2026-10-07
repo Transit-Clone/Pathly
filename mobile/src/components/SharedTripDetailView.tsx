@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
-import { routeById, type RouteId } from '../data/transit';
+import { routes } from '../data/transit';
 
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
 import { useLayoutEase } from '../theme/motion';
@@ -18,7 +18,7 @@ const MAP_HEIGHT = 360;
 
 export type TripDetailLeg = {
   agency: string;
-  routeId: RouteId;
+  routeId: string;
   color: string;
   direction: string;
   durationMinutes: number;
@@ -79,7 +79,10 @@ export function SharedTripDetailView({ actionLabel, backLabel, isFavorite, model
   const routeColor = model.legs[0]?.color ?? colors.primary;
   const isEndAction = actionLabel.startsWith('End');
 
-  const legPaths = orientLegs(model.legs.map((leg) => routeById[leg.routeId].mapPath));
+  // This view only ever shows legs from the static demo catalog (its own illustrative map
+  // path), never a dynamically-discovered route — a `.find` (rather than `routeById[id]`)
+  // keeps the lookup type-safe without assuming `leg.routeId` is one of its exhaustive ids.
+  const legPaths = orientLegs(model.legs.map((leg) => routes.find((route) => route.id === leg.routeId)?.mapPath ?? []));
   const mapLegs: MapLeg[] = model.legs.map((leg, index) => {
     const path = legPaths[index]!;
     return {

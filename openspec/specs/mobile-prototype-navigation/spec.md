@@ -44,7 +44,7 @@ Every route card shown on the home screen SHALL be selectable and SHALL open a d
 - **THEN** the home screen is restored
 
 ### Requirement: Search selection opens route results
-Each destination match and recent search row SHALL be selectable and SHALL open a Route Results screen using the selected place as the destination and current location as the default origin.
+Each place suggestion and recent search row SHALL be selectable and SHALL open a Route Results screen. Route Results SHALL use the selected place as the destination and current location as the default origin. For a place suggestion, the destination SHALL be the resolved Google place's display name. Itineraries SHALL remain mock data.
 
 #### Scenario: Rider selects a destination match
 - **WHEN** the rider selects a visible search result
@@ -120,11 +120,15 @@ The profile control on the home screen SHALL open a navigable Profile & Settings
 - **THEN** the prototype explains that real sign-out will be available after authentication is implemented and remains on the local settings flow
 
 ### Requirement: Expanded prototype remains local
-All route details, recents, trip results, preferences, refresh feedback, and profile settings introduced by this change SHALL use deterministic local mock data and component state. The prototype MUST remain usable before Firebase services are configured or implemented.
+All route details, recents, trip results, preferences, refresh feedback, and profile settings SHALL use deterministic local mock data and component state. Destination-search suggestions are the exception: they come from Google Maps place search. The prototype MUST remain usable before Firebase services or the place-search API key are configured.
 
 #### Scenario: Prototype runs without backend route data
 - **WHEN** Firebase is unconfigured or unavailable
-- **THEN** the new navigation flows and mock content remain usable without displaying technical failure state
+- **THEN** the navigation flows and mock content remain usable without displaying technical failure state
+
+#### Scenario: Prototype runs without place search
+- **WHEN** the place-search API key is unconfigured or the service is unreachable
+- **THEN** every flow other than live place suggestions remains usable, and search shows a non-technical unavailable message
 
 ### Requirement: Planned and recent trip details share interactions
 Planned and recent trip-detail screens SHALL both provide Back navigation, favorite state, current-location recentering, route-leg review, and a trip action using local state. A recent trip SHALL display its recorded origin, destination, fare, duration, leave and arrive times, transfers, and recency, and SHALL allow the rider to start that route again without rewriting the recorded historical values.

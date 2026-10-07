@@ -8,11 +8,38 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Image, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { AuthProvider, useAuth } from './src/auth/AuthContext';
+import { AuthScreen } from './src/components/AuthScreen';
 import { HomeScreen } from './src/components/HomeScreen';
 import { AppSettingsProvider } from './src/theme/AppSettings';
 import { colors } from './src/theme/colors';
 
 const pathlyLogo = require('./assets/pathly-logo.png');
+
+function LoadingScreen() {
+  return (
+    <View
+      accessibilityLabel="Pathly is loading"
+      accessibilityRole="progressbar"
+      style={styles.loadingScreen}
+      testID="loading-screen"
+    >
+      <Image
+        accessibilityIgnoresInvertColors={true}
+        resizeMode="contain"
+        source={pathlyLogo}
+        style={styles.loadingLogo}
+        testID="loading-logo"
+      />
+    </View>
+  );
+}
+
+function AppContent() {
+  const { initializing, user } = useAuth();
+  if (initializing) return <LoadingScreen />;
+  return user ? <HomeScreen /> : <AuthScreen />;
+}
 
 export default function App() {
   const [fontsLoaded] = useFonts({
@@ -24,29 +51,14 @@ export default function App() {
     ...MaterialCommunityIcons.font,
   });
 
-  if (!fontsLoaded) {
-    return (
-      <View
-        accessibilityLabel="Pathly is loading"
-        accessibilityRole="progressbar"
-        style={styles.loadingScreen}
-        testID="loading-screen"
-      >
-        <Image
-          accessibilityIgnoresInvertColors={true}
-          resizeMode="contain"
-          source={pathlyLogo}
-          style={styles.loadingLogo}
-          testID="loading-logo"
-        />
-      </View>
-    );
-  }
+  if (!fontsLoaded) return <LoadingScreen />;
 
   return (
     <SafeAreaProvider>
       <AppSettingsProvider>
-        <HomeScreen />
+        <AuthProvider>
+          <AppContent />
+        </AuthProvider>
       </AppSettingsProvider>
     </SafeAreaProvider>
   );

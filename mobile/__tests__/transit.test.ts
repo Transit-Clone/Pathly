@@ -7,8 +7,11 @@ import {
   routeColors,
   routes,
   scheduleItinerary,
+  scheduleStopsFromNow,
+  stopsForDirection,
   formatTripTimeChoice,
   MOCK_NOW_MINUTES,
+  type RouteId,
 } from '../src/data/transit';
 
 describe('transit prototype data', () => {
@@ -19,15 +22,19 @@ describe('transit prototype data', () => {
       'e',
       '51',
       '7',
+      'n4',
     ]);
     expect(new Set(routes.map((route) => route.id)).size).toBe(routes.length);
 
     for (const route of routes) {
-      expect(routeById[route.id]).toBe(route);
+      // Every entry in the static demo catalog is a known RouteId (route.id is `string` on
+      // RouteDetail generally, since a dynamically-discovered route's synthesized id isn't).
+      const id = route.id as RouteId;
+      expect(routeById[id]).toBe(route);
       expect(route.directions).toHaveLength(2);
       expect(route.predictions.length).toBeGreaterThanOrEqual(3);
-      expect(route.mapLabels.length).toBeGreaterThanOrEqual(3);
-      expect(route.stops.length).toBeGreaterThanOrEqual(3);
+      expect(route.mapLabels?.length ?? 0).toBeGreaterThanOrEqual(3);
+      expect(route.stops?.length ?? 0).toBeGreaterThanOrEqual(3);
     }
   });
 
@@ -38,9 +45,10 @@ describe('transit prototype data', () => {
       e: '#0139a6',
       '51': '#ff0011',
       '7': '#a625a9',
+      n4: '#ef853f',
     });
     for (const route of routes) {
-      expect(route.color).toBe(routeColors[route.id]);
+      expect(route.color).toBe(routeColors[route.id as RouteId]);
     }
   });
 
@@ -96,23 +104,49 @@ describe('transit prototype data', () => {
     expect(formatTripTimeChoice({ mode: 'arrive', minutes: 720 })).toBe('Arrive by 12:00 PM');
   });
 
+  it('anchors the live stop schedule at the rider\'s actual nearest stop, not always the route\'s first stop', () => {
+    // Huntington is partway down the Port Jefferson Branch (offsetMinutes 70 of 123 from Penn
+    // Station in the route's authored, eastbound order) — a rider there sees a train reach
+    // Huntington in `leadMinutes`, not Penn Station in `leadMinutes`.
+    const westboundStops = stopsForDirection(routeById.ronkonkoma, 0);
+    const leadMinutes = 10;
+
+    const anchoredAtHuntington = scheduleStopsFromNow(westboundStops, MOCK_NOW_MINUTES, leadMinutes, 'Huntington');
+    const huntington = anchoredAtHuntington.find((stop) => stop.name === 'Huntington');
+    const pennAfterHuntington = anchoredAtHuntington.find((stop) => stop.name === 'Penn Station');
+    expect(huntington?.time).toBe('10:10 AM');
+    // Westbound, Huntington's offset from Port Jefferson (the westbound list's first stop) is
+    // 53 (123 - 70); Penn Station's is 123 — 70 minutes further than Huntington's, so it's
+    // reached 70 minutes after Huntington.
+    expect(pennAfterHuntington?.time).toBe('11:20 AM');
+
+    // Falling back to the first stop (no anchor given, or one that doesn't match) reproduces
+    // the old, wrong behavior — included here only to document the contrast, not as a goal.
+    const anchoredAtFirstStop = scheduleStopsFromNow(westboundStops, MOCK_NOW_MINUTES, leadMinutes);
+    const pennWithoutAnchor = anchoredAtFirstStop.find((stop) => stop.name === 'Penn Station');
+    expect(pennWithoutAnchor?.time).not.toBe(pennAfterHuntington?.time);
+  });
+
   it('gives every route a map path with in-range stops and every leg a known route', () => {
     for (const route of routes) {
-      expect(route.mapPath.length).toBeGreaterThanOrEqual(2);
-      expect(route.mapStops).toHaveLength(route.mapLabels.length);
-      for (const stop of route.mapStops) {
+      const mapPath = route.mapPath ?? [];
+      const mapStops = route.mapStops ?? [];
+      const mapLabels = route.mapLabels ?? [];
+      expect(mapPath.length).toBeGreaterThanOrEqual(2);
+      expect(mapStops).toHaveLength(mapLabels.length);
+      for (const stop of mapStops) {
         expect(stop).toBeGreaterThanOrEqual(0);
-        expect(stop).toBeLessThan(route.mapPath.length);
+        expect(stop).toBeLessThan(mapPath.length);
       }
     }
     for (const trip of recentTrips) {
       for (const leg of trip.legs) {
-        expect(routeById[leg.routeId].shortName).toBe(leg.shortName);
+        expect(routeById[leg.routeId as RouteId].shortName).toBe(leg.shortName);
       }
     }
     for (const itinerary of itineraries) {
       for (const segment of itinerary.segments) {
-        expect(routeById[segment.id]).toBeDefined();
+        expect(routeById[segment.id as RouteId]).toBeDefined();
       }
     }
   });

@@ -1,5 +1,5 @@
 import { forwardRef, useState } from 'react';
-import { Animated, Platform, Pressable, type GestureResponderEvent, type PressableProps, type StyleProp, type View, type ViewStyle } from 'react-native';
+import { Animated, Platform, Pressable, StyleSheet, type GestureResponderEvent, type PressableProps, type StyleProp, type View, type ViewStyle } from 'react-native';
 
 import { useAppSettings } from '../theme/AppSettings';
 
@@ -32,7 +32,11 @@ export const PressableScale = forwardRef<View, PressableScaleProps>(function Pre
   };
 
   const scale = progress.interpolate({ inputRange: [0, 1], outputRange: [1, reducedMotionActive ? 1 : pressedScale] });
-  const opacity = progress.interpolate({ inputRange: [0, 1], outputRange: [1, 0.78] });
+  // Scales the caller's own opacity (e.g. a faded "scheduled" tile) rather than replacing it,
+  // which previously reset every pressable to fully opaque at rest.
+  const flatOpacity = StyleSheet.flatten(style)?.opacity;
+  const baseOpacity = typeof flatOpacity === 'number' ? flatOpacity : 1;
+  const opacity = progress.interpolate({ inputRange: [0, 1], outputRange: [baseOpacity, baseOpacity * 0.78] });
 
   return (
     <AnimatedPressable

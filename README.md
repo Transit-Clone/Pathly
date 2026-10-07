@@ -57,7 +57,7 @@ Install Android Studio, create and start an Android Virtual Device, then run:
 npm run dev:android
 ```
 
-No backend environment file or local API process is required.
+The live-transit branch requires Firebase client configuration. See **Security and local configuration** below.
 
 ## Run on a physical iPhone or Android phone
 
@@ -69,6 +69,22 @@ No backend environment file or local API process is required.
 
 Keep Expo running while using the app. If the device cannot load the project, confirm both devices are on the same network, allow incoming Node connections through the computer's firewall, or use Expo's tunnel option from the interactive terminal.
 
+## Destination search (Google Places)
+
+Destination search uses Google Places Autocomplete (Places API (New)). Without a key, search still opens and shows recent places, but typed queries show "Place search is unavailable."
+
+1. In the Google Cloud project that holds the Maps keys, enable **Places API (New)** under **APIs & Services → Library**.
+2. Create an API key (or reuse the web Maps key) and restrict it under **API restrictions** to Places API (New). For web, also add an **HTTP referrers** restriction for your dev and production origins.
+3. Add the key to `mobile/.env`:
+
+   ```sh
+   EXPO_PUBLIC_GOOGLE_PLACES_API_KEY=your-key
+   ```
+
+   If this variable is not set, the app falls back to `EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY`. Restart the Expo dev server after editing `.env`.
+
+`EXPO_PUBLIC_` values are bundled into the app, so treat this key as public and rely on its restrictions.
+
 ## Commands
 
 | Command               | Purpose                                   |
@@ -79,8 +95,118 @@ Keep Expo running while using the app. If the device cannot load the project, co
 | `npm run dev:ios`     | Open the iOS Simulator app                |
 | `npm run dev:android` | Open the Android app                      |
 | `npm run lint`        | Lint the mobile workspace                 |
-| `npm test`            | Run mobile tests                          |
+| `npm test`            | Run mobile and Functions tests            |
 | `npm run typecheck`   | Type-check the mobile workspace           |
 | `npm run build`       | Create Android, iOS, and web Expo exports |
+| `npm run functions:test` | Build and test Cloud Functions         |
+| `npm run deploy:backend` | Deploy Storage rules and Functions     |
 
 Stop development processes with `Ctrl+C`.
+
+## Transit timetable indexes (Cloud Functions)
+
+The Functions read each agency's static GTFS feed from `firebase/functions/static_data/`. Scanning the full
+`stop_times.txt` files on every cold start made the first nearby search take about 18 seconds, so a build step
+prepares small per-route files and a stop-to-routes index under `static_data/<agency>/derived/` (generated,
+not committed):
+
+```sh
+npm --prefix firebase/functions run build:gtfs
+```
+
+- Deploys run it automatically (`firebase.json` predeploy) and stop if any agency's index is missing or out of
+  date. The raw `stop_times.txt` files are not uploaded.
+- Re-run it after replacing any agency's static feed. Unchanged agencies are skipped; add `-- --force` to
+  rebuild everything.
+- Without the index (for example on a fresh checkout), the Functions still work locally by scanning the CSVs,
+  just more slowly. `npm --prefix firebase/functions test` builds it and checks it matches the CSVs.
+
+## Security and local configuration
+
+Copy `mobile/.env.example` to `mobile/.env` and fill in the Firebase and platform-restricted
+Maps client settings. Both `.env` and `.secret.local` are ignored by Git. Do not put the
+backend Google Maps or Swiftly credentials in the mobile bundle.
+
+Production Functions read backend credentials from Firebase Secret Manager:
+
+```sh
+firebase functions:secrets:set GOOGLE_MAPS_API_KEY
+firebase functions:secrets:set SWIFTLY_API_KEY
+```
+
+For the local Functions emulator only, copy `firebase/functions/.secret.local.example` to
+`firebase/functions/.secret.local`. Keep provider quotas and billing alerts enabled; the
+deployed per-user limiter uses an atomic Firestore transaction so cold starts and horizontal
+scaling cannot multiply a user's limit. A bounded in-process bucket rejects obvious bursts
+before that shared check.
+
+Do not create or share Firebase Admin service-account JSON keys for routine development.
+Cloud Functions uses dedicated managed runtime identities; developers should use
+`firebase login` for the CLI and user Application Default Credentials where ADC is actually
+required.
+
+### Static GTFS refresh
+
+The deployed backend refreshes the official LIRR, subway, NICE Bus, and Suffolk County Transit
+static GTFS feeds every day at 04:00 `America/New_York`. A successful run validates the full
+feed, uploads an immutable ZIP to `gtfs/v1/<agency>/versions/<archive-sha256>.zip`, then switches
+`gtfs/v1/<agency>/current.json` with a Cloud Storage generation precondition. Invalid, expired,
+rolled-back, or incompatible feeds leave the last published snapshot untouched. Repacked ZIPs
+whose runtime CSVs are unchanged only advance the trusted source watermark; they do not force
+instances to rehydrate. Callables check the
+manifest at most once every five minutes, hydrate a verified version into ephemeral `/tmp`,
+and retain the last good version for that warm instance. A cold instance falls back to the
+GTFS files bundled with the deployment if Storage is unavailable.
+
+Production setup for the `pathly-b7f0f` project:
+
+1. Keep the project on the Blaze plan, initialize Firestore and the default Firebase Storage
+   bucket, and keep Storage Public Access Prevention enabled. Client rules deny access to GTFS
+   objects and to the `_pathlyCallableRateLimits` collection; only Admin SDK identities use them.
+2. Create `pathly-callable-runtime@pathly-b7f0f.iam.gserviceaccount.com` and
+   `pathly-gtfs-writer@pathly-b7f0f.iam.gserviceaccount.com`. Do not create JSON keys for either.
+3. On the Storage bucket, grant the callable identity **Storage Object Viewer** and the writer
+   identity **Storage Object User**, with IAM Conditions restricting both grants to object names
+   under `gtfs/v1/`. At the project level, grant the callable identity **Cloud Datastore User**
+   for the shared limiter and Secret Manager access to the declared Maps/Swiftly secrets. Give
+   the deployer `iam.serviceAccounts.actAs` on both identities. Do not give the default compute
+   identity broad bucket write access; remove any temporary grant only after this deployment is
+   verified.
+4. Enable Firestore TTL for collection group `_pathlyCallableRateLimits`, field `expiresAt`.
+   Rate-limit documents contain only hashes and expire 24 hours after their last successful use.
+5. Enable the Cloud Scheduler API. The Functions deployment manages the
+   `firebase-schedule-refreshGtfsStaticData-us-central1` job; do not edit or delete it by hand.
+6. Run `npx --yes firebase-tools@15.32.1 login`, then `npm run deploy:backend`. The repository
+   scripts pin a Firebase CLI version that supports the Node 24 Functions runtime.
+
+After the first deploy, manually run the managed Scheduler job once. Confirm that all four
+`current.json` files and their referenced ZIPs exist, and that logs contain four
+`gtfs_snapshot_published` (or `gtfs_snapshot_unchanged`) events with no
+`gtfs_refresh_failed`. Run it a second time and confirm all four are unchanged. Then wait up
+to five minutes, invoke the authenticated nearby-transit flow, and confirm a
+`gtfs_snapshot_hydrated` event for each agency. Alert on `gtfs_refresh_failed`,
+`gtfs_snapshot_fallback`, and `gtfs_service_expiring`; also alert if no complete refresh
+succeeds (`gtfs_refresh_completed`) within 26 hours. The scheduler retains immutable ZIP
+history rather than deleting archives concurrently with publication; this makes content
+rollback and A-to-B-to-A reuse safe. Do not apply a blanket lifecycle rule that could remove an
+archive referenced by a live manifest. If manual cleanup is ever needed, pause the scheduler
+first and preserve at least every current and previous archive reference.
+
+### App Check rollout
+
+For web, create a score-based reCAPTCHA Enterprise key restricted to the production domains,
+register it against the Firebase web app under App Check, and set its public site key as
+`EXPO_PUBLIC_FIREBASE_APPCHECK_RECAPTCHA_ENTERPRISE_SITE_KEY`. Register the generated localhost
+debug token privately in Firebase Console. Native iOS/Android currently need a custom
+native provider before enforcement: register both native Firebase apps, configure
+App Attest/DeviceCheck and Play Integrity, and use private debug tokens in development builds.
+Because native currently calls Functions through the Firebase JavaScript SDK, the native token
+must then be bridged through a JS SDK `CustomProvider`, or native Functions calls must migrate to
+RNFirebase. Merely registering providers in Firebase Console is not enough.
+
+All callable Functions already require Firebase Authentication and contain deploy-ready App
+Check enforcement. `geocodeAddress` enforces it immediately because it is billable and has no
+current client caller. The active transit callables keep `enforceTransitAppCheck=false` in
+`firebase/functions/src/index.ts` while rollout metrics are monitored. After released web and
+native builds show valid App Check traffic, flip that version-controlled value to `true` and
+redeploy.

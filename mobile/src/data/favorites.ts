@@ -1,3 +1,4 @@
+import { realFareForItinerary } from './lirrFares';
 import {
   itineraryById,
   scheduleItinerary,
@@ -40,7 +41,7 @@ export function plannedTripCardData(trip: Extract<FavoriteTrip, { kind: 'planned
   return {
     destination: trip.destination,
     durationMinutes: itinerary.durationMinutes,
-    fare: itinerary.fare,
+    fare: realFareForItinerary(itinerary),
     origin: 'Current location',
     recency: formatTripTimeChoice(trip.time),
     legs: itinerary.segments.map((segment, index) => ({

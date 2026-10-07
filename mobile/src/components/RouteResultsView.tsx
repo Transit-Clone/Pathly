@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { realFareForItinerary } from '../data/lirrFares';
 import {
   formatTripTimeChoice,
   itineraries,
@@ -311,11 +312,12 @@ export function RouteResultsView({
             ) : null}
             {visibleItineraries.map((itinerary) => {
               const schedule = scheduleItinerary(itinerary, tripTime);
+              const fare = realFareForItinerary(itinerary);
               return (
                 <View key={itinerary.id} style={styles.itinerary} testID={`itinerary-${itinerary.id}`}>
                   <PressableScale
                     accessibilityHint="Opens the complete trip plan"
-                    accessibilityLabel={`View trip details to ${destination}, ${itinerary.durationMinutes} minutes, ${itinerary.fare}`}
+                    accessibilityLabel={`View trip details to ${destination}, ${itinerary.durationMinutes} minutes, ${fare}`}
                     accessibilityRole="button"
                     onPress={() => onOpenTrip(itinerary.id)}
                     style={styles.itineraryPressable}
@@ -337,7 +339,7 @@ export function RouteResultsView({
                         </Text>
                       </View>
                       <View style={styles.summary}>
-                        <Text style={styles.fare}>{itinerary.fare}</Text>
+                        <Text style={styles.fare}>{fare}</Text>
                         <View style={styles.durationGroup}>
                           <Text style={styles.duration}>{itinerary.durationMinutes}</Text>
                           <Text style={styles.minuteLabel}>min</Text>
