@@ -24,6 +24,7 @@ const SNAPSHOT_CHECK_TIMEOUT_MS = 10_000;
 
 const RUNTIME_FILES = [
   'routes.txt',
+  'shapes.txt',
   'stops.txt',
   'trips.txt',
   'stop_times.txt',
@@ -36,6 +37,7 @@ const RUNTIME_FILE_SET = new Set<string>(RUNTIME_FILES);
 const REQUIRED_FILES = ['routes.txt', 'stops.txt', 'trips.txt', 'stop_times.txt'] as const;
 const REQUIRED_COLUMNS: Record<string, readonly string[]> = {
   'routes.txt': ['route_id'],
+  'shapes.txt': ['shape_id', 'shape_pt_lat', 'shape_pt_lon', 'shape_pt_sequence'],
   'stops.txt': ['stop_id', 'stop_name', 'stop_lat', 'stop_lon'],
   'trips.txt': ['trip_id', 'route_id', 'service_id'],
   'stop_times.txt': ['trip_id', 'stop_id', 'arrival_time', 'departure_time', 'stop_sequence'],

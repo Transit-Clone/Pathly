@@ -21,6 +21,8 @@ type Padding = { bottom?: number; left?: number; right?: number; top?: number };
 type GoogleMapViewProps = {
   location: Coordinates;
   onUserPan?: () => void;
+  /** After the rider pans the map and it comes to rest: the center of the visible (padded) area. */
+  onUserMoveEnd?: (center: Coordinates) => void;
   padding?: Padding;
   testID?: string;
 };
@@ -35,8 +37,10 @@ function clampToServiceArea(region: Region): Region {
 }
 
 /** Real Google Maps view, defaulting to the user's location and panning only within NYC/Nassau/Suffolk. */
-export function GoogleMapView({ location, onUserPan, padding, testID = 'google-map-view' }: GoogleMapViewProps) {
+export function GoogleMapView({ location, onUserMoveEnd, onUserPan, padding, testID = 'google-map-view' }: GoogleMapViewProps) {
   const mapRef = useRef<MapView>(null);
+  // Set by a rider drag so programmatic moves (recentering on GPS) don't count as exploring.
+  const userMoved = useRef(false);
   const [region, setRegion] = useState<Region>({ ...location, ...INITIAL_DELTA });
 
   // Re-centers whenever `location` changes: on the initial GPS fix, and again whenever
@@ -51,12 +55,20 @@ export function GoogleMapView({ location, onUserPan, padding, testID = 'google-m
     if (clamped.latitude !== nextRegion.latitude || clamped.longitude !== nextRegion.longitude) {
       mapRef.current?.animateToRegion(clamped, SNAP_BACK_DURATION_MS);
     }
-  }, []);
+    // With mapPadding, the Google provider reports the padded (visible) area's center.
+    if (userMoved.current) {
+      userMoved.current = false;
+      onUserMoveEnd?.({ latitude: clamped.latitude, longitude: clamped.longitude });
+    }
+  }, [onUserMoveEnd]);
 
   return (
     <MapView
       mapPadding={{ top: padding?.top ?? 0, right: padding?.right ?? 0, bottom: padding?.bottom ?? 0, left: padding?.left ?? 0 }}
-      onPanDrag={onUserPan}
+      onPanDrag={() => {
+        userMoved.current = true;
+        onUserPan?.();
+      }}
       onRegionChangeComplete={onRegionChangeComplete}
       provider={PROVIDER_GOOGLE}
       ref={mapRef}

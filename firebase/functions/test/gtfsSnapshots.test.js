@@ -20,6 +20,7 @@ const {
   validateAgencySnapshotContract,
 } = require('../lib/gtfsSnapshots');
 const {
+  loadAgencyShapes,
   loadAgencyStaticData,
   loadGlobalStopRouteIndex,
   loadRouteStopCounts,
@@ -169,13 +170,14 @@ test.beforeEach(() => {
 
 test('extracts and validates only the GTFS files the runtime consumes', () => {
   const extracted = extractGtfsArchive(archive());
-  assert.equal(extracted.files.has('shapes.txt'), false);
+  assert.equal(extracted.files.has('shapes.txt'), true);
   assert.equal(extracted.files.has('stop_times.txt'), true);
   assert.equal(extracted.serviceEndDate, '20261231');
   assert.deepEqual(extracted.metadata.map(({ name }) => name), [
     'calendar.txt',
     'feed_info.txt',
     'routes.txt',
+    'shapes.txt',
     'stop_times.txt',
     'stops.txt',
     'trips.txt',
@@ -432,11 +434,11 @@ test('advances the source watermark without activating a logically identical rep
   const originalFetch = global.fetch;
   const first = archive({
     ...currentLirrFiles(),
-    'shapes.txt': strToU8('shape_id,shape_pt_lat,shape_pt_lon,shape_pt_sequence\nold,0,0,1\n'),
+    'agency.txt': strToU8('agency_id,agency_name,agency_url,agency_timezone\nold,Old,https://example.com,America/New_York\n'),
   });
   const repacked = archive({
     ...currentLirrFiles(),
-    'shapes.txt': strToU8('shape_id,shape_pt_lat,shape_pt_lon,shape_pt_sequence\nnew,1,1,1\n'),
+    'agency.txt': strToU8('agency_id,agency_name,agency_url,agency_timezone\nnew,New,https://example.com,America/New_York\n'),
   });
 
   try {
@@ -459,7 +461,7 @@ test('advances the source watermark without activating a logically identical rep
     fakeBucket.objects.delete(refreshed.archiveObject);
     const repairRepack = archive({
       ...currentLirrFiles(),
-      'shapes.txt': strToU8('shape_id,shape_pt_lat,shape_pt_lon,shape_pt_sequence\nrepair,2,2,1\n'),
+      'agency.txt': strToU8('agency_id,agency_name,agency_url,agency_timezone\nrepair,Repair,https://example.com,America/New_York\n'),
     });
     global.fetch = async () => new Response(repairRepack, {
       headers: { 'last-modified': 'Thu, 08 Oct 2026 12:00:00 GMT' },
@@ -572,15 +574,23 @@ test('activates new remote snapshots through the static-data readers and keeps t
   process.env.GTFS_USE_CLOUD_STORAGE = 'true';
 
   try {
-    global.fetch = async () => new Response(archive(currentLirrFiles('Remote version one')));
+    global.fetch = async () => new Response(archive({
+      ...currentLirrFiles('Remote version one'),
+      'shapes.txt': strToU8('shape_id,shape_pt_lat,shape_pt_lon,shape_pt_sequence\nroute-shape,40.1,-73.1,1\n'),
+    }));
     assert.equal(await refreshGtfsSnapshot('lirr'), 'published');
     await prepareAgencyStaticData('lirr', 1_000_000);
     assert.equal(loadAgencyStaticData('lirr').routesById.get('10').name, 'Remote version one');
+    assert.deepEqual(loadAgencyShapes('lirr').get('route-shape'), [{ lat: 40.1, lon: -73.1 }]);
 
-    global.fetch = async () => new Response(archive(currentLirrFiles('Remote version two')));
+    global.fetch = async () => new Response(archive({
+      ...currentLirrFiles('Remote version two'),
+      'shapes.txt': strToU8('shape_id,shape_pt_lat,shape_pt_lon,shape_pt_sequence\nroute-shape,40.2,-73.2,1\n'),
+    }));
     assert.equal(await refreshGtfsSnapshot('lirr'), 'published');
     await prepareAgencyStaticData('lirr', 1_300_001);
     assert.equal(loadAgencyStaticData('lirr').routesById.get('10').name, 'Remote version two');
+    assert.deepEqual(loadAgencyShapes('lirr').get('route-shape'), [{ lat: 40.2, lon: -73.2 }]);
 
     fakeBucket.objects.get('gtfs/v1/lirr/current.json').data = Buffer.from('{not json');
     await prepareAgencyStaticData('lirr', 1_600_002);

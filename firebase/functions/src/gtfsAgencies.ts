@@ -26,22 +26,21 @@ export type AgencyConfig = {
   /** App fallback routes/stops that must remain operational before an update is published. */
   requiredStaticFallbacks: readonly { routeId: string; stopIds: readonly string[] }[];
   /**
-   * True when stops.txt groups directional platform-level stop_ids under a parent_station
-   * (NYC Subway: "G06N"/"G06S" under parent "G06") — direction must then be read from *which*
-   * stop_id a trip actually hits, since direction_id is unreliable there. False when one
-   * stop_id serves a station regardless of direction (LIRR, NICE Bus, Suffolk County Transit)
-   * and direction_id can be trusted.
+   * True when opposite directions use distinct stop_ids and direction must be read from which
+   * stop a trip hits (with or without a parent_station link). False when one stop_id serves both
+   * directions and direction_id can be trusted.
    */
   directionalStops: boolean;
   /**
-   * Whether the static timetable can safely pad live predictions when live has nothing
-   * upcoming (see gtfsSchedule.ts). Needs the realtime feed's trip_ids to match the static
-   * schedule's trip_ids for dedup — confirmed matching for LIRR and Suffolk County Transit
-   * (e.g. live "265-2429" is trips.txt's "265-2429" exactly); confirmed *not* matching for NYC
-   * Subway (live "086750_E..N66R" vs static "BSP26GEN-E049-Sunday-00_001400_E..S04R") or NICE
-   * Bus (live trip_ids like "2044028" don't appear in trips.txt at all — a different id scheme).
+   * Whether the realtime feed's trip_ids match the static schedule's, so a timetable entry
+   * can be dropped exactly when its trip is already tracked live (see gtfsSchedule.ts) —
+   * confirmed matching for LIRR and Suffolk County Transit (e.g. live "265-2429" is trips.txt's
+   * "265-2429" exactly); confirmed *not* matching for NYC Subway (live "086750_E..N66R" vs
+   * static "BSP26GEN-E049-Sunday-00_001400_E..S04R") or NICE Bus (live trip_ids like "2044028"
+   * don't appear in trips.txt at all). When false, the timetable still pads live predictions,
+   * but only with departures after the last live one, so a tracked trip isn't listed twice.
    */
-  supportsStaticFallback: boolean;
+  realtimeTripIdsMatchStatic: boolean;
   /** Some agencies split their GTFS-RT feed by line group (subway) or by feed type (Swiftly-hosted agencies' trip-updates/vehicle-positions); most publish one combined feed for the whole system (LIRR). */
   feedRequestsForRoute(routeId: string): FeedRequest[];
 };
@@ -81,7 +80,7 @@ export const AGENCY_CONFIGS: Record<AgencyId, AgencyConfig> = {
     staticFeedUrl: 'https://rrgtfsfeeds.s3.amazonaws.com/gtfslirr.zip',
     requiredStaticFallbacks: [{ routeId: '10', stopIds: ['14'] }],
     directionalStops: false,
-    supportsStaticFallback: true,
+    realtimeTripIdsMatchStatic: true,
     feedRequestsForRoute: () => [{ url: LIRR_FEED_URL }],
   },
   subway: {
@@ -94,7 +93,7 @@ export const AGENCY_CONFIGS: Record<AgencyId, AgencyConfig> = {
       { routeId: '7', stopIds: ['701S', '701N'] },
     ],
     directionalStops: true,
-    supportsStaticFallback: false,
+    realtimeTripIdsMatchStatic: false,
     feedRequestsForRoute: (routeId) => {
       const path = SUBWAY_FEED_PATH_BY_ROUTE_ID[routeId];
       if (!path) throw new Error(`No known GTFS-RT feed for subway route_id "${routeId}"`);
@@ -116,7 +115,7 @@ export const AGENCY_CONFIGS: Record<AgencyId, AgencyConfig> = {
     dataDir: 'nice',
     staticFeedUrl: 'https://www.nicebus.com/NICE/media/nicebus-gtfs/NICE_GTFS.zip',
     requiredStaticFallbacks: [{ routeId: 'n4', stopIds: ['2004', '4538'] }],
-    supportsStaticFallback: false,
+    realtimeTripIdsMatchStatic: false,
     feedRequestsForRoute: () => swiftlyFeedRequests('nice-bus'),
   },
   suffolk: {
@@ -130,7 +129,7 @@ export const AGENCY_CONFIGS: Record<AgencyId, AgencyConfig> = {
       { routeId: '6859', stopIds: ['11420858', '11259869'] },
       { routeId: '6868', stopIds: ['11283786', '11283946'] },
     ],
-    supportsStaticFallback: true,
+    realtimeTripIdsMatchStatic: true,
     feedRequestsForRoute: () => swiftlyFeedRequests('suffolk-county'),
   },
 };

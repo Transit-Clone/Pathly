@@ -10,20 +10,20 @@ import { RouteDetailView } from '../src/components/RouteDetailView';
 import { AppSettingsProvider } from '../src/theme/AppSettings';
 import { autocompletePlaces, fetchPlaceDetails, getPlacesApiKey } from '../src/data/placesSearch';
 import { clearSessionRecents } from '../src/data/sessionRecents';
-import { PORT_JEFFERSON_SHAPE } from '../src/data/portJeffersonShape';
+import { SERVICE_AREA_FALLBACK } from '../src/data/serviceArea';
 import { STATION_TRANSFERS } from '../src/data/stationTransfers';
 import { routeById, routes, type RouteId } from '../src/data/transit';
 import { darkColors, lightColors } from '../src/theme/colors';
 
 const mockUseFonts = jest.fn(() => [true] as [boolean]);
 
-// 'ronkonkoma' is pinned by default (DEFAULT_PINNED_ROUTE_IDS), so it renders under its own
-// static card id immediately; every other live route is only reachable once the mocked
-// dynamic-discovery call resolves (jest.setup.js's findNearbyTransit mock mirrors the rest of
-// the demo catalog), under its synthesized "agencyId:routeId" card id — the same as production.
+// Nothing is saved by default, so every live route is only reachable once the mocked
+// dynamic-discovery call resolves (jest.setup.js's findNearbyTransit mock mirrors the demo
+// catalog), under its synthesized "agencyId:routeId" card id — the same as production.
 function cardIdFor(route: (typeof routes)[number]): string {
-  return route.id === 'ronkonkoma' || !route.liveSource ? route.id : `${route.liveSource.agencyId}:${route.liveSource.routeId}`;
+  return !route.liveSource ? route.id : `${route.liveSource.agencyId}:${route.liveSource.routeId}`;
 }
+const PJ_CARD = cardIdFor(routeById.ronkonkoma);
 
 jest.mock('react-native-safe-area-context', () => mockSafeAreaContext);
 jest.mock('@expo-google-fonts/nunito/useFonts', () => ({
@@ -129,8 +129,8 @@ describe('Pathly prototype navigation', () => {
     // to resolve before counting signals. findAllByTestId resolves as soon as it finds any
     // match, so the full count needs waitFor.
     await waitFor(() => expect(screen.getAllByTestId('live-gps-signal', { includeHiddenElements: true })).toHaveLength(routes.length));
-    expect(within(screen.getByTestId('route-card-ronkonkoma-primary')).getByTestId('live-gps-signal', { includeHiddenElements: true })).toBeTruthy();
-    expect(within(screen.getByTestId('route-card-ronkonkoma-alternate')).queryByTestId('live-gps-signal', { includeHiddenElements: true })).toBeNull();
+    expect(within(await screen.findByTestId(`route-card-${PJ_CARD}-primary`)).getByTestId('live-gps-signal', { includeHiddenElements: true })).toBeTruthy();
+    expect(within(screen.getByTestId(`route-card-${PJ_CARD}-alternate`)).queryByTestId('live-gps-signal', { includeHiddenElements: true })).toBeNull();
   });
 
   it.each(routes.map((route) => [cardIdFor(route), route.routeName, route.shortName] as const))(
@@ -178,7 +178,7 @@ describe('Pathly prototype navigation', () => {
     // Single-scroll page: the sheet rests below a transparent map window inside the same scroll.
     expect(StyleSheet.flatten(screen.getByTestId('transit-map-window').props.style).height).toBeGreaterThan(0);
     expect(screen.getByTestId('transit-sheet')).toBeTruthy();
-    expect(screen.getByTestId('route-card-ronkonkoma')).toBeTruthy();
+    expect(await screen.findByTestId(`route-card-${PJ_CARD}`)).toBeTruthy();
     expect(screen.getByTestId('tab-nearby')).toBeTruthy();
     expect(screen.getByTestId('tab-recents')).toBeTruthy();
     expect(screen.getByTestId('tab-favorites')).toBeTruthy();
@@ -419,33 +419,38 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getAllByTestId(/^itinerary-/)).toHaveLength(4);
   });
 
-  it('pins and unpins routes in the Nearby list', async () => {
+  it('saves routes with one star: saved routes lead Nearby and appear in Favorites', async () => {
+    const hidden = { includeHiddenElements: true };
     const screen = render(<App />);
-    expect(within(screen.getByTestId('pinned-routes')).getByTestId('route-card-ronkonkoma')).toBeTruthy();
-    expect(screen.queryByText('PINNED')).toBeNull();
-    expect(screen.getByTestId('route-card-ronkonkoma-pinned', { includeHiddenElements: true })).toBeTruthy();
-    const eCardId = cardIdFor(routeById.e);
-    expect(screen.queryByTestId(`route-card-${eCardId}-pinned`, { includeHiddenElements: true })).toBeNull();
+    // Nothing is saved by default.
+    await screen.findByTestId(`route-card-${PJ_CARD}`);
+    expect(screen.queryByTestId('saved-routes')).toBeNull();
+    expect(screen.queryByTestId(`route-card-${PJ_CARD}-saved`, hidden)).toBeNull();
 
-    // Every route besides the one pinned by default is only reachable once the mocked dynamic
-    // discovery resolves (jest.setup.js's findNearbyTransit mock), under its synthesized id.
     const route51CardId = cardIdFor(routeById['51']);
     fireEvent.press(await screen.findByTestId(`route-card-${route51CardId}-primary`));
-    expect(screen.getByTestId('route-pin').props.accessibilityState).toEqual({ selected: false });
-    fireEvent.press(screen.getByTestId('route-pin'));
-    expect(screen.getByTestId('route-pin').props.accessibilityState).toEqual({ selected: true });
+    // One save control, no pin.
+    expect(screen.queryByTestId('route-pin')).toBeNull();
+    expect(screen.getByTestId('route-favorite').props.accessibilityState).toEqual({ selected: false });
+    fireEvent.press(screen.getByTestId('route-favorite'));
+    expect(screen.getByTestId('route-favorite').props.accessibilityState).toEqual({ selected: true });
     fireEvent.press(screen.getByTestId('route-back'));
 
-    expect(within(screen.getByTestId('pinned-routes')).getByTestId(`route-card-${route51CardId}`)).toBeTruthy();
+    const saved = within(screen.getByTestId('saved-routes'));
+    expect(saved.getByTestId(`route-card-${route51CardId}`)).toBeTruthy();
+    expect(screen.getByTestId(`route-card-${route51CardId}-saved`, hidden)).toBeTruthy();
     expect(within(screen.getByTestId('nearby-routes')).queryByTestId(`route-card-${route51CardId}`)).toBeNull();
+    fireEvent.press(screen.getByTestId('tab-favorites'));
+    expect(within(screen.getByTestId('favorite-routes')).getByTestId(`route-card-${route51CardId}`)).toBeTruthy();
 
-    fireEvent.press(screen.getByTestId('route-card-ronkonkoma-primary'));
-    fireEvent.press(screen.getByTestId('route-pin'));
+    // Unsaving returns it to the regular nearby list and clears Favorites.
+    fireEvent.press(within(screen.getByTestId('favorite-routes')).getByTestId(`route-card-${route51CardId}-primary`));
+    fireEvent.press(screen.getByTestId('route-favorite'));
     fireEvent.press(screen.getByTestId('route-back'));
-    // Unpinning takes its card out of "pinned-routes" — whether/under-which-id its real line
-    // reappears in "nearby-routes" depends on dynamic (re-)discovery, covered separately by
-    // "renders every selectable route without contacting a backend".
-    expect(within(screen.getByTestId('pinned-routes')).queryByTestId('route-card-ronkonkoma')).toBeNull();
+    expect(screen.getByText('No favorites yet')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('tab-nearby'));
+    expect(screen.queryByTestId('saved-routes')).toBeNull();
+    expect(within(screen.getByTestId('nearby-routes')).getByTestId(`route-card-${route51CardId}`)).toBeTruthy();
   });
 
   it('saves favorite routes and trips to the Favorites tab and opens them', async () => {
@@ -762,9 +767,9 @@ describe('Pathly prototype navigation', () => {
     expect(backgroundOf(screen.getByTestId('leave-time-sheet'))).toBe(darkColors.surface);
   });
 
-  it('renders route detail, trip detail, and settings dark', () => {
+  it('renders route detail, trip detail, and settings dark', async () => {
     const screen = renderDark();
-    fireEvent.press(screen.getByTestId('route-card-ronkonkoma-primary'));
+    fireEvent.press(await screen.findByTestId(`route-card-${PJ_CARD}-primary`));
     expect(backgroundOf(screen.getByTestId('route-detail-content'))).toBe(darkColors.surface);
     fireEvent.press(screen.getByTestId('route-back'));
 
@@ -785,7 +790,7 @@ describe('Pathly prototype navigation', () => {
     // Routes with real, complete station geometry (Port Jefferson Branch, E, 7) render the
     // real map once it's fetched from the (mocked) backend; every other route still uses the
     // illustrated overlay immediately.
-    fireEvent.press(screen.getByTestId('route-card-ronkonkoma-primary'));
+    fireEvent.press(await screen.findByTestId(`route-card-${PJ_CARD}-primary`));
     expect(await screen.findByTestId('route-map', hidden)).toBeTruthy();
     await waitFor(() => expect(screen.getAllByTestId(/^route-stop-/, hidden)).toHaveLength(22));
     fireEvent.press(screen.getByTestId('route-back'));
@@ -856,6 +861,123 @@ describe('Pathly prototype navigation', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("fills in each card from one request per route without waiting for other routes", async () => {
+    const callableNamed = (name: string) => {
+      const index = (httpsCallable as jest.Mock).mock.calls.findIndex((call) => call[1] === name);
+      return (httpsCallable as jest.Mock).mock.results[index]!.value as jest.Mock;
+    };
+    const live = callableNamed('getRouteLiveStatus');
+    const nearest = callableNamed('getNearestRouteStop');
+    const liveDefault = live.getMockImplementation();
+    nearest.mockClear();
+    // New backend: the nearest stop comes back in the same call. The E's request never settles.
+    live.mockImplementation((request: { routeId: string; agencyId: string }) => (
+      request.routeId === 'E'
+        ? new Promise(() => undefined)
+        : Promise.resolve({
+          data: {
+            routeId: request.routeId,
+            routeName: 'Mock Route',
+            vehicles: [],
+            stopPredictions: { towardDirection1: [{ minutes: 4, live: true, peakOffpeak: null }], towardDirection0: [{ minutes: 18, live: false, peakOffpeak: null }] },
+            nearestStop: { distanceMeters: 100, direction1: { stopId: '14', name: 'Stony Brook' }, direction0: { stopId: '14', name: 'Stony Brook' } },
+          },
+        })
+    ));
+    try {
+      const screen = render(<App />);
+      const pj = await screen.findByTestId(`route-card-${PJ_CARD}-primary`);
+      await waitFor(() => expect(within(pj).getAllByText('minutes').length).toBeGreaterThan(0));
+      expect(live).toHaveBeenCalledWith(expect.objectContaining({ routeId: '10', lat: expect.any(Number), lon: expect.any(Number) }));
+      // No separate nearest-stop round trip once the backend returns it.
+      expect(nearest).not.toHaveBeenCalled();
+    } finally {
+      live.mockImplementation(liveDefault);
+    }
+  });
+
+  it('labels directions by destination only and titles cards with the route short name', async () => {
+    const hidden = { includeHiddenElements: true };
+    const screen = render(<App />);
+    const cardId = cardIdFor(routeById['51']);
+    await screen.findByTestId(`route-card-${cardId}-primary`);
+    await waitFor(() => expect(screen.getAllByText('minutes', hidden).length).toBeGreaterThan(0));
+
+    for (const title of screen.getAllByTestId(`transit-${cardId}-title`, hidden)) expect(title.props.children).toBe('51');
+    expect(screen.queryAllByText(/^(Westbound|Eastbound|Northbound|Southbound) to |^Toward /, hidden)).toHaveLength(0);
+
+    fireEvent.press(await screen.findByTestId(`route-card-${PJ_CARD}-primary`));
+    expect(screen.getByTestId('route-detail-destination').props.children).toBe('Penn Station');
+    expect(screen.getAllByLabelText(/^Show .* predictions$/).map((dot) => dot.props.accessibilityLabel)).toEqual(['Show Penn Station predictions', 'Show Port Jefferson predictions']);
+    expect(screen.queryAllByText(/^(Westbound|Eastbound) to |^Toward /, hidden)).toHaveLength(0);
+    expect(screen.queryByTestId('route-fare')).toBeNull();
+
+    // The subway used to show a flat-fare row; no route detail has one now.
+    fireEvent.press(screen.getByTestId('route-back'));
+    fireEvent.press(await screen.findByTestId(`route-card-${cardIdFor(routeById.e)}-primary`));
+    await screen.findAllByLabelText(/minutes?, (live GPS prediction|scheduled time)$/);
+    expect(screen.queryByTestId('route-fare')).toBeNull();
+  });
+
+  it('searches Nearby around the map center after the rider pans the home map', async () => {
+    const callableNamed = (name: string) => {
+      const index = (httpsCallable as jest.Mock).mock.calls.findIndex((call) => call[1] === name);
+      return (httpsCallable as jest.Mock).mock.results[index]!.value as jest.Mock;
+    };
+    const nearby = callableNamed('findNearbyTransit');
+    const screen = render(<App />);
+    await screen.findByTestId(`route-card-${PJ_CARD}`);
+    expect(screen.queryByTestId('search-center')).toBeNull();
+
+    const map = screen.getByTestId('google-map-view', { includeHiddenElements: true });
+    fireEvent(map, 'panDrag');
+    fireEvent(map, 'regionChangeComplete', { latitude: 40.7685, longitude: -73.5251, latitudeDelta: 0.05, longitudeDelta: 0.05 });
+    expect(screen.getByTestId('search-center')).toBeTruthy();
+    await waitFor(() => expect(nearby).toHaveBeenLastCalledWith({ lat: 40.7685, lon: -73.5251 }));
+
+    // A programmatic move (no rider drag) doesn't start a center search.
+    nearby.mockClear();
+    fireEvent(map, 'regionChangeComplete', { latitude: 40.9, longitude: -73.1, latitudeDelta: 0.05, longitudeDelta: 0.05 });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 700));
+    });
+    expect(nearby).not.toHaveBeenCalledWith({ lat: 40.9, lon: -73.1 });
+
+    // The location button returns Nearby to the rider and hides the circle.
+    fireEvent.press(await screen.findByLabelText('Center on current location'));
+    expect(screen.queryByTestId('search-center')).toBeNull();
+    // Location is denied in tests, so the rider's location is the Stony Brook fallback.
+    await waitFor(() => expect(nearby).toHaveBeenLastCalledWith({ lat: SERVICE_AREA_FALLBACK.latitude, lon: SERVICE_AREA_FALLBACK.longitude }));
+  });
+
+  it('keeps a route detail open when a location update drops it from the nearby list', async () => {
+    const callableNamed = (name: string) => {
+      const index = (httpsCallable as jest.Mock).mock.calls.findIndex((call) => call[1] === name);
+      return (httpsCallable as jest.Mock).mock.results[index]!.value as jest.Mock;
+    };
+    let onPosition: ((position: { coords: { latitude: number; longitude: number } }) => void) | undefined;
+    (Location.requestForegroundPermissionsAsync as jest.Mock).mockResolvedValueOnce({ status: 'granted' });
+    (Location.getCurrentPositionAsync as jest.Mock).mockResolvedValueOnce({ coords: { latitude: 40.92, longitude: -73.13 } });
+    (Location.watchPositionAsync as jest.Mock).mockImplementationOnce((_options, callback) => {
+      onPosition = callback;
+      return Promise.resolve({ remove: jest.fn() });
+    });
+
+    const screen = render(<App />);
+    const cardId = cardIdFor(routeById['51']);
+    fireEvent.press(await screen.findByTestId(`route-card-${cardId}-primary`));
+    expect(screen.getByTestId(`route-detail-${cardId}`)).toBeTruthy();
+
+    // The rider walks away: the next nearby search no longer includes this route.
+    callableNamed('findNearbyTransit').mockImplementationOnce(() => Promise.resolve({ data: { routes: [] } }));
+    await waitFor(() => expect(onPosition).toBeDefined());
+    await act(async () => onPosition!({ coords: { latitude: 40.75, longitude: -73.99 } }));
+    await waitFor(() => expect(callableNamed('findNearbyTransit')).toHaveBeenLastCalledWith({ lat: 40.75, lon: -73.99 }));
+    await act(async () => {});
+
+    expect(screen.getByTestId(`route-detail-${cardId}`)).toBeTruthy();
+  });
+
   describe('Port Jefferson route detail', () => {
     const hidden = { includeHiddenElements: true };
     // jest.setup.js's httpsCallable mock creates one jest.fn per backend function at import time.
@@ -901,7 +1023,7 @@ describe('Pathly prototype navigation', () => {
     /** Opens the Port Jefferson Branch and waits for live data, nearest stop, and geometry. */
     const openPortJefferson = async () => {
       const screen = render(<App />);
-      fireEvent.press(screen.getByTestId('route-card-ronkonkoma-primary'));
+      fireEvent.press(await screen.findByTestId(`route-card-${PJ_CARD}-primary`));
       await screen.findByLabelText('4 minutes, live GPS prediction');
       await screen.findByTestId('route-map', hidden);
       await screen.findByLabelText(/^Stony Brook, nearest to you, departs /);
@@ -919,7 +1041,7 @@ describe('Pathly prototype navigation', () => {
       // discovery always reports "No delays"), so render its detail page directly.
       const s1 = render(
         <AppSettingsProvider>
-          <RouteDetailView isFavorite={false} isPinned={false} onBack={jest.fn()} onToggleFavorite={jest.fn()} onTogglePin={jest.fn()} route={routeById.s1} />
+          <RouteDetailView isFavorite={false} onBack={jest.fn()} onToggleFavorite={jest.fn()} route={routeById.s1} />
         </AppSettingsProvider>,
       );
       expect(s1.getByText('Advisory')).toBeTruthy();
@@ -952,8 +1074,9 @@ describe('Pathly prototype navigation', () => {
       const routeLine = screen.getByTestId('route-line', hidden);
       expect(routeLine.props.strokeColor).toBe(routeById.ronkonkoma.color);
       // Follows the real track shape, not one straight segment per station pair.
-      expect(routeLine.props.coordinates).toHaveLength(PORT_JEFFERSON_SHAPE.length);
-      expect(PORT_JEFFERSON_SHAPE.length).toBeGreaterThan(routeById.ronkonkoma.stops!.length * 5);
+      // Follows the backend's real shape path (mocked as 3 points per hop), not one straight
+      // segment per stop pair.
+      expect(routeLine.props.coordinates).toHaveLength((routeById.ronkonkoma.stops!.length - 1) * 3 + 1);
 
       const stops = screen.getAllByTestId(/^route-stop-/, hidden);
       expect(stops).toHaveLength(22);
@@ -1007,9 +1130,18 @@ describe('Pathly prototype navigation', () => {
       expect(within(smithtown).getByText('56', hidden)).toBeTruthy();
       expect(screen.getByLabelText(/^Smithtown, arrives .*, transfers: (.*, )?56(,|$)/)).toBeTruthy();
 
+      // Other LIRR branches aren't listed on an LIRR route; subway and bus connections are.
+      const jamaicaOtherModes = STATION_TRANSFERS.Jamaica!.filter((transfer) => transfer.agency !== 'LIRR');
       const jamaica = within(screen.getByTestId('stop-transfers-Jamaica', hidden));
-      expect(jamaica.getAllByTestId(/^route-transfer-Jamaica-/, hidden)).toHaveLength(8);
-      expect(screen.getByTestId('stop-transfers-more-Jamaica', hidden).props.children).toEqual(['+', STATION_TRANSFERS.Jamaica!.length - 8]);
+      const chips = jamaica.getAllByTestId(/^route-transfer-Jamaica-/, hidden);
+      expect(chips).toHaveLength(8);
+      for (const branch of STATION_TRANSFERS.Jamaica!.filter((transfer) => transfer.agency === 'LIRR')) {
+        expect(screen.queryByTestId(`route-transfer-Jamaica-${branch.name}`, hidden)).toBeNull();
+      }
+      expect(screen.getByTestId('route-transfer-Jamaica-E', hidden)).toBeTruthy();
+      expect(screen.getByTestId('stop-transfers-more-Jamaica', hidden).props.children).toEqual(['+', jamaicaOtherModes.length - 8]);
+      // No fare row on route detail (any route).
+      expect(screen.queryByTestId('route-fare')).toBeNull();
       expect(screen.queryByTestId('stop-transfers-St. James', hidden)).toBeNull();
     });
 
@@ -1026,6 +1158,42 @@ describe('Pathly prototype navigation', () => {
       fireEvent(map(), 'panDrag');
       expect(screen.getByTestId('route-location').props.accessibilityState).toEqual({ selected: false });
       await act(async () => {}); // settle the location refresh
+    });
+
+    it('shows three fixed-width tiles with clock times for long waits and faint scheduled tiles', async () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(NOW);
+      try {
+        callable('getRouteLiveStatus').mockImplementation((request: { routeId: string }) => Promise.resolve({
+          data: {
+            routeId: request.routeId,
+            routeName: 'Mock Route',
+            vehicles: [],
+            stopPredictions: {
+              towardDirection1: [{ minutes: 0, live: true, peakOffpeak: null }, { minutes: 30, live: false, peakOffpeak: null }, { minutes: 124, live: false, peakOffpeak: null }],
+              towardDirection0: [{ minutes: 18, live: false, peakOffpeak: null }],
+            },
+          },
+        }));
+        const screen = render(<App />);
+        fireEvent.press(await screen.findByTestId(`route-card-${PJ_CARD}-primary`));
+        await screen.findByLabelText('0 minutes, live GPS prediction');
+        expect(screen.queryByText('Due')).toBeNull();
+        expect(screen.getByLabelText('30 minutes, scheduled time')).toBeTruthy();
+        // 10:00 AM + 124 min reads as a clock time.
+        expect(screen.getByLabelText('at 12:04 PM, scheduled time')).toBeTruthy();
+
+        const tiles = [0, 1, 2].map((index) => StyleSheet.flatten(screen.getByTestId(`route-prediction-0-${index}`).props.style));
+        const widths = new Set(tiles.map((tile) => tile.width));
+        expect(widths.size).toBe(1);
+        expect(tiles[0]!.borderWidth).toBe(3);
+        expect(tiles[0]!.opacity ?? 1).toBe(1);
+        expect(tiles[1]!.opacity).toBe(0.45);
+        // A direction with a single departure keeps the same fixed width rather than filling the row.
+        expect(StyleSheet.flatten(screen.getByTestId('route-prediction-1-0').props.style).width).toBe(tiles[0]!.width);
+      } finally {
+        jest.useRealTimers();
+      }
     });
 
     it('keeps route stop timing and live provenance accessible', async () => {
@@ -1082,6 +1250,15 @@ describe('Pathly prototype navigation', () => {
         const start = Number.parseInt(age(), 10);
         expect(screen.queryByTestId('route-vehicle-stale', hidden)).toBeNull();
 
+        // Inverted marker: a white circle with route-color border, and a route-color age badge with white text.
+        const color = routeById.ronkonkoma.color;
+        const badge = StyleSheet.flatten(screen.getByTestId('route-vehicle-badge-fresh', hidden).props.style);
+        expect(badge).toMatchObject({ backgroundColor: '#FFFFFF', borderColor: color });
+        expect(badge.borderRadius).toBe(badge.width / 2);
+        expect(badge.width).toBeGreaterThan(2 * 14);
+        expect(StyleSheet.flatten(screen.getByTestId('route-vehicle-age-badge-fresh', hidden).props.style)).toMatchObject({ backgroundColor: color, borderColor: '#FFFFFF' });
+        expect(StyleSheet.flatten(screen.getByTestId('route-vehicle-age-fresh', hidden).props.style).color).toBe('#FFFFFF');
+
         act(() => jest.advanceTimersByTime(2000));
         expect(age()).toBe(`${start + 2}s`);
         act(() => jest.advanceTimersByTime(60_000));
@@ -1089,9 +1266,9 @@ describe('Pathly prototype navigation', () => {
       });
     });
   });
-  it('keeps the route map fixed while the page and its map controls scroll', () => {
+  it('keeps the route map fixed while the page and its map controls scroll', async () => {
     const screen = render(<App />);
-    fireEvent.press(screen.getByTestId('route-card-ronkonkoma-primary'));
+    fireEvent.press(await screen.findByTestId(`route-card-${PJ_CARD}-primary`));
 
     const routeScroll = screen.getByTestId('route-detail-scroll');
     expect(screen.queryByTestId('route-sheet-handle')).toBeNull();
@@ -1100,13 +1277,14 @@ describe('Pathly prototype navigation', () => {
     expect(routeScroll.props.overScrollMode).toBe('never');
     expect(within(routeScroll).queryByTestId('route-detail-map')).toBeNull();
     expect(screen.getByTestId('route-detail-map')).toBeTruthy();
-    expect(within(routeScroll).getByTestId('route-pin')).toBeTruthy();
+    expect(within(routeScroll).getByTestId('route-favorite')).toBeTruthy();
+    expect(screen.queryByTestId('route-pin')).toBeNull();
     expect(within(routeScroll).getByTestId('route-back')).toBeTruthy();
-    expect(screen.queryByTestId('route-detail-ronkonkoma-header')).toBeNull();
+    expect(screen.queryByTestId(`route-detail-${PJ_CARD}-header`)).toBeNull();
     expect(within(routeScroll).getByTestId('route-detail-content')).toBeTruthy();
     expect(screen.getByTestId('route-back')).toBeTruthy();
     expect(screen.getByTestId('route-location')).toBeTruthy();
-    expect(screen.getByTestId('route-pin')).toBeTruthy();
+    expect(screen.getByTestId('route-favorite')).toBeTruthy();
 
     fireEvent.scroll(routeScroll, { nativeEvent: { contentOffset: { y: 140 } } });
     fireEvent.scroll(routeScroll, { nativeEvent: { contentOffset: { y: 280 } } });

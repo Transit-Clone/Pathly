@@ -19,28 +19,31 @@ const mapOptions = { disableDefaultUI: true, gestureHandling: 'greedy', clickabl
 const FALLBACK_CENTER = { lat: 40.75, lng: -73.95 };
 const FOCUS_ZOOM = 13;
 
-// Vehicle marker geometry: square at bottom-left of a larger box so the age badge can overhang its top-right.
+// Vehicle marker geometry: circle at bottom-left of a larger box so the age badge can overhang its top-right.
 const VEHICLE_SIZE = 34;
 const VEHICLE_BOX = 46;
 
 /**
- * Rounded square with a vehicle glyph (a different shape from the round stop dots, so a vehicle
- * can't be mistaken for a stop), plus a white age badge at its top-right, as an SVG data URL.
+ * White circle with a route-color border and vehicle glyph (larger than the stop dots and
+ * carrying a glyph they never have), plus a route-color age badge with white text at its
+ * top-right, as an SVG data URL. A soft shadow keeps the white circle visible on pale tiles.
  */
 function vehicleIconUrl(color: string, age: string | null) {
-  const s = VEHICLE_SIZE;
-  const top = VEHICLE_BOX - s;
+  const r = VEHICLE_SIZE / 2;
+  const cx = r;
+  const cy = VEHICLE_BOX - r;
   const badge = age
-    ? `<circle cx="34" cy="12" r="11" fill="#FFFFFF" stroke="${color}" stroke-width="1.5"/>
-<text x="34" y="15.2" text-anchor="middle" font-family="Nunito, Arial, sans-serif" font-weight="800" font-size="9" fill="#1F2937">${age}</text>`
+    ? `<circle cx="34" cy="12" r="11" fill="${color}" stroke="#FFFFFF" stroke-width="1.5"/>
+<text x="34" y="15.2" text-anchor="middle" font-family="Nunito, Arial, sans-serif" font-weight="800" font-size="9" fill="#FFFFFF">${age}</text>`
     : '';
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${VEHICLE_BOX}" height="${VEHICLE_BOX}" viewBox="0 0 ${VEHICLE_BOX} ${VEHICLE_BOX}">
-<rect x="1" y="${top + 1}" width="${s - 2}" height="${s - 2}" rx="9" fill="${color}" stroke="#FFFFFF" stroke-width="2"/>
-<g transform="translate(${s / 2 - 7} ${top + s / 2 - 9})">
-<rect x="0" y="0" width="14" height="14" rx="3.5" fill="#FFFFFF"/>
-<rect x="2.2" y="2.6" width="9.6" height="5" rx="1.2" fill="${color}"/>
-<circle cx="3.6" cy="11" r="1.3" fill="${color}"/><circle cx="10.4" cy="11" r="1.3" fill="${color}"/>
-<path d="M2.4 14.6 L0.6 17.6 M11.6 14.6 L13.4 17.6" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round"/>
+<defs><filter id="s" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="1.5" stdDeviation="1.5" flood-color="#16324F" flood-opacity="0.3"/></filter></defs>
+<circle cx="${cx}" cy="${cy}" r="${r - 2}" fill="#FFFFFF" stroke="${color}" stroke-width="3" filter="url(#s)"/>
+<g transform="translate(${cx - 7} ${cy - 9})">
+<rect x="0" y="0" width="14" height="14" rx="3.5" fill="${color}"/>
+<rect x="2.2" y="2.6" width="9.6" height="5" rx="1.2" fill="#FFFFFF"/>
+<circle cx="3.6" cy="11" r="1.3" fill="#FFFFFF"/><circle cx="10.4" cy="11" r="1.3" fill="#FFFFFF"/>
+<path d="M2.4 14.6 L0.6 17.6 M11.6 14.6 L13.4 17.6" stroke="${color}" stroke-width="1.8" stroke-linecap="round"/>
 </g>${badge}
 </svg>`;
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
@@ -195,7 +198,7 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
               icon={{
                 url: vehicleIconUrl(color, vehicle.updatedAt != null ? formatAge(now - vehicle.updatedAt) : null),
                 scaledSize: new google.maps.Size(VEHICLE_BOX, VEHICLE_BOX),
-                // Anchor on the square's center, not the badge-inclusive box's.
+                // Anchor on the circle's center, not the badge-inclusive box's.
                 anchor: new google.maps.Point(VEHICLE_SIZE / 2, VEHICLE_BOX - VEHICLE_SIZE / 2),
               }}
               position={{ lat: vehicle.lat, lng: vehicle.lon }}

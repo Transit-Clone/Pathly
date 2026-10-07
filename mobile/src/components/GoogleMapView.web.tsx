@@ -48,8 +48,23 @@ function createUserLocationDot(): HTMLDivElement {
 
 type Padding = { bottom?: number; left?: number; right?: number; top?: number };
 
+/**
+ * The map's container runs up behind the header, so its own center sits `topInset / 2` px above
+ * the center of what the rider can actually see. Converts that pixel offset to latitude.
+ */
+function visibleCenterOf(map: google.maps.Map, topInset: number): Coordinates | null {
+  const center = map.getCenter();
+  const bounds = map.getBounds();
+  const height = map.getDiv().clientHeight;
+  if (!center || !bounds || !height) return null;
+  const latPerPixel = (bounds.getNorthEast().lat() - bounds.getSouthWest().lat()) / height;
+  return { latitude: center.lat() - (topInset / 2) * latPerPixel, longitude: center.lng() };
+}
+
 type GoogleMapViewProps = {
   location: Coordinates;
+  /** After the rider pans the map and it comes to rest: the center of the visible area below the header. */
+  onUserMoveEnd?: (center: Coordinates) => void;
   onUserPan?: () => void;
   padding?: Padding;
   testID?: string;
@@ -62,7 +77,9 @@ type GoogleMapViewProps = {
  * like native; the bottom is sized to the sheet's top. To keep `center` centered in the
  * visible gap below the header, the map is panned up by half the top padding.
  */
-export function GoogleMapView({ location, onUserPan, padding, testID = 'google-map-view' }: GoogleMapViewProps) {
+export function GoogleMapView({ location, onUserMoveEnd, onUserPan, padding, testID = 'google-map-view' }: GoogleMapViewProps) {
+  // Set by a rider drag so programmatic moves (recentering on GPS) don't count as exploring.
+  const userMoved = useRef(false);
   const { isLoaded } = useJsApiLoader({
     id: GOOGLE_MAPS_SCRIPT_ID,
     googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY ?? '',
@@ -119,7 +136,24 @@ export function GoogleMapView({ location, onUserPan, padding, testID = 'google-m
       testID={testID}
     >
       {isLoaded ? (
-        <GoogleMap center={center} mapContainerStyle={containerStyle} onDragStart={onUserPan} onLoad={setMap} onUnmount={() => setMap(null)} options={mapOptions} zoom={ZOOM}>
+        <GoogleMap
+          center={center}
+          mapContainerStyle={containerStyle}
+          onDragStart={() => {
+            userMoved.current = true;
+            onUserPan?.();
+          }}
+          onIdle={() => {
+            if (!userMoved.current || !map) return;
+            userMoved.current = false;
+            const visibleCenter = visibleCenterOf(map, topInset);
+            if (visibleCenter) onUserMoveEnd?.(visibleCenter);
+          }}
+          onLoad={setMap}
+          onUnmount={() => setMap(null)}
+          options={mapOptions}
+          zoom={ZOOM}
+        >
           <Rectangle bounds={SERVICE_AREA_BOUNDS} options={serviceAreaOutlineOptions} />
         </GoogleMap>
       ) : null}

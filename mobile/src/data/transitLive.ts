@@ -1,6 +1,8 @@
 import { httpsCallable } from 'firebase/functions';
 
+import type { Coordinates } from '../hooks/useCurrentLocation';
 import { functions } from '../lib/firebase';
+import type { NearestRouteStop } from './nearestRouteStop';
 import type { LiveSource } from './transit';
 
 export type RouteLiveVehicle = {
@@ -42,11 +44,24 @@ export type RouteLiveData = {
     towardDirection0: readonly DirectionPrediction[];
   };
   vehicles: readonly RouteLiveVehicle[];
+  /** When this data was fetched (epoch ms), so countdowns can be aged between polls. */
+  fetchedAt: number;
+  /**
+   * The nearest stop the backend resolved from the rider's location in the same call;
+   * `undefined` (not null) when the deployed backend predates that, so callers can fall back.
+   */
+  nearestStop?: NearestRouteStop | null;
 };
 
+type NearestStopResponse = {
+  distanceMeters: number;
+  direction1: { stopId: string; name: string } | null;
+  direction0: { stopId: string; name: string } | null;
+} | null;
+
 const getRouteLiveStatus = httpsCallable<
-  { agencyId: string; routeId: string; direction1StopId: string; direction0StopId: string },
-  RouteLiveStatusResponse
+  { agencyId: string; routeId: string; direction1StopId: string; direction0StopId: string; lat?: number; lon?: number },
+  RouteLiveStatusResponse & { nearestStop?: NearestStopResponse }
 >(functions, 'getRouteLiveStatus');
 
 /**
@@ -56,15 +71,29 @@ const getRouteLiveStatus = httpsCallable<
  * where one stop_id serves a station regardless of direction, `source.direction1StopId` and
  * `.direction0StopId` are the same value.
  */
-export async function fetchRouteLiveData(source: LiveSource): Promise<RouteLiveData> {
+export async function fetchRouteLiveData(source: LiveSource, location?: Coordinates): Promise<RouteLiveData> {
   const { data } = await getRouteLiveStatus({
     agencyId: source.agencyId,
     routeId: source.routeId,
     direction1StopId: source.direction1StopId,
     direction0StopId: source.direction0StopId,
+    ...(location ? { lat: location.latitude, lon: location.longitude } : {}),
   });
+  const nearest = data.nearestStop;
   return {
     routeId: data.routeId,
+    fetchedAt: Date.now(),
+    ...(nearest !== undefined
+      ? {
+        nearestStop: nearest
+          ? {
+            distanceMeters: nearest.distanceMeters,
+            direction1: nearest.direction1 ? { stopId: nearest.direction1.stopId, name: nearest.direction1.name } : null,
+            direction0: nearest.direction0 ? { stopId: nearest.direction0.stopId, name: nearest.direction0.name } : null,
+          }
+          : null,
+      }
+      : {}),
     predictions: {
       towardDirection1: data.stopPredictions.towardDirection1,
       towardDirection0: data.stopPredictions.towardDirection0,

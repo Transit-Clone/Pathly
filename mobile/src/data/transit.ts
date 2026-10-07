@@ -37,13 +37,31 @@ export function minuteLabel(minutes: number): string {
 }
 
 /**
- * True once a countdown has reached (or passed) zero. A live prediction can briefly sit at 0
- * between the train's actual arrival and the next poll replacing it with the following trip —
- * showing a literal "0 minutes" there reads as broken, so callers should show a "due/arriving"
- * state instead.
+ * A direction named by its destination only: "Westbound to Penn Station" -> "Penn Station",
+ * "Toward Patchogue" -> "Patchogue". Riders read the last stop; compass/relative words add noise.
  */
-export function isDueNow(minutes: number): boolean {
-  return minutes <= 0;
+export function directionDestination(direction: string): string {
+  return direction
+    .replace(/^(?:(?:westbound|eastbound|northbound|southbound|uptown|downtown|inbound|outbound)\s+)?(?:to|toward|towards)\s+/i, '')
+    .trim();
+}
+
+/** Departures at least this far away read as a clock time ("5:00 PM"), not a long countdown. */
+export const CLOCK_TIME_THRESHOLD_MINUTES = 60;
+
+export type DepartureDisplay = { value: string; unit: string; accessibility: string };
+
+/**
+ * How a departure's countdown is shown on tiles and cards: whole minutes from `0` (leaving now,
+ * never a "Due" label), or the clock time once it's CLOCK_TIME_THRESHOLD_MINUTES or more away.
+ */
+export function departureDisplay(minutes: number, now: Date = new Date()): DepartureDisplay {
+  const wait = Math.max(0, Math.round(minutes));
+  if (wait >= CLOCK_TIME_THRESHOLD_MINUTES) {
+    const [time = '', period = ''] = formatClockTime(now.getHours() * 60 + now.getMinutes() + wait).split(' ');
+    return { value: time, unit: period, accessibility: `at ${time} ${period}` };
+  }
+  return { value: String(wait), unit: minuteLabel(wait), accessibility: `${wait} ${minuteLabel(wait)}` };
 }
 
 export type RouteStop = {
@@ -363,8 +381,6 @@ export const allNearbyRoutes = [
   routeById['51'],
   routeById.n4,
 ] as const;
-
-export const DEFAULT_PINNED_ROUTE_IDS: readonly RouteId[] = ['ronkonkoma'];
 
 export type RecentTripId = 'penn-station' | 'times-square' | 'patchogue';
 

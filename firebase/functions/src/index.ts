@@ -98,7 +98,8 @@ function requiredCoordinates(lat: unknown, lon: unknown): { lat: number; lon: nu
   return { lat, lon };
 }
 
-type RouteLiveStatusRequest = { agencyId: AgencyId; routeId: string; direction1StopId: string; direction0StopId: string };
+/** `lat`/`lon` (optional): resolve the nearest stop per direction server-side and use it instead of the given stop ids. */
+type RouteLiveStatusRequest = { agencyId: AgencyId; routeId: string; direction1StopId: string; direction0StopId: string; lat?: number; lon?: number };
 
 /**
  * Live trip updates and vehicle positions for one route on any configured agency (gtfsAgencies.ts),
@@ -119,12 +120,23 @@ export const getRouteLiveStatus = onCall<RouteLiveStatusRequest>({ ...liveStatus
   const agencyId = requiredAgencyId(data.agencyId);
   await prepareAgencyStaticData(agencyId);
   const routeId = requiredRouteId(agencyId, data.routeId);
-  const direction1StopId = requiredString(data.direction1StopId, 'direction1StopId');
-  const direction0StopId = requiredString(data.direction0StopId, 'direction0StopId');
+  let direction1StopId = requiredString(data.direction1StopId, 'direction1StopId');
+  let direction0StopId = requiredString(data.direction0StopId, 'direction0StopId');
+  // Location is optional, but when either coordinate is sent both must be valid.
+  const location = data.lat !== undefined || data.lon !== undefined ? requiredCoordinates(data.lat, data.lon) : null;
 
-  const status = await getRouteStatus(agencyId, routeId);
+  // With the rider's location, the nearest stop is resolved here (in parallel with the live
+  // feed) rather than by a separate prior call, so a route needs one round trip, not two. Each
+  // direction falls back to the given stop id if it can't be resolved.
+  const hasLocation = location !== null;
+  const [status, nearestStop] = await Promise.all([
+    getRouteStatus(agencyId, routeId),
+    location ? getNearestStopForRoute(agencyId, routeId, location.lat, location.lon).catch(() => null) : Promise.resolve(null),
+  ]);
+  direction1StopId = nearestStop?.direction1?.stopId ?? direction1StopId;
+  direction0StopId = nearestStop?.direction0?.stopId ?? direction0StopId;
   const stopPredictions = await getStopPredictions(agencyId, routeId, direction1StopId, direction0StopId, status.trips);
-  return { ...status, stopPredictions };
+  return { ...status, stopPredictions, ...(hasLocation ? { nearestStop } : {}) };
 });
 
 type FindNearbyTransitRequest = { lat: number; lon: number };

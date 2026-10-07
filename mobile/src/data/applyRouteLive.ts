@@ -14,7 +14,7 @@ import type { RouteDetail, RoutePrediction, TransitDirection } from './transit';
  * than left at whatever placeholder values live in transit.ts — showing nothing is honest;
  * showing a specific but fake number isn't.
  */
-export function applyRouteLive(route: RouteDetail, liveStatus: RouteLiveStatus): RouteDetail {
+export function applyRouteLive(route: RouteDetail, liveStatus: RouteLiveStatus, now: number = Date.now()): RouteDetail {
   if (!route.liveSource) return route;
 
   if (liveStatus.status !== 'loaded' || liveStatus.data.routeId !== route.liveSource.routeId) {
@@ -35,8 +35,13 @@ export function applyRouteLive(route: RouteDetail, liveStatus: RouteLiveStatus):
   const direction1Index = route.liveSource.direction1Index;
   const direction0Index = direction1Index === 0 ? 1 : 0;
 
-  const direction1Predictions = live.predictions.towardDirection1;
-  const direction0Predictions = live.predictions.towardDirection0;
+  // Countdowns were computed at fetch time: age them by whole minutes since, and drop any
+  // departure that has since passed so the next ones take its place until the next poll.
+  const ageMinutes = Math.max(0, Math.floor((now - live.fetchedAt) / 60_000));
+  const aged = (predictions: readonly RoutePrediction[]) =>
+    predictions.map((prediction) => ({ ...prediction, minutes: prediction.minutes - ageMinutes })).filter((prediction) => prediction.minutes >= 0);
+  const direction1Predictions = aged(live.predictions.towardDirection1);
+  const direction0Predictions = aged(live.predictions.towardDirection0);
   const direction1First = direction1Predictions[0];
   const direction0First = direction0Predictions[0];
 

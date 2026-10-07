@@ -12,6 +12,7 @@ import {
   type RecentTripId,
   type RouteDetail,
 } from '../data/transit';
+import { useNow } from '../hooks/useNow';
 import { useAppSettings, useTheme, useThemedStyles } from '../theme/AppSettings';
 import { useLayoutEase, useNativeDriver } from '../theme/motion';
 import type { Palette } from '../theme/colors';
@@ -26,7 +27,6 @@ export type TransitTabId = 'nearby' | 'recents' | 'favorites';
 type TransitSheetProps = {
   activeTripId: RecentTripId | null;
   activeTab: TransitTabId;
-  favoriteRouteIds: readonly string[];
   favoriteTrips: readonly FavoriteTrip[];
   /** Resolves a route id — the demo catalog's own or a dynamically-discovered one — to its full data, for pinned/favorited routes which can be either kind. */
   findRoute: (routeId: string) => RouteDetail | undefined;
@@ -34,13 +34,16 @@ type TransitSheetProps = {
   /** Every real nearby route for the rider's current location, across every configured agency (nearbyTransit.ts) — not a fixed handful of hand-picked lines. */
   nearbyRoutes: readonly RouteDetail[];
   nearbyStatus: 'loading' | 'loaded' | 'error';
+  /** A re-search is in flight (e.g. for a new map center) while the current list stays visible. */
+  nearbyRefreshing?: boolean;
   onOpenFavoriteTrip: (trip: FavoriteTrip) => void;
   onOpenRoute: (routeId: string) => void;
   onOpenTrip: (tripId: RecentTripId) => void;
   onEndTrip: () => void;
   onStartTrip: (tripId: RecentTripId) => void;
   onTabChange: (tab: TransitTabId) => void;
-  pinnedRouteIds: readonly string[];
+  /** Routes saved with the star: listed first in Nearby and under Favorites -> Routes. */
+  savedRouteIds: readonly string[];
   scrollY: Animated.Value;
 };
 
@@ -63,10 +66,10 @@ const tabs: { id: TransitTabId; label: string }[] = [
 export function TransitSheet({
   activeTripId,
   activeTab,
-  favoriteRouteIds,
   favoriteTrips,
   findRoute,
   mapHeight,
+  nearbyRefreshing = false,
   nearbyRoutes,
   nearbyStatus,
   onOpenFavoriteTrip,
@@ -75,24 +78,26 @@ export function TransitSheet({
   onEndTrip,
   onStartTrip,
   onTabChange,
-  pinnedRouteIds,
+  savedRouteIds,
   scrollY,
 }: TransitSheetProps) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
   const liveMap = useTransitLiveMap();
-  const pinnedRoutes = pinnedRouteIds
+  // Re-applies live data every 30 s so countdowns age and past departures drop between polls.
+  const now = useNow(30_000);
+  const savedRoutes = savedRouteIds
     .map((id) => findRoute(id))
     .filter((route): route is RouteDetail => route != null)
-    .map((route) => applyRouteLive(route, liveMap.get(route.id) ?? { status: 'error' }));
+    .map((route) => applyRouteLive(route, liveMap.get(route.id) ?? { status: 'error' }, now));
   const nearbyCards = nearbyRoutes
-    .filter((route) => !pinnedRouteIds.includes(route.id))
-    .map((route) => applyRouteLive(route, liveMap.get(route.id) ?? { status: 'error' }));
+    .filter((route) => !savedRouteIds.includes(route.id))
+    .map((route) => applyRouteLive(route, liveMap.get(route.id) ?? { status: 'error' }, now));
   // Keeps the sheet's resting height stable across tabs — the Nearby tab's own count varies with
   // the rider's real location, so this can't be a fixed constant. Never below three cards, so
   // the single-scroll page always has room to scroll the menu up.
-  const tabContentMinHeight = Math.max(3, pinnedRoutes.length + nearbyCards.length) * TRANSIT_CARD_HEIGHT;
-  const hasFavorites = favoriteRouteIds.length > 0 || favoriteTrips.length > 0;
+  const tabContentMinHeight = Math.max(3, savedRoutes.length + nearbyCards.length) * TRANSIT_CARD_HEIGHT;
+  const hasFavorites = savedRouteIds.length > 0 || favoriteTrips.length > 0;
   const ease = useLayoutEase();
   const { reducedMotionActive } = useAppSettings();
   const [tabsWidth, setTabsWidth] = useState(0);
@@ -186,20 +191,21 @@ export function TransitSheet({
 
         {activeTab === 'nearby' ? (
             <View style={[styles.tabContent, { minHeight: tabContentMinHeight }]} testID="nearby-route-content">
-              {pinnedRoutes.length > 0 ? (
-                <View testID="pinned-routes">
-                  {pinnedRoutes.map((route) => (
+              {savedRoutes.length > 0 ? (
+                <View testID="saved-routes">
+                  {savedRoutes.map((route) => (
                     <TransitCard
                       key={route.id}
                       onPress={() => onOpenRoute(route.id)}
-                      pinned={true}
                       route={route}
+                      saved={true}
                     />
                   ))}
                 </View>
               ) : null}
 
               <View style={styles.cardStack} testID="nearby-routes">
+                {nearbyRefreshing ? <ActivityIndicator accessibilityLabel="Updating nearby transit" color={colors.primary} style={styles.nearbyRefreshing} testID="nearby-refreshing" /> : null}
                 {nearbyCards.map((route) => (
                   <TransitCard
                     key={route.id}
@@ -241,15 +247,15 @@ export function TransitSheet({
           ) : (
             hasFavorites ? (
               <View style={[styles.tabContent, { minHeight: tabContentMinHeight }]} testID="favorites-route-content">
-                {favoriteRouteIds.length > 0 ? (
+                {savedRouteIds.length > 0 ? (
                   <View testID="favorite-routes">
                     <Text style={[styles.sectionLabel, styles.sectionHeading]}>ROUTES</Text>
-                    {favoriteRouteIds.map((id) => {
+                    {savedRouteIds.map((id) => {
                       const route = findRoute(id);
                       if (!route) return null;
                       return (
                         <View key={id} testID={`favorite-route-${id}`}>
-                          <TransitCard onPress={() => onOpenRoute(id)} route={applyRouteLive(route, liveMap.get(id) ?? { status: 'error' })} />
+                          <TransitCard onPress={() => onOpenRoute(id)} route={applyRouteLive(route, liveMap.get(id) ?? { status: 'error' }, now)} />
                         </View>
                       );
                     })}
@@ -349,6 +355,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   cardStack: { gap: 0 },
   nearbyEmpty: { alignItems: 'center', paddingVertical: 20, paddingHorizontal: 20, gap: 8 },
   nearbyEmptySpinner: { marginBottom: 2 },
+  nearbyRefreshing: { paddingVertical: 8 },
   nearbyEmptyText: { color: colors.mutedInk, ...typography.metadata, textAlign: 'center' },
   sectionHeading: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 },
   sectionLabel: { color: colors.mutedInk, ...typography.label },
