@@ -57,7 +57,7 @@ Install Android Studio, create and start an Android Virtual Device, then run:
 npm run dev:android
 ```
 
-No backend environment file or local API process is required.
+The live-transit branch requires Firebase client configuration. See **Security and local configuration** below.
 
 ## Run on a physical iPhone or Android phone
 
@@ -100,3 +100,44 @@ Destination search uses Google Places Autocomplete (Places API (New)). Without a
 | `npm run build`       | Create Android, iOS, and web Expo exports |
 
 Stop development processes with `Ctrl+C`.
+
+## Security and local configuration
+
+Copy `mobile/.env.example` to `mobile/.env` and fill in the Firebase and platform-restricted
+Maps client settings. Both `.env` and `.secret.local` are ignored by Git. Do not put the
+backend Google Maps or Swiftly credentials in the mobile bundle.
+
+Production Functions read backend credentials from Firebase Secret Manager:
+
+```sh
+firebase functions:secrets:set GOOGLE_MAPS_API_KEY
+firebase functions:secrets:set SWIFTLY_API_KEY
+```
+
+For the local Functions emulator only, copy `firebase/functions/.secret.local.example` to
+`firebase/functions/.secret.local`. Keep provider quotas and billing alerts enabled; the
+in-process per-user limiter is paired with a low Functions `maxInstances` ceiling and is not
+a replacement for a shared production rate limiter when the service scales out.
+
+Do not create or share Firebase Admin service-account JSON keys for routine development.
+Cloud Functions uses its managed runtime identity; developers should use `firebase login` for
+the CLI and user Application Default Credentials where ADC is actually required.
+
+### App Check rollout
+
+For web, create a score-based reCAPTCHA Enterprise key restricted to the production domains,
+register it against the Firebase web app under App Check, and set its public site key as
+`EXPO_PUBLIC_FIREBASE_APPCHECK_RECAPTCHA_ENTERPRISE_SITE_KEY`. Register the generated localhost
+debug token privately in Firebase Console. Native iOS/Android currently need a custom
+native provider before enforcement: register both native Firebase apps, configure
+App Attest/DeviceCheck and Play Integrity, and use private debug tokens in development builds.
+Because native currently calls Functions through the Firebase JavaScript SDK, the native token
+must then be bridged through a JS SDK `CustomProvider`, or native Functions calls must migrate to
+RNFirebase. Merely registering providers in Firebase Console is not enough.
+
+All callable Functions already require Firebase Authentication and contain deploy-ready App
+Check enforcement. `geocodeAddress` enforces it immediately because it is billable and has no
+current client caller. The active transit callables keep `enforceTransitAppCheck=false` in
+`firebase/functions/src/index.ts` while rollout metrics are monitored. After released web and
+native builds show valid App Check traffic, flip that version-controlled value to `true` and
+redeploy.

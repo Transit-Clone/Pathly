@@ -8,6 +8,8 @@ import { getFirestore } from 'firebase/firestore';
 import { getFunctions } from 'firebase/functions';
 import { Platform } from 'react-native';
 
+import { initializePlatformAppCheck } from './firebaseAppCheck';
+
 /** Populated from mobile/.env; these are safe to ship in the app bundle. */
 const firebaseConfig: FirebaseOptions = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
@@ -19,6 +21,7 @@ const firebaseConfig: FirebaseOptions = {
 };
 
 export const app = getApps()[0] ?? initializeApp(firebaseConfig);
+initializePlatformAppCheck(app);
 
 // @firebase/auth's "react-native" build (which getReactNativePersistence requires) has no
 // web implementation; on web, the regular browser-persisted getAuth() is the right call.
