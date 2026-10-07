@@ -103,6 +103,24 @@ Destination search uses Google Places Autocomplete (Places API (New)). Without a
 
 Stop development processes with `Ctrl+C`.
 
+## Transit timetable indexes (Cloud Functions)
+
+The Functions read each agency's static GTFS feed from `firebase/functions/static_data/`. Scanning the full
+`stop_times.txt` files on every cold start made the first nearby search take about 18 seconds, so a build step
+prepares small per-route files and a stop-to-routes index under `static_data/<agency>/derived/` (generated,
+not committed):
+
+```sh
+npm --prefix firebase/functions run build:gtfs
+```
+
+- Deploys run it automatically (`firebase.json` predeploy) and stop if any agency's index is missing or out of
+  date. The raw `stop_times.txt` files are not uploaded.
+- Re-run it after replacing any agency's static feed. Unchanged agencies are skipped; add `-- --force` to
+  rebuild everything.
+- Without the index (for example on a fresh checkout), the Functions still work locally by scanning the CSVs,
+  just more slowly. `npm --prefix firebase/functions test` builds it and checks it matches the CSVs.
+
 ## Security and local configuration
 
 Copy `mobile/.env.example` to `mobile/.env` and fill in the Firebase and platform-restricted

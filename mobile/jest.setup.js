@@ -92,13 +92,20 @@ jest.mock('firebase/functions', () => ({
           // corresponds to `directions` index 0.
           const directionIndex = request.directionId === 1 ? 0 : 1;
           const stops = mockStopsForDirection(mockRouteById.ronkonkoma, directionIndex);
+          // Each station sits at the same spot in both directions (positioned by its westbound
+          // order), so the eastbound list and path run the opposite way across the map.
+          const lastStop = stops.length - 1;
+          const place = (i) => (request.directionId === 1 ? i : lastStop - i);
           return Promise.resolve({
             data: {
               headsign: 'Mock Destination',
-              stops: stops.map((stop, i) => ({ stopId: String(i), name: stop.name, lat: 40.9 - i * 0.01, lon: -73.1 + i * 0.01, offsetMinutes: stop.offsetMinutes })),
+              stops: stops.map((stop, i) => ({ stopId: String(i), name: stop.name, lat: 40.9 - place(i) * 0.01, lon: -73.1 + place(i) * 0.01, offsetMinutes: stop.offsetMinutes })),
               // A real-shape-like path: three points per stop-to-stop hop, so tests can tell it
               // apart from a line that simply joins the stops.
-              path: Array.from({ length: (stops.length - 1) * 3 + 1 }, (_, i) => ({ lat: 40.9 - (i / 3) * 0.01, lon: -73.1 + (i / 3) * 0.01 + (i % 3 ? 0.002 : 0) })),
+              path: Array.from({ length: lastStop * 3 + 1 }, (_, i) => {
+                const at = request.directionId === 1 ? i : lastStop * 3 - i;
+                return { lat: 40.9 - (at / 3) * 0.01, lon: -73.1 + (at / 3) * 0.01 + (at % 3 ? 0.002 : 0) };
+              }),
             },
           });
         }
@@ -120,6 +127,18 @@ jest.mock('firebase/functions', () => ({
           },
         });
       });
+    }
+    if (name === 'getStopDepartures') {
+      // A short full-day list: one live departure, then the timetable.
+      return jest.fn(() => Promise.resolve({
+        data: {
+          departures: [
+            { minutes: 4, live: true, peakOffpeak: null },
+            { minutes: 34, live: false, peakOffpeak: null },
+            { minutes: 95, live: false, peakOffpeak: null },
+          ],
+        },
+      }));
     }
     return jest.fn((request) => Promise.resolve({
       data: {
@@ -148,8 +167,10 @@ jest.mock('expo-location', () => ({
 jest.mock('react-native-maps', () => {
   const { forwardRef, useImperativeHandle } = require('react');
   const { View } = require('react-native');
+  // Shared across every map instance so tests can assert when a map was told to move.
+  const mockAnimateToRegion = jest.fn();
   const MockMapView = forwardRef((props, ref) => {
-    useImperativeHandle(ref, () => ({ animateToRegion: jest.fn() }));
+    useImperativeHandle(ref, () => ({ animateToRegion: mockAnimateToRegion }));
     return <View {...props} />;
   });
   const MockPolygon = (props) => <View {...props} />;
@@ -158,6 +179,7 @@ jest.mock('react-native-maps', () => {
   return {
     __esModule: true,
     default: MockMapView,
+    mockAnimateToRegion,
     PROVIDER_GOOGLE: 'google',
     Polygon: MockPolygon,
     Marker: MockMarker,

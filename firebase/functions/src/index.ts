@@ -38,6 +38,8 @@ const liveStatusCallableOptions = { ...protectedCallableOptions, maxInstances: 1
 const RATE_LIMITS = {
   // Live/nearest calls run per visible route every 30 seconds and after meaningful GPS updates.
   getRouteLiveStatus: { userPerMinute: 600 },
+  // Opened on demand from route detail's "More departures" card.
+  getStopDepartures: { userPerMinute: 60 },
   findNearbyTransit: { userPerMinute: 30 },
   getNearestRouteStop: { userPerMinute: 600 },
   getRouteGeometry: { userPerMinute: 120 },
@@ -137,6 +139,34 @@ export const getRouteLiveStatus = onCall<RouteLiveStatusRequest>({ ...liveStatus
   direction0StopId = nearestStop?.direction0?.stopId ?? direction0StopId;
   const stopPredictions = await getStopPredictions(agencyId, routeId, direction1StopId, direction0StopId, status.trips);
   return { ...status, stopPredictions, ...(hasLocation ? { nearestStop } : {}) };
+});
+
+type StopDeparturesRequest = { agencyId: AgencyId; routeId: string; direction1StopId: string; direction0StopId: string; directionId: 0 | 1 };
+
+/** Enough for any route's remaining day at one stop (the busiest subway stops run well under this). */
+const FULL_DEPARTURES_LIMIT = 200;
+
+/**
+ * Every remaining departure today from one stop in one direction (plus the next service day's
+ * first departures when fewer than six remain), merged live and scheduled exactly like
+ * getRouteLiveStatus's tiles — for route detail's "More departures" page.
+ * Client call: httpsCallable(functions, 'getStopDepartures')({ agencyId, routeId, direction1StopId, direction0StopId, directionId }).
+ */
+// Reads the same live feeds as getRouteLiveStatus, so it shares that instance's feed cache and quota.
+export const getStopDepartures = onCall<StopDeparturesRequest>({ ...liveStatusCallableOptions, secrets: [swiftlyApiKey] }, async (request) => {
+  await enforceCallableSecurity(request, 'getStopDepartures', RATE_LIMITS.getStopDepartures);
+  const data = request.data ?? ({} as StopDeparturesRequest);
+  const agencyId = requiredAgencyId(data.agencyId);
+  await prepareAgencyStaticData(agencyId);
+  const routeId = requiredRouteId(agencyId, data.routeId);
+  const direction1StopId = requiredString(data.direction1StopId, 'direction1StopId');
+  const direction0StopId = requiredString(data.direction0StopId, 'direction0StopId');
+  const { directionId } = data;
+  if (directionId !== 0 && directionId !== 1) throw new HttpsError('invalid-argument', 'directionId must be 0 or 1');
+
+  const status = await getRouteStatus(agencyId, routeId);
+  const predictions = await getStopPredictions(agencyId, routeId, direction1StopId, direction0StopId, status.trips, FULL_DEPARTURES_LIMIT);
+  return { departures: directionId === 1 ? predictions.towardDirection1 : predictions.towardDirection0 };
 });
 
 type FindNearbyTransitRequest = { lat: number; lon: number };

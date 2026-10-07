@@ -12,6 +12,7 @@ import { autocompletePlaces, fetchPlaceDetails, getPlacesApiKey } from '../src/d
 import { clearSessionRecents } from '../src/data/sessionRecents';
 import { SERVICE_AREA_FALLBACK } from '../src/data/serviceArea';
 import { STATION_TRANSFERS } from '../src/data/stationTransfers';
+import { TransitLiveProvider } from '../src/data/TransitLiveContext';
 import { routeById, routes, type RouteId } from '../src/data/transit';
 import { darkColors, lightColors } from '../src/theme/colors';
 
@@ -769,8 +770,16 @@ describe('Pathly prototype navigation', () => {
 
   it('renders route detail, trip detail, and settings dark', async () => {
     const screen = renderDark();
+    // Both Google maps are recolored dark (and still hide places), not left bright.
+    const isDarkMap = (map: { props: { customMapStyle?: { featureType?: string; elementType?: string; stylers: { color?: string }[] }[] } }) => {
+      const style = map.props.customMapStyle ?? [];
+      expect(style.find((rule) => !rule.featureType && rule.elementType === 'geometry')?.stylers[0]?.color).toBe('#16171A');
+      expect(style).toContainEqual({ featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] });
+    };
+    isDarkMap(await screen.findByTestId('google-map-view', { includeHiddenElements: true }));
     fireEvent.press(await screen.findByTestId(`route-card-${PJ_CARD}-primary`));
     expect(backgroundOf(screen.getByTestId('route-detail-content'))).toBe(darkColors.surface);
+    isDarkMap(await screen.findByTestId('route-map', { includeHiddenElements: true }));
     fireEvent.press(screen.getByTestId('route-back'));
 
     fireEvent.press(screen.getByTestId('tab-recents'));
@@ -932,8 +941,12 @@ describe('Pathly prototype navigation', () => {
     const map = screen.getByTestId('google-map-view', { includeHiddenElements: true });
     fireEvent(map, 'panDrag');
     fireEvent(map, 'regionChangeComplete', { latitude: 40.7685, longitude: -73.5251, latitudeDelta: 0.05, longitudeDelta: 0.05 });
-    expect(screen.getByTestId('search-center')).toBeTruthy();
+    // A solid purple dot the size of the GPS dot, not a faint ring.
+    const centerStyle = StyleSheet.flatten(screen.getByTestId('search-center').props.style);
+    expect(centerStyle).toEqual(expect.objectContaining({ width: 17, height: 17, backgroundColor: lightColors.searchCenter }));
     await waitFor(() => expect(nearby).toHaveBeenLastCalledWith({ lat: 40.7685, lon: -73.5251 }));
+    // Each card's stop and departures are for the stop nearest the dot, not the rider.
+    await waitFor(() => expect(callableNamed('getRouteLiveStatus')).toHaveBeenCalledWith(expect.objectContaining({ lat: 40.7685, lon: -73.5251 })));
 
     // A programmatic move (no rider drag) doesn't start a center search.
     nearby.mockClear();
@@ -943,11 +956,177 @@ describe('Pathly prototype navigation', () => {
     });
     expect(nearby).not.toHaveBeenCalledWith({ lat: 40.9, lon: -73.1 });
 
-    // The location button returns Nearby to the rider and hides the circle.
+    // The location button returns Nearby (and its cards' stops) to the rider and hides the dot.
+    callableNamed('getRouteLiveStatus').mockClear();
     fireEvent.press(await screen.findByLabelText('Center on current location'));
     expect(screen.queryByTestId('search-center')).toBeNull();
     // Location is denied in tests, so the rider's location is the Stony Brook fallback.
     await waitFor(() => expect(nearby).toHaveBeenLastCalledWith({ lat: SERVICE_AREA_FALLBACK.latitude, lon: SERVICE_AREA_FALLBACK.longitude }));
+    await waitFor(() => expect(callableNamed('getRouteLiveStatus')).toHaveBeenCalledWith(expect.objectContaining({ lat: SERVICE_AREA_FALLBACK.latitude, lon: SERVICE_AREA_FALLBACK.longitude })));
+  });
+
+  it("hides Google's points of interest on the home and route maps", async () => {
+    const hidesPlaces = (map: { props: { customMapStyle?: unknown } }) => expect(map.props.customMapStyle).toEqual([
+      { featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+    ]);
+    const screen = render(<App />);
+    fireEvent.press(await screen.findByTestId(`route-card-${PJ_CARD}-primary`));
+    hidesPlaces(await screen.findByTestId('route-map', { includeHiddenElements: true }));
+    fireEvent.press(screen.getByTestId('route-back'));
+    hidesPlaces(await screen.findByTestId('google-map-view', { includeHiddenElements: true }));
+  });
+
+  it('reopens the home map on the purple dot after visiting a route', async () => {
+    const { mockAnimateToRegion } = jest.requireMock('react-native-maps') as { mockAnimateToRegion: jest.Mock };
+    const screen = render(<App />);
+    await screen.findByTestId(`route-card-${PJ_CARD}`);
+    const hicksville = { latitude: 40.7685, longitude: -73.5251, latitudeDelta: 0.08, longitudeDelta: 0.08 };
+    const map = screen.getByTestId('google-map-view', { includeHiddenElements: true });
+    fireEvent(map, 'panDrag');
+    fireEvent(map, 'regionChangeComplete', hicksville);
+    expect(screen.getByTestId('search-center')).toBeTruthy();
+
+    fireEvent.press(await screen.findByTestId(`route-card-${PJ_CARD}-primary`));
+    await screen.findByTestId('route-back');
+    mockAnimateToRegion.mockClear();
+    fireEvent.press(screen.getByTestId('route-back'));
+
+    // The rebuilt map opens where the rider left it, with the dot, and isn't pulled back to GPS.
+    const reopened = await screen.findByTestId('google-map-view', { includeHiddenElements: true });
+    expect(reopened.props.region).toEqual(hicksville);
+    expect(screen.getByTestId('search-center')).toBeTruthy();
+    await act(async () => {});
+    expect(mockAnimateToRegion).not.toHaveBeenCalled();
+  });
+
+  it('keeps the home map where the rider panned it until the location button is pressed', async () => {
+    const { mockAnimateToRegion } = jest.requireMock('react-native-maps') as { mockAnimateToRegion: jest.Mock };
+    let onPosition: ((position: { coords: { latitude: number; longitude: number } }) => void) | undefined;
+    (Location.requestForegroundPermissionsAsync as jest.Mock).mockResolvedValue({ status: 'granted' });
+    (Location.getCurrentPositionAsync as jest.Mock).mockResolvedValue({ coords: { latitude: 40.92, longitude: -73.13 } });
+    (Location.watchPositionAsync as jest.Mock).mockImplementationOnce((_options, callback) => {
+      onPosition = callback;
+      return Promise.resolve({ remove: jest.fn() });
+    });
+    mockAnimateToRegion.mockClear();
+
+    const screen = render(<App />);
+    await screen.findByTestId(`route-card-${PJ_CARD}`);
+    // The first fix centers the map once.
+    await waitFor(() => expect(mockAnimateToRegion).toHaveBeenCalledWith(expect.objectContaining({ latitude: 40.92, longitude: -73.13 }), expect.any(Number)));
+
+    const map = screen.getByTestId('google-map-view', { includeHiddenElements: true });
+    fireEvent(map, 'panDrag');
+    fireEvent(map, 'regionChangeComplete', { latitude: 40.7685, longitude: -73.5251, latitudeDelta: 0.05, longitudeDelta: 0.05 });
+    mockAnimateToRegion.mockClear();
+
+    // Routine GPS updates move only the rider's dot, not the map.
+    await waitFor(() => expect(onPosition).toBeDefined());
+    await act(async () => onPosition!({ coords: { latitude: 40.93, longitude: -73.12 } }));
+    await act(async () => onPosition!({ coords: { latitude: 40.94, longitude: -73.11 } }));
+    expect(mockAnimateToRegion).not.toHaveBeenCalled();
+
+    // The location button brings the map back to the rider.
+    fireEvent.press(screen.getByLabelText('Center on current location'));
+    await waitFor(() => expect(mockAnimateToRegion).toHaveBeenCalledWith(expect.objectContaining({ latitude: 40.92, longitude: -73.13 }), expect.any(Number)));
+    (Location.requestForegroundPermissionsAsync as jest.Mock).mockResolvedValue({ status: 'denied' });
+  });
+
+  describe('live data for visible routes only', () => {
+    const liveCall = () => {
+      const index = (httpsCallable as jest.Mock).mock.calls.findIndex((call) => call[1] === 'getRouteLiveStatus');
+      return (httpsCallable as jest.Mock).mock.results[index]!.value as jest.Mock;
+    };
+    // Distinct routes requested (the mocked backend predates in-call nearest stops, so each route's
+    // fetch also re-requests for its nearest stop).
+    const requestedRouteIds = () => [...new Set(liveCall().mock.calls.map(([request]) => (request as { routeId: string }).routeId))].sort();
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('polls only the active routes and fetches a newly active one right away', async () => {
+      jest.useFakeTimers();
+      // Ten extra live routes beside the built-in demo ones; only three are on screen.
+      const extra = Array.from({ length: 10 }, (_, index) => ({
+        ...routeById.ronkonkoma,
+        id: `extra-${index}`,
+        liveSource: { ...routeById.ronkonkoma.liveSource!, routeId: `X${index}` },
+      }));
+      const location = SERVICE_AREA_FALLBACK;
+      liveCall().mockClear();
+      const screen = render(<TransitLiveProvider activeRouteIds={['extra-0', 'extra-1', 'extra-2']} extraRoutes={extra} location={location}>{null}</TransitLiveProvider>);
+      await act(async () => {});
+      expect(requestedRouteIds()).toEqual(['X0', 'X1', 'X2']);
+
+      // A fourth route comes into view: fetched now, without re-fetching the other three.
+      liveCall().mockClear();
+      screen.rerender(<TransitLiveProvider activeRouteIds={['extra-0', 'extra-1', 'extra-2', 'extra-3']} extraRoutes={extra} location={location}>{null}</TransitLiveProvider>);
+      await act(async () => {});
+      expect(requestedRouteIds()).toEqual(['X3']);
+
+      // The poll refreshes exactly the four active routes.
+      liveCall().mockClear();
+      await act(async () => {
+        jest.advanceTimersByTime(15_000);
+      });
+      expect(requestedRouteIds()).toEqual(['X0', 'X1', 'X2', 'X3']);
+      screen.unmount();
+    });
+
+    it('follows the home cards on screen as the list scrolls, and only the open route behind a detail', async () => {
+      jest.useFakeTimers();
+      // A current backend (nearest stop resolved in the same call), so each route is one request.
+      const original = liveCall().getMockImplementation();
+      liveCall().mockImplementation((request: { routeId: string }) => Promise.resolve({
+        data: { routeId: request.routeId, routeName: 'Mock Route', vehicles: [], nearestStop: null, stopPredictions: { towardDirection1: [{ minutes: 4, live: true, peakOffpeak: null }], towardDirection0: [] } },
+      }));
+      try {
+        const screen = render(<App />);
+        await screen.findByTestId(`route-card-${PJ_CARD}`);
+        const slots = screen.getAllByTestId(/^card-slot-/).map((slot) => slot.props.testID.replace('card-slot-', '') as string);
+        expect(slots.length).toBeGreaterThanOrEqual(6);
+        const routeIdOf = (cardId: string) => cardId.split(':')[1]!;
+        const layout = (testID: string, y: number, height: number) => fireEvent(screen.getByTestId(testID), 'layout', { nativeEvent: { layout: { x: 0, y, width: 390, height } } });
+
+        // A 600 pt window over the page: cards start 350 pt down and are 104 pt tall, so the
+        // first three are on screen.
+        layout('nearby-route-list', 0, 600);
+        layout('transit-sheet', 300, 2000);
+        layout('nearby-route-content', 50, 1500);
+        layout('nearby-routes', 0, 1500);
+        slots.forEach((cardId, index) => layout(`card-slot-${cardId}`, index * 104, 104));
+        await act(async () => {
+          jest.advanceTimersByTime(20_000);
+        });
+        liveCall().mockClear();
+        await act(async () => {
+          jest.advanceTimersByTime(15_000);
+        });
+        expect(requestedRouteIds()).toEqual(slots.slice(0, 3).map(routeIdOf).sort());
+
+        // Scrolling down 300 pt brings cards 4–6 into view; they're fetched right away.
+        liveCall().mockClear();
+        fireEvent(screen.getByTestId('nearby-route-list'), 'momentumScrollEnd', { nativeEvent: { contentOffset: { x: 0, y: 300 } } });
+        await act(async () => {
+          jest.advanceTimersByTime(200);
+        });
+        expect(requestedRouteIds()).toEqual(slots.slice(3, 6).map(routeIdOf).sort());
+
+        // Behind an open route detail, only that route is refreshed.
+        fireEvent.press(screen.getByTestId(`route-card-${PJ_CARD}-primary`));
+        await act(async () => {
+          jest.advanceTimersByTime(1_000);
+        });
+        liveCall().mockClear();
+        await act(async () => {
+          jest.advanceTimersByTime(15_000);
+        });
+        expect(requestedRouteIds()).toEqual(['10']);
+      } finally {
+        liveCall().mockImplementation(original);
+      }
+    });
   });
 
   it('keeps a route detail open when a location update drops it from the nearby list', async () => {
@@ -1063,6 +1242,8 @@ describe('Pathly prototype navigation', () => {
       expect(within(pennBody).getByText('Penn Station', hidden)).toBeTruthy();
       expect(within(pennBody).getByText(/^\d{1,2}:\d{2} [AP]M$/, hidden)).toBeTruthy();
 
+      // The mocked scheduled departure is in the other direction; only the active direction's tiles render.
+      fireEvent.press(screen.getAllByLabelText(/^Show .* predictions$/)[1]!);
       const pill = StyleSheet.flatten(screen.getAllByTestId('route-prediction-scheduled', hidden)[0]!.props.style);
       expect(pill.backgroundColor).toBe(lightColors.mutedInk);
       expect(pill.color).toBe(lightColors.surface);
@@ -1073,10 +1254,14 @@ describe('Pathly prototype navigation', () => {
       const screen = await openPortJefferson();
       const routeLine = screen.getByTestId('route-line', hidden);
       expect(routeLine.props.strokeColor).toBe(routeById.ronkonkoma.color);
-      // Follows the real track shape, not one straight segment per station pair.
       // Follows the backend's real shape path (mocked as 3 points per hop), not one straight
-      // segment per stop pair.
-      expect(routeLine.props.coordinates).toHaveLength((routeById.ronkonkoma.stops!.length - 1) * 3 + 1);
+      // segment per stop pair. Westbound, the rider's Stony Brook is the second stop: the hop
+      // behind it is faint, and the rest of the line ahead is full strength.
+      const behindLine = screen.getByTestId('route-line-behind', hidden);
+      expect(behindLine.props.strokeColor).toBe(`${routeById.ronkonkoma.color}59`);
+      expect(behindLine.props.coordinates).toHaveLength(3 + 1);
+      expect(routeLine.props.coordinates).toHaveLength((routeById.ronkonkoma.stops!.length - 2) * 3 + 1);
+      expect(routeLine.props.coordinates[0]).toEqual(behindLine.props.coordinates[3]);
 
       const stops = screen.getAllByTestId(/^route-stop-/, hidden);
       expect(stops).toHaveLength(22);
@@ -1085,15 +1270,51 @@ describe('Pathly prototype navigation', () => {
         expect(stop.props.title).toBe(name);
         expect(stop.props.anchor).toEqual({ x: 0.5, y: 0.5 });
         const dot = StyleSheet.flatten(within(stop).getByTestId(`route-dot-${name}`, hidden).props.style);
+        // Westbound from Stony Brook, Port Jefferson is behind the rider: its outline is faint.
         expect(dot).toMatchObject(name === 'Stony Brook'
           ? { backgroundColor: routeById.ronkonkoma.color, borderColor: '#FFFFFF', width: 20 }
-          : { backgroundColor: '#FFFFFF', borderColor: routeById.ronkonkoma.color, width: 14 });
+          : { backgroundColor: '#FFFFFF', borderColor: name === 'Port Jefferson' ? `${routeById.ronkonkoma.color}59` : routeById.ronkonkoma.color, width: 8 });
+        // Ordinary stops are exactly as wide as the line, so they don't bulge out of it.
+        if (name !== 'Stony Brook') expect(dot.width).toBe(routeLine.props.strokeWidth);
       }
       // Opens zoomed on the rider's nearest station (mocked geometry places Stony Brook at 40.89, -73.09).
       const region = screen.getByTestId('route-map', hidden).props.initialRegion;
       expect(region.latitude).toBeCloseTo(40.89);
       expect(region.longitude).toBeCloseTo(-73.09);
       expect(region.latitudeDelta).toBe(0.06);
+    });
+
+    it('shows a compact route badge over the map that lets gestures through', async () => {
+      const screen = await openPortJefferson();
+      const badge = screen.getByTestId('route-detail-badge', hidden);
+      expect(within(badge).getByText('PJ', hidden)).toBeTruthy();
+      expect(within(badge).queryByText(/Port Jefferson/, hidden)).toBeNull();
+      // No taller than the 46 pt map controls, and inside an overlay that ignores touches.
+      expect(StyleSheet.flatten(badge.props.style).height).toBeLessThan(46);
+      let overlay = badge.parent;
+      while (overlay && overlay.props.pointerEvents === undefined) overlay = overlay.parent;
+      expect(overlay?.props.pointerEvents).toBe('none');
+    });
+
+    it("points an arrow from the rider's stop toward the next stop, flipping with the direction", async () => {
+      const screen = await openPortJefferson();
+      // One arrow, anchored at the rider's stop and turned to the line's bearing there. Mocked
+      // westbound runs southeast across the map (lat falls, lon rises): bearing 90°–180°.
+      const arrow = () => screen.getByTestId('route-direction-arrow', hidden);
+      const bearing = () => arrow().props.rotation;
+      expect(screen.getAllByTestId('route-direction-arrow', hidden)).toHaveLength(1);
+      expect(arrow().props.flat).toBe(true);
+      // Anchored at Stony Brook itself (mocked at 40.89, -73.09).
+      expect(arrow().props.coordinate.latitude).toBeCloseTo(40.89, 6);
+      expect(arrow().props.coordinate.longitude).toBeCloseTo(-73.09, 6);
+      expect(bearing()).toBeGreaterThan(90);
+      expect(bearing()).toBeLessThan(180);
+
+      // Eastbound flips it to the northwest.
+      fireEvent.press(screen.getAllByLabelText(/^Show .* predictions$/)[1]!);
+      await waitFor(() => expect(bearing()).toBeGreaterThan(270));
+      // Eastbound from Stony Brook only Port Jefferson is ahead; everything else is behind.
+      expect(screen.getByTestId('route-line', hidden).props.coordinates).toHaveLength(3 + 1);
     });
 
     it('lets only the live route map take gestures through the scrolling page', async () => {
@@ -1124,6 +1345,31 @@ describe('Pathly prototype navigation', () => {
       await waitFor(() => expect(rows(screen)).toEqual(['Stony Brook', 'Port Jefferson']));
     });
 
+    it('opens every transfer at a station from its +N count', async () => {
+      const screen = await openPortJefferson();
+      const jamaicaOtherModes = STATION_TRANSFERS.Jamaica!.filter((transfer) => transfer.agency !== 'LIRR');
+      expect(screen.queryByTestId('transfers-sheet')).toBeNull();
+
+      fireEvent.press(screen.getByTestId('stop-transfers-more-Jamaica', hidden));
+      const sheet = within(await screen.findByTestId('transfers-sheet'));
+      expect(screen.getByTestId('transfers-sheet-title').props.children).toBe('Jamaica');
+      // Every transfer, including the ones hidden from the row, grouped under its mode.
+      expect(sheet.getAllByTestId(/^transfers-sheet-chip-/)).toHaveLength(jamaicaOtherModes.length);
+      for (const mode of ['subway', 'bus'] as const) {
+        const group = within(screen.getByTestId(`transfers-sheet-${mode}`));
+        for (const transfer of jamaicaOtherModes.filter((item) => item.mode === mode)) {
+          expect(group.getByTestId(`transfers-sheet-chip-${transfer.name}`)).toBeTruthy();
+        }
+      }
+      expect(sheet.getByText('Subway')).toBeTruthy();
+      expect(sheet.getByText('Bus')).toBeTruthy();
+
+      fireEvent.press(screen.getByTestId('transfers-sheet-close'));
+      expect(screen.queryByTestId('transfers-sheet')).toBeNull();
+      // Still on the same route detail.
+      expect(screen.getByTestId('route-detail-destination').props.children).toBe('Penn Station');
+    });
+
     it('shows transfer chips per station, capped with a +N count', async () => {
       const screen = await openPortJefferson();
       const smithtown = screen.getByTestId('route-transfer-Smithtown-56', hidden);
@@ -1139,7 +1385,7 @@ describe('Pathly prototype navigation', () => {
         expect(screen.queryByTestId(`route-transfer-Jamaica-${branch.name}`, hidden)).toBeNull();
       }
       expect(screen.getByTestId('route-transfer-Jamaica-E', hidden)).toBeTruthy();
-      expect(screen.getByTestId('stop-transfers-more-Jamaica', hidden).props.children).toEqual(['+', jamaicaOtherModes.length - 8]);
+      expect(within(screen.getByTestId('stop-transfers-more-Jamaica', hidden)).getByText(`+${jamaicaOtherModes.length - 8}`, hidden)).toBeTruthy();
       // No fare row on route detail (any route).
       expect(screen.queryByTestId('route-fare')).toBeNull();
       expect(screen.queryByTestId('stop-transfers-St. James', hidden)).toBeNull();
@@ -1190,10 +1436,90 @@ describe('Pathly prototype navigation', () => {
         expect(tiles[0]!.opacity ?? 1).toBe(1);
         expect(tiles[1]!.opacity).toBe(0.45);
         // A direction with a single departure keeps the same fixed width rather than filling the row.
+        fireEvent.press(screen.getAllByLabelText(/^Show .* predictions$/)[1]!);
         expect(StyleSheet.flatten(screen.getByTestId('route-prediction-1-0').props.style).width).toBe(tiles[0]!.width);
       } finally {
         jest.useRealTimers();
       }
+    });
+
+    it('scrolls up to six departures with a More departures card, separate from the direction swipe', async () => {
+      const departures = (count: number) => Array.from({ length: count }, (_, index) => ({ minutes: 3 + index * 7, live: index === 0, peakOffpeak: null }));
+      callable('getRouteLiveStatus').mockImplementation((request: { routeId: string }) => Promise.resolve({
+        data: { routeId: request.routeId, routeName: 'Mock Route', vehicles: [], stopPredictions: { towardDirection1: departures(7), towardDirection0: departures(2) } },
+      }));
+      const screen = render(<App />);
+      fireEvent.press(await screen.findByTestId(`route-card-${PJ_CARD}-primary`));
+      await screen.findByLabelText('3 minutes, live GPS prediction');
+
+      // Six tiles at most, then the More card as the row's last item.
+      const tiles = screen.getByTestId('route-predictions-scroll');
+      expect([0, 1, 2, 3, 4, 5].every((index) => screen.queryByTestId(`route-prediction-0-${index}`))).toBe(true);
+      expect(screen.queryByTestId('route-prediction-0-6')).toBeNull();
+      const tileIds = within(tiles).getAllByRole('button').map((tile) => tile.props.testID);
+      expect(tileIds[tileIds.length - 1]).toBe('route-more-departures');
+
+      // Tall, narrow tiles with a big number: about three and a half across, so the next one peeks in.
+      const tileStyle = StyleSheet.flatten(screen.getByTestId('route-prediction-0-0').props.style);
+      const tileWidth = tileStyle.width;
+      expect(tileStyle.minHeight).toBeGreaterThan(tileWidth);
+      expect(StyleSheet.flatten(within(screen.getByTestId('route-prediction-0-0')).getByText('3').props.style).fontSize).toBeGreaterThanOrEqual(40);
+      // At least three and a half fit across, so the next tile always peeks in.
+      const rowWidth = Math.min(750, 540) - 36; // jest's window is 750 pt wide
+      expect(tileWidth * 3.5 + 8 * 3).toBeLessThanOrEqual(rowWidth);
+
+      // The direction dots share the heading's row, above (not inside) the tiles.
+      let headingRow = screen.getByTestId('route-detail-destination').parent;
+      while (headingRow && within(headingRow).queryAllByLabelText(/^Show .* predictions$/).length === 0) headingRow = headingRow.parent;
+      expect(within(headingRow!).queryByTestId('route-predictions-scroll')).toBeNull();
+
+      // Scrolling the tiles keeps the direction.
+      fireEvent.scroll(tiles, { nativeEvent: { contentOffset: { x: 240, y: 0 } } });
+      expect(screen.getByTestId('route-detail-destination').props.children).toBe('Penn Station');
+
+      // Swiping the heading switches direction; the tiles follow, and a short list still ends with More.
+      fireEvent(screen.getByTestId('route-direction-pager'), 'momentumScrollEnd', { nativeEvent: { contentOffset: { x: 354, y: 0 } } });
+      expect(screen.getByTestId('route-detail-destination').props.children).toBe('Port Jefferson');
+      expect(screen.getAllByLabelText(/^Show .* predictions$/)[1]!.props.accessibilityState).toEqual({ selected: true });
+      expect(screen.getByTestId('route-prediction-1-1')).toBeTruthy();
+      expect(screen.queryByTestId('route-prediction-1-2')).toBeNull();
+      expect(screen.queryByTestId('route-prediction-0-0')).toBeNull();
+      expect(screen.getByTestId('route-more-departures')).toBeTruthy();
+    });
+
+    it('opens every upcoming departure from More departures and returns to the same direction', async () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(NOW);
+      try {
+        const screen = await openPortJefferson();
+        // Switch to the second direction (Port Jefferson) before opening the list.
+        fireEvent.press(screen.getAllByLabelText(/^Show .* predictions$/)[1]!);
+        fireEvent.press(screen.getByTestId('route-more-departures'));
+
+        expect(await screen.findByTestId('departures-view')).toBeTruthy();
+        expect(screen.getByTestId('departures-destination').props.children).toBe('Port Jefferson');
+        expect(screen.getByTestId('departures-stop').props.children).toBe('From Stony Brook');
+        // Eastbound is GTFS direction 0 from the rider's nearest Stony Brook stop.
+        expect(callable('getStopDepartures')).toHaveBeenLastCalledWith(expect.objectContaining({ routeId: '10', direction1StopId: '1', direction0StopId: '20', directionId: 0 }));
+        await screen.findByTestId('departure-row-2');
+        expect(screen.getByLabelText('10:04 AM, in 4 min, live GPS prediction')).toBeTruthy();
+        expect(screen.getByLabelText('10:34 AM, in 34 min, scheduled time')).toBeTruthy();
+        expect(screen.getByLabelText('11:35 AM, in 1 h 35 min, scheduled time')).toBeTruthy();
+
+        fireEvent.press(screen.getByTestId('departures-back'));
+        expect(await screen.findByTestId('route-detail-destination')).toBeTruthy();
+        expect(screen.getByTestId('route-detail-destination').props.children).toBe('Port Jefferson');
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('says departures are unavailable when the full list cannot load', async () => {
+      callable('getStopDepartures').mockImplementationOnce(() => Promise.reject(new Error('offline')));
+      const screen = await openPortJefferson();
+      fireEvent.press(screen.getByTestId('route-more-departures'));
+      expect(await screen.findByTestId('departures-unavailable')).toBeTruthy();
+      expect(screen.getByText('Departures unavailable right now.')).toBeTruthy();
     });
 
     it('keeps route stop timing and live provenance accessible', async () => {
@@ -1203,12 +1529,13 @@ describe('Pathly prototype navigation', () => {
       try {
         const screen = await openPortJefferson();
         expect(screen.getByLabelText('4 minutes, live GPS prediction')).toBeTruthy();
-        expect(screen.getByLabelText('18 minutes, scheduled time')).toBeTruthy();
         // Westbound starts at the rider's nearest station (Stony Brook), which leaves in the first
         // prediction's 4 min; Penn Station is 111 min of real schedule later.
         expect(screen.getByLabelText(/^Stony Brook, nearest to you, departs 10:04 AM, transfers: /)).toBeTruthy();
         expect(screen.getByLabelText(/^Penn Station, arrives 11:55 AM, transfers: /)).toBeTruthy();
         expect(routeById.ronkonkoma.stops).toHaveLength(22);
+        fireEvent.press(screen.getAllByLabelText(/^Show .* predictions$/)[1]!);
+        expect(screen.getByLabelText('18 minutes, scheduled time')).toBeTruthy();
       } finally {
         jest.useRealTimers();
       }
@@ -1250,13 +1577,16 @@ describe('Pathly prototype navigation', () => {
         const start = Number.parseInt(age(), 10);
         expect(screen.queryByTestId('route-vehicle-stale', hidden)).toBeNull();
 
-        // Inverted marker: a white circle with route-color border, and a route-color age badge with white text.
+        // A borderless 42 pt white circle with a shadow, and a borderless route-color age badge with white text.
         const color = routeById.ronkonkoma.color;
         const badge = StyleSheet.flatten(screen.getByTestId('route-vehicle-badge-fresh', hidden).props.style);
-        expect(badge).toMatchObject({ backgroundColor: '#FFFFFF', borderColor: color });
+        expect(badge).toMatchObject({ backgroundColor: '#FFFFFF', width: 42 });
+        expect(badge.borderWidth ?? 0).toBe(0);
+        expect(badge.shadowOpacity).toBeGreaterThan(0);
         expect(badge.borderRadius).toBe(badge.width / 2);
-        expect(badge.width).toBeGreaterThan(2 * 14);
-        expect(StyleSheet.flatten(screen.getByTestId('route-vehicle-age-badge-fresh', hidden).props.style)).toMatchObject({ backgroundColor: color, borderColor: '#FFFFFF' });
+        const ageBadge = StyleSheet.flatten(screen.getByTestId('route-vehicle-age-badge-fresh', hidden).props.style);
+        expect(ageBadge.backgroundColor).toBe(color);
+        expect(ageBadge.borderWidth ?? 0).toBe(0);
         expect(StyleSheet.flatten(screen.getByTestId('route-vehicle-age-fresh', hidden).props.style).color).toBe('#FFFFFF');
 
         act(() => jest.advanceTimersByTime(2000));

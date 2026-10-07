@@ -107,3 +107,24 @@ export async function fetchRouteLiveData(source: LiveSource, location?: Coordina
     })),
   };
 }
+
+const getStopDeparturesCallable = httpsCallable<
+  { agencyId: string; routeId: string; direction1StopId: string; direction0StopId: string; directionId: 0 | 1 },
+  { departures: DirectionPrediction[] }
+>(functions, 'getStopDepartures');
+
+/**
+ * Every remaining departure today (plus the next service day's first ones late at night) from
+ * the given stops in one GTFS direction — the "More departures" page. Not cached: the page
+ * refetches each time it opens.
+ */
+export async function fetchStopDepartures(source: LiveSource, directionId: 0 | 1): Promise<readonly DirectionPrediction[]> {
+  const { data } = await getStopDeparturesCallable({
+    agencyId: source.agencyId,
+    routeId: source.routeId,
+    direction1StopId: source.direction1StopId,
+    direction0StopId: source.direction0StopId,
+    directionId,
+  });
+  return data.departures;
+}

@@ -15,6 +15,36 @@ export function transitModeForAgency(agency: string): TransitMode {
 
 const modeLabels: Record<TransitMode, string> = { subway: 'train', bus: 'bus', rail: 'rail' };
 
+const MAX_BADGE_LABEL = 4;
+// LIRR publishes no route_short_name, so discovered branches carry their long name; these are the
+// branches' customary two-letter codes (matching the demo catalog's "PJ").
+const LIRR_BRANCH_CODES: Record<string, string> = {
+  Babylon: 'BY',
+  'Belmont Park': 'BP',
+  'City Terminal Zone': 'CT',
+  'Far Rockaway': 'FR',
+  Greenport: 'GP',
+  Hempstead: 'HM',
+  'Long Beach': 'LB',
+  Montauk: 'MK',
+  'Oyster Bay': 'OB',
+  'Port Jefferson': 'PJ',
+  'Port Washington': 'PW',
+  Ronkonkoma: 'RK',
+  'West Hempstead': 'WH',
+};
+
+/**
+ * A badge-sized label for a route: its short name when that is already short (`51`, `E`, `PJ`),
+ * otherwise a code — LIRR's branch codes, or the initials of the name without "Branch"/"Line".
+ */
+export function badgeLabel(route: { agency: string; shortName: string }): string {
+  if (route.shortName.length <= MAX_BADGE_LABEL) return route.shortName;
+  const name = route.shortName.replace(/\s+(Branch|Line|Service)$/i, '').trim();
+  if (route.agency === 'LIRR' && LIRR_BRANCH_CODES[name]) return LIRR_BRANCH_CODES[name];
+  return name.split(/\s+/).map((word) => word[0]?.toUpperCase() ?? '').join('').slice(0, MAX_BADGE_LABEL);
+}
+
 const sizes = {
   small: { height: 28, fontSize: 12, icon: 13, padding: 7 },
   medium: { height: 36, fontSize: 14, icon: 15, padding: 9 },

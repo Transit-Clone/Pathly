@@ -9,7 +9,8 @@ import { PressableScale } from '../src/components/PressableScale';
 import { AppSettingsProvider } from '../src/theme/AppSettings';
 import { ScreenTransition } from '../src/theme/motion';
 import { darkColors, lightColors } from '../src/theme/colors';
-import { RouteBadge, transitModeForAgency } from '../src/components/RouteBadge';
+import { badgeLabel, RouteBadge, transitModeForAgency } from '../src/components/RouteBadge';
+import { RouteMap } from '../src/components/RouteMap';
 
 jest.mock('react-native-safe-area-context', () => mockSafeAreaContext);
 
@@ -148,5 +149,27 @@ describe('motion', () => {
   it('draws the pin as a thumbtack glyph', () => {
     const screen = render(<Icon filled={true} name="pin" testID="pin" />);
     expect(screen.getByTestId('pin', { includeHiddenElements: true }).props.children).toBe('pin');
+  });
+});
+
+describe('RouteMap', () => {
+  const stops = [0, 1, 2].map((index) => ({ stopId: String(index), name: `Stop ${index}`, lat: 40.9, lon: -73.2 + index * 0.01 }));
+
+  it('draws one full-strength line and no arrow when the rider has no nearest stop', () => {
+    const screen = render(<RouteMap color="#A626AA" stops={stops} vehicles={[]} />);
+    const hidden = { includeHiddenElements: true };
+    expect(screen.getByTestId('route-line', hidden).props.coordinates).toHaveLength(3);
+    expect(screen.queryByTestId('route-line-behind', hidden)).toBeNull();
+    expect(screen.queryByTestId('route-direction-arrow', hidden)).toBeNull();
+  });
+});
+
+describe('badgeLabel', () => {
+  it('keeps short names and abbreviates long ones', () => {
+    expect(badgeLabel({ agency: 'Suffolk County Transit', shortName: '51' })).toBe('51');
+    expect(badgeLabel({ agency: 'MTA Subway', shortName: 'E' })).toBe('E');
+    expect(badgeLabel({ agency: 'LIRR', shortName: 'Port Jefferson Branch' })).toBe('PJ');
+    expect(badgeLabel({ agency: 'LIRR', shortName: 'Ronkonkoma Branch' })).toBe('RK');
+    expect(badgeLabel({ agency: 'NICE Bus', shortName: 'Roosevelt Field Shuttle Line' })).toBe('RFS');
   });
 });

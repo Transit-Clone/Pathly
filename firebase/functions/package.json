@@ -10,8 +10,9 @@
   "scripts": {
     "build": "tsc",
     "build:watch": "tsc --watch",
-    "test": "npm run build && node --test test/*.test.js",
-    "serve": "npm run build && npx --yes firebase-tools@15.32.1 emulators:start --only functions",
+    "build:gtfs": "npm run build && node scripts/build-gtfs-index.js",
+    "test": "npm run build:gtfs && node --test test/*.test.js",
+    "serve": "npm run build:gtfs && npx --yes firebase-tools@15.32.1 emulators:start --only functions",
     "shell": "npm run build && npx --yes firebase-tools@15.32.1 functions:shell",
     "deploy": "npx --yes firebase-tools@15.32.1 deploy --only functions",
     "logs": "npx --yes firebase-tools@15.32.1 functions:log"

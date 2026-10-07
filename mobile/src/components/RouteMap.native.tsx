@@ -1,11 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE, type Region } from 'react-native-maps';
 
 import { formatAge, visibleTrains } from '../data/liveTrains';
+import { googleMapStyle } from '../data/mapStyle';
+import { bearingToNextStop, splitIndexAtStop, withAlpha } from '../data/routeDirection';
 import type { RouteLiveVehicle } from '../data/transitLive';
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { useNow } from '../hooks/useNow';
+import { useTheme } from '../theme/AppSettings';
 import { Icon } from './Icon';
 import type { TransitMode } from './RouteBadge';
 
@@ -15,11 +18,22 @@ const CENTER_ANCHOR = { x: 0.5, y: 0.5 };
 // Street-level span around a focused stop or the rider.
 const FOCUS_DELTA = { latitudeDelta: 0.06, longitudeDelta: 0.06 };
 const FOCUS_ANIMATION_MS = 400;
+// The line behind the rider's stop (already travelled in this direction) is drawn faint.
+const BEHIND_LINE_ALPHA = 0.35;
+const ARROW_SIZE = 22;
+// Stop dots are exactly as wide as the line, so they sit inside it like beads instead of
+// bulging out of it. Only the rider's own stop is drawn larger, so it stands out.
+const LINE_WIDTH = 8;
+const STOP_RING = 1.5;
+// The direction arrow sits this far out from the rider's stop (screen points, so it hugs the dot
+// at any zoom): a tall transparent box anchored at the stop, with the arrow at its far end.
+const ARROW_REACH = 48;
+const ARROW_BOTTOM_ANCHOR = { x: 0.5, y: 1 };
 
 // Vehicle marker geometry: the circle sits bottom-left of a larger box so the age badge can
 // overhang its top-right corner (Android clips marker views to their own bounds).
-const VEHICLE_SIZE = 34;
-const VEHICLE_BOX = 46;
+const VEHICLE_SIZE = 42;
+const VEHICLE_BOX = 54;
 const VEHICLE_ANCHOR = { x: VEHICLE_SIZE / 2 / VEHICLE_BOX, y: (VEHICLE_BOX - VEHICLE_SIZE / 2) / VEHICLE_BOX };
 
 type RouteMapProps = {
@@ -66,6 +80,9 @@ function regionFor(stops: readonly GeometryStop[], focusStop: GeometryStop | und
 /** Real route map: actual stop positions, the real line, and live vehicles — for any route with a live feed. */
 export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusStopId, mode = 'rail', onUserPan, path, stops, testID = 'route-map', userLocation, vehicles }: RouteMapProps) {
   const mapRef = useRef<MapView>(null);
+  // Places hidden, and recolored in the dark theme (see mapStyle.ts).
+  const { isDark } = useTheme();
+  const mapStyle = useMemo(() => googleMapStyle(isDark), [isDark]);
   const riderMovedMap = useRef(false);
   // True from a location-button press until the rider pans: keeps following fresh GPS fixes.
   const followRider = useRef(false);
@@ -76,7 +93,15 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
   const [tracksStopViews, setTracksStopViews] = useState(true);
   const now = useNow(1000);
   const shownVehicles = visibleTrains(vehicles, directionId, now);
-  const routeCoordinates = (path ?? stops).map((point) => ({ latitude: point.lat, longitude: point.lon }));
+  // Split at the rider's stop: faint behind it, full strength ahead, with an arrow toward the next stop.
+  const line = useMemo(() => {
+    const points = path ?? stops;
+    const toCoordinates = (part: readonly { lat: number; lon: number }[]) => part.map((point) => ({ latitude: point.lat, longitude: point.lon }));
+    const focusIndex = focusStop ? stops.indexOf(focusStop) : -1;
+    if (focusIndex < 0) return { behind: [], ahead: toCoordinates(points), bearing: null };
+    const split = splitIndexAtStop(points, stops, focusIndex);
+    return { behind: toCoordinates(points.slice(0, split + 1)), ahead: toCoordinates(points.slice(split)), bearing: bearingToNextStop(stops, focusIndex) };
+  }, [focusStop, path, stops]);
   const vehicleLabel = mode === 'bus' ? 'Bus' : 'Train';
   const vehicleIcon = mode === 'bus' ? 'bus' : mode === 'subway' ? 'subway' : 'rail';
 
@@ -107,6 +132,7 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
         followRider.current = false;
         onUserPan?.();
       }}
+      customMapStyle={mapStyle}
       provider={PROVIDER_GOOGLE}
       ref={mapRef}
       showsCompass={false}
@@ -116,9 +142,33 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
       testID={testID}
       toolbarEnabled={false}
     >
-      <Polyline coordinates={routeCoordinates} strokeColor={color} strokeWidth={4} testID="route-line" />
-      {stops.map((stop) => {
+      {line.behind.length > 1 ? <Polyline coordinates={line.behind} strokeColor={withAlpha(color, BEHIND_LINE_ALPHA)} strokeWidth={LINE_WIDTH} testID="route-line-behind" zIndex={0} /> : null}
+      <Polyline coordinates={line.ahead} strokeColor={color} strokeWidth={LINE_WIDTH} testID="route-line" zIndex={1} />
+      {line.bearing != null && focusStop ? (
+        // One arrow right beside the rider's stop, pointing at the next stop. The box is
+        // anchored at the stop and turned to that bearing (`flat`, so it turns with the map); the
+        // arrow sits at the box's far end, and the chevron glyph (pointing east) is turned upright.
+        <Marker
+          anchor={ARROW_BOTTOM_ANCHOR}
+          coordinate={{ latitude: focusStop.lat, longitude: focusStop.lon }}
+          flat={true}
+          rotation={line.bearing}
+          tappable={false}
+          testID="route-direction-arrow"
+          tracksViewChanges={tracksStopViews}
+          zIndex={3}
+        >
+          <View pointerEvents="none" style={styles.arrowReach}>
+            <View style={[styles.arrow, { backgroundColor: color }]}>
+              <Icon color="#FFFFFF" name="forward" size={17} style={styles.arrowGlyph} />
+            </View>
+          </View>
+        </Marker>
+      ) : null}
+      {stops.map((stop, stopIndex) => {
         const focused = stop === focusStop;
+        // Stops behind the rider's stop in this direction fade with the line behind it.
+        const passed = focusStop != null && stopIndex < stops.indexOf(focusStop);
         return (
           <Marker
             key={stop.stopId ?? stop.name}
@@ -129,7 +179,7 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
             tracksViewChanges={tracksStopViews}
             zIndex={focused ? 1 : 0}
           >
-            <View style={[styles.stopDot, { borderColor: color }, focused && [styles.focusedStopDot, { backgroundColor: color }]]} testID={`route-dot-${stop.name}`} />
+            <View style={[styles.stopDot, { borderColor: passed ? withAlpha(color, BEHIND_LINE_ALPHA) : color }, focused && [styles.focusedStopDot, { backgroundColor: color }]]} testID={`route-dot-${stop.name}`} />
           </Marker>
         );
       })}
@@ -137,8 +187,8 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
         // Vehicles keep tracking view changes so the ticking age badge re-renders; there are only a few.
         <Marker key={vehicle.tripId} anchor={VEHICLE_ANCHOR} coordinate={{ latitude: vehicle.lat, longitude: vehicle.lon }} testID={`route-vehicle-${vehicle.tripId}`} title={vehicleLabel} zIndex={2}>
           <View style={styles.vehicleBox}>
-            <View style={[styles.vehicleBadge, { borderColor: color }]} testID={`route-vehicle-badge-${vehicle.tripId}`}>
-              <Icon color={color} filled={true} name={vehicleIcon} size={18} />
+            <View style={styles.vehicleBadge} testID={`route-vehicle-badge-${vehicle.tripId}`}>
+              <Icon color={color} filled={true} name={vehicleIcon} size={22} />
             </View>
             {vehicle.updatedAt != null ? (
               <View style={[styles.ageBadge, { backgroundColor: color }]} testID={`route-vehicle-age-badge-${vehicle.tripId}`}>
@@ -154,10 +204,10 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
 
 const styles = StyleSheet.create({
   stopDot: {
-    width: 14,
-    height: 14,
-    borderWidth: 3,
-    borderRadius: 7,
+    width: LINE_WIDTH,
+    height: LINE_WIDTH,
+    borderWidth: STOP_RING,
+    borderRadius: LINE_WIDTH / 2,
     backgroundColor: '#FFFFFF',
   },
   // The rider's nearest stop: larger and filled, with a white ring.
@@ -167,12 +217,34 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderColor: '#FFFFFF',
   },
+  arrowReach: {
+    width: ARROW_SIZE,
+    height: ARROW_REACH,
+    alignItems: 'center',
+  },
+  arrowGlyph: {
+    transform: [{ rotate: '-90deg' }],
+  },
+  arrow: {
+    width: ARROW_SIZE,
+    height: ARROW_SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    borderRadius: ARROW_SIZE / 2,
+    shadowColor: '#16324F',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+    elevation: 3,
+  },
   vehicleBox: {
     width: VEHICLE_BOX,
     height: VEHICLE_BOX,
   },
-  // White circle with a route-color border and glyph: more than twice a stop dot's size and
-  // carrying the mode glyph (stop dots never do), so a vehicle reads apart from a stop.
+  // Borderless white circle with a route-color glyph: three times a stop dot's size and carrying
+  // the mode glyph (stop dots never do), so a vehicle reads apart from a stop.
   vehicleBadge: {
     position: 'absolute',
     left: 0,
@@ -181,15 +253,14 @@ const styles = StyleSheet.create({
     height: VEHICLE_SIZE,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 3,
     borderRadius: VEHICLE_SIZE / 2,
     backgroundColor: '#FFFFFF',
-    // Keeps the white circle visible on pale map tiles.
+    // With no outline, the shadow is what keeps the white circle visible on pale map tiles.
     shadowColor: '#16324F',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3,
-    elevation: 4,
+    shadowOpacity: 0.35,
+    shadowRadius: 5,
+    elevation: 6,
   },
   ageBadge: {
     position: 'absolute',
@@ -200,9 +271,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 3,
-    borderWidth: 1.5,
     borderRadius: 12,
-    borderColor: '#FFFFFF',
   },
   ageText: {
     color: '#FFFFFF',

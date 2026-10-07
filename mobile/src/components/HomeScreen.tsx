@@ -20,7 +20,8 @@ import { ThemedStatusBar, useThemedStyles } from '../theme/AppSettings';
 import { ScreenTransition } from '../theme/motion';
 import type { Palette } from '../theme/colors';
 import { CurrentLocationButton } from './CurrentLocationButton';
-import { GoogleMapView } from './GoogleMapView';
+import { DeparturesView } from './DeparturesView';
+import { GoogleMapView, type HomeMapCamera } from './GoogleMapView';
 import { ProfileView } from './ProfileView';
 import { RecentTripDetailView } from './RecentTripDetailView';
 import { RouteDetailView } from './RouteDetailView';
@@ -36,14 +37,17 @@ const VISIBLE_CARD_GUTTER = 24;
 const MINIMUM_MAP_HEIGHT = 240;
 // Height reserved for the floating search header at the top of the map.
 const HEADER_INSET = 80;
-const SEARCH_CENTER_SIZE = 28;
+// Same footprint as the blue current-location dot (CurrentLocationMarker).
+const SEARCH_CENTER_SIZE = 17;
 const NEARBY_SEARCH_DEBOUNCE_MS = 600;
 
 type ActiveView =
   | { name: 'home' }
   | { name: 'search' }
   // `route` is the snapshot opened, so the page never depends on the route still being nearby.
-  | { name: 'route'; routeId: string; route: RouteDetail }
+  | { name: 'route'; routeId: string; route: RouteDetail; directionIndex?: number }
+  // "More departures" for one direction of an opened route; back returns to that route and direction.
+  | { name: 'departures'; routeId: string; route: RouteDetail; directionIndex: number }
   | { name: 'results'; destination: string; returnTo: 'search' | 'favorites' }
   | { name: 'recentTrip'; tripId: RecentTripId; returnTab: TransitTabId }
   | { name: 'profile' };
@@ -58,8 +62,10 @@ function toggleItem<T>(items: readonly T[], item: T): T[] {
 }
 
 type RouteDetailScreenProps = {
+  initialDirectionIndex?: number;
   isFavorite: boolean;
   onBack: () => void;
+  onOpenDepartures: (directionIndex: number) => void;
   onToggleFavorite: () => void;
   route: RouteDetail;
   location: Coordinates;
@@ -68,21 +74,30 @@ type RouteDetailScreenProps = {
 };
 
 /** Reads live transit data itself — must render under TransitLiveProvider, which HomeScreen itself can't consume. */
-function RouteDetailScreen({ isFavorite, location, locationKnown, onBack, onRefreshLocation, onToggleFavorite, route }: RouteDetailScreenProps) {
+function RouteDetailScreen({ initialDirectionIndex, isFavorite, location, locationKnown, onBack, onOpenDepartures, onRefreshLocation, onToggleFavorite, route }: RouteDetailScreenProps) {
   const live = useTransitLive(route.id);
   // Re-applies live data every 30 s so countdowns age and past departures drop between polls.
   const now = useNow(30_000);
   return (
     <RouteDetailView
+      initialDirectionIndex={initialDirectionIndex}
       isFavorite={isFavorite}
       location={location}
       locationKnown={locationKnown}
       onBack={onBack}
+      onOpenDepartures={onOpenDepartures}
       onRefreshLocation={onRefreshLocation}
       onToggleFavorite={onToggleFavorite}
       route={applyRouteLive(route, live, now)}
     />
   );
+}
+
+/** Like RouteDetailScreen: reads live data so each direction carries the rider's nearest stop. */
+function DeparturesScreen({ directionIndex, onBack, route }: { directionIndex: number; onBack: () => void; route: RouteDetail }) {
+  const live = useTransitLive(route.id);
+  const now = useNow(30_000);
+  return <DeparturesView directionIndex={directionIndex} onBack={onBack} route={applyRouteLive(route, live, now)} />;
 }
 
 export function HomeScreen() {
@@ -99,6 +114,16 @@ export function HomeScreen() {
   const { height } = useWindowDimensions();
   const { location, refresh: refreshLocation, status: locationStatus } = useCurrentLocation();
   const [isLocationCentered, setIsLocationCentered] = useState(false);
+  // Home cards currently on screen; live data is fetched only for these (or the open route).
+  const [visibleRouteIds, setVisibleRouteIds] = useState<readonly string[]>([]);
+  // Bumped to recenter the home map: once on the first GPS fix and on each location-button press.
+  // Routine GPS updates move only the rider's dot, never the map.
+  const [recenterRequest, setRecenterRequest] = useState(0);
+  const [hasCenteredOnFix, setHasCenteredOnFix] = useState(false);
+  if (!hasCenteredOnFix && locationStatus === 'located') {
+    setHasCenteredOnFix(true);
+    setRecenterRequest((count) => count + 1);
+  }
 
   // Every real nearby route, across every configured agency — not a fixed handful of
   // hand-picked lines (nearbyTransit.ts). Fetched only on real location changes (the watch in
@@ -112,8 +137,12 @@ export function HomeScreen() {
   // lose its route and bounce back to Home.
   const [nearbyStatus, setNearbyStatus] = useState<{ status: 'loading' } | { status: 'loaded'; routes: readonly RouteDetail[]; refreshing?: boolean } | { status: 'error' }>({ status: 'loading' });
   // Where the rider has panned the home map to explore (null = their own location). Nearby is
-  // searched around this point; live predictions still use the rider's real location.
+  // searched around this point, and each card's stop and departures are for the stop nearest it,
+  // so exploring Hicksville shows Hicksville stops, not the rider's own.
   const [searchCenter, setSearchCenter] = useState<Coordinates | null>(null);
+  // Where the home map last came to rest. The map is rebuilt when the rider comes back from a
+  // route, and reopens here — on the purple dot, if they had panned away — not on their GPS fix.
+  const [homeCamera, setHomeCamera] = useState<HomeMapCamera | null>(null);
   const nearbyPoint = searchCenter ?? location;
   useEffect(() => {
     let cancelled = false;
@@ -287,8 +316,14 @@ export function HomeScreen() {
       return;
     }
 
+    if (activeView.name === 'departures') {
+      const { directionIndex, route, routeId } = activeView;
+      setActiveView({ name: 'route', routeId, route, directionIndex });
+      return;
+    }
+
     showHome();
-  }, [activeView.name, closePlannedTrip, closeRecentTrip, closeResults, selectedSearchTripId, showHome]);
+  }, [activeView, closePlannedTrip, closeRecentTrip, closeResults, selectedSearchTripId, showHome]);
 
   useEffect(() => {
     if (activeView.name === 'home' || Platform.OS === 'web') {
@@ -301,18 +336,19 @@ export function HomeScreen() {
     return () => subscription.remove();
   }, [activeView.name, closeCurrentView]);
 
-  const transitionKey = activeView.name === 'route'
-    ? `route-${activeView.routeId}`
+  const transitionKey = activeView.name === 'route' || activeView.name === 'departures'
+    ? `${activeView.name}-${activeView.routeId}`
     : activeView.name === 'recentTrip'
       ? `recent-${activeView.tripId}`
       : activeView.name;
   // The open route keeps receiving live data even after it drops out of the nearby list.
-  const openedRoute = activeView.name === 'route' ? activeView.route : null;
+  const openedRoute = activeView.name === 'route' || activeView.name === 'departures' ? activeView.route : null;
   const liveRoutes = openedRoute && !allDiscoveredRoutes.some((route) => route.id === openedRoute.id)
     ? [...allDiscoveredRoutes, openedRoute]
     : allDiscoveredRoutes;
+  const activeLiveRouteIds = activeView.name === 'home' ? visibleRouteIds : openedRoute ? [openedRoute.id] : [];
   const screen = (node: ReactNode) => (
-    <TransitLiveProvider extraRoutes={liveRoutes} location={location}>
+    <TransitLiveProvider activeRouteIds={activeLiveRouteIds} extraRoutes={liveRoutes} location={nearbyPoint}>
       <ScreenTransition key={transitionKey}>{node}</ScreenTransition>
     </TransitLiveProvider>
   );
@@ -333,8 +369,10 @@ export function HomeScreen() {
     const route = findRoute(routeId) ?? activeView.route;
     return screen(
       <RouteDetailScreen
+        initialDirectionIndex={activeView.directionIndex}
         isFavorite={savedRouteIds.includes(routeId)}
         onBack={showHome}
+        onOpenDepartures={(directionIndex) => setActiveView({ name: 'departures', routeId, route, directionIndex })}
         location={location}
         locationKnown={locationStatus === 'located'}
         onRefreshLocation={() => void refreshLocation()}
@@ -342,6 +380,11 @@ export function HomeScreen() {
         route={route}
       />
     );
+  }
+
+  if (activeView.name === 'departures') {
+    const route = findRoute(activeView.routeId) ?? activeView.route;
+    return screen(<DeparturesScreen directionIndex={activeView.directionIndex} onBack={closeCurrentView} route={route} />);
   }
 
   if (activeView.name === 'results') {
@@ -386,10 +429,13 @@ export function HomeScreen() {
       <ThemedStatusBar />
       <View style={styles.screen}>
         <GoogleMapView
+          initialCamera={homeCamera}
           location={location}
+          onCameraChange={setHomeCamera}
           onUserMoveEnd={setSearchCenter}
           onUserPan={() => setIsLocationCentered(false)}
           padding={{ top: HEADER_INSET, bottom: height - mapHeight }}
+          recenterRequest={recenterRequest}
         />
         {searchCenter ? (
           // Fixed at the center of the visible map (below the header, above the resting sheet):
@@ -426,7 +472,9 @@ export function HomeScreen() {
             onPress={() => {
               setIsLocationCentered(true);
               setSearchCenter(null);
-              void refreshLocation();
+              // Recenter on the last known location now, then again on the fresh fix.
+              setRecenterRequest((count) => count + 1);
+              void refreshLocation().then(() => setRecenterRequest((count) => count + 1));
             }}
             selected={isLocationCentered}
           />
@@ -455,6 +503,7 @@ export function HomeScreen() {
           onEndTrip={endRecentTrip}
           onStartTrip={startRecentTrip}
           onTabChange={setHomeTab}
+          onVisibleRouteIdsChange={setVisibleRouteIds}
           savedRouteIds={savedRouteIds}
           scrollY={homeScrollY}
         />
@@ -480,6 +529,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     zIndex: 4,
     elevation: 4,
   },
+  // Solid purple with a white ring, matching the GPS dot's look so it reads as a map point.
   searchCenter: {
     position: 'absolute',
     alignSelf: 'center',
@@ -488,8 +538,12 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     height: SEARCH_CENTER_SIZE,
     borderWidth: 3,
     borderRadius: SEARCH_CENTER_SIZE / 2,
-    borderColor: colors.searchCenter,
-    backgroundColor: `${colors.searchCenter}33`,
+    borderColor: colors.white,
+    backgroundColor: colors.searchCenter,
+    shadowColor: colors.searchCenter,
+    shadowOpacity: 0.32,
+    shadowRadius: 5,
+    elevation: 3,
   },
   locationStatusPill: {
     position: 'absolute',

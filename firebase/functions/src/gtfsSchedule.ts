@@ -14,7 +14,8 @@ export type StopPredictions = {
 };
 
 const EASTERN_TIME_ZONE = 'America/New_York';
-const PREDICTIONS_PER_DIRECTION = 3;
+/** Tiles shown per direction on route detail (and the minimum the next-day lookahead aims for). */
+const PREDICTIONS_PER_DIRECTION = 6;
 
 type ServiceDay = { dateKey: string; dayOfWeek: number };
 
@@ -73,6 +74,8 @@ export async function getStopPredictions(
   direction1StopId: string,
   direction0StopId: string,
   trips: readonly GtfsTripStatus[],
+  /** How many departures to return per direction; the full departures list asks for many more. */
+  limit = PREDICTIONS_PER_DIRECTION,
 ): Promise<StopPredictions> {
   const config = agencyConfig(agencyId);
   const now = Date.now();
@@ -129,7 +132,7 @@ export async function getStopPredictions(
   };
 
   collectStatic(nowParts, 0);
-  const needsMore = (live: Entry[], staticEntries: Entry[]) => live.length + staticEntries.length < PREDICTIONS_PER_DIRECTION;
+  const needsMore = (live: Entry[], staticEntries: Entry[]) => live.length + staticEntries.length < Math.min(limit, PREDICTIONS_PER_DIRECTION);
   if (needsMore(direction1Live, direction1Static) || needsMore(direction0Live, direction0Static)) {
     collectStatic(nowParts.tomorrow, 24 * 3600);
   }
@@ -144,7 +147,7 @@ export async function getStopPredictions(
       ...padding.map((entry) => ({ minutes: entry.minutes, live: false, peakOffpeak: entry.peakOffpeak })),
     ];
     merged.sort((a, b) => a.minutes - b.minutes);
-    return merged.slice(0, PREDICTIONS_PER_DIRECTION);
+    return merged.slice(0, limit);
   };
 
   return {

@@ -17,9 +17,14 @@
         ".env.*.local",
         ".env.*.local.*",
         "**/*firebase-adminsdk*.json",
-        "**/*.service-account.json"
+        "**/*.service-account.json",
+        "**/static_data/*/stop_times.txt",
+        "**/static_data/*/derived.tmp-*"
       ],
-      "predeploy": ["npm --prefix firebase/functions run build"]
+      "predeploy": [
+        "npm --prefix firebase/functions run build:gtfs",
+        "node firebase/functions/scripts/build-gtfs-index.js --check"
+      ]
     }
   ],
   "firestore": {

@@ -1,12 +1,13 @@
 import { parse } from 'csv-parse';
 import { parse as parseSync } from 'csv-parse/sync';
 import { createReadStream, existsSync, readFileSync } from 'fs';
-import { rm } from 'fs/promises';
+import { readFile, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join, resolve, sep } from 'path';
 import { logger } from 'firebase-functions';
 
 import { agencyConfig, type AgencyId } from './gtfsAgencies';
+import { DERIVED_DIR, DERIVED_VERSION, MANIFEST_FILE, STOP_INDEXES_FILE, STOP_TIMES_DIR, derivedSources, routeFileName, type DerivedManifest, type DerivedStopIndexes } from './gtfsDerived';
 import { hydrateCurrentGtfsSnapshot } from './gtfsSnapshots';
 
 const STATIC_DATA_ROOT = join(__dirname, '../static_data');
@@ -24,6 +25,39 @@ export function gtfsTimeToSeconds(hms: string): number {
 
 function dataDirFor(agencyId: AgencyId): string {
   return activeDataRoots.get(agencyId)?.dataDir ?? join(STATIC_DATA_ROOT, agencyConfig(agencyId).dataDir);
+}
+
+const derivedValidity = new Map<AgencyId, boolean>();
+
+/**
+ * Whether this agency's prepared timetable files (scripts/build-gtfs-index.js) can be used
+ * instead of scanning stop_times.txt: present, current format, and built from the feed files on
+ * disk. Deploys leave the raw stop_times.txt out (its prepared files are verified at deploy
+ * time), and file times aren't guaranteed to survive the upload — so without stop_times.txt the
+ * prepared files are the only data and are always used. Checked once per agency per instance.
+ * `GTFS_DERIVED_DISABLED=1` forces the scan (for comparing the two paths).
+ */
+function useDerived(agencyId: AgencyId): boolean {
+  if (process.env.GTFS_DERIVED_DISABLED === '1') return false;
+  const cached = derivedValidity.get(agencyId);
+  if (cached !== undefined) return cached;
+  let valid = false;
+  const dataDir = dataDirFor(agencyId);
+  const manifestPath = join(dataDir, DERIVED_DIR, MANIFEST_FILE);
+  if (existsSync(manifestPath)) {
+    try {
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8')) as DerivedManifest;
+      const current = derivedSources(dataDir);
+      valid = manifest.version === DERIVED_VERSION && (
+        current['stop_times.txt'] === null
+        || (Object.keys(current) as (keyof typeof current)[]).every((file) => JSON.stringify(current[file]) === JSON.stringify(manifest.sources[file]))
+      );
+    } catch {
+      valid = false;
+    }
+  }
+  derivedValidity.set(agencyId, valid);
+  return valid;
 }
 
 function loadCsvSync<T>(agencyId: AgencyId, filename: string): T[] {
@@ -163,6 +197,16 @@ export function loadRouteStopTimes(agencyId: AgencyId, routeId: string): Promise
   const cached = routeStopTimesCache.get(cacheKey);
   if (cached) return cached;
 
+  // Prepared per-route file: read just this route instead of scanning the whole feed.
+  if (useDerived(agencyId)) {
+    const path = join(dataDirFor(agencyId), DERIVED_DIR, STOP_TIMES_DIR, routeFileName(routeId));
+    const promise = existsSync(path)
+      ? readFile(path, 'utf-8').then((text) => indexStopTimeRows((JSON.parse(text) as { rows: DerivedStopTimeRow[] }).rows))
+      : Promise.resolve<RouteStopTimes>({ byStop: new Map(), byTrip: new Map() });
+    routeStopTimesCache.set(cacheKey, promise);
+    return promise;
+  }
+
   let batch = pendingStopTimeBatches.get(agencyId);
   if (!batch) {
     const routeIds = new Set<string>();
@@ -193,6 +237,26 @@ type AgencyStopIndexes = {
 };
 
 const agencyStopIndexesCache = new Map<AgencyId, Promise<AgencyStopIndexes>>();
+
+/** One prepared stop_times row: [tripId, stopId, arrivalTime, departureTime, stopSequence]. */
+type DerivedStopTimeRow = [string, string, string, string, number];
+
+/** A route's prepared rows, indexed the same way (and in the same order) as the CSV scan. */
+function indexStopTimeRows(rows: readonly DerivedStopTimeRow[]): RouteStopTimes {
+  const byStop = new Map<string, GtfsStopTime[]>();
+  const byTrip = new Map<string, GtfsStopTime[]>();
+  for (const [tripId, stopId, arrivalTime, departureTime, stopSequence] of rows) {
+    const entry: GtfsStopTime = { tripId, stopId, arrivalTime, departureTime, stopSequence };
+    const stopList = byStop.get(stopId);
+    if (stopList) stopList.push(entry);
+    else byStop.set(stopId, [entry]);
+    const tripList = byTrip.get(tripId);
+    if (tripList) tripList.push(entry);
+    else byTrip.set(tripId, [entry]);
+  }
+  return { byStop, byTrip };
+}
+
 type StopTimeBatch = { routeIds: Set<string>; done: Promise<Map<string, RouteStopTimes>> };
 const pendingStopTimeBatches = new Map<AgencyId, StopTimeBatch>();
 
@@ -243,6 +307,16 @@ function loadAgencyStopIndexes(agencyId: AgencyId): Promise<AgencyStopIndexes> {
   if (cached) return cached;
 
   const promise = (async () => {
+    if (useDerived(agencyId)) {
+      // Ordered pairs, not objects: entry order breaks ties downstream, and JSON objects reorder
+      // number-like keys (stop "14").
+      const text = await readFile(join(dataDirFor(agencyId), DERIVED_DIR, STOP_INDEXES_FILE), 'utf-8');
+      const prepared = JSON.parse(text) as DerivedStopIndexes;
+      return {
+        routeIdsByStop: new Map(prepared.routeIdsByStop.map(([stopId, routeIds]) => [stopId, new Set(routeIds)])),
+        stopCountsByRoute: new Map(prepared.stopCountsByRoute.map(([routeId, byDirection]) => [routeId, { 0: new Map(byDirection[0]), 1: new Map(byDirection[1]) }])),
+      };
+    }
     const { tripsById } = loadAgencyStaticData(agencyId);
     const routeIdsByStop = new Map<string, Set<string>>();
     const stopCountsByRoute = new Map<string, RouteStopCounts>();
@@ -302,6 +376,7 @@ export function loadAgencyShapes(agencyId: AgencyId): Map<string, ShapePoint[]> 
 }
 
 function clearAgencyCaches(agencyId: AgencyId): void {
+  derivedValidity.delete(agencyId);
   staticDataCache.delete(agencyId);
   agencyStopIndexesCache.delete(agencyId);
   shapesCache.delete(agencyId);
@@ -352,6 +427,7 @@ export async function prepareAgencyStaticData(agencyId: AgencyId, nowMs = Date.n
 /** Unit-test isolation only. */
 export function resetGtfsStaticDataForTests(): void {
   activeDataRoots.clear();
+  derivedValidity.clear();
   staticDataCache.clear();
   routeStopTimesCache.clear();
   agencyStopIndexesCache.clear();

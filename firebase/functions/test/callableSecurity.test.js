@@ -14,6 +14,7 @@ const {
   getNearestRouteStop,
   getRouteGeometry,
   getRouteLiveStatus,
+  getStopDepartures,
 } = require('../lib');
 
 function request(uid) {
@@ -33,7 +34,7 @@ test('requires an authenticated Firebase user', async () => {
 });
 
 test('every callable rejects anonymous traffic before validation or provider work', async () => {
-  for (const callable of [findNearbyTransit, geocodeAddress, getNearestRouteStop, getRouteGeometry, getRouteLiveStatus]) {
+  for (const callable of [findNearbyTransit, geocodeAddress, getNearestRouteStop, getRouteGeometry, getRouteLiveStatus, getStopDepartures]) {
     await assert.rejects(
       () => callable.run({ auth: null, data: {}, rawRequest: request(null).rawRequest }),
       (error) => error.code === 'unauthenticated',
@@ -145,6 +146,7 @@ test('rejects route IDs outside the selected agency before scanning stop_times',
       // n1 is a real NICE route, but it is not a valid route in the selected subway dataset.
       [getNearestRouteStop, { agencyId: 'subway', routeId: 'n1', lat: 40.7, lon: -73.9 }],
       [getRouteGeometry, { agencyId: 'subway', routeId: 'n1', directionId: 0 }],
+      [getStopDepartures, { agencyId: 'subway', routeId: 'n1', direction1StopId: 'A27N', direction0StopId: 'A27S', directionId: 0 }],
     ];
 
     for (const [callable, data] of cases) {

@@ -305,6 +305,8 @@ test('uses bundled GTFS outside deployed Cloud Functions', async () => {
 });
 
 test('shares one stop-times scan between global and per-route discovery indexes', async () => {
+  // Exercises the full-scan path; prepared indexes (scripts/build-gtfs-index.js) skip the scan entirely.
+  process.env.GTFS_DERIVED_DISABLED = '1';
   const originalCreateReadStream = fs.createReadStream;
   let scans = 0;
   fs.createReadStream = function (...args) {
@@ -319,6 +321,7 @@ test('shares one stop-times scan between global and per-route discovery indexes'
     ]);
   } finally {
     fs.createReadStream = originalCreateReadStream;
+    delete process.env.GTFS_DERIVED_DISABLED;
   }
   assert.equal(scans, 1);
 });

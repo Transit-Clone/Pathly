@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, useWindowDimensions, View, type GestureResponderEvent, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type GestureResponderEvent, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTransitLive } from '../data/TransitLiveContext';
 import { fetchRouteGeometry, type RouteGeometry } from '../data/routeGeometry';
-import { STATION_TRANSFERS, type StationTransfer } from '../data/stationTransfers';
+import { STATION_TRANSFERS, type StationTransfer, type TransferMode } from '../data/stationTransfers';
 import { departureDisplay, directionDestination, formatClockTime, scheduleStopsFromNow, stopsForDirection, type RouteDetail, type RoutePrediction } from '../data/transit';
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
@@ -17,21 +18,25 @@ import { LIVE_SIGNAL_WIDTH, LiveSignal } from './LiveSignal';
 import { MapBackdrop } from './MapBackdrop';
 import { RouteMap } from './RouteMap';
 import { pointAlong, routeFocus, RouteLines, VehicleMarker, type MapLeg } from './RouteMapOverlay';
-import { RouteBadge, transitModeForAgency } from './RouteBadge';
+import { badgeLabel, RouteBadge, transitModeForAgency } from './RouteBadge';
 import { PressableScale } from './PressableScale';
 
 type RouteDetailViewProps = {
+  /** Direction to open on (by `directions` index), e.g. when returning from the departures page. */
+  initialDirectionIndex?: number;
   isFavorite: boolean;
   /** Rider's location for the live map; `locationKnown` is false while it's only the fallback. */
   location?: Coordinates;
   locationKnown?: boolean;
   onBack: () => void;
+  /** Opens the full departures list for a direction (by `directions` index). */
+  onOpenDepartures?: (directionIndex: number) => void;
   onRefreshLocation?: () => void;
   onToggleFavorite: () => void;
   route: RouteDetail;
 };
 
-function predictionsForDirection(route: RouteDetail, directionIndex: number): readonly RoutePrediction[] {
+export function predictionsForDirection(route: RouteDetail, directionIndex: number): readonly RoutePrediction[] {
   if (directionIndex === 0) return route.predictions;
   if (route.reversePredictions) return route.reversePredictions;
   const direction = route.directions[directionIndex] ?? route.directions[0];
@@ -96,6 +101,17 @@ function liveStopsFor(
 }
 
 const MAX_TRANSFER_CHIPS = 8;
+/** Departure tiles before the "More departures" card. */
+const MAX_PREDICTION_TILES = 6;
+const TILE_GAP = 8;
+/** Tiles visible across the row; the half tile peeking in shows the row scrolls. */
+const VISIBLE_TILES = 3.5;
+const MAX_TILE_WIDTH = 96;
+/** Room beside the heading for the two direction dots. */
+const DIRECTION_DOTS_WIDTH = 30;
+/** Just below the 46 pt back button, which sits 8 pt below the safe area. */
+const MAP_BADGE_TOP = 62;
+const isWeb = Platform.OS === 'web';
 
 /**
  * Transfers are generated for the Port Jefferson Branch's stations only
@@ -117,49 +133,112 @@ const OWN_TRANSFER_KIND: Record<NonNullable<RouteDetail['liveSource']>['agencyId
   suffolk: { agency: 'Suffolk County Transit', mode: 'bus' },
 };
 
-/** Connecting lines at a station: rail, then subway (circles), then bus, in each agency's colors. */
-function TransferChips({ stopName, transfers }: { stopName: string; transfers: readonly StationTransfer[] }) {
+/** One connecting line, in its agency's color; subway bullets are round. */
+function TransferChip({ testID, transfer }: { testID: string; transfer: StationTransfer }) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
+  return (
+    <View
+      style={[styles.transferChip, transfer.mode === 'subway' && styles.subwayChip, { backgroundColor: transfer.color ?? colors.surfaceMuted }]}
+      testID={testID}
+    >
+      <Text numberOfLines={1} style={[styles.transferText, { color: transfer.color ? transfer.textColor ?? colors.white : colors.ink }]}>{transfer.name}</Text>
+    </View>
+  );
+}
+
+/** Connecting lines at a station: rail, then subway (circles), then bus. `+N` opens the full list. */
+function TransferChips({ onShowAll, stopName, transfers }: { onShowAll: () => void; stopName: string; transfers: readonly StationTransfer[] }) {
+  const styles = useThemedStyles(createStyles);
   const shown = transfers.slice(0, MAX_TRANSFER_CHIPS);
   const hidden = transfers.length - shown.length;
   return (
     <View style={styles.transfers} testID={`stop-transfers-${stopName}`}>
       {shown.map((transfer) => (
-        <View
-          key={`${transfer.agency}-${transfer.name}`}
-          style={[styles.transferChip, transfer.mode === 'subway' && styles.subwayChip, { backgroundColor: transfer.color ?? colors.surfaceMuted }]}
-          testID={`route-transfer-${stopName}-${transfer.name}`}
-        >
-          <Text numberOfLines={1} style={[styles.transferText, { color: transfer.color ? transfer.textColor ?? colors.white : colors.ink }]}>{transfer.name}</Text>
-        </View>
+        <TransferChip key={`${transfer.agency}-${transfer.name}`} testID={`route-transfer-${stopName}-${transfer.name}`} transfer={transfer} />
       ))}
-      {hidden > 0 ? <Text style={styles.transferMore} testID={`stop-transfers-more-${stopName}`}>+{hidden}</Text> : null}
+      {hidden > 0 ? (
+        <PressableScale
+          accessibilityLabel={`Show all ${transfers.length} transfers at ${stopName}`}
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={onShowAll}
+          style={styles.transferMoreButton}
+          testID={`stop-transfers-more-${stopName}`}
+        >
+          <Text style={styles.transferMore}>+{hidden}</Text>
+        </PressableScale>
+      ) : null}
     </View>
   );
 }
 
-export function RouteDetailView({ isFavorite, location, locationKnown = false, onBack, onRefreshLocation, onToggleFavorite, route }: RouteDetailViewProps) {
+const TRANSFER_MODE_HEADINGS: readonly { mode: TransferMode; title: string }[] = [
+  { mode: 'rail', title: 'Rail' },
+  { mode: 'subway', title: 'Subway' },
+  { mode: 'bus', title: 'Bus' },
+];
+
+/** Every transfer at one station, grouped by mode — opened from a row's `+N`. */
+function TransfersSheet({ onClose, sheet }: { onClose: () => void; sheet: { stopName: string; transfers: readonly StationTransfer[] } | null }) {
+  const styles = useThemedStyles(createStyles);
+  return (
+    <Modal animationType="slide" onRequestClose={onClose} transparent={true} visible={sheet != null}>
+      <Pressable accessibilityLabel="Close transfers" onPress={onClose} style={styles.sheetBackdrop} testID="transfers-sheet-backdrop" />
+      {sheet ? (
+        <View style={styles.transfersSheet} testID="transfers-sheet">
+          <View style={styles.transfersSheetHeader}>
+            <Text accessibilityRole="header" numberOfLines={2} style={styles.transfersSheetTitle} testID="transfers-sheet-title">{sheet.stopName}</Text>
+            <PressableScale accessibilityLabel="Close" accessibilityRole="button" hitSlop={8} onPress={onClose} testID="transfers-sheet-close"><Icon name="close" size={26} /></PressableScale>
+          </View>
+          <ScrollView contentContainerStyle={styles.transfersSheetContent}>
+            {TRANSFER_MODE_HEADINGS.map(({ mode, title }) => {
+              const ofMode = sheet.transfers.filter((transfer) => transfer.mode === mode);
+              if (ofMode.length === 0) return null;
+              return (
+                <View key={mode} testID={`transfers-sheet-${mode}`}>
+                  <Text style={styles.transfersSheetHeading}>{title}</Text>
+                  <View style={styles.transfers}>
+                    {ofMode.map((transfer) => (
+                      <TransferChip key={`${transfer.agency}-${transfer.name}`} testID={`transfers-sheet-chip-${transfer.name}`} transfer={transfer} />
+                    ))}
+                  </View>
+                </View>
+              );
+            })}
+          </ScrollView>
+        </View>
+      ) : null}
+    </Modal>
+  );
+}
+
+export function RouteDetailView({ initialDirectionIndex, isFavorite, location, locationKnown = false, onBack, onOpenDepartures, onRefreshLocation, onToggleFavorite, route }: RouteDetailViewProps) {
   const styles = useThemedStyles(createStyles);
   const { colors, isDark } = useTheme();
   // Route colors stay exact on fills; text and icons are lightened in dark mode to stay readable.
   const routeText = isDark ? readableColor(route.color, colors.surface) : route.color;
   const { height, width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [alertsOpen, setAlertsOpen] = useState(false);
+  const [transfersSheet, setTransfersSheet] = useState<{ stopName: string; transfers: readonly StationTransfer[] } | null>(null);
   const ease = useLayoutEase();
   const liveStatus = useTransitLive(route.id);
   const vehicles = liveStatus.status === 'loaded' ? liveStatus.data.vehicles : [];
   const [isLocationCentered, setIsLocationCentered] = useState(false);
   // Bumped on each location-button press; the live map re-centers on the rider whenever it changes.
   const [centerOnUserRequest, setCenterOnUserRequest] = useState(0);
-  const [activeDirectionIndex, setActiveDirectionIndex] = useState(0);
+  const [activeDirectionIndex, setActiveDirectionIndex] = useState(initialDirectionIndex ?? 0);
   const mapHeight = Math.max(280, Math.min(390, height * 0.58));
   const pageWidth = Math.min(width, 540) - 36;
-  // Three fixed-width tiles per row (two 8 pt gaps), so a lone departure never fills the row.
-  const tileWidth = (pageWidth - 16) / 3;
+  // Tall, narrow fixed-width tiles: about three and a half across on a phone (so a lone
+  // departure never fills the row), capped so wider screens show more tiles rather than squares.
+  const tileWidth = Math.min((pageWidth - 3 * TILE_GAP) / VISIBLE_TILES, MAX_TILE_WIDTH);
+  // The heading pages beside the direction dots.
+  const headingWidth = pageWidth - DIRECTION_DOTS_WIDTH;
 
   const updateDirection = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    setActiveDirectionIndex(Math.round(event.nativeEvent.contentOffset.x / pageWidth));
+    setActiveDirectionIndex(Math.round(event.nativeEvent.contentOffset.x / headingWidth));
   };
 
   // Which upcoming trip's tile is tapped — "Route stops" below shows *that* trip's schedule,
@@ -184,7 +263,8 @@ export function RouteDetailView({ isFavorite, location, locationKnown = false, o
   // from under someone who already swiped or tapped a direction themselves. Adjusted during
   // render (React's documented pattern for this, see "Adjusting state when a prop changes")
   // rather than in an effect, since it's a one-time derivation from props, not a subscription.
-  const [hasAutoSelectedDirection, setHasAutoSelectedDirection] = useState(false);
+  // A caller-chosen direction counts as already selected, so it isn't overridden.
+  const [hasAutoSelectedDirection, setHasAutoSelectedDirection] = useState(initialDirectionIndex !== undefined);
   const directionScrollRef = useRef<ScrollView>(null);
   if (!hasAutoSelectedDirection) {
     const [first, second] = route.directions;
@@ -198,8 +278,8 @@ export function RouteDetailView({ isFavorite, location, locationKnown = false, o
   // page is actually visible, so it's kept in sync here — covers the auto-select above and is
   // a no-op (already there) after the user's own scroll gesture updates the index instead.
   useEffect(() => {
-    directionScrollRef.current?.scrollTo({ x: activeDirectionIndex * pageWidth, animated: false });
-  }, [activeDirectionIndex, pageWidth]);
+    directionScrollRef.current?.scrollTo({ x: activeDirectionIndex * headingWidth, animated: false });
+  }, [activeDirectionIndex, headingWidth]);
 
   // react-native-web's horizontal ScrollView doesn't support click-and-drag scrolling for
   // mouse users the way native touch devices do (browsers only do that for real touch/trackpad
@@ -228,6 +308,31 @@ export function RouteDetailView({ isFavorite, location, locationKnown = false, o
     const direction = dx < 0 ? 1 : -1;
     setActiveDirectionIndex((current) => Math.min(Math.max(current + direction, 0), route.directions.length - 1));
   };
+
+  // The departure tiles scroll on their own. Native and web touch/trackpad scroll the ScrollView
+  // directly; a web mouse drag is turned into a scroll here, while a plain click still taps.
+  const tilesScrollRef = useRef<ScrollView>(null);
+  const tilesScrollX = useRef(0);
+  const tilesDragStartX = useRef<number | null>(null);
+  const handleTilesPressIn = (event: GestureResponderEvent) => {
+    tilesDragStartX.current = event.nativeEvent.pageX;
+  };
+  const handleTilesPressOut = (event: GestureResponderEvent, onTap: () => void) => {
+    const startX = tilesDragStartX.current;
+    tilesDragStartX.current = null;
+    if (startX == null) return;
+    const dx = event.nativeEvent.pageX - startX;
+    if (Math.abs(dx) <= DIRECTION_SWIPE_THRESHOLD) {
+      onTap();
+      return;
+    }
+    tilesScrollRef.current?.scrollTo({ x: Math.max(0, tilesScrollX.current - dx), animated: true });
+  };
+  // Each direction's departures start from its soonest one.
+  useEffect(() => {
+    tilesScrollX.current = 0;
+    tilesScrollRef.current?.scrollTo({ x: 0, animated: false });
+  }, [activeDirectionIndex]);
 
   const activeDirection = route.directions[activeDirectionIndex] ?? route.directions[0];
   const activeDestination = directionDestination(activeDirection.direction);
@@ -288,6 +393,20 @@ export function RouteDetailView({ isFavorite, location, locationKnown = false, o
     stops: (route.mapStops ?? []).map((pathIndex, index) => ({ label: (route.mapLabels ?? [])[index] ?? '', point: illustrativeMapPath[pathIndex] ?? [0, 0] })),
   };
 
+  // Compact (short code only) and tucked under the back button, clear of the map's center and the
+  // rider's stop that the camera opens on.
+  const mapBadge = (
+    <RouteBadge
+      agency={route.agency}
+      color={route.color}
+      shortName={badgeLabel(route)}
+      size="medium"
+      style={[styles.mapRouteBadge, { top: insets.top + MAP_BADGE_TOP }]}
+      testID="route-detail-badge"
+      withModeIcon={true}
+    />
+  );
+
   // Routes with a `liveSource` get the real map (once its geometry has loaded); every other
   // route still uses the illustrative overlay, since it never had real geometry to fetch.
   const map = !route.liveSource ? (
@@ -302,7 +421,7 @@ export function RouteDetailView({ isFavorite, location, locationKnown = false, o
         renderOverlay={({ scale }) => <RouteLines legs={[routeLeg]} scale={scale} />}
         showUserLocation={true}
       />
-      <RouteBadge agency={route.agency} color={route.color} shortName={route.shortName} size="large" style={styles.mapRouteBadge} testID="route-detail-badge" withModeIcon={true} />
+      {mapBadge}
     </>
   ) : geometryStatus.status === 'loaded' ? (
     <>
@@ -321,7 +440,7 @@ export function RouteDetailView({ isFavorite, location, locationKnown = false, o
       />
       {/* Overlay that ignores touches, so the badge never blocks panning the live map under it. */}
       <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-        <RouteBadge agency={route.agency} color={route.color} shortName={route.shortName} size="large" style={styles.mapRouteBadge} testID="route-detail-badge" withModeIcon={true} />
+        {mapBadge}
       </View>
     </>
   ) : (
@@ -367,106 +486,119 @@ export function RouteDetailView({ isFavorite, location, locationKnown = false, o
       testID={`route-detail-${route.id}`}
     >
       <ThemedStatusBar />
-      <View style={styles.titleRow}><Text accessibilityRole="header" numberOfLines={2} style={styles.title} testID="route-detail-destination">{activeDestination}</Text></View>
-
-      {Platform.OS === 'web' ? (
-        <PressableScale
-          accessibilityHint="Swipe horizontally for the other direction."
-          accessible={false}
-          onPressIn={handleDirectionPressIn}
-          onPressOut={handleDirectionPressOut}
-          style={[styles.directionPage, { width: pageWidth }]}
-          testID={`route-direction-${activeDirectionIndex}`}
-        >
-          <View style={styles.predictions}>
-            {predictionsForDirection(route, activeDirectionIndex).length === 0 ? (
-              <View accessible={true} style={styles.predictionsEmpty} testID="route-predictions-empty">
-                {route.liveStatus === 'loading' ? <ActivityIndicator color={route.color} style={styles.predictionsEmptySpinner} /> : null}
-                <Text style={styles.predictionsEmptyText}>{predictionsEmptyMessage(route)}</Text>
-              </View>
-            ) : (
-              predictionsForDirection(route, activeDirectionIndex).map((prediction, index) => {
-                const highlighted = index === selectedPredictionIndex;
-                const predictionColor = highlighted ? colors.white : routeText;
-                const timing = predictionTiming(prediction);
-                return (
-                  <PressableScale
-                    key={`${activeDirectionIndex}-${index}`}
-                    accessibilityHint="Shows this trip's stop times below."
-                    accessibilityLabel={`${timing.accessibility}, ${prediction.live ? 'live GPS prediction' : 'scheduled time'}`}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: highlighted }}
-                    onPressIn={handleDirectionPressIn}
-                    onPressOut={(event) => handleDirectionPressOut(event, () => setSelectedPredictionIndex(index))}
-                    style={[styles.prediction, { borderColor: route.color, width: tileWidth }, highlighted && { backgroundColor: route.color }, !prediction.live && styles.scheduled]}
-                    testID={`route-prediction-${activeDirectionIndex}-${index}`}
-                  >
-                    <View style={styles.predictionRow}>{prediction.live ? <View style={styles.predictionSignalSpacer} /> : null}<Text style={[styles.predictionTime, { color: predictionColor }]}>{timing.value}</Text>{prediction.live ? <LiveSignal color={predictionColor} style={styles.predictionSignal} /> : null}</View>
-                    <Text style={[styles.predictionUnit, { color: predictionColor }]}>{timing.unit}</Text>
-                    {!prediction.live ? <Text style={styles.predictionSource} testID="route-prediction-scheduled">SCHEDULED</Text> : null}
-                  </PressableScale>
-                );
-              })
-            )}
-          </View>
-        </PressableScale>
-      ) : (
-        <ScrollView ref={directionScrollRef} decelerationRate="fast" horizontal={true} onMomentumScrollEnd={updateDirection} onScroll={updateDirection} pagingEnabled={true} scrollEventThrottle={16} showsHorizontalScrollIndicator={false} style={styles.directionPager} testID="route-direction-pager">
-          {route.directions.map((direction, directionIndex) => (
-            <View key={direction.direction} style={[styles.directionPage, { width: pageWidth }]} testID={`route-direction-${directionIndex}`}>
-              <View style={styles.predictions}>
-                {predictionsForDirection(route, directionIndex).length === 0 ? (
-                  <View accessible={true} style={styles.predictionsEmpty} testID="route-predictions-empty">
-                    {route.liveStatus === 'loading' ? <ActivityIndicator color={route.color} style={styles.predictionsEmptySpinner} /> : null}
-                    <Text style={styles.predictionsEmptyText}>{predictionsEmptyMessage(route)}</Text>
-                  </View>
-                ) : (
-                  predictionsForDirection(route, directionIndex).map((prediction, index) => {
-                    const highlighted = directionIndex === activeDirectionIndex ? index === selectedPredictionIndex : index === 0;
-                    const predictionColor = highlighted ? colors.white : routeText;
-                    const timing = predictionTiming(prediction);
-                    return (
-                      <PressableScale
-                        key={`${directionIndex}-${index}`}
-                        accessibilityHint="Shows this trip's stop times below."
-                        accessibilityLabel={`${timing.accessibility}, ${prediction.live ? 'live GPS prediction' : 'scheduled time'}`}
-                        accessibilityRole="button"
-                        accessibilityState={{ selected: highlighted }}
-                        onPress={() => {
-                          setActiveDirectionIndex(directionIndex);
-                          setSelectedPredictionIndex(index);
-                        }}
-                        style={[styles.prediction, { borderColor: route.color, width: tileWidth }, highlighted && { backgroundColor: route.color }, !prediction.live && styles.scheduled]}
-                        testID={`route-prediction-${directionIndex}-${index}`}
-                      >
-                        <View style={styles.predictionRow}>{prediction.live ? <View style={styles.predictionSignalSpacer} /> : null}<Text style={[styles.predictionTime, { color: predictionColor }]}>{timing.value}</Text>{prediction.live ? <LiveSignal color={predictionColor} style={styles.predictionSignal} /> : null}</View>
-                        <Text style={[styles.predictionUnit, { color: predictionColor }]}>{timing.unit}</Text>
-                        {!prediction.live ? <Text style={styles.predictionSource} testID="route-prediction-scheduled">SCHEDULED</Text> : null}
-                      </PressableScale>
-                    );
-                  })
-                )}
-              </View>
-            </View>
-          ))}
-        </ScrollView>
-      )}
-
-      <View style={styles.pageDots}>
-        {route.directions.map((direction, index) => (
+      {/* The destination heading is the direction control: swipe it for the other direction. Its
+          page dots sit beside it. */}
+      <View style={styles.headingRow}>
+        {Platform.OS === 'web' ? (
           <PressableScale
-            key={direction.direction}
-            accessibilityLabel={`Show ${directionDestination(direction.direction)} predictions`}
-            accessibilityRole="button"
-            accessibilityState={{ selected: index === activeDirectionIndex }}
-            hitSlop={8}
-            onPress={() => setActiveDirectionIndex(index)}
+            accessibilityHint="Swipe horizontally for the other direction."
+            accessible={false}
+            onPressIn={handleDirectionPressIn}
+            onPressOut={handleDirectionPressOut}
+            style={[styles.titleRow, { width: headingWidth }]}
+            testID={`route-direction-${activeDirectionIndex}`}
           >
-            <View style={[styles.pageDot, index === activeDirectionIndex && { backgroundColor: route.color }]} />
+            <Text accessibilityRole="header" numberOfLines={2} style={styles.title} testID="route-detail-destination">{activeDestination}</Text>
           </PressableScale>
-        ))}
+        ) : (
+          <ScrollView ref={directionScrollRef} accessibilityHint="Swipe horizontally for the other direction." decelerationRate="fast" horizontal={true} onMomentumScrollEnd={updateDirection} onScroll={updateDirection} pagingEnabled={true} scrollEventThrottle={16} showsHorizontalScrollIndicator={false} style={styles.directionPager} testID="route-direction-pager">
+            {route.directions.map((direction, directionIndex) => (
+              <View key={direction.direction} style={[styles.titleRow, { width: headingWidth }]} testID={`route-direction-${directionIndex}`}>
+                <Text
+                  accessibilityRole={directionIndex === activeDirectionIndex ? 'header' : undefined}
+                  numberOfLines={2}
+                  style={styles.title}
+                  testID={directionIndex === activeDirectionIndex ? 'route-detail-destination' : undefined}
+                >
+                  {directionDestination(direction.direction)}
+                </Text>
+              </View>
+            ))}
+          </ScrollView>
+        )}
+
+        <View style={[styles.pageDots, { width: DIRECTION_DOTS_WIDTH }]}>
+          {route.directions.map((direction, index) => (
+            <PressableScale
+              key={direction.direction}
+              accessibilityLabel={`Show ${directionDestination(direction.direction)} predictions`}
+              accessibilityRole="button"
+              accessibilityState={{ selected: index === activeDirectionIndex }}
+              hitSlop={8}
+              onPress={() => setActiveDirectionIndex(index)}
+            >
+              <View style={[styles.pageDot, index === activeDirectionIndex && { backgroundColor: route.color }]} />
+            </PressableScale>
+          ))}
+        </View>
       </View>
 
+      {/* The active direction's departures: their own horizontal scroll, separate from the direction swipe. */}
+      {activePredictions.length === 0 ? (
+        <View style={styles.predictions}>
+          <View accessible={true} style={styles.predictionsEmpty} testID="route-predictions-empty">
+            {route.liveStatus === 'loading' ? <ActivityIndicator color={route.color} style={styles.predictionsEmptySpinner} /> : null}
+            <Text style={styles.predictionsEmptyText}>{predictionsEmptyMessage(route)}</Text>
+          </View>
+        </View>
+      ) : (
+        <ScrollView
+          ref={tilesScrollRef}
+          contentContainerStyle={styles.predictions}
+          decelerationRate="fast"
+          horizontal={true}
+          onScroll={(event) => {
+            tilesScrollX.current = event.nativeEvent.contentOffset.x;
+          }}
+          scrollEventThrottle={16}
+          showsHorizontalScrollIndicator={false}
+          snapToAlignment="start"
+          snapToInterval={tileWidth + TILE_GAP}
+          style={styles.tilesScroll}
+          testID="route-predictions-scroll"
+        >
+          {activePredictions.slice(0, MAX_PREDICTION_TILES).map((prediction, index) => {
+            const highlighted = index === selectedPredictionIndex;
+            const predictionColor = highlighted ? colors.white : routeText;
+            const timing = predictionTiming(prediction);
+            const isClockTime = timing.value.includes(':');
+            const selectTile = () => setSelectedPredictionIndex(index);
+            return (
+              <PressableScale
+                key={`${activeDirectionIndex}-${index}`}
+                accessibilityHint="Shows this trip's stop times below."
+                accessibilityLabel={`${timing.accessibility}, ${prediction.live ? 'live GPS prediction' : 'scheduled time'}`}
+                accessibilityRole="button"
+                accessibilityState={{ selected: highlighted }}
+                onPress={isWeb ? undefined : selectTile}
+                onPressIn={isWeb ? handleTilesPressIn : undefined}
+                onPressOut={isWeb ? (event) => handleTilesPressOut(event, selectTile) : undefined}
+                style={[styles.prediction, { borderColor: route.color, width: tileWidth }, highlighted && { backgroundColor: route.color }, !prediction.live && styles.scheduled]}
+                testID={`route-prediction-${activeDirectionIndex}-${index}`}
+              >
+                {/* Minutes get the big number; a clock time ("12:04") is longer, so it's a size down and
+                    drops the centering spacer to fit the narrow tile. */}
+                <View style={styles.predictionRow}>{prediction.live && !isClockTime ? <View style={styles.predictionSignalSpacer} /> : null}<Text numberOfLines={1} style={[styles.predictionTime, isClockTime && styles.predictionClockTime, { color: predictionColor }]}>{timing.value}</Text>{prediction.live ? <LiveSignal color={predictionColor} style={styles.predictionSignal} /> : null}</View>
+                <Text style={[styles.predictionUnit, { color: predictionColor }]}>{timing.unit}</Text>
+                {!prediction.live ? <Text style={styles.predictionSource} testID="route-prediction-scheduled">SCHEDULED</Text> : null}
+              </PressableScale>
+            );
+          })}
+          <PressableScale
+            accessibilityHint={`Lists every upcoming departure toward ${activeDestination}.`}
+            accessibilityLabel="More departures"
+            accessibilityRole="button"
+            onPress={isWeb ? undefined : () => onOpenDepartures?.(activeDirectionIndex)}
+            onPressIn={isWeb ? handleTilesPressIn : undefined}
+            onPressOut={isWeb ? (event) => handleTilesPressOut(event, () => onOpenDepartures?.(activeDirectionIndex)) : undefined}
+            style={[styles.prediction, styles.moreCard, { borderColor: route.color, width: tileWidth }]}
+            testID="route-more-departures"
+          >
+            <Icon color={routeText} name="time" size={24} />
+            <Text style={[styles.moreText, { color: routeText }]}>More departures</Text>
+          </PressableScale>
+        </ScrollView>
+      )}
 
       {/* Only routes with an advisory get an alert row; "No delays" needs no dropdown. */}
       {hasDelay ? (
@@ -519,7 +651,7 @@ export function RouteDetailView({ isFavorite, location, locationKnown = false, o
                   <View style={styles.timelineRail}>{!isFirst ? <View style={[styles.rail, styles.railTop, { backgroundColor: route.color }]} /> : null}<View style={[styles.stopDot, { borderColor: route.color }, isHighlighted && { backgroundColor: route.color }]} />{!isLast ? <View style={[styles.rail, styles.railBottom, { backgroundColor: route.color }]} /> : null}</View>
                   {/* One divider spans the name and the time, not just the name. */}
                   <View style={styles.stopBody} testID={`stop-row-body-${stop.name}`}>
-                    <View style={styles.stopCopy}><Text style={styles.stopName}>{stop.name}</Text>{transfers.length > 0 ? <TransferChips stopName={stop.name} transfers={transfers} /> : null}</View>
+                    <View style={styles.stopCopy}><Text style={styles.stopName}>{stop.name}</Text>{transfers.length > 0 ? <TransferChips onShowAll={() => setTransfersSheet({ stopName: stop.name, transfers })} stopName={stop.name} transfers={transfers} /> : null}</View>
                     <Text style={styles.stopTime}>{stop.time}</Text>
                   </View>
                 </View>
@@ -528,6 +660,7 @@ export function RouteDetailView({ isFavorite, location, locationKnown = false, o
           })()
         )}
       </View>
+      <TransfersSheet onClose={() => setTransfersSheet(null)} sheet={transfersSheet} />
     </DetailMapPage>
   );
 }
@@ -535,7 +668,6 @@ export function RouteDetailView({ isFavorite, location, locationKnown = false, o
 const createStyles = (colors: Palette) => StyleSheet.create({
   mapRouteBadge: {
     position: 'absolute',
-    top: 120,
     left: 14,
     shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 3 },
@@ -584,8 +716,12 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 36,
   },
+  headingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   titleRow: {
-    minHeight: 40,
+    minHeight: 34,
     justifyContent: 'center',
   },
   title: {
@@ -598,13 +734,13 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     flexGrow: 0,
     marginHorizontal: 0,
   },
-  directionPage: {
-    paddingRight: 0,
+  tilesScroll: {
+    flexGrow: 0,
   },
   predictions: {
     flexDirection: 'row',
-    gap: 8,
-    paddingTop: 10,
+    gap: TILE_GAP,
+    paddingTop: 8,
   },
   predictionsEmpty: {
     minHeight: 112,
@@ -631,15 +767,25 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   // shifting numbers, so live and scheduled tiles stay aligned.
   prediction: {
     minWidth: 0,
-    minHeight: 126,
+    minHeight: 136,
     flexGrow: 0,
     flexShrink: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingBottom: 22,
+    paddingBottom: 24,
     borderWidth: 3,
     borderRadius: 20,
     backgroundColor: colors.surface,
+  },
+  moreCard: {
+    gap: 6,
+    paddingBottom: 0,
+    paddingHorizontal: 8,
+  },
+  moreText: {
+    fontFamily: fontFamilies.extraBold,
+    fontSize: 12,
+    textAlign: 'center',
   },
   // Timetable (not GPS-tracked) departures read clearly fainter than live ones.
   scheduled: {
@@ -656,16 +802,21 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   },
   predictionSignal: {
     marginLeft: 2,
-    marginTop: 6,
+    marginTop: 8,
   },
+  // Big and obvious: tiles are narrow and tall so the number dominates.
   predictionTime: {
     fontFamily: fontFamilies.extraBold,
-    fontSize: 42,
-    lineHeight: 47,
+    fontSize: 44,
+    lineHeight: 50,
+  },
+  predictionClockTime: {
+    fontSize: 27,
+    lineHeight: 50,
   },
   predictionUnit: {
     fontFamily: fontFamilies.bold,
-    fontSize: 11,
+    fontSize: 12,
   },
   // Positioned so scheduled tiles keep the same number and label placement as live ones.
   // Filled pill so timetable tiles read clearly on both plain and route-colored tiles.
@@ -683,9 +834,8 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   },
   pageDots: {
     flexDirection: 'row',
-    justifyContent: 'center',
+    justifyContent: 'flex-end',
     gap: 5,
-    paddingTop: 10,
   },
   pageDot: {
     width: 6,
@@ -827,6 +977,45 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   transferText: {
     fontFamily: fontFamilies.extraBold,
     fontSize: 10,
+  },
+  transferMoreButton: {
+    justifyContent: 'center',
+    minHeight: 20,
+  },
+  sheetBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+  },
+  transfersSheet: {
+    width: '100%',
+    maxWidth: 540,
+    maxHeight: '70%',
+    alignSelf: 'center',
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 30,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: colors.surface,
+  },
+  transfersSheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  transfersSheetTitle: {
+    flex: 1,
+    color: colors.ink,
+    ...typography.screenHeading,
+    fontSize: 21,
+  },
+  transfersSheetContent: {
+    gap: 14,
+    paddingTop: 6,
+  },
+  transfersSheetHeading: {
+    color: colors.mutedInk,
+    ...typography.label,
   },
   transferMore: {
     marginLeft: 2,

@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Platform, StyleSheet, Text, View, type ScrollView } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Animated, Platform, StyleSheet, Text, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { applyRouteLive } from '../data/applyRouteLive';
@@ -45,6 +45,8 @@ type TransitSheetProps = {
   /** Routes saved with the star: listed first in Nearby and under Favorites -> Routes. */
   savedRouteIds: readonly string[];
   scrollY: Animated.Value;
+  /** The route ids of the cards currently on screen in the active tab, whenever that set changes. */
+  onVisibleRouteIdsChange?: (routeIds: readonly string[]) => void;
 };
 
 const TAB_ROW_HEIGHT = 44;
@@ -57,6 +59,8 @@ const DRAG_HANDLE_HEIGHT = 28;
 // Any scroll beyond this counts as "moved off rest", so a handle tap collapses instead of expanding.
 const AT_REST_TOLERANCE = 8;
 
+/** How long after a scroll or layout change the visible cards are recomputed. */
+const VISIBILITY_THROTTLE_MS = 150;
 const tabs: { id: TransitTabId; label: string }[] = [
   { id: 'nearby', label: 'Nearby' },
   { id: 'recents', label: 'Recents' },
@@ -78,6 +82,7 @@ export function TransitSheet({
   onEndTrip,
   onStartTrip,
   onTabChange,
+  onVisibleRouteIdsChange,
   savedRouteIds,
   scrollY,
 }: TransitSheetProps) {
@@ -120,12 +125,90 @@ export function TransitSheet({
   const pageScrollRef = useRef<ScrollView>(null);
   const scrollOffset = useRef(0);
   const expandedOffset = Math.max(0, mapHeight - EXPANDED_TOP);
+  // The sheet is rebuilt at the top each time Home is shown (e.g. back from a route), but
+  // HomeScreen keeps `scrollY`; without resetting it, a page scrolled before opening a route left
+  // the location button faded out and shifted up on return.
+  useEffect(() => {
+    scrollY.setValue(0);
+    scrollOffset.current = 0;
+  }, [scrollY]);
   useEffect(() => {
     const id = scrollY.addListener(({ value }) => {
       scrollOffset.current = value;
     });
     return () => scrollY.removeListener(id);
   }, [scrollY]);
+  // Which route cards are on screen, so only those are polled for live data. Card positions are
+  // measured by layout (section offsets add up to a page position) and compared with the page's
+  // scroll window; a card not yet measured counts as visible. Recomputed shortly after scrolling,
+  // layout, or the list changing, and reported only when the set changes.
+  const cardRouteIds = activeTab === 'nearby'
+    ? [...savedRoutes, ...nearbyCards].map((route) => route.id)
+    : activeTab === 'favorites' ? savedRouteIds.filter((id) => findRoute(id) != null) : [];
+  const cardRouteIdsKey = cardRouteIds.join(',');
+  const layout = useRef({
+    viewport: 0,
+    sheet: 0,
+    content: 0,
+    sections: new Map<string, number>(),
+    cards: new Map<string, { section: string; y: number; height: number }>(),
+  });
+  const shownCardIds = useRef<readonly string[]>([]);
+  const reportedVisibleKey = useRef<string | null>(null);
+  const visibilityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onVisibleRef = useRef(onVisibleRouteIdsChange);
+  useEffect(() => {
+    onVisibleRef.current = onVisibleRouteIdsChange;
+  });
+  const reportVisible = useCallback(() => {
+    visibilityTimer.current = null;
+    const { cards, content, sections, sheet, viewport } = layout.current;
+    const top = scrollOffset.current;
+    const visible = shownCardIds.current.filter((id) => {
+      const card = cards.get(id);
+      if (!card || viewport === 0) return true;
+      const y = sheet + content + (sections.get(card.section) ?? 0) + card.y;
+      return y < top + viewport && y + card.height > top;
+    });
+    const key = visible.join(',');
+    if (key === reportedVisibleKey.current) return;
+    reportedVisibleKey.current = key;
+    onVisibleRef.current?.(visible);
+  }, []);
+  const scheduleVisible = useCallback(() => {
+    if (visibilityTimer.current == null) visibilityTimer.current = setTimeout(reportVisible, VISIBILITY_THROTTLE_MS);
+  }, [reportVisible]);
+  useEffect(() => {
+    shownCardIds.current = cardRouteIdsKey ? cardRouteIdsKey.split(',') : [];
+    scheduleVisible();
+  }, [cardRouteIdsKey, scheduleVisible]);
+  useEffect(() => () => {
+    if (visibilityTimer.current != null) clearTimeout(visibilityTimer.current);
+  }, []);
+  // Where scrolling reports through the Animated value (web, and JS-driven scrolls).
+  useEffect(() => {
+    const id = scrollY.addListener(scheduleVisible);
+    return () => scrollY.removeListener(id);
+  }, [scheduleVisible, scrollY]);
+  const recordLayout = useCallback((part: 'viewport' | 'sheet' | 'content', event: LayoutChangeEvent) => {
+    layout.current[part] = part === 'viewport' ? event.nativeEvent.layout.height : event.nativeEvent.layout.y;
+    scheduleVisible();
+  }, [scheduleVisible]);
+  const recordSectionLayout = useCallback((section: string, event: LayoutChangeEvent) => {
+    layout.current.sections.set(section, event.nativeEvent.layout.y);
+    scheduleVisible();
+  }, [scheduleVisible]);
+  const recordCardLayout = useCallback((section: string, routeId: string, event: LayoutChangeEvent) => {
+    layout.current.cards.set(routeId, { section, y: event.nativeEvent.layout.y, height: event.nativeEvent.layout.height });
+    scheduleVisible();
+  }, [scheduleVisible]);
+  // Where the page settled: a native-driven Animated.Value doesn't report back to JS, so the
+  // offset is taken from the scroll-end events.
+  const onPageScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    scrollOffset.current = event.nativeEvent.contentOffset.y;
+    scheduleVisible();
+  }, [scheduleVisible]);
+
   const toggleExpanded = () => {
     const target = scrollOffset.current <= AT_REST_TOLERANCE ? expandedOffset : 0;
     // Recorded up front: the scrollY listener can't be relied on for natively driven scroll
@@ -142,9 +225,12 @@ export function TransitSheet({
       // box-none it swallows drags there (always on web) and the map underneath can't pan.
       contentContainerStyle={styles.pageContent}
       contentInsetAdjustmentBehavior="never"
+      onLayout={(event) => recordLayout('viewport', event)}
+      onMomentumScrollEnd={onPageScroll}
       onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
         useNativeDriver: Platform.OS !== 'web',
       })}
+      onScrollEndDrag={onPageScroll}
       overScrollMode="never"
       pointerEvents="box-none"
       ref={pageScrollRef}
@@ -154,7 +240,12 @@ export function TransitSheet({
       testID={`${activeTab}-route-list`}
     >
       <View pointerEvents="box-none" style={{ height: mapHeight }} testID="transit-map-window" />
-      <SafeAreaView edges={['bottom']} style={styles.sheet} testID="transit-sheet">
+      <SafeAreaView
+        edges={['bottom']}
+        onLayout={(event) => recordLayout('sheet', event)}
+        style={styles.sheet}
+        testID="transit-sheet"
+      >
         <PressableScale
           accessibilityHint="Expands or collapses the transit list."
           accessibilityLabel="Transit list handle"
@@ -190,28 +281,30 @@ export function TransitSheet({
         </View>
 
         {activeTab === 'nearby' ? (
-            <View style={[styles.tabContent, { minHeight: tabContentMinHeight }]} testID="nearby-route-content">
+            <View onLayout={(event) => recordLayout('content', event)} style={[styles.tabContent, { minHeight: tabContentMinHeight }]} testID="nearby-route-content">
               {savedRoutes.length > 0 ? (
-                <View testID="saved-routes">
+                <View onLayout={(event) => recordSectionLayout('saved', event)} testID="saved-routes">
                   {savedRoutes.map((route) => (
-                    <TransitCard
-                      key={route.id}
-                      onPress={() => onOpenRoute(route.id)}
-                      route={route}
-                      saved={true}
-                    />
+                    <View key={route.id} onLayout={(event) => recordCardLayout('saved', route.id, event)} testID={`card-slot-${route.id}`}>
+                      <TransitCard
+                        onPress={() => onOpenRoute(route.id)}
+                        route={route}
+                        saved={true}
+                      />
+                    </View>
                   ))}
                 </View>
               ) : null}
 
-              <View style={styles.cardStack} testID="nearby-routes">
+              <View onLayout={(event) => recordSectionLayout('nearby', event)} style={styles.cardStack} testID="nearby-routes">
                 {nearbyRefreshing ? <ActivityIndicator accessibilityLabel="Updating nearby transit" color={colors.primary} style={styles.nearbyRefreshing} testID="nearby-refreshing" /> : null}
                 {nearbyCards.map((route) => (
-                  <TransitCard
-                    key={route.id}
-                    onPress={() => onOpenRoute(route.id)}
-                    route={route}
-                  />
+                  <View key={route.id} onLayout={(event) => recordCardLayout('nearby', route.id, event)} testID={`card-slot-${route.id}`}>
+                    <TransitCard
+                      onPress={() => onOpenRoute(route.id)}
+                      route={route}
+                    />
+                  </View>
                 ))}
                 {nearbyStatus !== 'loaded' || nearbyCards.length === 0 ? (
                   <View accessible={true} style={styles.nearbyEmpty} testID="nearby-routes-empty">
@@ -246,15 +339,15 @@ export function TransitSheet({
             </View>
           ) : (
             hasFavorites ? (
-              <View style={[styles.tabContent, { minHeight: tabContentMinHeight }]} testID="favorites-route-content">
+              <View onLayout={(event) => recordLayout('content', event)} style={[styles.tabContent, { minHeight: tabContentMinHeight }]} testID="favorites-route-content">
                 {savedRouteIds.length > 0 ? (
-                  <View testID="favorite-routes">
+                  <View onLayout={(event) => recordSectionLayout('favorites', event)} testID="favorite-routes">
                     <Text style={[styles.sectionLabel, styles.sectionHeading]}>ROUTES</Text>
                     {savedRouteIds.map((id) => {
                       const route = findRoute(id);
                       if (!route) return null;
                       return (
-                        <View key={id} testID={`favorite-route-${id}`}>
+                        <View key={id} onLayout={(event) => recordCardLayout('favorites', id, event)} testID={`favorite-route-${id}`}>
                           <TransitCard onPress={() => onOpenRoute(id)} route={applyRouteLive(route, liveMap.get(id) ?? { status: 'error' }, now)} />
                         </View>
                       );
