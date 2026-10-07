@@ -11,7 +11,8 @@ const googleMapsApiKey = defineSecret('GOOGLE_MAPS_API_KEY');
 /** Set once with: firebase functions:secrets:set SWIFTLY_API_KEY. Needed for NICE Bus/Suffolk County Transit's real-time feeds (hosted by Swiftly, a third-party provider); not used by LIRR or subway. */
 const swiftlyApiKey = defineSecret('SWIFTLY_API_KEY');
 
-type RouteLiveStatusRequest = { agencyId: AgencyId; routeId: string; direction1StopId: string; direction0StopId: string };
+/** `lat`/`lon` (optional): resolve the nearest stop per direction server-side and use it instead of the given stop ids. */
+type RouteLiveStatusRequest = { agencyId: AgencyId; routeId: string; direction1StopId: string; direction0StopId: string; lat?: number; lon?: number };
 
 /**
  * Live trip updates and vehicle positions for one route on any configured agency (gtfsAgencies.ts),
@@ -27,15 +28,25 @@ type RouteLiveStatusRequest = { agencyId: AgencyId; routeId: string; direction1S
  * for both direction1StopId and direction0StopId.)
  */
 export const getRouteLiveStatus = onCall<RouteLiveStatusRequest>({ secrets: [swiftlyApiKey] }, async (request) => {
-  const { agencyId, routeId, direction1StopId, direction0StopId } = request.data ?? {};
+  const { agencyId, routeId, lat, lon } = request.data ?? {};
+  let { direction1StopId, direction0StopId } = request.data ?? {};
   if (!agencyId) throw new HttpsError('invalid-argument', 'agencyId is required');
   if (!routeId) throw new HttpsError('invalid-argument', 'routeId is required');
   if (!direction1StopId) throw new HttpsError('invalid-argument', 'direction1StopId is required');
   if (!direction0StopId) throw new HttpsError('invalid-argument', 'direction0StopId is required');
 
-  const status = await getRouteStatus(agencyId, routeId);
+  // With the rider's location, the nearest stop is resolved here (in parallel with the live
+  // feed) rather than by a separate prior call, so a route needs one round trip, not two. Each
+  // direction falls back to the given stop id if it can't be resolved.
+  const hasLocation = typeof lat === 'number' && typeof lon === 'number';
+  const [status, nearestStop] = await Promise.all([
+    getRouteStatus(agencyId, routeId),
+    hasLocation ? getNearestStopForRoute(agencyId, routeId, lat, lon).catch(() => null) : Promise.resolve(null),
+  ]);
+  direction1StopId = nearestStop?.direction1?.stopId ?? direction1StopId;
+  direction0StopId = nearestStop?.direction0?.stopId ?? direction0StopId;
   const stopPredictions = await getStopPredictions(agencyId, routeId, direction1StopId, direction0StopId, status.trips);
-  return { ...status, stopPredictions };
+  return { ...status, stopPredictions, ...(hasLocation ? { nearestStop } : {}) };
 });
 
 type FindNearbyTransitRequest = { lat: number; lon: number };

@@ -30,14 +30,15 @@ export type AgencyConfig = {
    */
   directionalStops: boolean;
   /**
-   * Whether the static timetable can safely pad live predictions when live has nothing
-   * upcoming (see gtfsSchedule.ts). Needs the realtime feed's trip_ids to match the static
-   * schedule's trip_ids for dedup — confirmed matching for LIRR and Suffolk County Transit
-   * (e.g. live "265-2429" is trips.txt's "265-2429" exactly); confirmed *not* matching for NYC
-   * Subway (live "086750_E..N66R" vs static "BSP26GEN-E049-Sunday-00_001400_E..S04R") or NICE
-   * Bus (live trip_ids like "2044028" don't appear in trips.txt at all — a different id scheme).
+   * Whether the realtime feed's trip_ids match the static schedule's, so a timetable entry
+   * can be dropped exactly when its trip is already tracked live (see gtfsSchedule.ts) —
+   * confirmed matching for LIRR and Suffolk County Transit (e.g. live "265-2429" is trips.txt's
+   * "265-2429" exactly); confirmed *not* matching for NYC Subway (live "086750_E..N66R" vs
+   * static "BSP26GEN-E049-Sunday-00_001400_E..S04R") or NICE Bus (live trip_ids like "2044028"
+   * don't appear in trips.txt at all). When false, the timetable still pads live predictions,
+   * but only with departures after the last live one, so a tracked trip isn't listed twice.
    */
-  supportsStaticFallback: boolean;
+  realtimeTripIdsMatchStatic: boolean;
   /** Some agencies split their GTFS-RT feed by line group (subway) or by feed type (Swiftly-hosted agencies' trip-updates/vehicle-positions); most publish one combined feed for the whole system (LIRR). */
   feedRequestsForRoute(routeId: string): FeedRequest[];
 };
@@ -75,7 +76,7 @@ export const AGENCY_CONFIGS: Record<AgencyId, AgencyConfig> = {
     displayName: 'LIRR',
     dataDir: 'lirr',
     directionalStops: false,
-    supportsStaticFallback: true,
+    realtimeTripIdsMatchStatic: true,
     feedRequestsForRoute: () => [{ url: LIRR_FEED_URL }],
   },
   subway: {
@@ -83,7 +84,7 @@ export const AGENCY_CONFIGS: Record<AgencyId, AgencyConfig> = {
     displayName: 'MTA Subway',
     dataDir: 'subway',
     directionalStops: true,
-    supportsStaticFallback: false,
+    realtimeTripIdsMatchStatic: false,
     feedRequestsForRoute: (routeId) => {
       const path = SUBWAY_FEED_PATH_BY_ROUTE_ID[routeId];
       if (!path) throw new Error(`No known GTFS-RT feed for subway route_id "${routeId}"`);
@@ -103,7 +104,7 @@ export const AGENCY_CONFIGS: Record<AgencyId, AgencyConfig> = {
     // the rider's GPS location, which still needs addressing if that matters for this agency.
     directionalStops: true,
     dataDir: 'nice',
-    supportsStaticFallback: false,
+    realtimeTripIdsMatchStatic: false,
     feedRequestsForRoute: () => swiftlyFeedRequests('nice-bus'),
   },
   suffolk: {
@@ -112,7 +113,7 @@ export const AGENCY_CONFIGS: Record<AgencyId, AgencyConfig> = {
     // Same direction-paired-stops, no-parent_station situation as NICE Bus above.
     directionalStops: true,
     dataDir: 'suffolk',
-    supportsStaticFallback: true,
+    realtimeTripIdsMatchStatic: true,
     feedRequestsForRoute: () => swiftlyFeedRequests('suffolk-county'),
   },
 };

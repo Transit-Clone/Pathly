@@ -1,5 +1,7 @@
 export const lightColors = {
   primary: '#0B4F9C',
+  /** Home map center-search marker. */
+  searchCenter: '#7C3AED',
   onPrimary: '#FFFFFF',
   accent: '#A7D8FF',
   background: '#F7FAFF',
@@ -42,6 +44,7 @@ export type Palette = { readonly [Key in keyof typeof lightColors]: string };
 
 export const darkColors: Palette = {
   primary: '#5B9BF8',
+  searchCenter: '#A78BFA',
   onPrimary: '#0A1B30',
   accent: '#2F5E93',
   background: '#000000',

@@ -88,7 +88,8 @@ export function discoveredRouteToRouteDetail(discovered: DiscoveredRoute): Route
   const fallbackStopId = direction1?.stopId ?? direction0?.stopId ?? '';
 
   const directionFor = (primary: DiscoveredDirection, other: DiscoveredDirection): TransitDirection => ({
-    direction: primary?.headsign ? `Toward ${primary.headsign}` : 'Schedule unavailable',
+    // The destination alone ("Patchogue"), not "Toward Patchogue".
+    direction: primary?.headsign ?? 'Schedule unavailable',
     live: false,
     minutes: 0,
     stopName: primary?.name ?? other?.name ?? 'Unknown stop',
@@ -101,7 +102,7 @@ export function discoveredRouteToRouteDetail(discovered: DiscoveredRoute): Route
     alert: 'No delays reported on this route.',
     color: discovered.color,
     destination: direction1?.headsign ?? direction0?.headsign ?? discovered.routeName,
-    direction: 'Toward',
+    direction: direction1?.headsign ?? direction0?.headsign ?? discovered.routeName,
     directions: [directionFor(direction1, direction0), directionFor(direction0, direction1)],
     id: `${discovered.agencyId}:${discovered.routeId}`,
     liveSource: {

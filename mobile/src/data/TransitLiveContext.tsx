@@ -73,35 +73,42 @@ export function TransitLiveProvider({ children, extraRoutes = [], location }: { 
   useEffect(() => {
     let cancelled = false;
 
-    const load = async () => {
-      const results = await Promise.all(
-        liveRoutes.map(async (route) => {
-          try {
-            const nearestStop = await fetchNearestRouteStop(route.liveSource!, location);
-            // Each direction overrides independently — one direction resolving doesn't require
-            // the other to, since they're never assumed to share a station (see
-            // nearestRouteStop.ts).
-            const effectiveSource: LiveSource = {
-              ...route.liveSource!,
-              direction1StopId: nearestStop?.direction1?.stopId ?? route.liveSource!.direction1StopId,
-              direction0StopId: nearestStop?.direction0?.stopId ?? route.liveSource!.direction0StopId,
-            };
-            const data = await fetchRouteLiveData(effectiveSource);
-            return [route.id, { status: 'loaded', data, nearestStop } satisfies RouteLiveStatus] as const;
-          } catch {
-            return [route.id, { status: 'error' } satisfies RouteLiveStatus] as const;
-          }
-        }),
-      );
-      if (cancelled) return;
-      setLiveStatus((current) => {
-        const next = new Map(current);
-        for (const [routeId, result] of results) {
-          if (result.status === 'error' && current.get(routeId)?.status === 'loaded') continue;
-          next.set(routeId, result);
-        }
-        return next;
-      });
+    // One request per route: the backend resolves the rider's nearest stop and its departures
+    // together. Each route's result is applied as soon as it arrives, so a card never waits on
+    // another route's (possibly cold) request.
+    const loadRoute = async (route: RouteDetail): Promise<RouteLiveStatus> => {
+      const source = route.liveSource!;
+      try {
+        const data = await fetchRouteLiveData(source, location);
+        if (data.nearestStop !== undefined) return { status: 'loaded', data, nearestStop: data.nearestStop };
+        // Older backend without in-call nearest stops: resolve it separately, then refetch for it.
+        const nearestStop = await fetchNearestRouteStop(source, location);
+        // Each direction overrides independently — they're never assumed to share a station.
+        const effectiveSource: LiveSource = {
+          ...source,
+          direction1StopId: nearestStop?.direction1?.stopId ?? source.direction1StopId,
+          direction0StopId: nearestStop?.direction0?.stopId ?? source.direction0StopId,
+        };
+        const sameStops = effectiveSource.direction1StopId === source.direction1StopId && effectiveSource.direction0StopId === source.direction0StopId;
+        return { status: 'loaded', data: sameStops ? data : await fetchRouteLiveData(effectiveSource), nearestStop };
+      } catch {
+        return { status: 'error' };
+      }
+    };
+
+    const load = () => {
+      for (const route of liveRoutes) {
+        void loadRoute(route).then((result) => {
+          if (cancelled) return;
+          setLiveStatus((current) => {
+            // A route that has loaded before keeps its last good value through one failed poll.
+            if (result.status === 'error' && current.get(route.id)?.status === 'loaded') return current;
+            const next = new Map(current);
+            next.set(route.id, result);
+            return next;
+          });
+        });
+      }
     };
 
     load();

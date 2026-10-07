@@ -16,7 +16,7 @@ const CENTER_ANCHOR = { x: 0.5, y: 0.5 };
 const FOCUS_DELTA = { latitudeDelta: 0.06, longitudeDelta: 0.06 };
 const FOCUS_ANIMATION_MS = 400;
 
-// Vehicle marker geometry: the square sits bottom-left of a larger box so the age badge can
+// Vehicle marker geometry: the circle sits bottom-left of a larger box so the age badge can
 // overhang its top-right corner (Android clips marker views to their own bounds).
 const VEHICLE_SIZE = 34;
 const VEHICLE_BOX = 46;
@@ -137,11 +137,11 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
         // Vehicles keep tracking view changes so the ticking age badge re-renders; there are only a few.
         <Marker key={vehicle.tripId} anchor={VEHICLE_ANCHOR} coordinate={{ latitude: vehicle.lat, longitude: vehicle.lon }} testID={`route-vehicle-${vehicle.tripId}`} title={vehicleLabel} zIndex={2}>
           <View style={styles.vehicleBox}>
-            <View style={[styles.vehicleBadge, { backgroundColor: color }]} testID={`route-vehicle-badge-${vehicle.tripId}`}>
-              <Icon color="#FFFFFF" filled={true} name={vehicleIcon} size={18} />
+            <View style={[styles.vehicleBadge, { borderColor: color }]} testID={`route-vehicle-badge-${vehicle.tripId}`}>
+              <Icon color={color} filled={true} name={vehicleIcon} size={18} />
             </View>
             {vehicle.updatedAt != null ? (
-              <View style={[styles.ageBadge, { borderColor: color }]}>
+              <View style={[styles.ageBadge, { backgroundColor: color }]} testID={`route-vehicle-age-badge-${vehicle.tripId}`}>
                 <Text style={styles.ageText} testID={`route-vehicle-age-${vehicle.tripId}`}>{formatAge(now - vehicle.updatedAt)}</Text>
               </View>
             ) : null}
@@ -171,8 +171,8 @@ const styles = StyleSheet.create({
     width: VEHICLE_BOX,
     height: VEHICLE_BOX,
   },
-  // Rounded square with a mode glyph: a different shape from the round stop dots, so a
-  // vehicle can never be mistaken for a stop.
+  // White circle with a route-color border and glyph: more than twice a stop dot's size and
+  // carrying the mode glyph (stop dots never do), so a vehicle reads apart from a stop.
   vehicleBadge: {
     position: 'absolute',
     left: 0,
@@ -181,9 +181,15 @@ const styles = StyleSheet.create({
     height: VEHICLE_SIZE,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
-    borderRadius: 9,
-    borderColor: '#FFFFFF',
+    borderWidth: 3,
+    borderRadius: VEHICLE_SIZE / 2,
+    backgroundColor: '#FFFFFF',
+    // Keeps the white circle visible on pale map tiles.
+    shadowColor: '#16324F',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 4,
   },
   ageBadge: {
     position: 'absolute',
@@ -196,10 +202,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
     borderWidth: 1.5,
     borderRadius: 12,
-    backgroundColor: '#FFFFFF',
+    borderColor: '#FFFFFF',
   },
   ageText: {
-    color: '#1F2937',
+    color: '#FFFFFF',
     fontFamily: 'Nunito_800ExtraBold',
     fontSize: 9,
   },

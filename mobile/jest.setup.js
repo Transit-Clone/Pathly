@@ -96,6 +96,9 @@ jest.mock('firebase/functions', () => ({
             data: {
               headsign: 'Mock Destination',
               stops: stops.map((stop, i) => ({ stopId: String(i), name: stop.name, lat: 40.9 - i * 0.01, lon: -73.1 + i * 0.01, offsetMinutes: stop.offsetMinutes })),
+              // A real-shape-like path: three points per stop-to-stop hop, so tests can tell it
+              // apart from a line that simply joins the stops.
+              path: Array.from({ length: (stops.length - 1) * 3 + 1 }, (_, i) => ({ lat: 40.9 - (i / 3) * 0.01, lon: -73.1 + (i / 3) * 0.01 + (i % 3 ? 0.002 : 0) })),
             },
           });
         }

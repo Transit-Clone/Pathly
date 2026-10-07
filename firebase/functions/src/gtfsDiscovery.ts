@@ -1,6 +1,6 @@
 import { haversineMeters } from './geo';
 import { AGENCY_CONFIGS, agencyConfig, type AgencyId } from './gtfsAgencies';
-import { gtfsTimeToSeconds, loadAgencyStaticData, loadGlobalStopRouteIndex, loadRouteStopTimes } from './gtfsStaticData';
+import { gtfsTimeToSeconds, loadAgencyShapes, loadAgencyStaticData, loadGlobalStopRouteIndex, loadRouteStopTimes, type ShapePoint } from './gtfsStaticData';
 
 export type NearbyStop = {
   /** The parent station's stop_id for agencies with directional platform stop_ids (one entry per physical station, not per direction); otherwise the stop's own id. */
@@ -47,7 +47,8 @@ export async function findNearestStops(agencyId: AgencyId, lat: number, lon: num
 }
 
 export type RouteGeometryStop = { stopId: string; name: string; lat: number; lon: number; offsetMinutes: number };
-export type RouteGeometry = { headsign: string; stops: RouteGeometryStop[] };
+/** `path` is the published track/street geometry (GTFS shapes) for the chained trips, when the agency has one. */
+export type RouteGeometry = { headsign: string; stops: RouteGeometryStop[]; path?: ShapePoint[] };
 
 /** Chain-building only — `timeSeconds` is each stop's real scheduled time, converted to the public `offsetMinutes` (relative to the chain's own first stop) once the full chain is assembled. */
 type ChainStop = { stopId: string; name: string; lat: number; lon: number; timeSeconds: number };
@@ -67,6 +68,89 @@ type TripShape = { tripId: string; headsign: string; stops: ChainStop[] };
  * the map and the "Route stops" list, rather than keeping a second, hand-authored stop list
  * that can silently drift from (or simply never match) this real one.
  */
+// Douglas-Peucker tolerance for returned paths: visually identical at street zoom while keeping
+// payloads to a few hundred points per direction.
+const PATH_SIMPLIFY_METERS = 4;
+
+function metresXY(point: ShapePoint): [number, number] {
+  return [point.lon * 111_320 * Math.cos((point.lat * Math.PI) / 180), point.lat * 110_540];
+}
+
+function nearestPointIndex(points: readonly ShapePoint[], target: { lat: number; lon: number }): number {
+  const [tx, ty] = metresXY(target);
+  let best = 0;
+  let bestDistance = Infinity;
+  points.forEach((point, index) => {
+    const [x, y] = metresXY(point);
+    const distance = (x - tx) ** 2 + (y - ty) ** 2;
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = index;
+    }
+  });
+  return best;
+}
+
+/** Iterative Douglas-Peucker (no recursion depth limits on long shapes). */
+function simplifyPath(points: readonly ShapePoint[], toleranceMeters: number): ShapePoint[] {
+  if (points.length < 3) return [...points];
+  const xy = points.map(metresXY);
+  const keep = new Uint8Array(points.length);
+  keep[0] = 1;
+  keep[points.length - 1] = 1;
+  const stack: [number, number][] = [[0, points.length - 1]];
+  while (stack.length > 0) {
+    const [start, end] = stack.pop()!;
+    const [ax, ay] = xy[start]!;
+    const [bx, by] = xy[end]!;
+    const length = Math.hypot(bx - ax, by - ay) || 1;
+    let farthest = -1;
+    let farthestDistance = 0;
+    for (let i = start + 1; i < end; i += 1) {
+      const [px, py] = xy[i]!;
+      const distance = Math.abs((by - ay) * px - (bx - ax) * py + bx * ay - by * ax) / length;
+      if (distance > farthestDistance) {
+        farthestDistance = distance;
+        farthest = i;
+      }
+    }
+    if (farthest >= 0 && farthestDistance > toleranceMeters) {
+      keep[farthest] = 1;
+      stack.push([start, farthest], [farthest, end]);
+    }
+  }
+  return points.filter((_, index) => keep[index] === 1);
+}
+
+/** A trip's shape_id, or (subway, whose trips.txt often leaves it blank) the shape named by its trip_id suffix. */
+function shapeForTrip(agencyId: AgencyId, tripId: string): ShapePoint[] | undefined {
+  const shapes = loadAgencyShapes(agencyId);
+  const trip = loadAgencyStaticData(agencyId).tripsById.get(tripId);
+  if (trip?.shapeId && shapes.has(trip.shapeId)) return shapes.get(trip.shapeId);
+  const suffix = tripId.slice(tripId.lastIndexOf('_') + 1);
+  return shapes.get(suffix);
+}
+
+/**
+ * The chained trips' real track/street geometry: each trip's shape trimmed to the stretch
+ * between its own first and last stop, joined in travel order, then simplified. Undefined when
+ * any trip has no published shape, so the client falls back to joining stops.
+ */
+function pathForTrips(agencyId: AgencyId, trips: readonly TripShape[]): ShapePoint[] | undefined {
+  const joined: ShapePoint[] = [];
+  for (const trip of trips) {
+    const shape = shapeForTrip(agencyId, trip.tripId);
+    const first = trip.stops[0];
+    const last = trip.stops[trip.stops.length - 1];
+    if (!shape || shape.length < 2 || !first || !last) return undefined;
+    const from = nearestPointIndex(shape, first);
+    const to = nearestPointIndex(shape, last);
+    const piece = from <= to ? shape.slice(from, to + 1) : shape.slice(to, from + 1).reverse();
+    joined.push(...(joined.length > 0 ? piece.slice(1) : piece));
+  }
+  return joined.length >= 2 ? simplifyPath(joined, PATH_SIMPLIFY_METERS) : undefined;
+}
+
 export async function getRouteGeometry(agencyId: AgencyId, routeId: string, directionId: 0 | 1): Promise<RouteGeometry | null> {
   const config = agencyConfig(agencyId);
   const { tripsById, stopsById } = loadAgencyStaticData(agencyId);
@@ -98,6 +182,8 @@ export async function getRouteGeometry(agencyId: AgencyId, routeId: string, dire
   candidateTrips.sort((a, b) => b.stops.length - a.stops.length);
   const base = candidateTrips[0]!;
   const usedTripIds = new Set([base.tripId]);
+  // Trips in travel order, so their shapes can be joined the same way their stops are.
+  const orderedTrips: TripShape[] = [base];
   let headsign = base.headsign;
   let stops = base.stops;
 
@@ -131,6 +217,7 @@ export async function getRouteGeometry(agencyId: AgencyId, routeId: string, dire
         const rebased = candidate.stops.map((stop) => ({ ...stop, timeSeconds: stop.timeSeconds + correction }));
         stops = [...stops, ...rebased.slice(1)];
         usedTripIds.add(candidate.tripId);
+        orderedTrips.push(candidate);
         headsign = candidate.headsign;
         extended = true;
         break;
@@ -140,6 +227,7 @@ export async function getRouteGeometry(agencyId: AgencyId, routeId: string, dire
         const rebased = candidate.stops.map((stop) => ({ ...stop, timeSeconds: stop.timeSeconds + correction }));
         stops = [...rebased.slice(0, -1), ...stops];
         usedTripIds.add(candidate.tripId);
+        orderedTrips.unshift(candidate);
         extended = true;
         break;
       }
@@ -147,9 +235,11 @@ export async function getRouteGeometry(agencyId: AgencyId, routeId: string, dire
   }
 
   const firstTimeSeconds = stops[0]?.timeSeconds ?? 0;
+  const path = pathForTrips(agencyId, orderedTrips);
   return {
     headsign,
     stops: stops.map(({ timeSeconds, ...stop }) => ({ ...stop, offsetMinutes: Math.round((timeSeconds - firstTimeSeconds) / 60) })),
+    ...(path ? { path } : {}),
   };
 }
 
@@ -261,72 +351,83 @@ const MAX_NEARBY_DISTANCE_METERS: Partial<Record<AgencyId, number>> = {
 };
 const DEFAULT_MAX_NEARBY_DISTANCE_METERS = 1_600;
 
-// findNearestStops' own default (8) exists for callers that just want "the N closest
-// regardless of count" (findNearestStops' own docs); here it's only a candidate-discovery
-// step before the real maxDistance filter below, so it needs to be generous enough that the
-// distance filter — not this count — decides what's "nearby". Without this, a dense bus hub
-// easily serving 10+ distinct routes nearby would have most of them silently dropped before
-// their distance was even checked.
-const CANDIDATE_STOPS_PER_AGENCY = 200;
+// Nearby search widens in passes until it finds enough distinct routes: each agency's base
+// radius above (small for dense subway, larger for sparse bus/LIRR) times 1, 2, 4, then 8,
+// capped per agency. Dense areas stop at the first pass; sparse suburbs keep widening.
+const NEARBY_PASS_MULTIPLIERS = [1, 2, 4, 8];
+const MIN_NEARBY_ROUTES = 8;
+const MAX_NEARBY_ROUTES = 30;
+const MAX_NEARBY_CAP_METERS: Partial<Record<AgencyId, number>> = {
+  subway: 6_000,
+  lirr: 30_000,
+  nice: 12_000,
+  suffolk: 12_000,
+};
+const DEFAULT_MAX_NEARBY_CAP_METERS = 6_000;
+
+// Only a candidate-discovery step before the real distance filter: generous enough that the
+// widest pass, not this count, decides what's "nearby" (a dense bus hub easily serves 10+
+// routes, and the widest pass covers several hubs).
+const CANDIDATE_STOPS_PER_AGENCY = 400;
 
 /**
- * Every real route, on every configured agency, near a point — not limited to the handful of
- * routes this app has hand-built UI for, and not capped to a small count either (every route
- * within MAX_NEARBY_DISTANCE_METERS is returned). One entry per (agency, route_id); a station
- * served by several routes (e.g. a subway hub, or a LIRR station shared by branches) produces
- * one entry per route, all anchored at that same station. Returns an empty list if nothing
- * real is actually nearby, rather than the closest thing regardless of distance. Adding a new
- * agency to gtfsAgencies.ts makes it show up here automatically — nothing in this function is
- * agency-specific.
+ * Real routes, on every configured agency, near a point. Starts from each agency's base
+ * "nearby" radius and widens in passes (NEARBY_PASS_MULTIPLIERS, capped per agency) until at
+ * least MIN_NEARBY_ROUTES distinct routes are found or the widest pass is reached, so a sparse
+ * suburb still lists a useful set while a dense neighborhood isn't flooded. Each route is
+ * resolved (its own nearest stop per direction) at most once across passes. One entry per
+ * (agency, route_id), ordered by distance, at most MAX_NEARBY_ROUTES. Adding an agency to
+ * gtfsAgencies.ts makes it show up here automatically.
  */
-export async function findNearbyTransit(lat: number, lon: number, limit = 100): Promise<DiscoveredRoute[]> {
+export async function findNearbyTransit(lat: number, lon: number, limit = MAX_NEARBY_ROUTES): Promise<DiscoveredRoute[]> {
   const agencyIds = Object.keys(AGENCY_CONFIGS) as AgencyId[];
-
-  const perAgencyResults = await Promise.all(
-    agencyIds.map(async (agencyId): Promise<DiscoveredRoute[]> => {
-      const config = agencyConfig(agencyId);
-      const maxDistance = MAX_NEARBY_DISTANCE_METERS[agencyId] ?? DEFAULT_MAX_NEARBY_DISTANCE_METERS;
-      // findNearestStops is only used here to cheaply discover *which route_ids* are plausibly
-      // nearby at all (grouping by parent_station is fine for that); each candidate's actual
-      // stop/distance is then resolved precisely via getNearestStopForRoute, independently per
-      // direction — the parent_station grouping isn't safe to trust for that part (NICE
-      // Bus/Suffolk County Transit don't have one — see that function's own comment).
-      const nearestStops = (await findNearestStops(agencyId, lat, lon, CANDIDATE_STOPS_PER_AGENCY)).filter((stop) => stop.distanceMeters <= maxDistance);
-      const { routesById } = loadAgencyStaticData(agencyId);
-
-      // Resolving candidate routeIds concurrently rather than one at a time is the difference
-      // between this taking as long as the single slowest route instead of the sum of all of
-      // them, which matters a lot at a hub station served by several lines.
-      const candidateRouteIds = new Set<string>();
-      for (const stop of nearestStops) {
-        for (const routeId of stop.routeIds) candidateRouteIds.add(routeId);
-      }
-
-      const routes = await Promise.all(
-        [...candidateRouteIds].map(async (routeId): Promise<DiscoveredRoute | null> => {
-          const route = routesById.get(routeId);
-          if (!route) return null;
-          const nearest = await getNearestStopForRoute(agencyId, routeId, lat, lon);
-          if (!nearest || nearest.distanceMeters > maxDistance) return null;
-          return {
-            agencyId,
-            agencyDisplayName: config.displayName,
-            routeId,
-            routeName: route.name,
-            shortName: route.shortName,
-            color: `#${route.color}`,
-            distanceMeters: nearest.distanceMeters,
-            direction1: nearest.direction1,
-            direction0: nearest.direction0,
-          };
-        }),
-      );
-      return routes.filter((route): route is DiscoveredRoute => route !== null);
-    }),
+  const baseRadius = (agencyId: AgencyId) => MAX_NEARBY_DISTANCE_METERS[agencyId] ?? DEFAULT_MAX_NEARBY_DISTANCE_METERS;
+  const capRadius = (agencyId: AgencyId) => MAX_NEARBY_CAP_METERS[agencyId] ?? DEFAULT_MAX_NEARBY_CAP_METERS;
+  const candidateStops = new Map(
+    await Promise.all(agencyIds.map(async (agencyId) => [agencyId, await findNearestStops(agencyId, lat, lon, CANDIDATE_STOPS_PER_AGENCY)] as const)),
   );
+  // `${agencyId}:${routeId}` -> resolved route (null if it has no usable stop), across passes.
+  const resolved = new Map<string, DiscoveredRoute | null>();
 
-  return perAgencyResults
-    .flat()
-    .sort((a, b) => a.distanceMeters - b.distanceMeters)
-    .slice(0, limit);
+  const resolveRoute = async (agencyId: AgencyId, routeId: string): Promise<DiscoveredRoute | null> => {
+    const route = loadAgencyStaticData(agencyId).routesById.get(routeId);
+    if (!route) return null;
+    const nearest = await getNearestStopForRoute(agencyId, routeId, lat, lon);
+    if (!nearest) return null;
+    return {
+      agencyId,
+      agencyDisplayName: agencyConfig(agencyId).displayName,
+      routeId,
+      routeName: route.name,
+      shortName: route.shortName,
+      color: `#${route.color}`,
+      distanceMeters: nearest.distanceMeters,
+      direction1: nearest.direction1,
+      direction0: nearest.direction0,
+    };
+  };
+
+  let found: DiscoveredRoute[] = [];
+  for (const multiplier of NEARBY_PASS_MULTIPLIERS) {
+    const radius = (agencyId: AgencyId) => Math.min(baseRadius(agencyId) * multiplier, capRadius(agencyId));
+    // Resolving candidates concurrently means a pass takes as long as its slowest route, not the sum.
+    await Promise.all(
+      agencyIds.flatMap((agencyId) => {
+        const routeIds = new Set<string>();
+        for (const stop of candidateStops.get(agencyId) ?? []) {
+          if (stop.distanceMeters <= radius(agencyId)) for (const routeId of stop.routeIds) routeIds.add(routeId);
+        }
+        return [...routeIds]
+          .filter((routeId) => !resolved.has(`${agencyId}:${routeId}`))
+          .map(async (routeId) => {
+            resolved.set(`${agencyId}:${routeId}`, null);
+            resolved.set(`${agencyId}:${routeId}`, await resolveRoute(agencyId, routeId));
+          });
+      }),
+    );
+    found = [...resolved.values()].filter((route): route is DiscoveredRoute => route !== null && route.distanceMeters <= radius(route.agencyId));
+    if (found.length >= MIN_NEARBY_ROUTES) break;
+  }
+
+  return found.sort((a, b) => a.distanceMeters - b.distanceMeters).slice(0, Math.min(limit, MAX_NEARBY_ROUTES));
 }

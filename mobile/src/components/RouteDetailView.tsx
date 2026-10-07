@@ -2,11 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, useWindowDimensions, View, type GestureResponderEvent, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 
 import { useTransitLive } from '../data/TransitLiveContext';
-import { realFareForRoute } from '../data/lirrFares';
-import { PORT_JEFFERSON_SHAPE } from '../data/portJeffersonShape';
 import { fetchRouteGeometry, type RouteGeometry } from '../data/routeGeometry';
 import { STATION_TRANSFERS, type StationTransfer } from '../data/stationTransfers';
-import { formatClockTime, isDueNow, minuteLabel, scheduleStopsFromNow, stopsForDirection, type RouteDetail, type RoutePrediction } from '../data/transit';
+import { departureDisplay, directionDestination, formatClockTime, scheduleStopsFromNow, stopsForDirection, type RouteDetail, type RoutePrediction } from '../data/transit';
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
 import { useLayoutEase } from '../theme/motion';
@@ -24,14 +22,12 @@ import { PressableScale } from './PressableScale';
 
 type RouteDetailViewProps = {
   isFavorite: boolean;
-  isPinned: boolean;
   /** Rider's location for the live map; `locationKnown` is false while it's only the fallback. */
   location?: Coordinates;
   locationKnown?: boolean;
   onBack: () => void;
   onRefreshLocation?: () => void;
   onToggleFavorite: () => void;
-  onTogglePin: () => void;
   route: RouteDetail;
 };
 
@@ -46,16 +42,10 @@ function predictionsForDirection(route: RouteDetail, directionIndex: number): re
   ];
 }
 
-function destinationForDirection(direction: string) {
-  return direction.replace(/^(?:westbound|eastbound|northbound|southbound|uptown|downtown)\s+(?:to|toward)\s+/i, '');
-}
 
-/** A prediction tile's big value and small unit label — "Due"/"now" once the countdown hits zero (a literal "0 minutes" reads as broken), otherwise the plain minute count. */
+/** A prediction tile's big value and small unit label (see departureDisplay). */
 function predictionTiming(prediction: RoutePrediction): { accessibility: string; unit: string; value: string } {
-  if (isDueNow(prediction.minutes)) {
-    return { value: 'Due', unit: 'now', accessibility: 'due now' };
-  }
-  return { value: String(prediction.minutes), unit: minuteLabel(prediction.minutes), accessibility: `${prediction.minutes} ${minuteLabel(prediction.minutes)}` };
+  return departureDisplay(prediction.minutes);
 }
 
 /** Why there are no prediction tiles to show for this route right now — null for routes with no `liveSource` at all, since their illustrative data always has entries. */
@@ -112,8 +102,20 @@ const MAX_TRANSFER_CHIPS = 8;
  * (scripts/generate_station_transfers.py), keyed by station name.
  */
 function transfersFor(route: RouteDetail, stopName: string): readonly StationTransfer[] {
-  return route.liveSource?.agencyId === 'lirr' && route.liveSource.routeId === '10' ? STATION_TRANSFERS[stopName] ?? [] : [];
+  if (route.liveSource?.agencyId !== 'lirr' || route.liveSource.routeId !== '10') return [];
+  // Only connections to a different agency or mode: on an LIRR route, other LIRR branches at the
+  // same station aren't a meaningful "transfer" to call out.
+  const own = OWN_TRANSFER_KIND[route.liveSource.agencyId];
+  return (STATION_TRANSFERS[stopName] ?? []).filter((transfer) => transfer.agency !== own.agency || transfer.mode !== own.mode);
 }
+
+/** How each live agency's own lines are labeled in the transfers data, to leave them out. */
+const OWN_TRANSFER_KIND: Record<NonNullable<RouteDetail['liveSource']>['agencyId'], Pick<StationTransfer, 'agency' | 'mode'>> = {
+  lirr: { agency: 'LIRR', mode: 'rail' },
+  subway: { agency: 'NYC Subway', mode: 'subway' },
+  nice: { agency: 'NICE Bus', mode: 'bus' },
+  suffolk: { agency: 'Suffolk County Transit', mode: 'bus' },
+};
 
 /** Connecting lines at a station: rail, then subway (circles), then bus, in each agency's colors. */
 function TransferChips({ stopName, transfers }: { stopName: string; transfers: readonly StationTransfer[] }) {
@@ -137,7 +139,7 @@ function TransferChips({ stopName, transfers }: { stopName: string; transfers: r
   );
 }
 
-export function RouteDetailView({ isFavorite, isPinned, location, locationKnown = false, onBack, onRefreshLocation, onToggleFavorite, onTogglePin, route }: RouteDetailViewProps) {
+export function RouteDetailView({ isFavorite, location, locationKnown = false, onBack, onRefreshLocation, onToggleFavorite, route }: RouteDetailViewProps) {
   const styles = useThemedStyles(createStyles);
   const { colors, isDark } = useTheme();
   // Route colors stay exact on fills; text and icons are lightened in dark mode to stay readable.
@@ -153,6 +155,8 @@ export function RouteDetailView({ isFavorite, isPinned, location, locationKnown 
   const [activeDirectionIndex, setActiveDirectionIndex] = useState(0);
   const mapHeight = Math.max(280, Math.min(390, height * 0.58));
   const pageWidth = Math.min(width, 540) - 36;
+  // Three fixed-width tiles per row (two 8 pt gaps), so a lone departure never fills the row.
+  const tileWidth = (pageWidth - 16) / 3;
 
   const updateDirection = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     setActiveDirectionIndex(Math.round(event.nativeEvent.contentOffset.x / pageWidth));
@@ -226,7 +230,7 @@ export function RouteDetailView({ isFavorite, isPinned, location, locationKnown 
   };
 
   const activeDirection = route.directions[activeDirectionIndex] ?? route.directions[0];
-  const activeDestination = destinationForDirection(activeDirection.direction);
+  const activeDestination = directionDestination(activeDirection.direction);
 
   // Real geometry is fetched on demand for whichever route is actually open, derived
   // generically on the backend from its real schedule (gtfsDiscovery.ts) — not hand-authored
@@ -268,9 +272,6 @@ export function RouteDetailView({ isFavorite, isPinned, location, locationKnown 
   const activePredictions = predictionsForDirection(route, activeDirectionIndex);
   const leadMinutes = (activePredictions[selectedPredictionIndex] ?? activePredictions[0])?.minutes ?? 0;
   const liveStopsResult = liveStopsFor(route, activeDirectionIndex, activeDirection, geometryStatus, nowMinutes, leadMinutes);
-  // Fare is always priced for the route's primary direction (route.predictions, index 0),
-  // regardless of which direction tab is active — see realFareForRoute's own comment.
-  const fare = realFareForRoute(route, now, route.predictions[0]?.peakOffpeak);
 
   const vehicleIcon = transitModeForAgency(route.agency);
   const hasDelay = !route.alert.startsWith('No delays');
@@ -312,8 +313,8 @@ export function RouteDetailView({ isFavorite, isPinned, location, locationKnown 
         focusStopId={activeDirection.stopId}
         mode={vehicleIcon}
         onUserPan={() => setIsLocationCentered(false)}
-        // Real track geometry is only bundled for the Port Jefferson Branch; other routes join their stops.
-        path={route.liveSource?.agencyId === 'lirr' && route.liveSource.routeId === '10' ? PORT_JEFFERSON_SHAPE : undefined}
+        // The agency's real track/street shape for this direction, served with the stop list.
+        path={geometryStatus.geometry.path}
         stops={geometryStatus.geometry.stops}
         userLocation={locationKnown ? location : undefined}
         vehicles={vehicles}
@@ -345,8 +346,7 @@ export function RouteDetailView({ isFavorite, isPinned, location, locationKnown 
           onRefreshLocation?.();
           setCenterOnUserRequest((count) => count + 1);
         }} style={[styles.iconButton, isLocationCentered && styles.selectedButton]} testID="route-location"><Icon filled={isLocationCentered} name="locate" /></PressableScale>
-        <PressableScale accessibilityLabel={isFavorite ? 'Remove route from favorites' : 'Add route to favorites'} accessibilityRole="button" accessibilityState={{ selected: isFavorite }} onPress={onToggleFavorite} style={[styles.iconButton, isFavorite && styles.selectedButton]} testID="route-favorite"><Icon color={isFavorite ? colors.warning : colors.primary} filled={isFavorite} name="favorite" /></PressableScale>
-        <PressableScale accessibilityLabel={isPinned ? 'Unpin route' : 'Pin route'} accessibilityRole="button" accessibilityState={{ selected: isPinned }} onPress={onTogglePin} style={[styles.iconButton, isPinned && { backgroundColor: route.color }]} testID="route-pin"><Icon color={isPinned ? colors.white : routeText} filled={isPinned} name="pin" /></PressableScale>
+        <PressableScale accessibilityLabel={isFavorite ? 'Remove route from saved' : 'Save route'} accessibilityRole="button" accessibilityState={{ selected: isFavorite }} onPress={onToggleFavorite} style={[styles.iconButton, isFavorite && styles.selectedButton]} testID="route-favorite"><Icon color={isFavorite ? colors.warning : colors.primary} filled={isFavorite} name="favorite" /></PressableScale>
       </View>
     </View>
   );
@@ -398,7 +398,7 @@ export function RouteDetailView({ isFavorite, isPinned, location, locationKnown 
                     accessibilityState={{ selected: highlighted }}
                     onPressIn={handleDirectionPressIn}
                     onPressOut={(event) => handleDirectionPressOut(event, () => setSelectedPredictionIndex(index))}
-                    style={[styles.prediction, { borderColor: route.color }, highlighted && { backgroundColor: route.color }, !prediction.live && styles.scheduled]}
+                    style={[styles.prediction, { borderColor: route.color, width: tileWidth }, highlighted && { backgroundColor: route.color }, !prediction.live && styles.scheduled]}
                     testID={`route-prediction-${activeDirectionIndex}-${index}`}
                   >
                     <View style={styles.predictionRow}>{prediction.live ? <View style={styles.predictionSignalSpacer} /> : null}<Text style={[styles.predictionTime, { color: predictionColor }]}>{timing.value}</Text>{prediction.live ? <LiveSignal color={predictionColor} style={styles.predictionSignal} /> : null}</View>
@@ -436,7 +436,7 @@ export function RouteDetailView({ isFavorite, isPinned, location, locationKnown 
                           setActiveDirectionIndex(directionIndex);
                           setSelectedPredictionIndex(index);
                         }}
-                        style={[styles.prediction, { borderColor: route.color }, highlighted && { backgroundColor: route.color }, !prediction.live && styles.scheduled]}
+                        style={[styles.prediction, { borderColor: route.color, width: tileWidth }, highlighted && { backgroundColor: route.color }, !prediction.live && styles.scheduled]}
                         testID={`route-prediction-${directionIndex}-${index}`}
                       >
                         <View style={styles.predictionRow}>{prediction.live ? <View style={styles.predictionSignalSpacer} /> : null}<Text style={[styles.predictionTime, { color: predictionColor }]}>{timing.value}</Text>{prediction.live ? <LiveSignal color={predictionColor} style={styles.predictionSignal} /> : null}</View>
@@ -456,7 +456,7 @@ export function RouteDetailView({ isFavorite, isPinned, location, locationKnown 
         {route.directions.map((direction, index) => (
           <PressableScale
             key={direction.direction}
-            accessibilityLabel={`Show ${destinationForDirection(direction.direction)} predictions`}
+            accessibilityLabel={`Show ${directionDestination(direction.direction)} predictions`}
             accessibilityRole="button"
             accessibilityState={{ selected: index === activeDirectionIndex }}
             hitSlop={8}
@@ -467,28 +467,6 @@ export function RouteDetailView({ isFavorite, isPinned, location, locationKnown 
         ))}
       </View>
 
-      {fare?.kind === 'flat' ? (
-        <View accessibilityLabel={`Fare ${fare.amount}`} accessible={true} style={styles.alertButton} testID="route-fare">
-          <Icon color={colors.mutedInk} filled={true} name="fare" size={18} style={styles.alertIcon} />
-          <Text style={styles.alertText}>Fare</Text>
-          <Text style={styles.fareValue}>{fare.amount}</Text>
-        </View>
-      ) : null}
-      {fare?.kind === 'peakOffPeak' ? (
-        <View
-          accessibilityLabel={`Fare: ${fare.isPeakNow ? 'peak' : 'off-peak'} fare applies right now. Peak ${fare.peak}, off-peak ${fare.offPeak}.`}
-          accessible={true}
-          style={styles.alertButton}
-          testID="route-fare"
-        >
-          <Icon color={colors.mutedInk} filled={true} name="fare" size={18} style={styles.alertIcon} />
-          <Text style={styles.alertText}>Fare</Text>
-          <View style={styles.fareTiers}>
-            <Text style={[styles.fareTier, fare.isPeakNow && { color: routeText, fontFamily: fontFamilies.extraBold }]}>Peak {fare.peak}</Text>
-            <Text style={[styles.fareTier, !fare.isPeakNow && { color: routeText, fontFamily: fontFamilies.extraBold }]}>Off-Peak {fare.offPeak}</Text>
-          </View>
-        </View>
-      ) : null}
 
       {/* Only routes with an advisory get an alert row; "No delays" needs no dropdown. */}
       {hasDelay ? (
@@ -654,16 +632,18 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   prediction: {
     minWidth: 0,
     minHeight: 126,
-    flex: 1,
+    flexGrow: 0,
+    flexShrink: 0,
     alignItems: 'center',
     justifyContent: 'center',
     paddingBottom: 22,
-    borderWidth: 2,
+    borderWidth: 3,
     borderRadius: 20,
     backgroundColor: colors.surface,
   },
+  // Timetable (not GPS-tracked) departures read clearly fainter than live ones.
   scheduled: {
-    opacity: 0.68,
+    opacity: 0.45,
   },
   predictionRow: {
     flexDirection: 'row',
@@ -734,18 +714,6 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   },
   alertStatus: {
     color: colors.success,
-    ...typography.metadata,
-  },
-  fareValue: {
-    color: colors.ink,
-    ...typography.bodyStrong,
-  },
-  fareTiers: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  fareTier: {
-    color: colors.mutedInk,
     ...typography.metadata,
   },
   chevron: {

@@ -29,7 +29,8 @@ function loadCsvSync<T>(agencyId: AgencyId, filename: string): T[] {
 
 type RouteRow = { route_id: string; route_short_name: string; route_long_name: string; route_color: string };
 type StopRow = { stop_id: string; stop_name: string; stop_lat: string; stop_lon: string; parent_station?: string };
-type TripRow = { trip_id: string; route_id: string; trip_headsign: string; direction_id: string; service_id: string; peak_offpeak?: string };
+type TripRow = { trip_id: string; route_id: string; trip_headsign: string; direction_id: string; service_id: string; peak_offpeak?: string; shape_id?: string };
+type ShapeRow = { shape_id: string; shape_pt_lat: string; shape_pt_lon: string; shape_pt_sequence: string };
 type StopTimeRow = { trip_id: string; stop_id: string; arrival_time: string; departure_time: string; stop_sequence: string };
 type CalendarRow = {
   service_id: string;
@@ -40,7 +41,8 @@ type CalendarDateRow = { service_id: string; date: string; exception_type: strin
 
 export type GtfsStop = { stopId: string; name: string; lat: number; lon: number; parentStation: string | null };
 /** `peakOffpeak` is LIRR's own real schedule classification (trips.txt's peak_offpeak column) — null for agencies whose trips.txt doesn't have that column (e.g. subway, which doesn't have peak/off-peak fares at all). */
-export type GtfsTrip = { tripId: string; routeId: string; headsign: string; directionId: number; serviceId: string; peakOffpeak: boolean | null };
+export type GtfsTrip = { tripId: string; routeId: string; headsign: string; directionId: number; serviceId: string; peakOffpeak: boolean | null; shapeId: string | null };
+export type ShapePoint = { lat: number; lon: number };
 export type GtfsRoute = { routeId: string; shortName: string; name: string; color: string };
 /** One scheduled stop event from stop_times.txt — arrival/departure are "HH:MM:SS" local time, can exceed 24:00:00 for a post-midnight trip of the same service day. */
 export type GtfsStopTime = { tripId: string; stopId: string; arrivalTime: string; departureTime: string; stopSequence: number };
@@ -91,6 +93,7 @@ export function loadAgencyStaticData(agencyId: AgencyId): AgencyStaticData {
       directionId: Number(row.direction_id),
       serviceId: row.service_id,
       peakOffpeak: row.peak_offpeak === undefined ? null : row.peak_offpeak === '1',
+      shapeId: row.shape_id || null,
     });
   }
 
@@ -143,53 +146,75 @@ type RouteStopTimes = { byStop: Map<string, GtfsStopTime[]>; byTrip: Map<string,
 const routeStopTimesCache = new Map<string, Promise<RouteStopTimes>>();
 
 /**
- * stop_times.txt can be the agency's entire system (NYC Subway: 565k+ rows) — too big to load
- * whole for every agency, so this always streams it once per route_id and keeps only that
- * route's rows, indexed both by stop_id (for predictions at a given stop) and by trip_id (for
- * reconstructing one trip's full ordered station sequence). For a small agency (LIRR) this is
- * just as correct, only faster — there's no separate "small agency" code path. Cached per
- * agency+route after the first call.
+ * stop_times.txt can be the agency's entire system (NYC Subway: 565k+ rows, ~35 MB) — too big
+ * to keep whole, so only requested routes' rows are kept, indexed both by stop_id (predictions
+ * at a stop) and by trip_id (one trip's ordered station sequence). Routes requested in the same
+ * tick are batched into a single streaming pass per agency: nearby discovery asks for dozens of
+ * routes at once, and streaming the full file once per route made a cold Midtown search take
+ * ~110 s. Cached per agency+route after the first call.
  */
 export function loadRouteStopTimes(agencyId: AgencyId, routeId: string): Promise<RouteStopTimes> {
   const cacheKey = `${agencyId}:${routeId}`;
   const cached = routeStopTimesCache.get(cacheKey);
   if (cached) return cached;
 
-  const promise = (async () => {
-    const { tripsById } = loadAgencyStaticData(agencyId);
-    const relevantTripIds = new Set<string>();
-    for (const trip of tripsById.values()) {
-      if (trip.routeId === routeId) relevantTripIds.add(trip.tripId);
-    }
-
-    const byStop = new Map<string, GtfsStopTime[]>();
-    const byTrip = new Map<string, GtfsStopTime[]>();
-    const path = join(dataDirFor(agencyId), 'stop_times.txt');
-    if (existsSync(path)) {
-      const parser = createReadStream(path).pipe(parse({ columns: true }));
-      for await (const row of parser as AsyncIterable<StopTimeRow>) {
-        if (!relevantTripIds.has(row.trip_id)) continue;
-        const entry: GtfsStopTime = {
-          tripId: row.trip_id,
-          stopId: row.stop_id,
-          arrivalTime: row.arrival_time,
-          departureTime: row.departure_time,
-          stopSequence: Number(row.stop_sequence),
-        };
-        const stopList = byStop.get(row.stop_id);
-        if (stopList) stopList.push(entry);
-        else byStop.set(row.stop_id, [entry]);
-        const tripList = byTrip.get(row.trip_id);
-        if (tripList) tripList.push(entry);
-        else byTrip.set(row.trip_id, [entry]);
-      }
-    }
-
-    return { byStop, byTrip };
-  })();
-
+  let batch = pendingStopTimeBatches.get(agencyId);
+  if (!batch) {
+    const routeIds = new Set<string>();
+    let resolveBatch!: (result: Map<string, RouteStopTimes>) => void;
+    const done = new Promise<Map<string, RouteStopTimes>>((resolve) => {
+      resolveBatch = resolve;
+    });
+    batch = { routeIds, done };
+    pendingStopTimeBatches.set(agencyId, batch);
+    // Next macrotask: lets every caller in the current burst join this batch first.
+    setImmediate(() => {
+      pendingStopTimeBatches.delete(agencyId);
+      void streamStopTimesForRoutes(agencyId, routeIds).then(resolveBatch);
+    });
+  }
+  batch.routeIds.add(routeId);
+  const promise = batch.done.then((byRoute) => byRoute.get(routeId) ?? { byStop: new Map(), byTrip: new Map() });
   routeStopTimesCache.set(cacheKey, promise);
   return promise;
+}
+
+type StopTimeBatch = { routeIds: Set<string>; done: Promise<Map<string, RouteStopTimes>> };
+const pendingStopTimeBatches = new Map<AgencyId, StopTimeBatch>();
+
+/** One pass over an agency's stop_times.txt, keeping only the given routes' rows. */
+async function streamStopTimesForRoutes(agencyId: AgencyId, routeIds: ReadonlySet<string>): Promise<Map<string, RouteStopTimes>> {
+  const { tripsById } = loadAgencyStaticData(agencyId);
+  const routeOfTrip = new Map<string, string>();
+  for (const trip of tripsById.values()) {
+    if (routeIds.has(trip.routeId)) routeOfTrip.set(trip.tripId, trip.routeId);
+  }
+
+  const byRoute = new Map<string, RouteStopTimes>();
+  for (const routeId of routeIds) byRoute.set(routeId, { byStop: new Map(), byTrip: new Map() });
+  const path = join(dataDirFor(agencyId), 'stop_times.txt');
+  if (!existsSync(path)) return byRoute;
+
+  const parser = createReadStream(path).pipe(parse({ columns: true }));
+  for await (const row of parser as AsyncIterable<StopTimeRow>) {
+    const routeId = routeOfTrip.get(row.trip_id);
+    if (!routeId) continue;
+    const { byStop, byTrip } = byRoute.get(routeId)!;
+    const entry: GtfsStopTime = {
+      tripId: row.trip_id,
+      stopId: row.stop_id,
+      arrivalTime: row.arrival_time,
+      departureTime: row.departure_time,
+      stopSequence: Number(row.stop_sequence),
+    };
+    const stopList = byStop.get(row.stop_id);
+    if (stopList) stopList.push(entry);
+    else byStop.set(row.stop_id, [entry]);
+    const tripList = byTrip.get(row.trip_id);
+    if (tripList) tripList.push(entry);
+    else byTrip.set(row.trip_id, [entry]);
+  }
+  return byRoute;
 }
 
 const globalStopRouteIndexCache = new Map<AgencyId, Promise<Map<string, Set<string>>>>();
@@ -224,4 +249,26 @@ export function loadGlobalStopRouteIndex(agencyId: AgencyId): Promise<Map<string
 
   globalStopRouteIndexCache.set(agencyId, promise);
   return promise;
+}
+
+const shapesCache = new Map<AgencyId, Map<string, ShapePoint[]>>();
+
+/**
+ * shape_id -> ordered points from an agency's shapes.txt (several MB each), loaded lazily the
+ * first time that agency's geometry is requested and cached per instance — not part of
+ * loadAgencyStaticData, so live predictions never pay for it.
+ */
+export function loadAgencyShapes(agencyId: AgencyId): Map<string, ShapePoint[]> {
+  const cached = shapesCache.get(agencyId);
+  if (cached) return cached;
+  const withSequence = new Map<string, { sequence: number; point: ShapePoint }[]>();
+  for (const row of loadCsvSync<ShapeRow>(agencyId, 'shapes.txt')) {
+    const list = withSequence.get(row.shape_id) ?? [];
+    list.push({ sequence: Number(row.shape_pt_sequence), point: { lat: Number(row.shape_pt_lat), lon: Number(row.shape_pt_lon) } });
+    withSequence.set(row.shape_id, list);
+  }
+  const shapes = new Map<string, ShapePoint[]>();
+  for (const [shapeId, list] of withSequence) shapes.set(shapeId, list.sort((a, b) => a.sequence - b.sequence).map((entry) => entry.point));
+  shapesCache.set(agencyId, shapes);
+  return shapes;
 }

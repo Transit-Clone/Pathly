@@ -12,7 +12,7 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 
-import { isDueNow, minuteLabel, type RouteDetail, type TransitDirection } from '../data/transit';
+import { departureDisplay, directionDestination, type RouteDetail, type TransitDirection } from '../data/transit';
 import { useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { typography } from '../theme/typography';
@@ -22,7 +22,8 @@ import { PressableScale } from './PressableScale';
 
 type TransitCardProps = {
   onPress: () => void;
-  pinned?: boolean;
+  /** Saved by the rider: shown first in Nearby with a small star. */
+  saved?: boolean;
   route: RouteDetail;
 };
 
@@ -40,9 +41,9 @@ function PageBody({ index, item, route, styles }: {
     <>
       <View style={styles.copy}>
         <Text numberOfLines={2} style={styles.routeName} testID={`transit-${route.id}-title`}>
-          {route.routeName}
+          {route.shortName || route.routeName}
         </Text>
-        <Text numberOfLines={1} style={styles.direction}>{item.direction}</Text>
+        <Text numberOfLines={1} style={styles.direction}>{directionDestination(item.direction)}</Text>
         <Text numberOfLines={1} style={styles.stopName}>{item.stopName}</Text>
       </View>
 
@@ -50,32 +51,23 @@ function PageBody({ index, item, route, styles }: {
         <View style={styles.timing} testID={`transit-${route.id}-arrival-${index}`}>
           {route.liveStatus === 'loading' ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.unavailableText}>{'—'}</Text>}
         </View>
-      ) : isDueNow(item.minutes) ? (
-        <View style={[styles.timing, !item.live && styles.scheduledTiming]}>
-          <View style={styles.timeRow}>
-            {item.live ? <View style={styles.signalSpacer} /> : null}
-            <Text style={styles.dueText} testID={`transit-${route.id}-arrival-${index}`}>Due</Text>
-            {item.live ? <LiveSignal style={styles.signal} /> : null}
-          </View>
-          <Text style={styles.minuteUnit}>now</Text>
-        </View>
       ) : (
         <View style={[styles.timing, !item.live && styles.scheduledTiming]}>
           <View style={styles.timeRow}>
             {item.live ? <View style={styles.signalSpacer} /> : null}
             <Text style={styles.minutes} testID={`transit-${route.id}-arrival-${index}`}>
-              {item.minutes}
+              {departureDisplay(item.minutes).value}
             </Text>
             {item.live ? <LiveSignal style={styles.signal} /> : null}
           </View>
-          <Text style={styles.minuteUnit}>{minuteLabel(item.minutes)}</Text>
+          <Text style={styles.minuteUnit}>{departureDisplay(item.minutes).unit}</Text>
         </View>
       )}
     </>
   );
 }
 
-export function TransitCard({ onPress, pinned = false, route }: TransitCardProps) {
+export function TransitCard({ onPress, route, saved = false }: TransitCardProps) {
   const styles = useThemedStyles(createStyles);
   const { width } = useWindowDimensions();
   const pageWidth = Math.min(width, 540) - CARD_HORIZONTAL_MARGIN * 2;
@@ -110,10 +102,10 @@ export function TransitCard({ onPress, pinned = false, route }: TransitCardProps
 
   const accessibilityLabelFor = (item: TransitDirection) => {
     if (item.unavailable) {
-      return `${route.agency} ${route.routeName}. ${item.direction}. ${item.stopName}. ${route.liveStatus === 'loading' ? 'Loading live data.' : 'Live data unavailable.'}`;
+      return `${route.agency} ${route.routeName}. ${directionDestination(item.direction)}. ${item.stopName}. ${route.liveStatus === 'loading' ? 'Loading live data.' : 'Live data unavailable.'}`;
     }
-    const timing = isDueNow(item.minutes) ? 'due now' : `${item.minutes} ${minuteLabel(item.minutes)}`;
-    return `${route.agency} ${route.routeName}. ${item.direction}. ${item.stopName}. ${timing}, ${item.live ? 'live GPS prediction' : 'scheduled time'}.`;
+    const timing = departureDisplay(item.minutes).accessibility;
+    return `${route.agency} ${route.routeName}. ${directionDestination(item.direction)}. ${item.stopName}. ${timing}, ${item.live ? 'live GPS prediction' : 'scheduled time'}.`;
   };
 
   // react-native-web doesn't reliably hand a drag off from a nested Pressable to its parent
@@ -186,7 +178,7 @@ export function TransitCard({ onPress, pinned = false, route }: TransitCardProps
         </ScrollView>
       )}
 
-      {pinned ? <View pointerEvents="none" style={styles.pinBadge} testID={`route-card-${route.id}-pinned`}><Icon color="rgba(255,255,255,0.9)" filled={true} name="pin" size={12} /></View> : null}
+      {saved ? <View pointerEvents="none" style={styles.savedBadge} testID={`route-card-${route.id}-saved`}><Icon color="rgba(255,255,255,0.9)" filled={true} name="favorite" size={12} /></View> : null}
       <View accessibilityElementsHidden={true} style={styles.pageDots}>
         {route.directions.map((item, index) => (
           <View
@@ -253,7 +245,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   // The spacer mirrors the signal so the number stays centered over "minutes".
   signalSpacer: { width: LIVE_SIGNAL_WIDTH },
   signal: { marginLeft: 2, marginTop: 1 },
-  pinBadge: { position: 'absolute', top: 6, right: 8, transform: [{ rotate: '30deg' }] },
+  savedBadge: { position: 'absolute', top: 6, right: 8 },
   minutes: {
     color: colors.white,
     ...typography.displayTime,

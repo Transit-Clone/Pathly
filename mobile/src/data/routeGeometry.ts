@@ -5,9 +5,10 @@ import type { LiveSource } from './transit';
 
 /** `offsetMinutes` is this stop's real scheduled time, relative to `stops[0]` — see gtfsDiscovery.ts's getRouteGeometry. */
 export type GeometryStop = { stopId: string; name: string; lat: number; lon: number; offsetMinutes: number };
-export type RouteGeometry = { headsign: string; stops: readonly GeometryStop[] };
+/** `path` is the agency's published track/street geometry (GTFS shapes); absent when it has none (or from an older backend), in which case the line joins the stops. */
+export type RouteGeometry = { headsign: string; stops: readonly GeometryStop[]; path?: readonly { lat: number; lon: number }[] };
 
-type RouteGeometryResponse = { headsign: string; stops: GeometryStop[] };
+type RouteGeometryResponse = { headsign: string; stops: GeometryStop[]; path?: { lat: number; lon: number }[] };
 
 const getRouteGeometryCallable = httpsCallable<{ agencyId: string; routeId: string; directionId: 0 | 1 }, RouteGeometryResponse>(
   functions,
