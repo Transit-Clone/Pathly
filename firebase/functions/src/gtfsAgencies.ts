@@ -21,12 +21,14 @@ export type AgencyConfig = {
   displayName: string;
   /** Subdirectory under firebase/functions/static_data/. */
   dataDir: string;
+  /** Official static GTFS ZIP refreshed into Cloud Storage by the scheduled updater. */
+  staticFeedUrl: string;
+  /** App fallback routes/stops that must remain operational before an update is published. */
+  requiredStaticFallbacks: readonly { routeId: string; stopIds: readonly string[] }[];
   /**
-   * True when stops.txt groups directional platform-level stop_ids under a parent_station
-   * (NYC Subway: "G06N"/"G06S" under parent "G06") — direction must then be read from *which*
-   * stop_id a trip actually hits, since direction_id is unreliable there. False when one
-   * stop_id serves a station regardless of direction (LIRR, NICE Bus, Suffolk County Transit)
-   * and direction_id can be trusted.
+   * True when opposite directions use distinct stop_ids and direction must be read from which
+   * stop a trip hits (with or without a parent_station link). False when one stop_id serves both
+   * directions and direction_id can be trusted.
    */
   directionalStops: boolean;
   /**
@@ -75,6 +77,8 @@ export const AGENCY_CONFIGS: Record<AgencyId, AgencyConfig> = {
     id: 'lirr',
     displayName: 'LIRR',
     dataDir: 'lirr',
+    staticFeedUrl: 'https://rrgtfsfeeds.s3.amazonaws.com/gtfslirr.zip',
+    requiredStaticFallbacks: [{ routeId: '10', stopIds: ['14'] }],
     directionalStops: false,
     realtimeTripIdsMatchStatic: true,
     feedRequestsForRoute: () => [{ url: LIRR_FEED_URL }],
@@ -83,6 +87,11 @@ export const AGENCY_CONFIGS: Record<AgencyId, AgencyConfig> = {
     id: 'subway',
     displayName: 'MTA Subway',
     dataDir: 'subway',
+    staticFeedUrl: 'https://rrgtfsfeeds.s3.amazonaws.com/gtfs_subway.zip',
+    requiredStaticFallbacks: [
+      { routeId: 'E', stopIds: ['G06S', 'G06N'] },
+      { routeId: '7', stopIds: ['701S', '701N'] },
+    ],
     directionalStops: true,
     realtimeTripIdsMatchStatic: false,
     feedRequestsForRoute: (routeId) => {
@@ -104,6 +113,8 @@ export const AGENCY_CONFIGS: Record<AgencyId, AgencyConfig> = {
     // the rider's GPS location, which still needs addressing if that matters for this agency.
     directionalStops: true,
     dataDir: 'nice',
+    staticFeedUrl: 'https://www.nicebus.com/NICE/media/nicebus-gtfs/NICE_GTFS.zip',
+    requiredStaticFallbacks: [{ routeId: 'n4', stopIds: ['2004', '4538'] }],
     realtimeTripIdsMatchStatic: false,
     feedRequestsForRoute: () => swiftlyFeedRequests('nice-bus'),
   },
@@ -113,6 +124,11 @@ export const AGENCY_CONFIGS: Record<AgencyId, AgencyConfig> = {
     // Same direction-paired-stops, no-parent_station situation as NICE Bus above.
     directionalStops: true,
     dataDir: 'suffolk',
+    staticFeedUrl: 'https://tracksctbus.org/gtfs',
+    requiredStaticFallbacks: [
+      { routeId: '6859', stopIds: ['11420858', '11259869'] },
+      { routeId: '6868', stopIds: ['11283786', '11283946'] },
+    ],
     realtimeTripIdsMatchStatic: true,
     feedRequestsForRoute: () => swiftlyFeedRequests('suffolk-county'),
   },

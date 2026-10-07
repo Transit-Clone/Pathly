@@ -1,12 +1,17 @@
 import { defineSecret } from 'firebase-functions/params';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
+import { onSchedule } from 'firebase-functions/v2/scheduler';
 
 import { enforceCallableSecurity, type CallableRateLimit } from './callableSecurity';
 import { findNearbyTransit as findNearbyTransitDiscovery, getNearestStopForRoute, getRouteGeometry as getRouteGeometryDiscovery } from './gtfsDiscovery';
 import { AGENCY_CONFIGS, type AgencyId } from './gtfsAgencies';
 import { getStopPredictions } from './gtfsSchedule';
-import { loadAgencyStaticData } from './gtfsStaticData';
+import { refreshAllGtfsSnapshots } from './gtfsSnapshots';
+import { loadAgencyStaticData, prepareAgencyStaticData } from './gtfsStaticData';
 import { getRouteStatus } from './gtfsStatus';
+
+const CALLABLE_RUNTIME_SERVICE_ACCOUNT = 'pathly-callable-runtime@pathly-b7f0f.iam.gserviceaccount.com';
+const GTFS_WRITER_SERVICE_ACCOUNT = 'pathly-gtfs-writer@pathly-b7f0f.iam.gserviceaccount.com';
 
 /** Set once with: firebase functions:secrets:set GOOGLE_MAPS_API_KEY */
 const googleMapsApiKey = defineSecret('GOOGLE_MAPS_API_KEY');
@@ -17,7 +22,19 @@ const swiftlyApiKey = defineSecret('SWIFTLY_API_KEY');
 // version-controlled deliberately so a deploy from a machine missing local config cannot
 // silently change enforcement.
 const enforceTransitAppCheck = false;
-const protectedCallableOptions = { enforceAppCheck: enforceTransitAppCheck, maxInstances: 1 } as const;
+// Static GTFS roots and indexes switch together at request boundaries. One request per transit
+// instance prevents an in-flight request from observing a mixture of two daily snapshots.
+const protectedCallableOptions = {
+  concurrency: 1,
+  enforceAppCheck: enforceTransitAppCheck,
+  maxInstances: 10,
+  memory: '1GiB',
+  serviceAccount: CALLABLE_RUNTIME_SERVICE_ACCOUNT,
+} as const;
+// Swiftly's NICE/Suffolk feeds have a shared provider quota. Keeping live status on one instance
+// makes the short in-process feed cache coalesce every route poll into one upstream request per
+// feed, while the CPU-heavy static-data endpoints can still scale horizontally.
+const liveStatusCallableOptions = { ...protectedCallableOptions, maxInstances: 1 } as const;
 const RATE_LIMITS = {
   // Live/nearest calls run per visible route every 30 seconds and after meaningful GPS updates.
   getRouteLiveStatus: { userPerMinute: 600 },
@@ -26,6 +43,23 @@ const RATE_LIMITS = {
   getRouteGeometry: { userPerMinute: 120 },
   geocodeAddress: { userPerMinute: 10 },
 } satisfies Record<string, CallableRateLimit>;
+
+/** Refresh official static feeds daily; each agency publishes atomically and retries safely. */
+export const refreshGtfsStaticData = onSchedule(
+  {
+    concurrency: 1,
+    maxBackoffSeconds: 300,
+    maxInstances: 1,
+    memory: '1GiB',
+    minBackoffSeconds: 60,
+    retryCount: 3,
+    schedule: '0 4 * * *',
+    serviceAccount: GTFS_WRITER_SERVICE_ACCOUNT,
+    timeZone: 'America/New_York',
+    timeoutSeconds: 540,
+  },
+  refreshAllGtfsSnapshots,
+);
 
 function requiredString(value: unknown, name: string, maxLength = 128): string {
   if (typeof value !== 'string' || !value.trim() || value.length > maxLength) {
@@ -80,11 +114,12 @@ type RouteLiveStatusRequest = { agencyId: AgencyId; routeId: string; direction1S
  * (For agencies where one stop_id serves a station regardless of direction, pass the same id
  * for both direction1StopId and direction0StopId.)
  */
-export const getRouteLiveStatus = onCall<RouteLiveStatusRequest>({ ...protectedCallableOptions, secrets: [swiftlyApiKey] }, async (request) => {
-  enforceCallableSecurity(request, 'getRouteLiveStatus', RATE_LIMITS.getRouteLiveStatus);
+export const getRouteLiveStatus = onCall<RouteLiveStatusRequest>({ ...liveStatusCallableOptions, secrets: [swiftlyApiKey] }, async (request) => {
+  await enforceCallableSecurity(request, 'getRouteLiveStatus', RATE_LIMITS.getRouteLiveStatus);
   const data = request.data ?? ({} as RouteLiveStatusRequest);
   const agencyId = requiredAgencyId(data.agencyId);
-  const routeId = requiredString(data.routeId, 'routeId');
+  await prepareAgencyStaticData(agencyId);
+  const routeId = requiredRouteId(agencyId, data.routeId);
   let direction1StopId = requiredString(data.direction1StopId, 'direction1StopId');
   let direction0StopId = requiredString(data.direction0StopId, 'direction0StopId');
   // Location is optional, but when either coordinate is sent both must be valid.
@@ -114,8 +149,12 @@ type FindNearbyTransitRequest = { lat: number; lon: number };
  * Client call: httpsCallable(functions, 'findNearbyTransit')({ lat, lon }).
  */
 export const findNearbyTransit = onCall<FindNearbyTransitRequest>(protectedCallableOptions, async (request) => {
-  enforceCallableSecurity(request, 'findNearbyTransit', RATE_LIMITS.findNearbyTransit);
+  await enforceCallableSecurity(request, 'findNearbyTransit', RATE_LIMITS.findNearbyTransit);
   const { lat, lon } = requiredCoordinates(request.data?.lat, request.data?.lon);
+  // Hydrate sequentially so a cold instance never buffers four bounded ZIPs at once.
+  for (const agencyId of Object.keys(AGENCY_CONFIGS) as AgencyId[]) {
+    await prepareAgencyStaticData(agencyId);
+  }
   const routes = await findNearbyTransitDiscovery(lat, lon);
   return { routes };
 });
@@ -130,9 +169,10 @@ type NearestRouteStopRequest = { agencyId: AgencyId; routeId: string; lat: numbe
  * Client call: httpsCallable(functions, 'getNearestRouteStop')({ agencyId, routeId, lat, lon }).
  */
 export const getNearestRouteStop = onCall<NearestRouteStopRequest>(protectedCallableOptions, async (request) => {
-  enforceCallableSecurity(request, 'getNearestRouteStop', RATE_LIMITS.getNearestRouteStop);
+  await enforceCallableSecurity(request, 'getNearestRouteStop', RATE_LIMITS.getNearestRouteStop);
   const data = request.data ?? ({} as NearestRouteStopRequest);
   const agencyId = requiredAgencyId(data.agencyId);
+  await prepareAgencyStaticData(agencyId);
   const routeId = requiredRouteId(agencyId, data.routeId);
   const { lat, lon } = requiredCoordinates(data.lat, data.lon);
 
@@ -151,9 +191,10 @@ type RouteGeometryRequest = { agencyId: AgencyId; routeId: string; directionId: 
  * Client call: httpsCallable(functions, 'getRouteGeometry')({ agencyId, routeId, directionId }).
  */
 export const getRouteGeometry = onCall<RouteGeometryRequest>(protectedCallableOptions, async (request) => {
-  enforceCallableSecurity(request, 'getRouteGeometry', RATE_LIMITS.getRouteGeometry);
+  await enforceCallableSecurity(request, 'getRouteGeometry', RATE_LIMITS.getRouteGeometry);
   const data = request.data ?? ({} as RouteGeometryRequest);
   const agencyId = requiredAgencyId(data.agencyId);
+  await prepareAgencyStaticData(agencyId);
   const routeId = requiredRouteId(agencyId, data.routeId);
   const { directionId } = data;
   if (directionId !== 0 && directionId !== 1) throw new HttpsError('invalid-argument', 'directionId must be 0 or 1');
@@ -176,16 +217,21 @@ type GeocodingApiResponse = {
  */
 export const geocodeAddress = onCall<GeocodeRequest, Promise<GeocodeResult>>(
   // No current client calls this billable proxy, so it is safe to require App Check now.
-  { enforceAppCheck: true, maxInstances: 1, secrets: [googleMapsApiKey] },
+  {
+    enforceAppCheck: true,
+    maxInstances: 1,
+    secrets: [googleMapsApiKey],
+    serviceAccount: CALLABLE_RUNTIME_SERVICE_ACCOUNT,
+  },
   async (request) => {
-    enforceCallableSecurity(request, 'geocodeAddress', RATE_LIMITS.geocodeAddress);
+    await enforceCallableSecurity(request, 'geocodeAddress', RATE_LIMITS.geocodeAddress);
     const address = requiredString(request.data?.address, 'address', 200);
 
     const url = new URL('https://maps.googleapis.com/maps/api/geocode/json');
     url.searchParams.set('address', address);
     url.searchParams.set('key', googleMapsApiKey.value());
 
-    const response = await fetch(url);
+    const response = await fetch(url, { signal: AbortSignal.timeout(10_000) });
     const body = (await response.json()) as GeocodingApiResponse;
 
     if (body.status !== 'OK' || !body.results[0]) {

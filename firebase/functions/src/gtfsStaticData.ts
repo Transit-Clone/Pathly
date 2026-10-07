@@ -1,11 +1,16 @@
 import { parse } from 'csv-parse';
 import { parse as parseSync } from 'csv-parse/sync';
 import { createReadStream, existsSync, readFileSync } from 'fs';
-import { join } from 'path';
+import { rm } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join, resolve, sep } from 'path';
+import { logger } from 'firebase-functions';
 
 import { agencyConfig, type AgencyId } from './gtfsAgencies';
+import { hydrateCurrentGtfsSnapshot } from './gtfsSnapshots';
 
 const STATIC_DATA_ROOT = join(__dirname, '../static_data');
+const activeDataRoots = new Map<AgencyId, { dataDir: string; version: string }>();
 
 /**
  * GTFS times are "HH:MM:SS" and can exceed 24:00:00 for a post-midnight trip of the same
@@ -18,7 +23,7 @@ export function gtfsTimeToSeconds(hms: string): number {
 }
 
 function dataDirFor(agencyId: AgencyId): string {
-  return join(STATIC_DATA_ROOT, agencyConfig(agencyId).dataDir);
+  return activeDataRoots.get(agencyId)?.dataDir ?? join(STATIC_DATA_ROOT, agencyConfig(agencyId).dataDir);
 }
 
 function loadCsvSync<T>(agencyId: AgencyId, filename: string): T[] {
@@ -162,15 +167,17 @@ export function loadRouteStopTimes(agencyId: AgencyId, routeId: string): Promise
   if (!batch) {
     const routeIds = new Set<string>();
     let resolveBatch!: (result: Map<string, RouteStopTimes>) => void;
-    const done = new Promise<Map<string, RouteStopTimes>>((resolve) => {
+    let rejectBatch!: (error: unknown) => void;
+    const done = new Promise<Map<string, RouteStopTimes>>((resolve, reject) => {
       resolveBatch = resolve;
+      rejectBatch = reject;
     });
     batch = { routeIds, done };
     pendingStopTimeBatches.set(agencyId, batch);
     // Next macrotask: lets every caller in the current burst join this batch first.
     setImmediate(() => {
       pendingStopTimeBatches.delete(agencyId);
-      void streamStopTimesForRoutes(agencyId, routeIds).then(resolveBatch);
+      void streamStopTimesForRoutes(agencyId, routeIds).then(resolveBatch, rejectBatch);
     });
   }
   batch.routeIds.add(routeId);
@@ -179,6 +186,13 @@ export function loadRouteStopTimes(agencyId: AgencyId, routeId: string): Promise
   return promise;
 }
 
+export type RouteStopCounts = Record<0 | 1, Map<string, number>>;
+type AgencyStopIndexes = {
+  routeIdsByStop: Map<string, Set<string>>;
+  stopCountsByRoute: Map<string, RouteStopCounts>;
+};
+
+const agencyStopIndexesCache = new Map<AgencyId, Promise<AgencyStopIndexes>>();
 type StopTimeBatch = { routeIds: Set<string>; done: Promise<Map<string, RouteStopTimes>> };
 const pendingStopTimeBatches = new Map<AgencyId, StopTimeBatch>();
 
@@ -217,38 +231,52 @@ async function streamStopTimesForRoutes(agencyId: AgencyId, routeIds: ReadonlySe
   return byRoute;
 }
 
-const globalStopRouteIndexCache = new Map<AgencyId, Promise<Map<string, Set<string>>>>();
-
 /**
  * Every route_id that calls at each stop_id, across an agency's whole system — for "what
  * lines serve this station" lookups (nearest-stop discovery), as opposed to
  * loadRouteStopTimes's one-route-at-a-time scope. Built once per agency (full file scan) and
- * cached (the in-flight promise, so concurrent callers share one scan) for the function
- * instance's lifetime.
+ * cached (the in-flight promise, so concurrent callers share one scan) until that agency's
+ * active static snapshot changes.
  */
-export function loadGlobalStopRouteIndex(agencyId: AgencyId): Promise<Map<string, Set<string>>> {
-  const cached = globalStopRouteIndexCache.get(agencyId);
+function loadAgencyStopIndexes(agencyId: AgencyId): Promise<AgencyStopIndexes> {
+  const cached = agencyStopIndexesCache.get(agencyId);
   if (cached) return cached;
 
   const promise = (async () => {
     const { tripsById } = loadAgencyStaticData(agencyId);
-    const index = new Map<string, Set<string>>();
+    const routeIdsByStop = new Map<string, Set<string>>();
+    const stopCountsByRoute = new Map<string, RouteStopCounts>();
     const path = join(dataDirFor(agencyId), 'stop_times.txt');
     if (existsSync(path)) {
       const parser = createReadStream(path).pipe(parse({ columns: true }));
       for await (const row of parser as AsyncIterable<StopTimeRow>) {
-        const routeId = tripsById.get(row.trip_id)?.routeId;
-        if (!routeId) continue;
-        const set = index.get(row.stop_id);
+        const trip = tripsById.get(row.trip_id);
+        if (!trip) continue;
+        const { routeId, directionId } = trip;
+        const set = routeIdsByStop.get(row.stop_id);
         if (set) set.add(routeId);
-        else index.set(row.stop_id, new Set([routeId]));
+        else routeIdsByStop.set(row.stop_id, new Set([routeId]));
+
+        if (directionId !== 0 && directionId !== 1) continue;
+        const counts = stopCountsByRoute.get(routeId) ?? { 0: new Map(), 1: new Map() };
+        const directionCounts = counts[directionId];
+        directionCounts.set(row.stop_id, (directionCounts.get(row.stop_id) ?? 0) + 1);
+        stopCountsByRoute.set(routeId, counts);
       }
     }
-    return index;
+    return { routeIdsByStop, stopCountsByRoute };
   })();
 
-  globalStopRouteIndexCache.set(agencyId, promise);
+  agencyStopIndexesCache.set(agencyId, promise);
   return promise;
+}
+
+export async function loadGlobalStopRouteIndex(agencyId: AgencyId): Promise<Map<string, Set<string>>> {
+  return (await loadAgencyStopIndexes(agencyId)).routeIdsByStop;
+}
+
+export async function loadRouteStopCounts(agencyId: AgencyId, routeId: string): Promise<RouteStopCounts> {
+  return (await loadAgencyStopIndexes(agencyId)).stopCountsByRoute.get(routeId) ?? { 0: new Map(), 1: new Map() };
 }
 
 const shapesCache = new Map<AgencyId, Map<string, ShapePoint[]>>();
@@ -271,4 +299,62 @@ export function loadAgencyShapes(agencyId: AgencyId): Map<string, ShapePoint[]> 
   for (const [shapeId, list] of withSequence) shapes.set(shapeId, list.sort((a, b) => a.sequence - b.sequence).map((entry) => entry.point));
   shapesCache.set(agencyId, shapes);
   return shapes;
+}
+
+function clearAgencyCaches(agencyId: AgencyId): void {
+  staticDataCache.delete(agencyId);
+  agencyStopIndexesCache.delete(agencyId);
+  shapesCache.delete(agencyId);
+  pendingStopTimeBatches.delete(agencyId);
+  for (const key of routeStopTimesCache.keys()) {
+    if (key.startsWith(`${agencyId}:`)) routeStopTimesCache.delete(key);
+  }
+}
+
+/**
+ * Before an operation reads static GTFS, hydrate the latest validated Cloud Storage snapshot
+ * into this instance's /tmp cache. Missing/unavailable storage deliberately keeps the bundled
+ * deploy snapshot, so publishing the scheduler cannot create a cold-start outage.
+ */
+export async function prepareAgencyStaticData(agencyId: AgencyId, nowMs = Date.now()): Promise<void> {
+  const snapshot = await hydrateCurrentGtfsSnapshot(agencyId, nowMs);
+  const next = snapshot ?? {
+    dataDir: join(STATIC_DATA_ROOT, agencyConfig(agencyId).dataDir),
+    version: 'bundled',
+  };
+  const previous = activeDataRoots.get(agencyId);
+  if (previous?.version === next.version) return;
+
+  activeDataRoots.set(agencyId, next);
+  clearAgencyCaches(agencyId);
+
+  // Transit callables run with concurrency=1, so no earlier request can still be reading this
+  // instance's prior root. Remove it from Cloud Run's in-memory /tmp to prevent daily versions
+  // accumulating until the instance runs out of memory.
+  if (previous && previous.version !== 'bundled') {
+    const hydratedRoot = resolve(tmpdir(), 'pathly-gtfs');
+    const previousDir = resolve(previous.dataDir);
+    if (previousDir.startsWith(`${hydratedRoot}${sep}`)) {
+      try {
+        await rm(previousDir, { force: true, recursive: true });
+      } catch (error) {
+        logger.warn('Could not prune prior GTFS snapshot directory', {
+          agencyId,
+          event: 'gtfs_snapshot_prune_failed',
+          reason: error instanceof Error ? error.message : String(error),
+          version: previous.version,
+        });
+      }
+    }
+  }
+}
+
+/** Unit-test isolation only. */
+export function resetGtfsStaticDataForTests(): void {
+  activeDataRoots.clear();
+  staticDataCache.clear();
+  routeStopTimesCache.clear();
+  agencyStopIndexesCache.clear();
+  shapesCache.clear();
+  pendingStopTimeBatches.clear();
 }

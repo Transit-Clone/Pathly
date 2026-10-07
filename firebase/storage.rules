@@ -1,0 +1,11 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // GTFS snapshots are backend-only. Cloud Functions uses the Admin SDK and IAM, which
+    // bypass these client rules; mobile/web clients never need direct object access.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

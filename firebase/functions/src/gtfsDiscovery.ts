@@ -1,6 +1,14 @@
 import { haversineMeters } from './geo';
 import { AGENCY_CONFIGS, agencyConfig, type AgencyId } from './gtfsAgencies';
-import { gtfsTimeToSeconds, loadAgencyShapes, loadAgencyStaticData, loadGlobalStopRouteIndex, loadRouteStopTimes, type ShapePoint } from './gtfsStaticData';
+import {
+  gtfsTimeToSeconds,
+  loadAgencyShapes,
+  loadAgencyStaticData,
+  loadGlobalStopRouteIndex,
+  loadRouteStopCounts,
+  loadRouteStopTimes,
+  type ShapePoint,
+} from './gtfsStaticData';
 
 export type NearbyStop = {
   /** The parent station's stop_id for agencies with directional platform stop_ids (one entry per physical station, not per direction); otherwise the stop's own id. */
@@ -276,17 +284,7 @@ export type NearestRouteStop = {
  */
 export async function getNearestStopForRoute(agencyId: AgencyId, routeId: string, lat: number, lon: number): Promise<NearestRouteStop | null> {
   const { stopsById, tripsById } = loadAgencyStaticData(agencyId);
-  const { byStop } = await loadRouteStopTimes(agencyId, routeId);
-
-  const tripCountByDirectionAndStop: Record<0 | 1, Map<string, number>> = { 0: new Map(), 1: new Map() };
-  for (const [stopId, stopTimes] of byStop) {
-    for (const stopTime of stopTimes) {
-      const directionId = tripsById.get(stopTime.tripId)?.directionId;
-      if (directionId !== 0 && directionId !== 1) continue;
-      const counts = tripCountByDirectionAndStop[directionId];
-      counts.set(stopId, (counts.get(stopId) ?? 0) + 1);
-    }
-  }
+  const tripCountByDirectionAndStop = await loadRouteStopCounts(agencyId, routeId);
 
   const MIN_SERVICE_FRACTION = 0.1;
   const nearestInDirection = (directionId: 0 | 1): { stopId: string; name: string; headsign: string | null; distanceMeters: number } | null => {
