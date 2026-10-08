@@ -517,7 +517,7 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
         ) : (
           <ScrollView ref={directionScrollRef} accessibilityHint="Swipe horizontally for the other direction." decelerationRate="fast" horizontal={true} onMomentumScrollEnd={updateDirection} onScroll={updateDirection} pagingEnabled={true} scrollEventThrottle={16} showsHorizontalScrollIndicator={false} style={styles.directionPager} testID="route-direction-pager">
             {route.directions.map((direction, directionIndex) => (
-              <View key={direction.direction} style={[styles.titleRow, { width: headingWidth }]} testID={`route-direction-${directionIndex}`}>
+              <View key={`${direction.direction}-${directionIndex}`} style={[styles.titleRow, { width: headingWidth }]} testID={`route-direction-${directionIndex}`}>
                 <Text
                   accessibilityRole={directionIndex === activeDirectionIndex ? 'header' : undefined}
                   numberOfLines={2}
@@ -534,7 +534,7 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
         <View style={[styles.pageDots, { width: DIRECTION_DOTS_WIDTH }]}>
           {route.directions.map((direction, index) => (
             <PressableScale
-              key={direction.direction}
+              key={`${direction.direction}-${index}`}
               accessibilityLabel={`Show ${directionDestination(direction.direction)} predictions`}
               accessibilityRole="button"
               accessibilityState={{ selected: index === activeDirectionIndex }}
@@ -661,7 +661,7 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
               // Rows show only the stop name and time (plus transfers); "nearest to you" and
               // departs/arrives stay in the accessibility label.
               return (
-                <View key={stop.stopId ?? stop.name} accessibilityLabel={`${stop.name}, ${isNearestMatch ? 'nearest to you, ' : ''}${isFirst ? 'departs' : 'arrives'} ${stop.time}${transferLabel}`} accessible={true} style={styles.stopRow}>
+                <View key={`${stop.stopId ?? stop.name}-${index}`} accessibilityLabel={`${stop.name}, ${isNearestMatch ? 'nearest to you, ' : ''}${isFirst ? 'departs' : 'arrives'} ${stop.time}${transferLabel}`} accessible={true} style={styles.stopRow}>
                   <View style={styles.timelineRail}>{!isFirst ? <View style={[styles.rail, styles.railTop, { backgroundColor: route.color }]} /> : null}<View style={[styles.stopDot, { borderColor: route.color }, isHighlighted && { backgroundColor: route.color }]} />{!isLast ? <View style={[styles.rail, styles.railBottom, { backgroundColor: route.color }]} /> : null}</View>
                   {/* One divider spans the name and the time, not just the name. */}
                   <View style={styles.stopBody} testID={`stop-row-body-${stop.name}`}>

@@ -215,7 +215,7 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
             const passed = line.focusIndex >= 0 && stopIndex < line.focusIndex;
             return (
               <Marker
-                key={stop.stopId ?? stop.name}
+                key={`${stop.stopId ?? stop.name}-${stopIndex}`}
                 // A circle symbol is centered on its position by definition, unlike a pin. The
                 // rider's nearest stop is larger and filled, with a white ring.
                 icon={focused

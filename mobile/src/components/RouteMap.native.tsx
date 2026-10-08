@@ -186,7 +186,7 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
         const passed = focusStop != null && stopIndex < stops.indexOf(focusStop);
         return (
           <Marker
-            key={stop.stopId ?? stop.name}
+            key={`${stop.stopId ?? stop.name}-${stopIndex}`}
             anchor={CENTER_ANCHOR}
             coordinate={{ latitude: stop.lat, longitude: stop.lon }}
             testID={`route-stop-${stop.name}`}

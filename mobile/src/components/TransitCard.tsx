@@ -164,7 +164,7 @@ export function TransitCard({ onPress, route, saved = false }: TransitCardProps)
         >
           {route.directions.map((item, index) => (
             <PressableScale
-              key={item.direction}
+              key={`${item.direction}-${index}`}
               accessibilityHint="Opens route details. Swipe horizontally for the other direction."
               accessibilityLabel={accessibilityLabelFor(item)}
               accessibilityRole="button"
@@ -182,7 +182,7 @@ export function TransitCard({ onPress, route, saved = false }: TransitCardProps)
       <View accessibilityElementsHidden={true} style={styles.pageDots}>
         {route.directions.map((item, index) => (
           <View
-            key={item.direction}
+            key={`${item.direction}-${index}`}
             style={[styles.pageDot, index === activePage && styles.activePageDot]}
           />
         ))}
