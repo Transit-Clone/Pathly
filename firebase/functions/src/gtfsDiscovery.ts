@@ -349,12 +349,14 @@ const MAX_NEARBY_DISTANCE_METERS: Partial<Record<AgencyId, number>> = {
 };
 const DEFAULT_MAX_NEARBY_DISTANCE_METERS = 1_600;
 
-// Nearby search widens in passes until it finds enough distinct routes: each agency's base
-// radius above (small for dense subway, larger for sparse bus/LIRR) times 1, 2, 4, then 8,
-// capped per agency. Dense areas stop at the first pass; sparse suburbs keep widening.
+// Every route within each agency's base radius above (small for dense subway, larger for sparse
+// bus/LIRR) is listed. Only when that's fewer than MIN_NEARBY_ROUTES does the search widen —
+// times 2, 4, then 8, capped per agency — and then it adds just the closest extra routes needed,
+// never everything in the wider circle. MAX_NEARBY_ROUTES only guards against pathological
+// cases; a dense neighborhood's walkable routes are all shown.
 const NEARBY_PASS_MULTIPLIERS = [1, 2, 4, 8];
-const MIN_NEARBY_ROUTES = 8;
-const MAX_NEARBY_ROUTES = 30;
+const MIN_NEARBY_ROUTES = 6;
+const MAX_NEARBY_ROUTES = 40;
 const MAX_NEARBY_CAP_METERS: Partial<Record<AgencyId, number>> = {
   subway: 6_000,
   lirr: 30_000,
@@ -369,13 +371,30 @@ const DEFAULT_MAX_NEARBY_CAP_METERS = 6_000;
 const CANDIDATE_STOPS_PER_AGENCY = 400;
 
 /**
- * Real routes, on every configured agency, near a point. Starts from each agency's base
- * "nearby" radius and widens in passes (NEARBY_PASS_MULTIPLIERS, capped per agency) until at
- * least MIN_NEARBY_ROUTES distinct routes are found or the widest pass is reached, so a sparse
- * suburb still lists a useful set while a dense neighborhood isn't flooded. Each route is
- * resolved (its own nearest stop per direction) at most once across passes. One entry per
- * (agency, route_id), ordered by distance, at most MAX_NEARBY_ROUTES. Adding an agency to
- * gtfsAgencies.ts makes it show up here automatically.
+ * Which routes Nearby lists: every route within the base radius (`base`), and — only when that's
+ * fewer than `min` — the closest of the routes found farther out (`wider`), just enough to reach
+ * `min`. Ordered by distance, at most `max`.
+ */
+export function pickNearbyRoutes(
+  base: readonly DiscoveredRoute[],
+  wider: readonly DiscoveredRoute[],
+  min = MIN_NEARBY_ROUTES,
+  max = MAX_NEARBY_ROUTES,
+): DiscoveredRoute[] {
+  const byDistance = (a: DiscoveredRoute, b: DiscoveredRoute) => a.distanceMeters - b.distanceMeters;
+  const key = (route: DiscoveredRoute) => `${route.agencyId}:${route.routeId}`;
+  const baseKeys = new Set(base.map(key));
+  const extras = wider.filter((route) => !baseKeys.has(key(route))).sort(byDistance).slice(0, Math.max(0, min - base.length));
+  return [...base, ...extras].sort(byDistance).slice(0, max);
+}
+
+/**
+ * Real routes, on every configured agency, near a point (see pickNearbyRoutes for which). Starts
+ * from each agency's base "nearby" radius; when fewer than MIN_NEARBY_ROUTES routes are that
+ * close, widens in passes (NEARBY_PASS_MULTIPLIERS, capped per agency) only until enough are
+ * found. Each route is resolved (its own nearest stop per direction) at most once across passes.
+ * One entry per (agency, route_id), ordered by distance. Adding an agency to gtfsAgencies.ts makes
+ * it show up here automatically.
  */
 export async function findNearbyTransit(lat: number, lon: number, limit = MAX_NEARBY_ROUTES): Promise<DiscoveredRoute[]> {
   const agencyIds = Object.keys(AGENCY_CONFIGS) as AgencyId[];
@@ -405,7 +424,12 @@ export async function findNearbyTransit(lat: number, lon: number, limit = MAX_NE
     };
   };
 
-  let found: DiscoveredRoute[] = [];
+  const resolvedWithin = (multiplier: number) => [...resolved.values()].filter((route): route is DiscoveredRoute => (
+    route !== null && route.distanceMeters <= Math.min(baseRadius(route.agencyId) * multiplier, capRadius(route.agencyId))
+  ));
+
+  let base: DiscoveredRoute[] = [];
+  let wider: DiscoveredRoute[] = [];
   for (const multiplier of NEARBY_PASS_MULTIPLIERS) {
     const radius = (agencyId: AgencyId) => Math.min(baseRadius(agencyId) * multiplier, capRadius(agencyId));
     // Resolving candidates concurrently means a pass takes as long as its slowest route, not the sum.
@@ -423,9 +447,10 @@ export async function findNearbyTransit(lat: number, lon: number, limit = MAX_NE
           });
       }),
     );
-    found = [...resolved.values()].filter((route): route is DiscoveredRoute => route !== null && route.distanceMeters <= radius(route.agencyId));
-    if (found.length >= MIN_NEARBY_ROUTES) break;
+    if (multiplier === 1) base = resolvedWithin(1);
+    wider = resolvedWithin(multiplier);
+    if (wider.length >= MIN_NEARBY_ROUTES) break;
   }
 
-  return found.sort((a, b) => a.distanceMeters - b.distanceMeters).slice(0, Math.min(limit, MAX_NEARBY_ROUTES));
+  return pickNearbyRoutes(base, wider, MIN_NEARBY_ROUTES, Math.min(limit, MAX_NEARBY_ROUTES));
 }

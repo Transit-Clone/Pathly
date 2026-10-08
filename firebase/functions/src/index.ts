@@ -1,3 +1,4 @@
+import { logger } from 'firebase-functions';
 import { defineSecret } from 'firebase-functions/params';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
@@ -38,6 +39,8 @@ const liveStatusCallableOptions = { ...protectedCallableOptions, maxInstances: 1
 const RATE_LIMITS = {
   // Live/nearest calls run per visible route every 30 seconds and after meaningful GPS updates.
   getRouteLiveStatus: { userPerMinute: 600 },
+  // One batch per refresh of the cards on screen (every 15 s, plus on scrolling and moving).
+  getRoutesLiveStatus: { userPerMinute: 120 },
   // Opened on demand from route detail's "More departures" card.
   getStopDepartures: { userPerMinute: 60 },
   findNearbyTransit: { userPerMinute: 30 },
@@ -119,8 +122,13 @@ type RouteLiveStatusRequest = { agencyId: AgencyId; routeId: string; direction1S
 export const getRouteLiveStatus = onCall<RouteLiveStatusRequest>({ ...liveStatusCallableOptions, secrets: [swiftlyApiKey] }, async (request) => {
   await enforceCallableSecurity(request, 'getRouteLiveStatus', RATE_LIMITS.getRouteLiveStatus);
   const data = request.data ?? ({} as RouteLiveStatusRequest);
+  await prepareAgencyStaticData(requiredAgencyId(data.agencyId));
+  return routeLiveStatus(data);
+});
+
+/** One route's live status — the shared body of getRouteLiveStatus and getRoutesLiveStatus. Its agency's static data must already be prepared. */
+async function routeLiveStatus(data: RouteLiveStatusRequest) {
   const agencyId = requiredAgencyId(data.agencyId);
-  await prepareAgencyStaticData(agencyId);
   const routeId = requiredRouteId(agencyId, data.routeId);
   let direction1StopId = requiredString(data.direction1StopId, 'direction1StopId');
   let direction0StopId = requiredString(data.direction0StopId, 'direction0StopId');
@@ -139,6 +147,47 @@ export const getRouteLiveStatus = onCall<RouteLiveStatusRequest>({ ...liveStatus
   direction0StopId = nearestStop?.direction0?.stopId ?? direction0StopId;
   const stopPredictions = await getStopPredictions(agencyId, routeId, direction1StopId, direction0StopId, status.trips);
   return { ...status, stopPredictions, ...(hasLocation ? { nearestStop } : {}) };
+}
+
+/** The most routes one batch may ask for (a screenful of cards with room to spare). */
+const MAX_BATCH_ROUTES = 12;
+type RoutesLiveStatusRequest = { routes: Omit<RouteLiveStatusRequest, 'lat' | 'lon'>[]; lat?: number; lon?: number };
+
+/**
+ * Live status for several routes in one request — every card on screen at once. Live status runs
+ * on one instance, one request at a time (see liveStatusCallableOptions), so one batch instead of
+ * a request per card means the screen waits in that queue once, not once per card. Each route
+ * succeeds or fails on its own: `results[i]` is `{ ok: true, data }` (getRouteLiveStatus's
+ * response) or `{ ok: false, code }`.
+ * Client call: httpsCallable(functions, 'getRoutesLiveStatus')({ routes: [{ agencyId, routeId, direction1StopId, direction0StopId }, ...], lat, lon }).
+ */
+export const getRoutesLiveStatus = onCall<RoutesLiveStatusRequest>({ ...liveStatusCallableOptions, secrets: [swiftlyApiKey] }, async (request) => {
+  await enforceCallableSecurity(request, 'getRoutesLiveStatus', RATE_LIMITS.getRoutesLiveStatus);
+  const data = request.data ?? ({} as RoutesLiveStatusRequest);
+  if (!Array.isArray(data.routes) || data.routes.length === 0 || data.routes.length > MAX_BATCH_ROUTES) {
+    throw new HttpsError('invalid-argument', `routes must list 1 to ${MAX_BATCH_ROUTES} routes`);
+  }
+  const location = data.lat !== undefined || data.lon !== undefined ? requiredCoordinates(data.lat, data.lon) : null;
+
+  // Each agency's static snapshot is prepared once, one after another (preparing can switch the
+  // active snapshot, which must not happen while another route is reading it); then every route
+  // is answered in parallel.
+  const agencies = new Set<AgencyId>();
+  for (const route of data.routes) {
+    if (typeof route?.agencyId === 'string' && Object.hasOwn(AGENCY_CONFIGS, route.agencyId)) agencies.add(route.agencyId as AgencyId);
+  }
+  for (const agencyId of agencies) await prepareAgencyStaticData(agencyId);
+
+  const results = await Promise.all(data.routes.map(async (route) => {
+    try {
+      return { ok: true as const, data: await routeLiveStatus({ ...route, ...(location ? { lat: location.lat, lon: location.lon } : {}) }) };
+    } catch (error) {
+      if (error instanceof HttpsError) return { ok: false as const, code: error.code };
+      logger.error('Batched route live status failed', { agencyId: route?.agencyId, routeId: route?.routeId, reason: error instanceof Error ? error.message : String(error) });
+      return { ok: false as const, code: 'internal' };
+    }
+  }));
+  return { results };
 });
 
 type StopDeparturesRequest = { agencyId: AgencyId; routeId: string; direction1StopId: string; direction0StopId: string; directionId: 0 | 1 };

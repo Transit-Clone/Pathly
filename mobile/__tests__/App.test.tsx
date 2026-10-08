@@ -1,4 +1,5 @@
 import { act, fireEvent, render, waitFor, within, type RenderResult } from '@testing-library/react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { signOut } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
 import * as Location from 'expo-location';
@@ -36,10 +37,12 @@ jest.mock('../src/data/placesSearch', () => {
   const places = {
     'terry-road-smithtown': { id: 'terry-road-smithtown', title: '123 Terry Rd', subtitle: 'Smithtown, NY, USA' },
     'stony-brook-university': { id: 'stony-brook-university', title: 'Stony Brook University', subtitle: 'Stony Brook, NY, USA' },
+    'times-square': { id: 'times-square', title: 'Times Square', subtitle: 'Manhattan, NY, USA' },
   };
   const details = {
     'terry-road-smithtown': { ...places['terry-road-smithtown'], subtitle: '123 Terry Rd, Smithtown, NY 11787, USA' },
     'stony-brook-university': { id: 'stony-brook-university', title: 'Stony Brook University Main Campus', subtitle: '100 Nicolls Rd, Stony Brook, NY 11794, USA' },
+    'times-square': { id: 'times-square', title: 'Times Square', subtitle: 'Times Sq, New York, NY 10036, USA' },
   };
   return {
     ...jest.requireActual('../src/data/placesSearch'),
@@ -48,6 +51,7 @@ jest.mock('../src/data/placesSearch', () => {
       const text = input.toLowerCase();
       if (text.includes('terry')) return [places['terry-road-smithtown']];
       if (text.includes('stony')) return [places['stony-brook-university']];
+      if (text.includes('times')) return [places['times-square']];
       return [];
     }),
     fetchPlaceDetails: jest.fn(async ({ placeId }: { placeId: keyof typeof details }) => details[placeId]),
@@ -68,7 +72,9 @@ async function pickPlace(screen: RenderResult, query: string, placeId: string) {
 describe('Pathly prototype navigation', () => {
   const originalFetch = globalThis.fetch;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    // The app saves its last nearby list and live times on the device; start each test clean.
+    await AsyncStorage.clear();
     clearSessionRecents();
     mockAutocompletePlaces.mockClear();
     mockFetchPlaceDetails.mockClear();
@@ -129,7 +135,9 @@ describe('Pathly prototype navigation', () => {
     // Live routes start in a loading state (no signal yet); wait for the mocked predictions
     // to resolve before counting signals. findAllByTestId resolves as soon as it finds any
     // match, so the full count needs waitFor.
-    await waitFor(() => expect(screen.getAllByTestId('live-gps-signal', { includeHiddenElements: true })).toHaveLength(routes.length));
+    // Cards fill in after the nearby search's debounce and the on-screen check, so a busy test
+    // machine can take over the default 1 s.
+    await waitFor(() => expect(screen.getAllByTestId('live-gps-signal', { includeHiddenElements: true })).toHaveLength(routes.length), { timeout: 5000 });
     expect(within(await screen.findByTestId(`route-card-${PJ_CARD}-primary`)).getByTestId('live-gps-signal', { includeHiddenElements: true })).toBeTruthy();
     expect(within(screen.getByTestId(`route-card-${PJ_CARD}-alternate`)).queryByTestId('live-gps-signal', { includeHiddenElements: true })).toBeNull();
   });
@@ -271,7 +279,7 @@ describe('Pathly prototype navigation', () => {
     expect(mockAutocompletePlaces).not.toHaveBeenCalled();
     fireEvent.changeText(screen.getByTestId('search-input'), '');
     fireEvent.press(screen.getByTestId('search-result-recent-penn-station'));
-    expect(screen.getByDisplayValue('Penn Station')).toBeTruthy();
+    expect(screen.getByLabelText(/^Trip (origin|destination), Penn Station$/)).toBeTruthy();
   });
 
   it('opens route results with the resolved place name', async () => {
@@ -281,7 +289,7 @@ describe('Pathly prototype navigation', () => {
     fireEvent.press(await screen.findByTestId('search-result-stony-brook-university'));
 
     expect(await screen.findByTestId('route-results-view')).toBeTruthy();
-    expect(screen.getByDisplayValue('Stony Brook University Main Campus')).toBeTruthy();
+    expect(screen.getByLabelText(/^Trip (origin|destination), Stony Brook University Main Campus$/)).toBeTruthy();
     expect(mockFetchPlaceDetails).toHaveBeenCalledWith(expect.objectContaining({ placeId: 'stony-brook-university' }));
   });
 
@@ -312,7 +320,7 @@ describe('Pathly prototype navigation', () => {
     mockAutocompletePlaces.mockClear();
     mockFetchPlaceDetails.mockClear();
     fireEvent.press(recentRows[0]);
-    expect(screen.getByDisplayValue('123 Terry Rd')).toBeTruthy();
+    expect(screen.getByLabelText(/^Trip (origin|destination), 123 Terry Rd$/)).toBeTruthy();
     expect(mockAutocompletePlaces).not.toHaveBeenCalled();
     expect(mockFetchPlaceDetails).not.toHaveBeenCalled();
   });
@@ -323,12 +331,14 @@ describe('Pathly prototype navigation', () => {
     await pickPlace(screen, '123 Terry Rd', 'terry-road-smithtown');
 
     expect(screen.getByTestId('route-results-view')).toBeTruthy();
-    expect(screen.getByDisplayValue('123 Terry Rd')).toBeTruthy();
-    fireEvent.changeText(screen.getByTestId('origin-input'), 'Stony Brook University');
-    fireEvent.changeText(screen.getByTestId('destination-input'), 'Times Square');
+    expect(screen.getByLabelText(/^Trip (origin|destination), 123 Terry Rd$/)).toBeTruthy();
+    fireEvent.press(screen.getByTestId('origin-field'));
+    await pickPlace(screen, 'stony', 'stony-brook-university');
+    fireEvent.press(screen.getByTestId('destination-field'));
+    await pickPlace(screen, 'times', 'times-square');
     fireEvent.press(screen.getByTestId('swap-endpoints'));
-    expect(screen.getByDisplayValue('Times Square')).toBeTruthy();
-    expect(screen.getByDisplayValue('Stony Brook University')).toBeTruthy();
+    expect(screen.getByLabelText('Trip origin, Times Square')).toBeTruthy();
+    expect(screen.getByLabelText('Trip destination, Stony Brook University Main Campus')).toBeTruthy();
     fireEvent.press(screen.getByTestId('swap-endpoints'));
     fireEvent.press(screen.getByTestId('filter-control'));
     fireEvent.press(screen.getByTestId('preference-cheapest'));
@@ -337,8 +347,8 @@ describe('Pathly prototype navigation', () => {
     fireEvent.press(screen.getByTestId('leave-time-done'));
     fireEvent.press(screen.getByTestId('refresh-results'));
 
-    expect(screen.getByDisplayValue('Stony Brook University')).toBeTruthy();
-    expect(screen.getByDisplayValue('Times Square')).toBeTruthy();
+    expect(screen.getByLabelText('Trip origin, Stony Brook University Main Campus')).toBeTruthy();
+    expect(screen.getByLabelText('Trip destination, Times Square')).toBeTruthy();
     expect(screen.getByTestId('leave-time-label').props.children).toBe('Depart 10:30 AM');
     expect(screen.getByText('Updated now · 1')).toBeTruthy();
     expect(screen.getByTestId('preference-cheapest').props.accessibilityState).toEqual({ selected: true });
@@ -533,11 +543,54 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByTestId('results-location').props.accessibilityState).toEqual({ selected: true });
   });
 
+  it('edits a Route Results endpoint through the search page and keeps the other criteria', async () => {
+    const screen = render(<App />);
+    fireEvent.press(screen.getByTestId('search-trigger'));
+    await pickPlace(screen, '123 Terry Rd', 'terry-road-smithtown');
+    fireEvent.press(screen.getByTestId('filter-control'));
+    fireEvent.press(screen.getByTestId('preference-cheapest'));
+    fireEvent.press(screen.getByTestId('leave-time-control'));
+    fireEvent.press(screen.getByTestId('leave-mode-depart'));
+    fireEvent.press(screen.getByTestId('leave-time-done'));
+
+    // The destination opens the real search page, prefilled with the current destination.
+    fireEvent.press(screen.getByTestId('destination-field'));
+    expect(screen.getByTestId('search-view')).toBeTruthy();
+    expect(screen.getByTestId('search-input').props.value).toBe('123 Terry Rd');
+    expect(screen.queryByTestId('search-current-location')).toBeNull();
+    fireEvent.changeText(screen.getByTestId('search-input'), 'stony');
+    await waitFor(() => expect(mockAutocompletePlaces).toHaveBeenLastCalledWith(expect.objectContaining({ input: 'stony' })));
+    fireEvent.press(await screen.findByTestId('search-result-stony-brook-university'));
+    await screen.findByTestId('route-results-view');
+    expect(screen.getByLabelText('Trip destination, Stony Brook University Main Campus')).toBeTruthy();
+    expect(screen.getByLabelText('Trip origin, Current location')).toBeTruthy();
+    // Leave time and the chosen preference survived the round trip.
+    expect(screen.getByTestId('leave-time-label').props.children).toBe('Depart 10:30 AM');
+    fireEvent.press(screen.getByTestId('filter-control'));
+    expect(screen.getByTestId('preference-cheapest').props.accessibilityState).toEqual(expect.objectContaining({ selected: true }));
+
+    // The origin can go back to the rider's location; it starts with an empty query.
+    fireEvent.press(screen.getByTestId('origin-field'));
+    await pickPlace(screen, 'times', 'times-square');
+    expect(screen.getByLabelText('Trip origin, Times Square')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('origin-field'));
+    fireEvent.press(screen.getByTestId('search-current-location'));
+    expect(await screen.findByLabelText('Trip origin, Current location')).toBeTruthy();
+
+    // Cancelling changes nothing.
+    fireEvent.press(screen.getByTestId('origin-field'));
+    expect(screen.getByTestId('search-input').props.value).toBe('');
+    fireEvent.press(screen.getByLabelText('Cancel destination search'));
+    expect(await screen.findByLabelText('Trip origin, Current location')).toBeTruthy();
+    expect(screen.getByLabelText('Trip destination, Stony Brook University Main Campus')).toBeTruthy();
+  });
+
   it('starts and ends a searched trip from its detail screen, with no Go buttons on result cards', async () => {
     const screen = render(<App />);
     fireEvent.press(screen.getByTestId('search-trigger'));
     await pickPlace(screen, '123 Terry Rd', 'terry-road-smithtown');
-    fireEvent.changeText(screen.getByTestId('destination-input'), 'Times Square');
+    fireEvent.press(screen.getByTestId('destination-field'));
+    await pickPlace(screen, 'times', 'times-square');
 
     fireEvent.press(screen.getByTestId('search-result-view-rail-fast'));
     expect(screen.getByTestId('search-trip-detail-rail-fast')).toBeTruthy();
@@ -558,7 +611,7 @@ describe('Pathly prototype navigation', () => {
 
     fireEvent.press(screen.getByTestId('search-trip-back'));
     expect(screen.getByTestId('route-results-view')).toBeTruthy();
-    expect(screen.getByDisplayValue('Times Square')).toBeTruthy();
+    expect(screen.getByLabelText(/^Trip (origin|destination), Times Square$/)).toBeTruthy();
 
     expect(screen.queryByTestId('search-result-go-rail-fast')).toBeNull();
     expect(screen.queryByTestId(/^search-result-(go|end)-/)).toBeNull();
@@ -870,13 +923,15 @@ describe('Pathly prototype navigation', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("fills in each card from one request per route without waiting for other routes", async () => {
+  it("batches each agency's cards into one request, without waiting on another agency", async () => {
     const callableNamed = (name: string) => {
       const index = (httpsCallable as jest.Mock).mock.calls.findIndex((call) => call[1] === name);
       return (httpsCallable as jest.Mock).mock.results[index]!.value as jest.Mock;
     };
     const live = callableNamed('getRouteLiveStatus');
+    const batch = callableNamed('getRoutesLiveStatus');
     const nearest = callableNamed('getNearestRouteStop');
+    batch.mockClear();
     const liveDefault = live.getMockImplementation();
     nearest.mockClear();
     // New backend: the nearest stop comes back in the same call. The E's request never settles.
@@ -900,8 +955,74 @@ describe('Pathly prototype navigation', () => {
       expect(live).toHaveBeenCalledWith(expect.objectContaining({ routeId: '10', lat: expect.any(Number), lon: expect.any(Number) }));
       // No separate nearest-stop round trip once the backend returns it.
       expect(nearest).not.toHaveBeenCalled();
+      // One batch per agency, never mixing agencies: the subway batch is still stuck on the E,
+      // yet the LIRR card above already filled in.
+      const batches = batch.mock.calls.map(([request]) => (request as { routes: { agencyId: string }[] }).routes);
+      expect(batches.length).toBeGreaterThan(0);
+      for (const routes of batches) expect(new Set(routes.map((route) => route.agencyId)).size).toBe(1);
+      expect(batches.some((routes) => routes.some((route) => route.agencyId === 'subway'))).toBe(true);
     } finally {
       live.mockImplementation(liveDefault);
+    }
+  });
+
+  it('falls back to one request per route when the deployed backend cannot batch', async () => {
+    const callableNamed = (name: string) => {
+      const index = (httpsCallable as jest.Mock).mock.calls.findIndex((call) => call[1] === name);
+      return (httpsCallable as jest.Mock).mock.results[index]!.value as jest.Mock;
+    };
+    const batch = callableNamed('getRoutesLiveStatus');
+    const batchDefault = batch.getMockImplementation();
+    batch.mockImplementation(() => Promise.reject(Object.assign(new Error('not found'), { code: 'functions/not-found' })));
+    try {
+      const screen = render(<App />);
+      const pj = await screen.findByTestId(`route-card-${PJ_CARD}-primary`);
+      await waitFor(() => expect(within(pj).getAllByText('minutes').length).toBeGreaterThan(0));
+    } finally {
+      batch.mockImplementation(batchDefault);
+    }
+  });
+
+  it('opens on the last nearby list and live times saved on the device while fresh data loads', async () => {
+    const callableNamed = (name: string) => {
+      const index = (httpsCallable as jest.Mock).mock.calls.findIndex((call) => call[1] === name);
+      return (httpsCallable as jest.Mock).mock.results[index]!.value as jest.Mock;
+    };
+    const pj = routeById.ronkonkoma;
+    const source = pj.liveSource!;
+    await AsyncStorage.setItem('pathly.nearby.v1', JSON.stringify({
+      savedAt: Date.now() - 60_000,
+      value: [{
+        agencyId: source.agencyId, agencyDisplayName: pj.agency, routeId: source.routeId, routeName: pj.routeName, shortName: pj.shortName, color: pj.color, distanceMeters: 500,
+        direction1: { stopId: source.direction1StopId, name: pj.directions[0].stopName, headsign: pj.directions[0].direction },
+        direction0: { stopId: source.direction0StopId, name: pj.directions[1].stopName, headsign: pj.directions[1].direction },
+      }],
+    }));
+    await AsyncStorage.setItem('pathly.live.v1', JSON.stringify({
+      savedAt: Date.now() - 60_000,
+      value: {
+        [PJ_CARD]: {
+          data: { routeId: '10', fetchedAt: Date.now() - 60_000, predictions: { towardDirection1: [{ minutes: 9, live: true, peakOffpeak: null }], towardDirection0: [] }, vehicles: [], nearestStop: null },
+          nearestStop: null,
+        },
+      },
+    }));
+    // The backend is slow: neither the nearby search nor live status answers during this test.
+    const nearby = callableNamed('findNearbyTransit');
+    const batch = callableNamed('getRoutesLiveStatus');
+    const nearbyDefault = nearby.getMockImplementation();
+    const batchDefault = batch.getMockImplementation();
+    nearby.mockImplementation(() => new Promise(() => undefined));
+    batch.mockImplementation(() => new Promise(() => undefined));
+    try {
+      const screen = render(<App />);
+      // The saved card shows at once, marked as updating, with its saved time aged by a minute.
+      const card = await screen.findByTestId(`route-card-${PJ_CARD}-primary`);
+      expect(screen.getByTestId('nearby-refreshing')).toBeTruthy();
+      await waitFor(() => expect(within(card).getByText('8')).toBeTruthy());
+    } finally {
+      nearby.mockImplementation(nearbyDefault);
+      batch.mockImplementation(batchDefault);
     }
   });
 
@@ -974,6 +1095,43 @@ describe('Pathly prototype navigation', () => {
     hidesPlaces(await screen.findByTestId('route-map', { includeHiddenElements: true }));
     fireEvent.press(screen.getByTestId('route-back'));
     hidesPlaces(await screen.findByTestId('google-map-view', { includeHiddenElements: true }));
+  });
+
+  it('shows a compass after the rider rotates the home map, and reorients to north', async () => {
+    const maps = jest.requireMock('react-native-maps') as { mockAnimateCamera: jest.Mock; mockCamera: { heading: number; pitch: number } };
+    const screen = render(<App />);
+    await screen.findByTestId(`route-card-${PJ_CARD}`);
+    const map = screen.getByTestId('google-map-view', { includeHiddenElements: true });
+    const settle = async () => {
+      fireEvent(map, 'regionChangeComplete', { latitude: 40.9, longitude: -73.1, latitudeDelta: 0.05, longitudeDelta: 0.05 });
+      await act(async () => {});
+    };
+    expect(screen.queryByTestId('reorient-map')).toBeNull();
+
+    // Twisted so north points right (heading 90): the compass appears, its needle pointing right.
+    maps.mockCamera.heading = 90;
+    try {
+      await settle();
+      const needle = StyleSheet.flatten(screen.getByTestId('reorient-needle', { includeHiddenElements: true }).props.style);
+      expect(needle.transform).toEqual([{ rotate: '-90deg' }]);
+
+      maps.mockAnimateCamera.mockClear();
+      fireEvent.press(screen.getByTestId('reorient-map'));
+      expect(maps.mockAnimateCamera).toHaveBeenCalledWith({ heading: 0, pitch: 0 }, expect.objectContaining({ duration: expect.any(Number) }));
+
+      // Back at north-up, the compass goes away.
+      maps.mockCamera.heading = 0;
+      await settle();
+      expect(screen.queryByTestId('reorient-map')).toBeNull();
+
+      // A tilt alone also counts.
+      maps.mockCamera.pitch = 30;
+      await settle();
+      expect(screen.getByTestId('reorient-map')).toBeTruthy();
+    } finally {
+      maps.mockCamera.heading = 0;
+      maps.mockCamera.pitch = 0;
+    }
   });
 
   it('reopens the home map on the purple dot after visiting a route', async () => {
@@ -1403,6 +1561,36 @@ describe('Pathly prototype navigation', () => {
       expect(screen.getByTestId('route-location').props.accessibilityState).toEqual({ selected: true });
       fireEvent(map(), 'panDrag');
       expect(screen.getByTestId('route-location').props.accessibilityState).toEqual({ selected: false });
+      await act(async () => {}); // settle the location refresh
+    });
+
+    it('frames the whole route from the crosshair button', async () => {
+      const { mockFitToCoordinates } = jest.requireMock('react-native-maps') as { mockFitToCoordinates: jest.Mock };
+      const screen = await openPortJefferson();
+      const map = () => screen.getByTestId('route-map', hidden);
+      const overview = () => screen.getByTestId('route-overview');
+      expect(screen.getByLabelText('Show the whole route')).toBeTruthy();
+
+      const permissionRequests = (Location.requestForegroundPermissionsAsync as jest.Mock).mock.calls.length;
+      mockFitToCoordinates.mockClear();
+      fireEvent.press(overview());
+      // Every point of the selected direction's line, padded clear of the controls.
+      const lineLength = screen.getByTestId('route-line', hidden).props.coordinates.length + screen.getByTestId('route-line-behind', hidden).props.coordinates.length - 1;
+      expect(mockFitToCoordinates).toHaveBeenCalledTimes(1);
+      expect(mockFitToCoordinates.mock.calls[0][0]).toHaveLength(lineLength);
+      expect(mockFitToCoordinates.mock.calls[0][1]).toEqual(expect.objectContaining({ animated: true, edgePadding: expect.any(Object) }));
+      // About the route, not the rider: no location refresh.
+      expect((Location.requestForegroundPermissionsAsync as jest.Mock).mock.calls.length).toBe(permissionRequests);
+      expect(overview().props.accessibilityState).toEqual({ selected: true });
+
+      // The two buttons are exclusive: centering on the rider deselects the overview, and back.
+      fireEvent.press(screen.getByTestId('route-location'));
+      expect(overview().props.accessibilityState).toEqual({ selected: false });
+      fireEvent.press(overview());
+      expect(screen.getByTestId('route-location').props.accessibilityState).toEqual({ selected: false });
+
+      fireEvent(map(), 'panDrag');
+      expect(overview().props.accessibilityState).toEqual({ selected: false });
       await act(async () => {}); // settle the location refresh
     });
 

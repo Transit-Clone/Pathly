@@ -14,6 +14,7 @@ const {
   getNearestRouteStop,
   getRouteGeometry,
   getRouteLiveStatus,
+  getRoutesLiveStatus,
   getStopDepartures,
 } = require('../lib');
 
@@ -34,7 +35,7 @@ test('requires an authenticated Firebase user', async () => {
 });
 
 test('every callable rejects anonymous traffic before validation or provider work', async () => {
-  for (const callable of [findNearbyTransit, geocodeAddress, getNearestRouteStop, getRouteGeometry, getRouteLiveStatus, getStopDepartures]) {
+  for (const callable of [findNearbyTransit, geocodeAddress, getNearestRouteStop, getRouteGeometry, getRouteLiveStatus, getRoutesLiveStatus, getStopDepartures]) {
     await assert.rejects(
       () => callable.run({ auth: null, data: {}, rawRequest: request(null).rawRequest }),
       (error) => error.code === 'unauthenticated',
@@ -160,4 +161,14 @@ test('rejects route IDs outside the selected agency before scanning stop_times',
   }
 
   assert.equal(stopTimesScans, 0);
+});
+
+test('batched live status bounds its size and answers each route on its own', async () => {
+  const run = (data) => getRoutesLiveStatus.run({ auth: { uid: 'batch-user' }, data, rawRequest: request('batch-user').rawRequest });
+  await assert.rejects(() => run({ routes: [] }), (error) => error.code === 'invalid-argument');
+  await assert.rejects(() => run({ routes: Array.from({ length: 13 }, () => ({ agencyId: 'lirr', routeId: '10', direction1StopId: '14', direction0StopId: '14' })) }), (error) => error.code === 'invalid-argument');
+
+  // One unknown route doesn't fail the batch; it reports its own error.
+  const { results } = await run({ routes: [{ agencyId: 'subway', routeId: 'no-such-route', direction1StopId: 'x', direction0StopId: 'x' }] });
+  assert.deepEqual(results, [{ ok: false, code: 'invalid-argument' }]);
 });

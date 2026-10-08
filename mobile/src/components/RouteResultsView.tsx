@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { realFareForItinerary } from '../data/lirrFares';
@@ -24,13 +24,30 @@ import { PlannedTripDetailView } from './PlannedTripDetailView';
 import { RouteBadge, transitModeForAgency, type TransitMode } from './RouteBadge';
 import { PressableScale } from './PressableScale';
 
+/** What the rider has chosen on Route Results; kept by HomeScreen so it survives a trip to the search page. */
+export type ResultsCriteria = {
+  origin: string;
+  destination: string;
+  preference: RoutePreference;
+  enabledModes: readonly TransitMode[];
+};
+
+export const CURRENT_LOCATION_LABEL = 'Current location';
+
+export function initialResultsCriteria(destination: string): ResultsCriteria {
+  return { origin: CURRENT_LOCATION_LABEL, destination, preference: 'fastest', enabledModes: ['subway', 'bus', 'rail'] };
+}
+
 type RouteResultsViewProps = {
   activeItineraryId: ItineraryId | null;
-  destination: string;
+  criteria: ResultsCriteria;
   isTripFavorite: (itineraryId: ItineraryId, destination: string) => boolean;
   onBack: () => void;
+  onChangeCriteria: (criteria: ResultsCriteria) => void;
   onChangeTripTime: (choice: TripTimeChoice) => void;
   onCloseTrip: () => void;
+  /** Opens the destination search page to change one endpoint. */
+  onEditEndpoint: (field: 'origin' | 'destination') => void;
   onEndTrip: () => void;
   onOpenTrip: (itineraryId: ItineraryId) => void;
   onStartTrip: (itineraryId: ItineraryId) => void;
@@ -57,11 +74,13 @@ type OptionsPanel = 'modes' | 'filter' | null;
 
 export function RouteResultsView({
   activeItineraryId,
-  destination: initialDestination,
+  criteria,
   isTripFavorite,
   onBack,
+  onChangeCriteria,
   onChangeTripTime,
   onCloseTrip,
+  onEditEndpoint,
   onEndTrip,
   onOpenTrip,
   onStartTrip,
@@ -72,18 +91,16 @@ export function RouteResultsView({
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
   const { height } = useWindowDimensions();
-  const [origin, setOrigin] = useState('Current location');
-  const [destination, setDestination] = useState(initialDestination);
-  const [preference, setPreference] = useState<RoutePreference>('fastest');
+  const { destination, enabledModes, origin, preference } = criteria;
+  const setPreference = (next: RoutePreference) => onChangeCriteria({ ...criteria, preference: next });
+  const setEnabledModes = (update: readonly TransitMode[] | ((current: readonly TransitMode[]) => readonly TransitMode[])) => (
+    onChangeCriteria({ ...criteria, enabledModes: typeof update === 'function' ? update(enabledModes) : update })
+  );
   const [openPanel, setOpenPanel] = useState<OptionsPanel>(null);
-  const [enabledModes, setEnabledModes] = useState<readonly TransitMode[]>(ALL_MODES);
   const [timeSheetOpen, setTimeSheetOpen] = useState(false);
   const [refreshCount, setRefreshCount] = useState(0);
 
-  const swapEndpoints = () => {
-    setOrigin(destination);
-    setDestination(origin);
-  };
+  const swapEndpoints = () => onChangeCriteria({ ...criteria, origin: destination, destination: origin });
 
   const orderedItineraries = useMemo(
     () =>
@@ -160,28 +177,31 @@ export function RouteResultsView({
               <View style={styles.endpointStack}>
                 <View style={styles.endpointRow}>
                   <View style={[styles.endpointDot, { backgroundColor: colors.success }]} />
-                  <TextInput
-                    accessibilityLabel="Trip origin"
-                    onChangeText={setOrigin}
-                    placeholder="Start"
-                    placeholderTextColor={colors.mutedInk}
-                    style={styles.endpointInput}
-                    testID="origin-input"
-                    value={origin}
-                  />
+                  {/* Each endpoint opens the destination search page, rather than taking typed text. */}
+                  <PressableScale
+                    accessibilityHint="Opens search to change the start"
+                    accessibilityLabel={`Trip origin, ${origin}`}
+                    accessibilityRole="button"
+                    onPress={() => onEditEndpoint('origin')}
+                    style={styles.endpointField}
+                    testID="origin-field"
+                  >
+                    <Text numberOfLines={1} style={styles.endpointInput}>{origin}</Text>
+                  </PressableScale>
                 </View>
                 <View style={styles.endpointConnector} />
                 <View style={styles.endpointRow}>
                   <View style={[styles.endpointDot, { backgroundColor: colors.primary }]} />
-                  <TextInput
-                    accessibilityLabel="Trip destination"
-                    onChangeText={setDestination}
-                    placeholder="Destination"
-                    placeholderTextColor={colors.mutedInk}
-                    style={styles.endpointInput}
-                    testID="destination-input"
-                    value={destination}
-                  />
+                  <PressableScale
+                    accessibilityHint="Opens search to change the destination"
+                    accessibilityLabel={`Trip destination, ${destination}`}
+                    accessibilityRole="button"
+                    onPress={() => onEditEndpoint('destination')}
+                    style={styles.endpointField}
+                    testID="destination-field"
+                  >
+                    <Text numberOfLines={1} style={styles.endpointInput}>{destination}</Text>
+                  </PressableScale>
                 </View>
               </View>
               <PressableScale
@@ -380,6 +400,11 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   endpointRow: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 11 },
   endpointDot: { width: 10, height: 10, borderRadius: 5 },
   endpointConnector: { width: 2, height: 7, marginLeft: 4, backgroundColor: colors.border },
+  endpointField: {
+    flex: 1,
+    minWidth: 0,
+    justifyContent: 'center',
+  },
   endpointInput: { minWidth: 0, flex: 1, paddingVertical: 7, color: colors.ink, ...typography.bodyStrong, fontSize: 14 },
   swapButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19, backgroundColor: colors.blueSoft },
   mapLocation: { position: 'absolute', top: '35%', right: 16, zIndex: 2 },

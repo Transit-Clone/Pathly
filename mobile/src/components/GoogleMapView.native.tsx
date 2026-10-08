@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet } from 'react-native';
-import MapView, { PROVIDER_GOOGLE, Polygon, type Region } from 'react-native-maps';
+import MapView, { PROVIDER_GOOGLE, Polygon, type Camera, type Region } from 'react-native-maps';
 
 import { googleMapStyle } from '../data/mapStyle';
 import { SERVICE_AREA_BOUNDS } from '../data/serviceArea';
@@ -27,6 +27,12 @@ export type HomeMapCamera = { latitude: number; longitude: number; latitudeDelta
 
 type Padding = { bottom?: number; left?: number; right?: number; top?: number };
 
+export type MapOrientation = { heading: number; rotated: boolean };
+/** Within this many degrees of north-up and flat, the map counts as oriented. */
+const ORIENTED_TOLERANCE_DEGREES = 2;
+const REORIENT_DURATION_MS = 300;
+const ORIENTATION_READ_INTERVAL_MS = 200;
+
 type GoogleMapViewProps = {
   /** Camera to open on instead of the rider's location (e.g. where they had panned before). */
   initialCamera?: HomeMapCamera | null;
@@ -39,6 +45,10 @@ type GoogleMapViewProps = {
   padding?: Padding;
   /** Incremented to center the map on `location`; later GPS updates alone never move the map. */
   recenterRequest?: number;
+  /** After the rider rotates or tilts the map: its heading (degrees clockwise from north) and whether it's off north-up/flat. */
+  onOrientationChange?: (orientation: MapOrientation) => void;
+  /** Incremented to turn the map back to north-up and flat, keeping its center and zoom. */
+  reorientRequest?: number;
   testID?: string;
 };
 
@@ -52,7 +62,7 @@ function clampToServiceArea(region: Region): Region {
 }
 
 /** Real Google Maps view, defaulting to the user's location and panning only within NYC/Nassau/Suffolk. */
-export function GoogleMapView({ initialCamera, location, onCameraChange, onUserMoveEnd, onUserPan, padding, recenterRequest = 0, testID = 'google-map-view' }: GoogleMapViewProps) {
+export function GoogleMapView({ initialCamera, location, onCameraChange, onOrientationChange, onUserMoveEnd, onUserPan, padding, recenterRequest = 0, reorientRequest = 0, testID = 'google-map-view' }: GoogleMapViewProps) {
   const mapRef = useRef<MapView>(null);
   // Places hidden, and recolored in the dark theme (see mapStyle.ts).
   const { isDark } = useTheme();
@@ -78,7 +88,28 @@ export function GoogleMapView({ initialCamera, location, onCameraChange, onUserM
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the request only; `location` is read at request time
   }, [recenterRequest]);
 
+  // Rotation and tilt aren't in the region, so the camera is read after gestures (and at most every
+  // ORIENTATION_READ_INTERVAL_MS while one is in progress) to show or hide the reorient button.
+  const lastOrientationRead = useRef(0);
+  const readOrientation = useCallback(() => {
+    if (!onOrientationChange) return;
+    lastOrientationRead.current = Date.now();
+    void mapRef.current?.getCamera().then((camera: Camera) => {
+      const heading = (((camera.heading ?? 0) % 360) + 360) % 360;
+      const offNorth = Math.min(heading, 360 - heading);
+      onOrientationChange({ heading, rotated: offNorth > ORIENTED_TOLERANCE_DEGREES || (camera.pitch ?? 0) > ORIENTED_TOLERANCE_DEGREES });
+    }).catch(() => undefined);
+  }, [onOrientationChange]);
+
+  const handledReorientRequest = useRef(reorientRequest);
+  useEffect(() => {
+    if (reorientRequest === handledReorientRequest.current) return;
+    handledReorientRequest.current = reorientRequest;
+    mapRef.current?.animateCamera({ heading: 0, pitch: 0 }, { duration: REORIENT_DURATION_MS });
+  }, [reorientRequest]);
+
   const onRegionChangeComplete = useCallback((nextRegion: Region) => {
+    readOrientation();
     const clamped = clampToServiceArea(nextRegion);
     setRegion(clamped);
     onCameraChange?.(clamped);
@@ -90,7 +121,7 @@ export function GoogleMapView({ initialCamera, location, onCameraChange, onUserM
       userMoved.current = false;
       onUserMoveEnd?.({ latitude: clamped.latitude, longitude: clamped.longitude });
     }
-  }, [onCameraChange, onUserMoveEnd]);
+  }, [onCameraChange, onUserMoveEnd, readOrientation]);
 
   return (
     <MapView
@@ -98,6 +129,7 @@ export function GoogleMapView({ initialCamera, location, onCameraChange, onUserM
       onPanDrag={() => {
         userMoved.current = true;
         onUserPan?.();
+        if (Date.now() - lastOrientationRead.current >= ORIENTATION_READ_INTERVAL_MS) readOrientation();
       }}
       onRegionChangeComplete={onRegionChangeComplete}
       customMapStyle={mapStyle}
