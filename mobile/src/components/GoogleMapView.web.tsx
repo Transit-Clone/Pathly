@@ -70,6 +70,12 @@ type GoogleMapViewProps = {
   padding?: Padding;
   /** Incremented to center the map on `location`; later GPS updates alone never move the map. */
   recenterRequest?: number;
+  /**
+   * Accepted for parity with native, never called: without a Map ID the web map can't rotate or
+   * tilt, so it never needs reorienting.
+   */
+  onOrientationChange?: (orientation: { heading: number; rotated: boolean }) => void;
+  reorientRequest?: number;
   testID?: string;
 };
 

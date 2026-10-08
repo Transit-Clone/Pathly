@@ -21,6 +21,7 @@ const baseMapOptions = { disableDefaultUI: true, gestureHandling: 'greedy', clic
 // Arbitrary point; immediately replaced by fitBounds (or the focus stop) once the map is ready.
 const FALLBACK_CENTER = { lat: 40.75, lng: -73.95 };
 const FOCUS_ZOOM = 13;
+const ROUTE_FIT_PADDING = { top: 90, right: 40, bottom: 60, left: 40 };
 // The line behind the rider's stop (already travelled in this direction) is drawn faint.
 const BEHIND_LINE_OPACITY = 0.35;
 // Stop dots are exactly as wide as the line (a circle symbol's outer size is 2 × scale + stroke),
@@ -70,8 +71,10 @@ function vehicleIconUrl(color: string, age: string | null) {
 const labelOffset = (width: number, height: number) => ({ x: -width / 2, y: -height - 12 });
 
 type RouteMapProps = {
-  /** Incremented by the location button; each change centers the map on `userLocation`. */
+  /** Incremented by the location button; each change centers the map on `userLocation` and follows it until a drag. */
   centerOnUserRequest?: number;
+  /** Incremented by the route-overview button; each change fits the map to the whole line. */
+  showRouteRequest?: number;
   color: string;
   /** GTFS direction_id to show vehicles for; all directions when omitted. */
   directionId?: number;
@@ -91,7 +94,7 @@ type RouteMapProps = {
 };
 
 /** Real route map: actual stop positions, the real line, and live vehicles — for any route with a live feed. */
-export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusStopId, mode = 'rail', onUserPan, path, stops, testID = 'route-map', userLocation, vehicles }: RouteMapProps) {
+export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusStopId, mode = 'rail', onUserPan, path, showRouteRequest = 0, stops, testID = 'route-map', userLocation, vehicles }: RouteMapProps) {
   const { isLoaded } = useJsApiLoader({
     id: GOOGLE_MAPS_SCRIPT_ID,
     googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY ?? '',
@@ -103,7 +106,8 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
   const [selectedStop, setSelectedStop] = useState<GeometryStop | null>(null);
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const riderMovedMap = useRef(false);
-  // True from a location-button press until the rider drags: keeps following fresh GPS fixes.
+  // True from a location-button press until the rider drags (or asks for the whole route): keeps
+  // following fresh GPS fixes.
   const followRider = useRef(false);
   const now = useNow(1000);
   const shownVehicles = visibleTrains(vehicles, directionId, now);
@@ -155,6 +159,18 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
     map.panTo({ lat: userLocation.latitude, lng: userLocation.longitude });
     if ((map.getZoom() ?? 0) < FOCUS_ZOOM) map.setZoom(FOCUS_ZOOM);
   }, [centerOnUserRequest, map, userLocation]);
+
+  // The route-overview button frames the whole line in this direction (every stop), clear of the
+  // controls over the map's top.
+  useEffect(() => {
+    if (showRouteRequest === 0 || !map) return;
+    followRider.current = false;
+    riderMovedMap.current = true; // the nearest-stop focus must not pull the map back
+    const bounds = new google.maps.LatLngBounds();
+    for (const point of path ?? stops) bounds.extend({ lat: point.lat, lng: point.lon });
+    map.fitBounds(bounds, ROUTE_FIT_PADDING);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the request only; the line is read at request time
+  }, [showRouteRequest]);
 
   return (
     <View style={StyleSheet.absoluteFill} testID={testID}>

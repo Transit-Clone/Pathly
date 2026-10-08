@@ -24,6 +24,8 @@ export type SearchViewProps = {
   initialQuery?: string;
   onCancel: () => void;
   onSelect: (place: SearchPlace) => void;
+  /** When set (editing a trip's start), a "Current location" choice is offered first. */
+  onSelectCurrentLocation?: () => void;
 };
 
 type SearchResultRowProps = {
@@ -89,7 +91,7 @@ function Message({ body, children, title }: MessageProps) {
 }
 
 /** Full-screen destination search: search field pinned on top, a flat result list below. */
-export function SearchView({ initialQuery = '', onCancel, onSelect }: SearchViewProps) {
+export function SearchView({ initialQuery = '', onCancel, onSelect, onSelectCurrentLocation }: SearchViewProps) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
   const [query, setQuery] = useState(initialQuery);
@@ -241,6 +243,27 @@ export function SearchView({ initialQuery = '', onCancel, onSelect }: SearchView
             <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={styles.selectionError} testID="search-selection-error">
               {"Couldn't open that place. Try selecting it again."}
             </Text>
+          ) : null}
+
+          {onSelectCurrentLocation ? (
+            <PressableScale
+              accessibilityLabel="Current location"
+              accessibilityRole="button"
+              onPress={() => {
+                if (resolvingId) return;
+                endSession();
+                onSelectCurrentLocation();
+              }}
+              style={styles.resultRow}
+              testID="search-current-location"
+            >
+              <View style={styles.resultIcon}>
+                <Icon color={colors.primary} filled={true} name="locate" size={20} />
+              </View>
+              <View style={styles.resultCopy}>
+                <Text numberOfLines={1} style={styles.resultTitle}>Current location</Text>
+              </View>
+            </PressableScale>
           ) : null}
 
           {isSearching ? renderSearchState() : (

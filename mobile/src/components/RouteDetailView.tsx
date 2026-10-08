@@ -227,7 +227,11 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
   const vehicles = liveStatus.status === 'loaded' ? liveStatus.data.vehicles : [];
   const [isLocationCentered, setIsLocationCentered] = useState(false);
   // Bumped on each location-button press; the live map re-centers on the rider whenever it changes.
+  // Bumped on each location-button press; the live map re-centers on the rider whenever it changes.
   const [centerOnUserRequest, setCenterOnUserRequest] = useState(0);
+  // Bumped by the crosshair (route-overview) button: the map frames the whole route.
+  const [showRouteRequest, setShowRouteRequest] = useState(0);
+  const [isRouteShown, setIsRouteShown] = useState(false);
   const [activeDirectionIndex, setActiveDirectionIndex] = useState(initialDirectionIndex ?? 0);
   const mapHeight = Math.max(280, Math.min(390, height * 0.58));
   const pageWidth = Math.min(width, 540) - 36;
@@ -427,11 +431,15 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
     <>
       <RouteMap
         centerOnUserRequest={centerOnUserRequest}
+        showRouteRequest={showRouteRequest}
         color={route.color}
         directionId={geometryDirectionId}
         focusStopId={activeDirection.stopId}
         mode={vehicleIcon}
-        onUserPan={() => setIsLocationCentered(false)}
+        onUserPan={() => {
+          setIsLocationCentered(false);
+          setIsRouteShown(false);
+        }}
         // The agency's real track/street shape for this direction, served with the stop list.
         path={geometryStatus.geometry.path}
         stops={geometryStatus.geometry.stops}
@@ -462,9 +470,15 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
       <View style={styles.topActions}>
         <PressableScale accessibilityLabel="Show current location" accessibilityRole="button" accessibilityState={{ selected: isLocationCentered }} onPress={() => {
           setIsLocationCentered(true);
+          setIsRouteShown(false);
           onRefreshLocation?.();
           setCenterOnUserRequest((count) => count + 1);
         }} style={[styles.iconButton, isLocationCentered && styles.selectedButton]} testID="route-location"><Icon filled={isLocationCentered} name="locate" /></PressableScale>
+        <PressableScale accessibilityLabel="Show the whole route" accessibilityRole="button" accessibilityState={{ selected: isRouteShown }} onPress={() => {
+          setIsRouteShown(true);
+          setIsLocationCentered(false);
+          setShowRouteRequest((count) => count + 1);
+        }} style={[styles.iconButton, isRouteShown && styles.selectedButton]} testID="route-overview"><Icon filled={isRouteShown} name="crosshair" /></PressableScale>
         <PressableScale accessibilityLabel={isFavorite ? 'Remove route from saved' : 'Save route'} accessibilityRole="button" accessibilityState={{ selected: isFavorite }} onPress={onToggleFavorite} style={[styles.iconButton, isFavorite && styles.selectedButton]} testID="route-favorite"><Icon color={isFavorite ? colors.warning : colors.primary} filled={isFavorite} name="favorite" /></PressableScale>
       </View>
     </View>

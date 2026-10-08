@@ -43,9 +43,10 @@ jest.mock('firebase/firestore', () => ({
 // default, echoing back whatever routeId was actually requested (not a single hardcoded one —
 // every live route needs to see its own routeId match, or applyRouteLive treats it as a
 // mismatch and reports an error status, same as it would for real mismatched data).
-jest.mock('firebase/functions', () => ({
-  getFunctions: jest.fn(() => ({})),
-  httpsCallable: jest.fn((_functions, name) => {
+jest.mock('firebase/functions', () => {
+  // Every callable's mock, by name, so the batch mock can answer through the per-route one.
+  const mockCallables = new Map();
+  const create = (name) => {
     if (name === 'findNearbyTransit') {
       // Mirrors every demo-catalog live route as a "discovered" result, so tests can open a
       // route through the real dynamic-discovery path, not just a pinned one. Which of these
@@ -128,6 +129,14 @@ jest.mock('firebase/functions', () => ({
         });
       });
     }
+    if (name === 'getRoutesLiveStatus') {
+      // Answers each route through the getRouteLiveStatus mock, so tests that customize that one
+      // (and count its calls by routeId) cover batched requests too.
+      return jest.fn((request) => Promise.all((request?.routes ?? []).map((route) => mockCallables.get('getRouteLiveStatus')({
+        ...route,
+        ...(request.lat !== undefined ? { lat: request.lat, lon: request.lon } : {}),
+      }).then(({ data }) => ({ ok: true, data }), () => ({ ok: false, code: 'internal' })))).then((results) => ({ data: { results } })));
+    }
     if (name === 'getStopDepartures') {
       // A short full-day list: one live departure, then the timetable.
       return jest.fn(() => Promise.resolve({
@@ -151,8 +160,15 @@ jest.mock('firebase/functions', () => ({
         },
       },
     }));
-  }),
-}));
+  };
+  return {
+    getFunctions: jest.fn(() => ({})),
+    httpsCallable: jest.fn((_functions, name) => {
+      if (!mockCallables.has(name)) mockCallables.set(name, create(name));
+      return mockCallables.get(name);
+    }),
+  };
+});
 
 // Keep location deterministic in tests: permission denied, so screens render with the
 // Stony Brook fallback rather than racing a real (mocked) GPS lookup.
@@ -167,10 +183,19 @@ jest.mock('expo-location', () => ({
 jest.mock('react-native-maps', () => {
   const { forwardRef, useImperativeHandle } = require('react');
   const { View } = require('react-native');
-  // Shared across every map instance so tests can assert when a map was told to move.
+  // Shared across every map instance so tests can assert when a map was told to move, and set
+  // the camera a map reports (e.g. rotated by the rider).
   const mockAnimateToRegion = jest.fn();
+  const mockAnimateCamera = jest.fn();
+  const mockFitToCoordinates = jest.fn();
+  const mockCamera = { heading: 0, pitch: 0 };
   const MockMapView = forwardRef((props, ref) => {
-    useImperativeHandle(ref, () => ({ animateToRegion: mockAnimateToRegion }));
+    useImperativeHandle(ref, () => ({
+      animateToRegion: mockAnimateToRegion,
+      animateCamera: mockAnimateCamera,
+      fitToCoordinates: mockFitToCoordinates,
+      getCamera: () => Promise.resolve({ ...mockCamera, center: { latitude: 0, longitude: 0 }, zoom: 14 }),
+    }));
     return <View {...props} />;
   });
   const MockPolygon = (props) => <View {...props} />;
@@ -180,6 +205,9 @@ jest.mock('react-native-maps', () => {
     __esModule: true,
     default: MockMapView,
     mockAnimateToRegion,
+    mockAnimateCamera,
+    mockCamera,
+    mockFitToCoordinates,
     PROVIDER_GOOGLE: 'google',
     Polygon: MockPolygon,
     Marker: MockMarker,

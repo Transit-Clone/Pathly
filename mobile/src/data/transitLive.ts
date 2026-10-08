@@ -73,12 +73,57 @@ const getRouteLiveStatus = httpsCallable<
  */
 export async function fetchRouteLiveData(source: LiveSource, location?: Coordinates): Promise<RouteLiveData> {
   const { data } = await getRouteLiveStatus({
+    ...routeRequest(source),
+    ...(location ? { lat: location.latitude, lon: location.longitude } : {}),
+  });
+  return toRouteLiveData(data);
+}
+
+type RouteRequest = { agencyId: string; routeId: string; direction1StopId: string; direction0StopId: string };
+
+function routeRequest(source: LiveSource): RouteRequest {
+  return {
     agencyId: source.agencyId,
     routeId: source.routeId,
     direction1StopId: source.direction1StopId,
     direction0StopId: source.direction0StopId,
-    ...(location ? { lat: location.latitude, lon: location.longitude } : {}),
-  });
+  };
+}
+
+/** The most routes the backend answers in one batch (getRoutesLiveStatus's MAX_BATCH_ROUTES). */
+export const MAX_BATCH_ROUTES = 12;
+
+const getRoutesLiveStatus = httpsCallable<
+  { routes: RouteRequest[]; lat?: number; lon?: number },
+  { results: ({ ok: true; data: RouteLiveStatusResponse & { nearestStop?: NearestStopResponse } } | { ok: false; code: string })[] }
+>(functions, 'getRoutesLiveStatus');
+
+/** Thrown when the deployed backend predates batching, so callers can fall back to one request per route. */
+export class BatchUnavailableError extends Error {}
+
+/**
+ * Live status for up to MAX_BATCH_ROUTES routes in one request: every card on screen waits in the
+ * backend's one-at-a-time live-status queue once, not once per card. Each entry is that route's
+ * data, or null if that route alone failed.
+ */
+export async function fetchRoutesLiveData(sources: readonly LiveSource[], location?: Coordinates): Promise<(RouteLiveData | null)[]> {
+  try {
+    const { data } = await getRoutesLiveStatus({
+      routes: sources.map(routeRequest),
+      ...(location ? { lat: location.latitude, lon: location.longitude } : {}),
+    });
+    return sources.map((_, index) => {
+      const result = data.results[index];
+      return result?.ok ? toRouteLiveData(result.data) : null;
+    });
+  } catch (error) {
+    // A backend deployed before batching has no such function.
+    if ((error as { code?: string } | null)?.code === 'functions/not-found') throw new BatchUnavailableError();
+    throw error;
+  }
+}
+
+function toRouteLiveData(data: RouteLiveStatusResponse & { nearestStop?: NearestStopResponse }): RouteLiveData {
   const nearest = data.nearestStop;
   return {
     routeId: data.routeId,

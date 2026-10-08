@@ -4,7 +4,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { applyRouteLive } from '../data/applyRouteLive';
 import { favoriteTripKey, type FavoriteTrip } from '../data/favorites';
-import { discoveredRouteToRouteDetail, fetchNearbyTransit, filterOutPinnedDuplicates } from '../data/nearbyTransit';
+import { NEARBY_CACHE_KEY, readCache, writeCache } from '../data/deviceCache';
+import { discoveredRouteToRouteDetail, fetchNearbyTransit, filterOutPinnedDuplicates, type DiscoveredRoute } from '../data/nearbyTransit';
 import { TransitLiveProvider, useTransitLive } from '../data/TransitLiveContext';
 import {
   recentTripById,
@@ -22,10 +23,11 @@ import type { Palette } from '../theme/colors';
 import { CurrentLocationButton } from './CurrentLocationButton';
 import { DeparturesView } from './DeparturesView';
 import { GoogleMapView, type HomeMapCamera } from './GoogleMapView';
+import { PressableScale } from './PressableScale';
 import { ProfileView } from './ProfileView';
 import { RecentTripDetailView } from './RecentTripDetailView';
 import { RouteDetailView } from './RouteDetailView';
-import { RouteResultsView } from './RouteResultsView';
+import { CURRENT_LOCATION_LABEL, initialResultsCriteria, RouteResultsView, type ResultsCriteria } from './RouteResultsView';
 import { SearchHeader } from './SearchHeader';
 import { SearchView } from './SearchView';
 import { TransitSheet, type TransitTabId } from './TransitSheet';
@@ -40,15 +42,20 @@ const HEADER_INSET = 80;
 // Same footprint as the blue current-location dot (CurrentLocationMarker).
 const SEARCH_CENTER_SIZE = 17;
 const NEARBY_SEARCH_DEBOUNCE_MS = 600;
+// A cached nearby list older than a day is more misleading than helpful.
+const NEARBY_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+type ResultsViewState = { name: 'results'; criteria: ResultsCriteria; returnTo: 'search' | 'favorites' };
 
 type ActiveView =
   | { name: 'home' }
-  | { name: 'search' }
+  // `editing`: changing one endpoint of an open Route Results, which this search returns to.
+  | { name: 'search'; editing?: { field: 'origin' | 'destination'; results: ResultsViewState } }
   // `route` is the snapshot opened, so the page never depends on the route still being nearby.
   | { name: 'route'; routeId: string; route: RouteDetail; directionIndex?: number }
   // "More departures" for one direction of an opened route; back returns to that route and direction.
   | { name: 'departures'; routeId: string; route: RouteDetail; directionIndex: number }
-  | { name: 'results'; destination: string; returnTo: 'search' | 'favorites' }
+  | ResultsViewState
   | { name: 'recentTrip'; tripId: RecentTripId; returnTab: TransitTabId }
   | { name: 'profile' };
 
@@ -66,11 +73,11 @@ type RouteDetailScreenProps = {
   isFavorite: boolean;
   onBack: () => void;
   onOpenDepartures: (directionIndex: number) => void;
+  onRefreshLocation: () => void;
   onToggleFavorite: () => void;
   route: RouteDetail;
   location: Coordinates;
   locationKnown: boolean;
-  onRefreshLocation: () => void;
 };
 
 /** Reads live transit data itself — must render under TransitLiveProvider, which HomeScreen itself can't consume. */
@@ -120,6 +127,9 @@ export function HomeScreen() {
   // Routine GPS updates move only the rider's dot, never the map.
   const [recenterRequest, setRecenterRequest] = useState(0);
   const [hasCenteredOnFix, setHasCenteredOnFix] = useState(false);
+  // A rotated or tilted map shows a compass that turns it back to north-up.
+  const [mapOrientation, setMapOrientation] = useState({ heading: 0, rotated: false });
+  const [reorientRequest, setReorientRequest] = useState(0);
   if (!hasCenteredOnFix && locationStatus === 'located') {
     setHasCenteredOnFix(true);
     setRecenterRequest((count) => count + 1);
@@ -144,6 +154,15 @@ export function HomeScreen() {
   // route, and reopens here — on the purple dot, if they had panned away — not on their GPS fix.
   const [homeCamera, setHomeCamera] = useState<HomeMapCamera | null>(null);
   const nearbyPoint = searchCenter ?? location;
+  const exploring = searchCenter != null;
+  // On launch, the last nearby list shows at once (marked as updating) while the fresh search,
+  // possibly against a cold backend, runs.
+  useEffect(() => {
+    void readCache<DiscoveredRoute[]>(NEARBY_CACHE_KEY, NEARBY_CACHE_MAX_AGE_MS).then((cached) => {
+      if (!cached?.length) return;
+      setNearbyStatus((current) => (current.status === 'loading' ? { status: 'loaded', routes: cached.map(discoveredRouteToRouteDetail), refreshing: true } : current));
+    });
+  }, []);
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
@@ -152,6 +171,8 @@ export function HomeScreen() {
         const discovered = await fetchNearbyTransit(nearbyPoint);
         if (cancelled) return;
         setNearbyStatus({ status: 'loaded', routes: discovered.map(discoveredRouteToRouteDetail) });
+        // The rider's own surroundings (not an area explored with the map) open instantly next time.
+        if (!exploring) void writeCache(NEARBY_CACHE_KEY, discovered);
       } catch {
         if (!cancelled) setNearbyStatus((current) => (current.status === 'loaded' ? { ...current, refreshing: false } : { status: 'error' }));
       }
@@ -221,7 +242,7 @@ export function HomeScreen() {
   }, []);
   const showRouteResults = useCallback((destination: string) => {
     setSelectedSearchTripId(null);
-    setActiveView({ name: 'results', destination, returnTo: 'search' });
+    setActiveView({ name: 'results', criteria: initialResultsCriteria(destination), returnTo: 'search' });
   }, []);
   const showFavorites = useCallback(() => {
     setHomeTab('favorites');
@@ -245,7 +266,7 @@ export function HomeScreen() {
     }
     setTripTime(trip.time);
     setSelectedSearchTripId(trip.itineraryId);
-    setActiveView({ name: 'results', destination: trip.destination, returnTo: 'favorites' });
+    setActiveView({ name: 'results', criteria: initialResultsCriteria(trip.destination), returnTo: 'favorites' });
   }, []);
   const showRecents = useCallback(() => {
     setHomeTab('recents');
@@ -316,6 +337,11 @@ export function HomeScreen() {
       return;
     }
 
+    if (activeView.name === 'search' && activeView.editing) {
+      setActiveView(activeView.editing.results);
+      return;
+    }
+
     if (activeView.name === 'departures') {
       const { directionIndex, route, routeId } = activeView;
       setActiveView({ name: 'route', routeId, route, directionIndex });
@@ -354,6 +380,22 @@ export function HomeScreen() {
   );
 
   if (activeView.name === 'search') {
+    const { editing } = activeView;
+    if (editing) {
+      // The same search page, changing one endpoint of the open Route Results; every other trip
+      // criterion is kept, and cancel returns to it unchanged.
+      const { field, results } = editing;
+      const current = results.criteria[field];
+      const choose = (value: string) => setActiveView({ ...results, criteria: { ...results.criteria, [field]: value } });
+      return screen(
+        <SearchView
+          initialQuery={current === CURRENT_LOCATION_LABEL ? '' : current}
+          onCancel={() => setActiveView(results)}
+          onSelect={(place) => choose(place.title)}
+          onSelectCurrentLocation={field === 'origin' ? () => choose(CURRENT_LOCATION_LABEL) : undefined}
+        />
+      );
+    }
     return screen(
       <SearchView
         onCancel={showHome}
@@ -373,9 +415,9 @@ export function HomeScreen() {
         isFavorite={savedRouteIds.includes(routeId)}
         onBack={showHome}
         onOpenDepartures={(directionIndex) => setActiveView({ name: 'departures', routeId, route, directionIndex })}
+        onRefreshLocation={() => void refreshLocation()}
         location={location}
         locationKnown={locationStatus === 'located'}
-        onRefreshLocation={() => void refreshLocation()}
         onToggleFavorite={() => setSavedRouteIds((current) => toggleItem(current, routeId))}
         route={route}
       />
@@ -391,11 +433,13 @@ export function HomeScreen() {
     return screen(
       <RouteResultsView
         activeItineraryId={activeTrip?.kind === 'planned' ? activeTrip.itineraryId : null}
-        destination={activeView.destination}
+        criteria={activeView.criteria}
         isTripFavorite={(itineraryId, destination) => isTripFavorite({ kind: 'planned', itineraryId, destination, time: tripTime })}
         onBack={closeResults}
+        onChangeCriteria={(criteria) => setActiveView((current) => (current.name === 'results' ? { ...current, criteria } : current))}
         onChangeTripTime={setTripTime}
         onCloseTrip={closePlannedTrip}
+        onEditEndpoint={(field) => setActiveView({ name: 'search', editing: { field, results: activeView } })}
         onEndTrip={endPlannedTrip}
         onOpenTrip={showPlannedTrip}
         onStartTrip={startPlannedTrip}
@@ -434,8 +478,10 @@ export function HomeScreen() {
           onCameraChange={setHomeCamera}
           onUserMoveEnd={setSearchCenter}
           onUserPan={() => setIsLocationCentered(false)}
+          onOrientationChange={setMapOrientation}
           padding={{ top: HEADER_INSET, bottom: height - mapHeight }}
           recenterRequest={recenterRequest}
+          reorientRequest={reorientRequest}
         />
         {searchCenter ? (
           // Fixed at the center of the visible map (below the header, above the resting sheet):
@@ -467,6 +513,22 @@ export function HomeScreen() {
             },
           ]}
         >
+          {mapOrientation.rotated ? (
+            <PressableScale
+              accessibilityHint="Turns the map back to north-up"
+              accessibilityLabel="Reorient map to north"
+              accessibilityRole="button"
+              onPress={() => setReorientRequest((count) => count + 1)}
+              style={styles.reorientButton}
+              testID="reorient-map"
+            >
+              {/* The needle's red end points at true north on the rotated map. */}
+              <View style={[styles.compassNeedle, { transform: [{ rotate: `${-mapOrientation.heading}deg` }] }]} testID="reorient-needle">
+                <View style={styles.needleNorth} />
+                <View style={styles.needleSouth} />
+              </View>
+            </PressableScale>
+          ) : null}
           <CurrentLocationButton
             loading={locationStatus === 'loading'}
             onPress={() => {
@@ -528,6 +590,44 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     right: 16,
     zIndex: 4,
     elevation: 4,
+    alignItems: 'center',
+    gap: 10,
+  },
+  reorientButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 20,
+    backgroundColor: colors.surface,
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  compassNeedle: {
+    alignItems: 'center',
+  },
+  needleNorth: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 5,
+    borderRightWidth: 5,
+    borderBottomWidth: 12,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderBottomColor: colors.red,
+  },
+  needleSouth: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 5,
+    borderRightWidth: 5,
+    borderTopWidth: 12,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: colors.mutedInk,
   },
   // Solid purple with a white ring, matching the GPS dot's look so it reads as a map point.
   searchCenter: {
