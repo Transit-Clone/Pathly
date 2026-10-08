@@ -1,13 +1,29 @@
 import { Fragment } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import type { TripCardData } from '../data/favorites';
 import { useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
 import { Icon } from './Icon';
 import { RouteBadge } from './RouteBadge';
 import { PressableScale } from './PressableScale';
+
+export type TripCardLeg = {
+  agency: string;
+  alightTime: string;
+  boardTime: string;
+  color: string;
+  shortName: string;
+};
+
+export type TripCardData = {
+  destination: string;
+  durationMinutes: number;
+  fare: string;
+  legs: readonly TripCardLeg[];
+  origin: string;
+  recency: string;
+};
 
 type TripCardProps = {
   accessibilityLabel?: string;

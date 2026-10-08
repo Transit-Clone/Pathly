@@ -3,6 +3,7 @@ import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-n
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { realFareForItinerary } from '../data/lirrFares';
+import type { SearchPlace } from '../data/placesSearch';
 import {
   formatTripTimeChoice,
   itineraries,
@@ -28,20 +29,23 @@ import { PressableScale } from './PressableScale';
 export type ResultsCriteria = {
   origin: string;
   destination: string;
+  /** The searched place behind `destination`, when it came from search; it's what the star saves. */
+  destinationPlace?: SearchPlace;
   preference: RoutePreference;
   enabledModes: readonly TransitMode[];
 };
 
 export const CURRENT_LOCATION_LABEL = 'Current location';
 
-export function initialResultsCriteria(destination: string): ResultsCriteria {
-  return { origin: CURRENT_LOCATION_LABEL, destination, preference: 'fastest', enabledModes: ['subway', 'bus', 'rail'] };
+export function initialResultsCriteria(destination: string, destinationPlace?: SearchPlace): ResultsCriteria {
+  return { origin: CURRENT_LOCATION_LABEL, destination, destinationPlace, preference: 'fastest', enabledModes: ['subway', 'bus', 'rail'] };
 }
 
 type RouteResultsViewProps = {
   activeItineraryId: ItineraryId | null;
   criteria: ResultsCriteria;
-  isTripFavorite: (itineraryId: ItineraryId, destination: string) => boolean;
+  /** Whether the trip's destination is in the rider's saved locations (the trip page's star). */
+  isDestinationSaved: boolean;
   onBack: () => void;
   onChangeCriteria: (criteria: ResultsCriteria) => void;
   onChangeTripTime: (choice: TripTimeChoice) => void;
@@ -51,7 +55,7 @@ type RouteResultsViewProps = {
   onEndTrip: () => void;
   onOpenTrip: (itineraryId: ItineraryId) => void;
   onStartTrip: (itineraryId: ItineraryId) => void;
-  onToggleTripFavorite: (itineraryId: ItineraryId, destination: string) => void;
+  onToggleSaveDestination: () => void;
   selectedItineraryId: ItineraryId | null;
   tripTime: TripTimeChoice;
 };
@@ -75,7 +79,7 @@ type OptionsPanel = 'modes' | 'filter' | null;
 export function RouteResultsView({
   activeItineraryId,
   criteria,
-  isTripFavorite,
+  isDestinationSaved,
   onBack,
   onChangeCriteria,
   onChangeTripTime,
@@ -84,7 +88,7 @@ export function RouteResultsView({
   onEndTrip,
   onOpenTrip,
   onStartTrip,
-  onToggleTripFavorite,
+  onToggleSaveDestination,
   selectedItineraryId,
   tripTime,
 }: RouteResultsViewProps) {
@@ -142,12 +146,12 @@ export function RouteResultsView({
       <PlannedTripDetailView
         destination={destination}
         isActive={activeItineraryId === selectedItineraryId}
-        isFavorite={isTripFavorite(selectedItineraryId, destination)}
+        isFavorite={isDestinationSaved}
         itinerary={itineraryById[selectedItineraryId]}
         onBack={onCloseTrip}
         onEnd={onEndTrip}
         onStart={() => onStartTrip(selectedItineraryId)}
-        onToggleFavorite={() => onToggleTripFavorite(selectedItineraryId, destination)}
+        onToggleFavorite={onToggleSaveDestination}
         schedule={scheduleItinerary(itineraryById[selectedItineraryId], tripTime)}
       />
       </ScreenTransition>

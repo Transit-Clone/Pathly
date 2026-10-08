@@ -18,6 +18,7 @@ const glyphs = {
   close: ['close-circle', 'close-circle'],
   collapse: ['chevron-up', 'chevron-up'],
   crosshair: ['locate-outline', 'locate'],
+  dismiss: ['close', 'close'],
   expand: ['chevron-down', 'chevron-down'],
   fare: ['pricetag-outline', 'pricetag'],
   favorite: ['star-outline', 'star'],

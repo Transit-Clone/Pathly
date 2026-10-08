@@ -111,7 +111,7 @@ export function SharedTripDetailView({ actionLabel, backLabel, isFavorite, model
     <View pointerEvents="box-none" style={styles.topBar}>
       <MapControl label={backLabel} onPress={onBack} testID={`${testPrefix}-back`}><Icon name="back" size={26} /></MapControl>
       <View style={styles.mapActions}>
-        <MapControl label={isFavorite ? 'Remove trip from favorites' : 'Add trip to favorites'} onPress={onToggleFavorite} selected={isFavorite} testID={`${testPrefix}-favorite`}><Icon color={isFavorite ? colors.warning : colors.primary} filled={isFavorite} name="favorite" size={24} /></MapControl>
+        <MapControl label={isFavorite ? 'Remove destination from saved' : 'Save destination'} onPress={onToggleFavorite} selected={isFavorite} testID={`${testPrefix}-favorite`}><Icon color={isFavorite ? colors.warning : colors.primary} filled={isFavorite} name="favorite" size={24} /></MapControl>
         <MapControl label="Center trip map on current location" onPress={() => setIsLocationCentered(true)} selected={isLocationCentered} testID={`${testPrefix}-location`}><Icon filled={isLocationCentered} name="locate" /></MapControl>
       </View>
     </View>

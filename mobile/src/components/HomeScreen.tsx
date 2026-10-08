@@ -2,11 +2,21 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { ActivityIndicator, Animated, BackHandler, Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useAuth } from '../auth/AuthContext';
 import { applyRouteLive } from '../data/applyRouteLive';
-import { favoriteTripKey, type FavoriteTrip } from '../data/favorites';
 import { NEARBY_CACHE_KEY, readCache, writeCache } from '../data/deviceCache';
 import { discoveredRouteToRouteDetail, fetchNearbyTransit, filterOutPinnedDuplicates, type DiscoveredRoute } from '../data/nearbyTransit';
+import type { SearchPlace } from '../data/placesSearch';
 import { TransitLiveProvider, useTransitLive } from '../data/TransitLiveContext';
+import {
+  findSavedLocation,
+  locationToPlace,
+  placeFromName,
+  removeSavedLocation,
+  saveLocation,
+  subscribeToSavedLocations,
+  type SavedLocation,
+} from '../data/userData';
 import {
   recentTripById,
   routes,
@@ -64,6 +74,13 @@ type ActiveTrip =
   | { kind: 'recent'; tripId: RecentTripId }
   | null;
 
+const MAX_SAVED_LOCATIONS = 50;
+
+/** The place a Route Results destination stands for; a swapped-in or demo one is known only by name. */
+function destinationPlaceOf(criteria: ResultsCriteria): SearchPlace {
+  return criteria.destinationPlace?.title === criteria.destination ? criteria.destinationPlace : placeFromName(criteria.destination);
+}
+
 function toggleItem<T>(items: readonly T[], item: T): T[] {
   return items.includes(item) ? items.filter((value) => value !== item) : [...items, item];
 }
@@ -117,7 +134,10 @@ export function HomeScreen() {
   // One "Save" star replaces pin + favorite: saved routes lead Nearby and fill Favorites -> Routes.
   // Nothing is saved by default.
   const [savedRouteIds, setSavedRouteIds] = useState<readonly string[]>([]);
-  const [favoriteTrips, setFavoriteTrips] = useState<readonly FavoriteTrip[]>([]);
+  // A trip's star saves its destination to the account (Firestore), listed under Favorites -> Places.
+  const { user } = useAuth();
+  const uid = user?.uid;
+  const [savedLocations, setSavedLocations] = useState<readonly SavedLocation[]>([]);
   const { height } = useWindowDimensions();
   const { location, refresh: refreshLocation, status: locationStatus } = useCurrentLocation();
   const [isLocationCentered, setIsLocationCentered] = useState(false);
@@ -240,33 +260,32 @@ export function HomeScreen() {
     setSelectedSearchTripId(null);
     setActiveView({ name: 'search' });
   }, []);
-  const showRouteResults = useCallback((destination: string) => {
+  const showRouteResults = useCallback((place: SearchPlace) => {
     setSelectedSearchTripId(null);
-    setActiveView({ name: 'results', criteria: initialResultsCriteria(destination), returnTo: 'search' });
+    setActiveView({ name: 'results', criteria: initialResultsCriteria(place.title, place), returnTo: 'search' });
   }, []);
   const showFavorites = useCallback(() => {
     setHomeTab('favorites');
     setActiveView({ name: 'home' });
   }, []);
-  const isTripFavorite = useCallback(
-    (trip: FavoriteTrip) => favoriteTrips.some((item) => favoriteTripKey(item) === favoriteTripKey(trip)),
-    [favoriteTrips],
-  );
-  const toggleTripFavorite = useCallback((trip: FavoriteTrip) => {
-    setFavoriteTrips((current) =>
-      current.some((item) => favoriteTripKey(item) === favoriteTripKey(trip))
-        ? current.filter((item) => favoriteTripKey(item) !== favoriteTripKey(trip))
-        : [...current, trip],
-    );
-  }, []);
-  const openFavoriteTrip = useCallback((trip: FavoriteTrip) => {
-    if (trip.kind === 'recent') {
-      setActiveView({ name: 'recentTrip', tripId: trip.tripId, returnTab: 'favorites' });
-      return;
-    }
-    setTripTime(trip.time);
-    setSelectedSearchTripId(trip.itineraryId);
-    setActiveView({ name: 'results', criteria: initialResultsCriteria(trip.destination), returnTo: 'favorites' });
+  useEffect(() => {
+    if (!uid) return undefined;
+    return subscribeToSavedLocations(uid, MAX_SAVED_LOCATIONS, setSavedLocations);
+  }, [uid]);
+  const isPlaceSaved = useCallback((place: SearchPlace) => findSavedLocation(savedLocations, place) != null, [savedLocations]);
+  const toggleSavedPlace = useCallback((place: SearchPlace) => {
+    if (!uid) return;
+    const saved = findSavedLocation(savedLocations, place);
+    // The listener picks up the change (Firestore applies local writes right away, even offline),
+    // so the star needs no state of its own; a rejected write just leaves it as it was.
+    const write = saved ? removeSavedLocation(uid, saved.address.placeId) : saveLocation(uid, place, 'Destination');
+    write.catch(() => undefined);
+  }, [savedLocations, uid]);
+  // Until the route navigation page exists, a saved place opens Route Results for it.
+  const openSavedLocation = useCallback((location: SavedLocation) => {
+    const place = locationToPlace(location.address);
+    setSelectedSearchTripId(null);
+    setActiveView({ name: 'results', criteria: initialResultsCriteria(place.title, place), returnTo: 'favorites' });
   }, []);
   const showRecents = useCallback(() => {
     setHomeTab('recents');
@@ -300,12 +319,8 @@ export function HomeScreen() {
   const showPlannedTrip = useCallback((itineraryId: ItineraryId) => {
     setSelectedSearchTripId(itineraryId);
   }, []);
-  const closePlannedTrip = useCallback(() => {
-    setSelectedSearchTripId(null);
-    if (activeView.name === 'results' && activeView.returnTo === 'favorites') {
-      showFavorites();
-    }
-  }, [activeView, showFavorites]);
+  // Back to the results list, also when it was opened from a saved place (Favorites comes after it).
+  const closePlannedTrip = useCallback(() => setSelectedSearchTripId(null), []);
   const closeResults = useCallback(() => {
     if (activeView.name === 'results' && activeView.returnTo === 'favorites') {
       showFavorites();
@@ -386,12 +401,15 @@ export function HomeScreen() {
       // criterion is kept, and cancel returns to it unchanged.
       const { field, results } = editing;
       const current = results.criteria[field];
-      const choose = (value: string) => setActiveView({ ...results, criteria: { ...results.criteria, [field]: value } });
+      const choose = (value: string, place?: SearchPlace) => setActiveView({
+        ...results,
+        criteria: { ...results.criteria, [field]: value, ...(field === 'destination' ? { destinationPlace: place } : {}) },
+      });
       return screen(
         <SearchView
           initialQuery={current === CURRENT_LOCATION_LABEL ? '' : current}
           onCancel={() => setActiveView(results)}
-          onSelect={(place) => choose(place.title)}
+          onSelect={(place) => choose(place.title, place)}
           onSelectCurrentLocation={field === 'origin' ? () => choose(CURRENT_LOCATION_LABEL) : undefined}
         />
       );
@@ -399,7 +417,7 @@ export function HomeScreen() {
     return screen(
       <SearchView
         onCancel={showHome}
-        onSelect={(place) => showRouteResults(place.title)}
+        onSelect={showRouteResults}
       />
     );
   }
@@ -434,7 +452,7 @@ export function HomeScreen() {
       <RouteResultsView
         activeItineraryId={activeTrip?.kind === 'planned' ? activeTrip.itineraryId : null}
         criteria={activeView.criteria}
-        isTripFavorite={(itineraryId, destination) => isTripFavorite({ kind: 'planned', itineraryId, destination, time: tripTime })}
+        isDestinationSaved={isPlaceSaved(destinationPlaceOf(activeView.criteria))}
         onBack={closeResults}
         onChangeCriteria={(criteria) => setActiveView((current) => (current.name === 'results' ? { ...current, criteria } : current))}
         onChangeTripTime={setTripTime}
@@ -443,7 +461,7 @@ export function HomeScreen() {
         onEndTrip={endPlannedTrip}
         onOpenTrip={showPlannedTrip}
         onStartTrip={startPlannedTrip}
-        onToggleTripFavorite={(itineraryId, destination) => toggleTripFavorite({ kind: 'planned', itineraryId, destination, time: tripTime })}
+        onToggleSaveDestination={() => toggleSavedPlace(destinationPlaceOf(activeView.criteria))}
         selectedItineraryId={selectedSearchTripId}
         tripTime={tripTime}
       />
@@ -454,11 +472,11 @@ export function HomeScreen() {
     return screen(
       <RecentTripDetailView
         isActive={activeTrip?.kind === 'recent' && activeTrip.tripId === activeView.tripId}
-        isFavorite={isTripFavorite({ kind: 'recent', tripId: activeView.tripId })}
+        isFavorite={isPlaceSaved(placeFromName(recentTripById[activeView.tripId].destination))}
         onBack={closeRecentTrip}
         onEnd={endRecentTrip}
         onStart={() => startRecentTrip(activeView.tripId)}
-        onToggleFavorite={() => toggleTripFavorite({ kind: 'recent', tripId: activeView.tripId })}
+        onToggleFavorite={() => toggleSavedPlace(placeFromName(recentTripById[activeView.tripId].destination))}
         trip={recentTripById[activeView.tripId]}
       />
     );
@@ -553,19 +571,19 @@ export function HomeScreen() {
         <TransitSheet
           activeTripId={activeTrip?.kind === 'recent' ? activeTrip.tripId : null}
           activeTab={homeTab}
-          favoriteTrips={favoriteTrips}
           findRoute={findRoute}
           mapHeight={mapHeight}
           nearbyRoutes={nearbyRoutes}
           nearbyRefreshing={nearbyStatus.status === 'loaded' && nearbyStatus.refreshing === true}
           nearbyStatus={nearbyStatus.status}
-          onOpenFavoriteTrip={openFavoriteTrip}
+          onOpenSavedLocation={openSavedLocation}
           onOpenRoute={openRoute}
           onOpenTrip={showRecentTrip}
           onEndTrip={endRecentTrip}
           onStartTrip={startRecentTrip}
           onTabChange={setHomeTab}
           onVisibleRouteIdsChange={setVisibleRouteIds}
+          savedLocations={savedLocations}
           savedRouteIds={savedRouteIds}
           scrollY={homeScrollY}
         />

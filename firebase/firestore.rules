@@ -2,12 +2,52 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /users/{uid} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
     }
 
-    // Locked down by default. Add per-collection rules as more Firestore-backed
-    // features (favorites, trip history, etc.) land, scoped to request.auth.uid.
+    // Mirrors Location in mobile/src/data/userData.ts.
+    function isValidLocation(location) {
+      return location is map
+        && location.keys().hasAll(['streetAddress', 'name', 'coordinates', 'type', 'placeId'])
+        && location.keys().hasOnly(['streetAddress', 'name', 'coordinates', 'type', 'placeId'])
+        && location.streetAddress is string && location.streetAddress.size() <= 500
+        && location.name is string && location.name.size() <= 200
+        && location.placeId is string && location.placeId.size() <= 300
+        && location.coordinates is list && location.coordinates.size() == 2
+        && location.coordinates[0] is number && location.coordinates[1] is number
+        && location.type in ['Destination', 'Start', 'Stop', 'Other'];
+    }
+
+    // An { address, <dateField> } history entry whose date is the server's write time.
+    function isValidEntry(dateField) {
+      let data = request.resource.data;
+      return data.keys().hasAll(['address', dateField])
+        && data.keys().hasOnly(['address', dateField])
+        && isValidLocation(data.address)
+        && data[dateField] == request.time;
+    }
+
+    match /users/{uid} {
+      allow read, write: if isOwner(uid);
+
+      match /searches/{entryId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid) && isValidEntry('dateSearched');
+      }
+
+      match /prevDests/{entryId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid) && isValidEntry('dateNavigated');
+      }
+
+      match /savedLocations/{entryId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid) && isValidEntry('dateSaved');
+      }
+    }
+
+    // Locked down by default; add per-collection rules as more Firestore-backed features land.
     match /{document=**} {
       allow read, write: if false;
     }

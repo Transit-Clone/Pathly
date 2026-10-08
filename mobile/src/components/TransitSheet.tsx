@@ -3,21 +3,21 @@ import { ActivityIndicator, Animated, Platform, StyleSheet, Text, View, type Lay
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { applyRouteLive } from '../data/applyRouteLive';
-import { favoriteTripKey, plannedTripCardData, type FavoriteTrip } from '../data/favorites';
 import { realFareForRecentTrip } from '../data/lirrFares';
 import { useTransitLiveMap } from '../data/TransitLiveContext';
 import {
-  recentTripById,
   recentTrips,
   type RecentTripId,
   type RouteDetail,
 } from '../data/transit';
+import type { SavedLocation } from '../data/userData';
 import { useNow } from '../hooks/useNow';
 import { useAppSettings, useTheme, useThemedStyles } from '../theme/AppSettings';
 import { useLayoutEase, useNativeDriver } from '../theme/motion';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
 import { Icon } from './Icon';
+import { SavedLocationCard } from './SavedLocationCard';
 import { TransitCard } from './TransitCard';
 import { TripCard } from './TripCard';
 import { PressableScale } from './PressableScale';
@@ -27,7 +27,6 @@ export type TransitTabId = 'nearby' | 'recents' | 'favorites';
 type TransitSheetProps = {
   activeTripId: RecentTripId | null;
   activeTab: TransitTabId;
-  favoriteTrips: readonly FavoriteTrip[];
   /** Resolves a route id — the demo catalog's own or a dynamically-discovered one — to its full data, for pinned/favorited routes which can be either kind. */
   findRoute: (routeId: string) => RouteDetail | undefined;
   mapHeight: number;
@@ -36,12 +35,14 @@ type TransitSheetProps = {
   nearbyStatus: 'loading' | 'loaded' | 'error';
   /** A re-search is in flight (e.g. for a new map center) while the current list stays visible. */
   nearbyRefreshing?: boolean;
-  onOpenFavoriteTrip: (trip: FavoriteTrip) => void;
+  onOpenSavedLocation: (location: SavedLocation) => void;
   onOpenRoute: (routeId: string) => void;
   onOpenTrip: (tripId: RecentTripId) => void;
   onEndTrip: () => void;
   onStartTrip: (tripId: RecentTripId) => void;
   onTabChange: (tab: TransitTabId) => void;
+  /** Destinations saved with a trip's star (Firestore savedLocations), under Favorites -> Places. */
+  savedLocations: readonly SavedLocation[];
   /** Routes saved with the star: listed first in Nearby and under Favorites -> Routes. */
   savedRouteIds: readonly string[];
   scrollY: Animated.Value;
@@ -70,19 +71,19 @@ const tabs: { id: TransitTabId; label: string }[] = [
 export function TransitSheet({
   activeTripId,
   activeTab,
-  favoriteTrips,
   findRoute,
   mapHeight,
   nearbyRefreshing = false,
   nearbyRoutes,
   nearbyStatus,
-  onOpenFavoriteTrip,
+  onOpenSavedLocation,
   onOpenRoute,
   onOpenTrip,
   onEndTrip,
   onStartTrip,
   onTabChange,
   onVisibleRouteIdsChange,
+  savedLocations,
   savedRouteIds,
   scrollY,
 }: TransitSheetProps) {
@@ -102,7 +103,7 @@ export function TransitSheet({
   // the rider's real location, so this can't be a fixed constant. Never below three cards, so
   // the single-scroll page always has room to scroll the menu up.
   const tabContentMinHeight = Math.max(3, savedRoutes.length + nearbyCards.length) * TRANSIT_CARD_HEIGHT;
-  const hasFavorites = savedRouteIds.length > 0 || favoriteTrips.length > 0;
+  const hasFavorites = savedRouteIds.length > 0 || savedLocations.length > 0;
   const ease = useLayoutEase();
   const { reducedMotionActive } = useAppSettings();
   const [tabsWidth, setTabsWidth] = useState(0);
@@ -354,24 +355,17 @@ export function TransitSheet({
                     })}
                   </View>
                 ) : null}
-                {favoriteTrips.length > 0 ? (
-                  <View style={styles.favoriteTrips} testID="favorite-trips">
-                    <Text style={[styles.sectionLabel, styles.sectionHeading, styles.flushHeading]}>TRIPS</Text>
-                    {favoriteTrips.map((trip) => {
-                      const key = favoriteTripKey(trip);
-                      const data = trip.kind === 'recent'
-                        ? { ...recentTripById[trip.tripId], fare: realFareForRecentTrip(recentTripById[trip.tripId]) }
-                        : plannedTripCardData(trip);
-                      return (
-                        <TripCard
-                          key={key}
-                          accessibilityLabel={`View favorite trip to ${data.destination}`}
-                          onOpen={() => onOpenFavoriteTrip(trip)}
-                          testID={`favorite-trip-${key}`}
-                          trip={data}
-                        />
-                      );
-                    })}
+                {savedLocations.length > 0 ? (
+                  <View style={styles.favoriteTrips} testID="saved-locations">
+                    <Text style={[styles.sectionLabel, styles.sectionHeading, styles.flushHeading]}>PLACES</Text>
+                    {savedLocations.map((location) => (
+                      <SavedLocationCard
+                        key={location.id}
+                        location={location}
+                        onOpen={() => onOpenSavedLocation(location)}
+                        testID={`saved-location-${location.address.name}`}
+                      />
+                    ))}
                   </View>
                 ) : null}
               </View>
@@ -379,7 +373,7 @@ export function TransitSheet({
               <View style={[styles.tabContent, styles.emptyState, { minHeight: tabContentMinHeight }]} testID="favorites-route-content">
                 <View style={styles.emptyIcon}><Icon name="favorite" size={30} /></View>
                 <Text style={styles.emptyTitle}>No favorites yet</Text>
-                <Text style={styles.emptyBody}>Tap the star on a route or trip to save it here.</Text>
+                <Text style={styles.emptyBody}>Tap the star on a route, or on a trip to save its destination.</Text>
               </View>
             )
           )}

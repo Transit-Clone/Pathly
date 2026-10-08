@@ -11,14 +11,17 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useAuth } from '../auth/AuthContext';
 import { fetchPlaceDetails, type SearchPlace } from '../data/placesSearch';
-import { addSessionRecent, getRecentPlaces } from '../data/sessionRecents';
+import { locationToPlace, recordSearch, removeSearch, subscribeToSearches } from '../data/userData';
 import { usePlacesSearch } from '../hooks/usePlacesSearch';
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { Icon } from './Icon';
 import { PressableScale } from './PressableScale';
+
+const MAX_RECENT_SEARCHES = 8;
 
 export type SearchViewProps = {
   initialQuery?: string;
@@ -33,6 +36,8 @@ type SearchResultRowProps = {
   recent?: boolean;
   resolving?: boolean;
   onPress: () => void;
+  /** Adds a remove button beside the row (recent searches). */
+  onRemove?: () => void;
 };
 
 function SearchIcon() {
@@ -40,16 +45,16 @@ function SearchIcon() {
   return <Icon color={colors.ink} name="search" size={20} />;
 }
 
-function SearchResultRow({ onPress, place, recent = false, resolving = false }: SearchResultRowProps) {
+function SearchResultRow({ onPress, onRemove, place, recent = false, resolving = false }: SearchResultRowProps) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
-  return (
+  const row = (
     <PressableScale
       accessibilityLabel={`${place.title}, ${place.subtitle}`}
       accessibilityRole="button"
       accessibilityState={{ busy: resolving }}
       onPress={onPress}
-      style={styles.resultRow}
+      style={[styles.resultRow, onRemove && styles.removableResultRow]}
       testID={`search-result-${place.id}`}
     >
       <View style={styles.resultIcon}>
@@ -69,6 +74,23 @@ function SearchResultRow({ onPress, place, recent = false, resolving = false }: 
         </Text>
       </View>
     </PressableScale>
+  );
+  if (!onRemove) return row;
+  // A sibling of the row rather than nested in it, so each is its own button for screen readers.
+  return (
+    <View style={styles.removableRowWrap}>
+      {row}
+      <PressableScale
+        accessibilityLabel={`Remove ${place.title} from recent searches`}
+        accessibilityRole="button"
+        hitSlop={4}
+        onPress={onRemove}
+        style={styles.removeButton}
+        testID={`search-recent-remove-${place.id}`}
+      >
+        <Icon color={colors.mutedInk} name="dismiss" size={20} />
+      </PressableScale>
+    </View>
   );
 }
 
@@ -97,14 +119,30 @@ export function SearchView({ initialQuery = '', onCancel, onSelect, onSelectCurr
   const [query, setQuery] = useState(initialQuery);
   const [resolvingId, setResolvingId] = useState<string | null>(null);
   const [selectionFailed, setSelectionFailed] = useState(false);
-  const [recentPlaces] = useState(getRecentPlaces);
+  const { user } = useAuth();
+  const uid = user?.uid;
+  // The account's search history (Firestore), newest first; it shows new picks right away, even offline.
+  const [recentPlaces, setRecentPlaces] = useState<readonly SearchPlace[]>([]);
+
+  useEffect(() => {
+    if (!uid) return undefined;
+    return subscribeToSearches(uid, MAX_RECENT_SEARCHES, (searches) => setRecentPlaces(searches.map((search) => locationToPlace(search.address))));
+  }, [uid]);
+
+  // Fire-and-forget: history is a convenience and must never block navigating to the place.
+  const rememberPlace = (place: SearchPlace) => {
+    if (uid) recordSearch(uid, place, onSelectCurrentLocation ? 'Start' : 'Destination').catch(() => undefined);
+  };
+  const forgetPlace = (place: SearchPlace) => {
+    if (uid) removeSearch(uid, place.id).catch(() => undefined);
+  };
   const { endSession, getSessionToken, retry, status, suggestions } = usePlacesSearch(query);
   const isSearching = status !== 'idle';
 
   // Not an effect dependency, so a parent re-render (new onSelect identity) can't restart the request.
   const finishSelection = useEffectEvent((place: SearchPlace) => {
     endSession();
-    addSessionRecent(place);
+    rememberPlace(place);
     onSelect(place);
   });
   const getDetailsSessionToken = useEffectEvent(getSessionToken);
@@ -132,7 +170,7 @@ export function SearchView({ initialQuery = '', onCancel, onSelect, onSelectCurr
 
   const selectRecent = (place: SearchPlace) => {
     if (resolvingId) return;
-    addSessionRecent(place);
+    rememberPlace(place);
     onSelect(place);
   };
 
@@ -266,16 +304,16 @@ export function SearchView({ initialQuery = '', onCancel, onSelect, onSelectCurr
             </PressableScale>
           ) : null}
 
-          {isSearching ? renderSearchState() : (
+          {isSearching ? renderSearchState() : recentPlaces.length > 0 ? (
             <>
               <Text accessibilityRole="header" style={styles.heading}>
                 Recent
               </Text>
               {recentPlaces.map((place) => (
-                <SearchResultRow key={place.id} onPress={() => selectRecent(place)} place={place} recent={true} />
+                <SearchResultRow key={place.id} onPress={() => selectRecent(place)} onRemove={() => forgetPlace(place)} place={place} recent={true} />
               ))}
             </>
-          )}
+          ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -365,6 +403,21 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     alignItems: 'center',
     gap: 16,
     paddingHorizontal: 20,
+  },
+  removableRowWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  removableResultRow: {
+    flex: 1,
+    paddingRight: 0,
+  },
+  removeButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 8,
   },
   resultIcon: {
     width: 40,

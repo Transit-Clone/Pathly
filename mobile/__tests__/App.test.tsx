@@ -10,11 +10,11 @@ import App from '../App';
 import { RouteDetailView } from '../src/components/RouteDetailView';
 import { AppSettingsProvider } from '../src/theme/AppSettings';
 import { autocompletePlaces, fetchPlaceDetails, getPlacesApiKey } from '../src/data/placesSearch';
-import { clearSessionRecents } from '../src/data/sessionRecents';
 import { SERVICE_AREA_FALLBACK } from '../src/data/serviceArea';
 import { STATION_TRANSFERS } from '../src/data/stationTransfers';
 import { TransitLiveProvider } from '../src/data/TransitLiveContext';
 import { routeById, routes, type RouteId } from '../src/data/transit';
+import { recordSearch } from '../src/data/userData';
 import { darkColors, lightColors } from '../src/theme/colors';
 
 const mockUseFonts = jest.fn(() => [true] as [boolean]);
@@ -75,7 +75,6 @@ describe('Pathly prototype navigation', () => {
   beforeEach(async () => {
     // The app saves its last nearby list and live times on the device; start each test clean.
     await AsyncStorage.clear();
-    clearSessionRecents();
     mockAutocompletePlaces.mockClear();
     mockFetchPlaceDetails.mockClear();
     mockGetPlacesApiKey.mockReturnValue('test-key');
@@ -226,7 +225,8 @@ describe('Pathly prototype navigation', () => {
   it('shows search as a full-screen list with no map, pins, or match count', () => {
     const screen = render(<App />);
     fireEvent.press(screen.getByTestId('search-trigger'));
-    expect(screen.getByText('Recent')).toBeTruthy();
+    // No sample history: a new account's Recent section stays hidden until it searches.
+    expect(screen.queryByText('Recent')).toBeNull();
     expect(screen.getByTestId('search-results')).toBeTruthy();
     fireEvent.changeText(screen.getByTestId('search-input'), '142 christian ave');
 
@@ -270,6 +270,8 @@ describe('Pathly prototype navigation', () => {
   });
 
   it('explains when place search is not configured', async () => {
+    // jest.setup.js signs in as test-uid; give that account one past search.
+    await recordSearch('test-uid', { id: 'penn-station', title: 'Penn Station', subtitle: 'New York, NY' });
     mockGetPlacesApiKey.mockReturnValue('');
     const screen = render(<App />);
     fireEvent.press(screen.getByTestId('search-trigger'));
@@ -278,7 +280,7 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByText('Place search is unavailable')).toBeTruthy();
     expect(mockAutocompletePlaces).not.toHaveBeenCalled();
     fireEvent.changeText(screen.getByTestId('search-input'), '');
-    fireEvent.press(screen.getByTestId('search-result-recent-penn-station'));
+    fireEvent.press(screen.getByTestId('search-result-penn-station'));
     expect(screen.getByLabelText(/^Trip (origin|destination), Penn Station$/)).toBeTruthy();
   });
 
@@ -323,6 +325,25 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByLabelText(/^Trip (origin|destination), 123 Terry Rd$/)).toBeTruthy();
     expect(mockAutocompletePlaces).not.toHaveBeenCalled();
     expect(mockFetchPlaceDetails).not.toHaveBeenCalled();
+  });
+
+  it('removes a recent search from the account history', async () => {
+    await recordSearch('test-uid', { id: 'penn-station', title: 'Penn Station', subtitle: 'New York, NY' });
+    await recordSearch('test-uid', { id: 'times-square', title: 'Times Square', subtitle: 'Manhattan, NY' });
+    const screen = render(<App />);
+    fireEvent.press(screen.getByTestId('search-trigger'));
+    expect(screen.getAllByTestId(/^search-result-/).map((row) => row.props.testID)).toEqual(['search-result-times-square', 'search-result-penn-station']);
+
+    fireEvent.press(screen.getByLabelText('Remove Times Square from recent searches'));
+    expect(screen.queryByTestId('search-result-times-square')).toBeNull();
+    expect(screen.getByTestId('search-result-penn-station')).toBeTruthy();
+
+    // It stays gone after leaving and reopening search, and the last one hides the section.
+    fireEvent.press(screen.getByLabelText('Cancel destination search'));
+    fireEvent.press(screen.getByTestId('search-trigger'));
+    expect(screen.queryByTestId('search-result-times-square')).toBeNull();
+    fireEvent.press(screen.getByTestId('search-recent-remove-penn-station'));
+    expect(screen.queryByText('Recent')).toBeNull();
   });
 
   it('opens route results from search and preserves editable criteria across controls', async () => {
@@ -464,7 +485,7 @@ describe('Pathly prototype navigation', () => {
     expect(within(screen.getByTestId('nearby-routes')).getByTestId(`route-card-${route51CardId}`)).toBeTruthy();
   });
 
-  it('saves favorite routes and trips to the Favorites tab and opens them', async () => {
+  it('saves favorite routes, and trip destinations as saved places, to the Favorites tab', async () => {
     const screen = render(<App />);
     fireEvent.press(screen.getByTestId('tab-favorites'));
     expect(screen.getByText('No favorites yet')).toBeTruthy();
@@ -477,6 +498,7 @@ describe('Pathly prototype navigation', () => {
     fireEvent.press(screen.getByTestId('route-favorite'));
     fireEvent.press(screen.getByTestId('route-back'));
 
+    // A recent trip's star saves its destination.
     fireEvent.press(screen.getByTestId('tab-recents'));
     fireEvent.press(screen.getByTestId('recent-trip-times-square'));
     fireEvent.press(screen.getByTestId('recent-trip-favorite'));
@@ -485,23 +507,24 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByTestId('recent-trip-favorite').props.accessibilityState).toEqual({ selected: true });
     fireEvent.press(screen.getByTestId('recent-trip-back'));
 
+    // So does a planned trip's, and the destination stays saved whichever itinerary is open.
     fireEvent.press(screen.getByTestId('search-trigger'));
     await pickPlace(screen, '123 Terry Rd', 'terry-road-smithtown');
-    fireEvent.press(screen.getByTestId('leave-time-control'));
-    fireEvent.press(screen.getByTestId('leave-mode-depart'));
-    fireEvent.press(screen.getByTestId('leave-time-done'));
     fireEvent.press(screen.getByTestId('search-result-view-budget'));
     fireEvent.press(screen.getByTestId('search-trip-favorite'));
+    fireEvent.press(screen.getByTestId('search-trip-back'));
+    fireEvent.press(screen.getByTestId('search-result-view-rail-fast'));
+    expect(screen.getByTestId('search-trip-favorite').props.accessibilityState).toEqual({ selected: true });
     fireEvent.press(screen.getByTestId('search-trip-back'));
     fireEvent.press(screen.getByTestId('results-back'));
     fireEvent.press(screen.getByLabelText('Cancel destination search'));
 
     fireEvent.press(screen.getByTestId('tab-favorites'));
     expect(within(screen.getByTestId('favorite-routes')).getByTestId(`route-card-${eCardId}`)).toBeTruthy();
-    const trips = screen.getByTestId('favorite-trips');
-    expect(within(trips).getByTestId('favorite-trip-recent-times-square')).toBeTruthy();
-    expect(within(trips).getByTestId('favorite-trip-planned-budget-123 Terry Rd')).toBeTruthy();
-    expect(within(trips).getByText('Depart 10:30 AM')).toBeTruthy();
+    const places = screen.getByTestId('saved-locations');
+    expect(within(places).getByTestId('saved-location-Times Square')).toBeTruthy();
+    expect(within(places).getByTestId('saved-location-123 Terry Rd')).toBeTruthy();
+    expect(within(places).getByText('123 Terry Rd, Smithtown, NY 11787, USA')).toBeTruthy();
 
     fireEvent.press(within(screen.getByTestId('favorite-routes')).getByTestId(`route-card-${eCardId}-primary`));
     expect(screen.getByTestId(`route-detail-${eCardId}`)).toBeTruthy();
@@ -510,18 +533,21 @@ describe('Pathly prototype navigation', () => {
     fireEvent.press(screen.getByTestId('route-back'));
     expect(screen.queryByTestId('favorite-routes')).toBeNull();
 
-    fireEvent.press(screen.getByTestId('favorite-trip-planned-budget-123 Terry Rd'));
-    expect(screen.getByTestId('search-trip-detail-budget')).toBeTruthy();
-    expect(screen.getByTestId('search-trip-leave-time').props.children).toBe('10:36 AM');
+    // A saved place opens Route Results for it; unsaving from a trip there removes it.
+    fireEvent.press(screen.getByTestId('saved-location-123 Terry Rd'));
+    expect(screen.getByLabelText('Trip destination, 123 Terry Rd')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('search-result-view-budget'));
     fireEvent.press(screen.getByTestId('search-trip-favorite'));
     fireEvent.press(screen.getByTestId('search-trip-back'));
+    fireEvent.press(screen.getByTestId('results-back'));
     expect(screen.getByTestId('tab-favorites').props.accessibilityState).toEqual({ selected: true });
+    expect(screen.queryByTestId('saved-location-123 Terry Rd')).toBeNull();
 
-    fireEvent.press(screen.getByTestId('favorite-trip-recent-times-square'));
-    expect(screen.getByTestId('recent-trip-detail-times-square')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('tab-recents'));
+    fireEvent.press(screen.getByTestId('recent-trip-times-square'));
     fireEvent.press(screen.getByTestId('recent-trip-favorite'));
     fireEvent.press(screen.getByTestId('recent-trip-back'));
-    expect(screen.getByTestId('tab-favorites').props.accessibilityState).toEqual({ selected: true });
+    fireEvent.press(screen.getByTestId('tab-favorites'));
     expect(screen.getByText('No favorites yet')).toBeTruthy();
   });
 

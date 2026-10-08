@@ -32,12 +32,60 @@ jest.mock('firebase/auth', () => ({
   updateProfile: jest.fn(),
 }));
 
-jest.mock('firebase/firestore', () => ({
-  doc: jest.fn(),
-  getFirestore: jest.fn(() => ({})),
-  serverTimestamp: jest.fn(),
-  setDoc: jest.fn(),
-}));
+// A tiny in-memory Firestore: refs are just paths, writes notify listeners synchronously (like
+// Firestore's local-write latency compensation), and collections list newest write first.
+// jest.setupAfterEnv.js empties it before each test.
+jest.mock('firebase/firestore', () => {
+  const mockDocs = new Map();
+  const mockListeners = new Set();
+  const ref = (_db, ...segments) => ({ path: segments.join('/') });
+  const snapshotOf = (collectionPath) => ({
+    docs: [...mockDocs]
+      .filter(([path]) => path.startsWith(`${collectionPath}/`) && !path.slice(collectionPath.length + 1).includes('/'))
+      .reverse()
+      .map(([path, data]) => ({ id: path.split('/').at(-1), data: () => data })),
+  });
+  const notify = () => mockListeners.forEach((listener) => listener.onNext(snapshotOf(listener.path)));
+  return {
+    __resetMockFirestore: () => {
+      mockDocs.clear();
+      mockListeners.clear();
+    },
+    collection: jest.fn(ref),
+    deleteDoc: jest.fn((docRef) => {
+      mockDocs.delete(docRef.path);
+      notify();
+      return Promise.resolve();
+    }),
+    doc: jest.fn(ref),
+    getFirestore: jest.fn(() => ({})),
+    limit: jest.fn(),
+    onSnapshot: jest.fn((queryRef, onNext) => {
+      const listener = { path: queryRef.path, onNext };
+      mockListeners.add(listener);
+      onNext(snapshotOf(listener.path));
+      return () => mockListeners.delete(listener);
+    }),
+    orderBy: jest.fn(),
+    query: jest.fn((collectionRef) => collectionRef),
+    runTransaction: jest.fn(async (_db, update) => {
+      await update({
+        get: async (docRef) => ({ exists: () => mockDocs.has(docRef.path), data: () => mockDocs.get(docRef.path) }),
+        set: (docRef, data) => {
+          mockDocs.set(docRef.path, data);
+          notify();
+        },
+      });
+    }),
+    serverTimestamp: jest.fn(() => null),
+    setDoc: jest.fn((docRef, data) => {
+      mockDocs.delete(docRef.path);
+      mockDocs.set(docRef.path, data);
+      notify();
+      return Promise.resolve();
+    }),
+  };
+});
 
 // Resolves with one upcoming live prediction per direction and a tiny two-stop geometry by
 // default, echoing back whatever routeId was actually requested (not a single hardcoded one —
