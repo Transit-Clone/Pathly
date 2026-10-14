@@ -8,7 +8,7 @@ import { findNearbyTransit as findNearbyTransitDiscovery, getNearestStopForRoute
 import { AGENCY_CONFIGS, type AgencyId } from './gtfsAgencies';
 import { getStopPredictions } from './gtfsSchedule';
 import { refreshAllGtfsSnapshots } from './gtfsSnapshots';
-import { loadAgencyStaticData, prepareAgencyStaticData } from './gtfsStaticData';
+import { loadAgencyStaticData, loadGlobalStopRouteIndex, prepareAgencyStaticData } from './gtfsStaticData';
 import { getRouteStatus } from './gtfsStatus';
 
 const CALLABLE_RUNTIME_SERVICE_ACCOUNT = 'pathly-callable-runtime@pathly-b7f0f.iam.gserviceaccount.com';
@@ -218,17 +218,38 @@ export const getStopDepartures = onCall<StopDeparturesRequest>({ ...liveStatusCa
   return { departures: directionId === 1 ? predictions.towardDirection1 : predictions.towardDirection0 };
 });
 
-type FindNearbyTransitRequest = { lat: number; lon: number };
+/** Sent once by the app when it opens; see warmTransitInstance. */
+type WarmupRequest = { warmup?: boolean };
+
+/**
+ * Answers a `{ warmup: true }` call: brings this (possibly cold) instance's static data up —
+ * every agency's current snapshot and small files, plus the stop indexes nearby search starts
+ * from — so the rider's first real request finds it ready. Returns no transit data. The app waits
+ * for this before its first real call, since with concurrency 1 a request arriving mid-warm-up
+ * would otherwise start a second cold instance.
+ */
+async function warmTransitInstance({ stopIndexes }: { stopIndexes: boolean }): Promise<{ warmed: true }> {
+  // Sequential for the same reason as findNearbyTransit's hydration below.
+  for (const agencyId of Object.keys(AGENCY_CONFIGS) as AgencyId[]) {
+    await prepareAgencyStaticData(agencyId);
+    loadAgencyStaticData(agencyId);
+    if (stopIndexes) await loadGlobalStopRouteIndex(agencyId);
+  }
+  return { warmed: true };
+}
+
+type FindNearbyTransitRequest = { lat: number; lon: number } & WarmupRequest;
 
 /**
  * Every real route, on every configured agency, near a point — not limited to the handful of
  * routes this app has hand-built UI for. Each result already carries its own nearest stop and
  * both directions' real headsigns/stop_ids, ready to pass straight into getRouteLiveStatus for
  * live predictions, or getRouteGeometry for a real map.
- * Client call: httpsCallable(functions, 'findNearbyTransit')({ lat, lon }).
+ * Client call: httpsCallable(functions, 'findNearbyTransit')({ lat, lon }), or ({ warmup: true }).
  */
 export const findNearbyTransit = onCall<FindNearbyTransitRequest>(protectedCallableOptions, async (request) => {
   await enforceCallableSecurity(request, 'findNearbyTransit', RATE_LIMITS.findNearbyTransit);
+  if (request.data?.warmup === true) return warmTransitInstance({ stopIndexes: true });
   const { lat, lon } = requiredCoordinates(request.data?.lat, request.data?.lon);
   // Hydrate sequentially so a cold instance never buffers four bounded ZIPs at once.
   for (const agencyId of Object.keys(AGENCY_CONFIGS) as AgencyId[]) {
@@ -260,17 +281,18 @@ export const getNearestRouteStop = onCall<NearestRouteStopRequest>(protectedCall
   return stop;
 });
 
-type RouteGeometryRequest = { agencyId: AgencyId; routeId: string; directionId: 0 | 1 };
+type RouteGeometryRequest = { agencyId: AgencyId; routeId: string; directionId: 0 | 1 } & WarmupRequest;
 
 /**
  * A representative real station sequence for any route's direction on any configured agency,
  * derived generically from its longest scheduled trip — not limited to routes with hand-built
  * geometry. See gtfsDiscovery.ts for the "longest trip" caveat on branches that split partway
  * (e.g. LIRR's Port Jefferson Branch at Huntington).
- * Client call: httpsCallable(functions, 'getRouteGeometry')({ agencyId, routeId, directionId }).
+ * Client call: httpsCallable(functions, 'getRouteGeometry')({ agencyId, routeId, directionId }), or ({ warmup: true }).
  */
 export const getRouteGeometry = onCall<RouteGeometryRequest>(protectedCallableOptions, async (request) => {
   await enforceCallableSecurity(request, 'getRouteGeometry', RATE_LIMITS.getRouteGeometry);
+  if (request.data?.warmup === true) return warmTransitInstance({ stopIndexes: false });
   const data = request.data ?? ({} as RouteGeometryRequest);
   const agencyId = requiredAgencyId(data.agencyId);
   await prepareAgencyStaticData(agencyId);

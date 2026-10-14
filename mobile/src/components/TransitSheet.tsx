@@ -18,6 +18,7 @@ import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
 import { Icon } from './Icon';
 import { SavedLocationCard } from './SavedLocationCard';
+import { NearbySkeleton } from './Skeleton';
 import { TransitCard } from './TransitCard';
 import { TripCard } from './TripCard';
 import { PressableScale } from './PressableScale';
@@ -307,15 +308,11 @@ export function TransitSheet({
                     />
                   </View>
                 ))}
-                {nearbyStatus !== 'loaded' || nearbyCards.length === 0 ? (
+                {nearbyStatus === 'loading' && nearbyCards.length === 0 ? <NearbySkeleton /> : null}
+                {nearbyStatus !== 'loading' && (nearbyStatus !== 'loaded' || nearbyCards.length === 0) ? (
                   <View accessible={true} style={styles.nearbyEmpty} testID="nearby-routes-empty">
-                    {nearbyStatus === 'loading' ? <ActivityIndicator color={colors.primary} style={styles.nearbyEmptySpinner} /> : null}
                     <Text style={styles.nearbyEmptyText}>
-                      {nearbyStatus === 'loading'
-                        ? 'Finding transit near you…'
-                        : nearbyStatus === 'error'
-                          ? 'Could not check for nearby transit right now.'
-                          : 'No other nearby transit found.'}
+                      {nearbyStatus === 'error' ? 'Could not check for nearby transit right now.' : 'No other nearby transit found.'}
                     </Text>
                   </View>
                 ) : null}
@@ -441,7 +438,6 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   },
   cardStack: { gap: 0 },
   nearbyEmpty: { alignItems: 'center', paddingVertical: 20, paddingHorizontal: 20, gap: 8 },
-  nearbyEmptySpinner: { marginBottom: 2 },
   nearbyRefreshing: { paddingVertical: 8 },
   nearbyEmptyText: { color: colors.mutedInk, ...typography.metadata, textAlign: 'center' },
   sectionHeading: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 },

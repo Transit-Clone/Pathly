@@ -20,6 +20,7 @@ import { RouteMap } from './RouteMap';
 import { pointAlong, routeFocus, RouteLines, VehicleMarker, type MapLeg } from './RouteMapOverlay';
 import { badgeLabel, RouteBadge, transitModeForAgency } from './RouteBadge';
 import { PressableScale } from './PressableScale';
+import { PredictionTilesSkeleton } from './Skeleton';
 
 type RouteDetailViewProps = {
   /** Direction to open on (by `directions` index), e.g. when returning from the departures page. */
@@ -548,10 +549,11 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
       </View>
 
       {/* The active direction's departures: their own horizontal scroll, separate from the direction swipe. */}
-      {activePredictions.length === 0 ? (
+      {activePredictions.length === 0 && route.liveStatus === 'loading' ? (
+        <PredictionTilesSkeleton accessibilityLabel={predictionsEmptyMessage(route) ?? 'Loading departures'} gap={TILE_GAP} tileWidth={tileWidth} />
+      ) : activePredictions.length === 0 ? (
         <View style={styles.predictions}>
           <View accessible={true} style={styles.predictionsEmpty} testID="route-predictions-empty">
-            {route.liveStatus === 'loading' ? <ActivityIndicator color={route.color} style={styles.predictionsEmptySpinner} /> : null}
             <Text style={styles.predictionsEmptyText}>{predictionsEmptyMessage(route)}</Text>
           </View>
         </View>

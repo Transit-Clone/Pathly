@@ -1,21 +1,26 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, dirname, join, relative, sep } from 'node:path';
 
 import { getApps, initializeApp } from 'firebase-admin/app';
 import { getStorage } from 'firebase-admin/storage';
 import { logger } from 'firebase-functions';
 import { parse as parseCsv } from 'csv-parse/sync';
-import { unzipSync } from 'fflate';
+import { unzipSync, zipSync, type Zippable } from 'fflate';
 
 import { AGENCY_CONFIGS, type AgencyId } from './gtfsAgencies';
+import { DERIVED_DIR, DERIVED_VERSION } from './gtfsDerived';
+import { buildDerivedData } from './gtfsDerivedBuild';
 
 const SNAPSHOT_SCHEMA_VERSION = 1;
 const SNAPSHOT_ROOT = 'gtfs/v1';
 const MAX_ARCHIVE_BYTES = 16 * 1024 * 1024;
 const MAX_EXTRACTED_BYTES = 64 * 1024 * 1024;
 const MAX_MANIFEST_BYTES = 256 * 1024;
+const MAX_DERIVED_ARCHIVE_BYTES = 32 * 1024 * 1024;
+const MAX_DERIVED_EXTRACTED_BYTES = 160 * 1024 * 1024;
 const MAX_STOP_TIME_ROWS = 1_000_000;
 const MAX_STOP_TIMES_PER_TRIP = 500;
 const MANIFEST_CHECK_INTERVAL_MS = 5 * 60_000;
@@ -52,11 +57,26 @@ export type GtfsSnapshotFile = {
   size: number;
 };
 
+/**
+ * The prepared timetable files (gtfsDerivedBuild.ts) for one snapshot version, published as a
+ * separate archive so the runtime archive, its hash, and the snapshot version never change when
+ * prepared output is added or rebuilt in a newer format.
+ */
+export type GtfsSnapshotDerived = {
+  /** DERIVED_VERSION the archive was built with. */
+  version: number;
+  object: string;
+  sha256: string;
+  size: number;
+};
+
 export type GtfsSnapshotManifest = {
   agencyId: AgencyId;
   archiveObject: string;
   archiveSha256: string;
   archiveSize: number;
+  /** Absent for snapshots published before prepared output existed, or when its build failed. */
+  derived?: GtfsSnapshotDerived;
   files: GtfsSnapshotFile[];
   previousArchiveObject: string | null;
   publishedAt: string;
@@ -99,6 +119,7 @@ type StorageBucket = ReturnType<ReturnType<typeof getStorage>['bucket']>;
 
 const snapshotStates = new Map<AgencyId, SnapshotState>();
 let storageBucketForTests: StorageBucket | undefined;
+let derivedArchiveBuilderForTests: ((agencyId: AgencyId, files: ReadonlyMap<string, Buffer>) => Promise<Buffer>) | undefined;
 
 function sha256(data: Uint8Array): string {
   return createHash('sha256').update(data).digest('hex');
@@ -124,6 +145,10 @@ function snapshotVersion(files: readonly GtfsSnapshotFile[]): string {
     versionHash.update(file.name).update('\0').update(String(file.size)).update('\0').update(file.sha256).update('\n');
   }
   return versionHash.digest('hex');
+}
+
+export function derivedArchiveObject(agencyId: AgencyId, version: string, derivedVersion: number): string {
+  return `${SNAPSHOT_ROOT}/${agencyId}/derived/${version}-v${derivedVersion}.zip`;
 }
 
 function normalizedBasename(name: string): string {
@@ -696,6 +721,23 @@ export function parseGtfsSnapshotManifest(value: unknown, expectedAgencyId?: Age
   if (manifest.version !== snapshotVersion(manifest.files)) {
     throw new Error('GTFS manifest version does not match its runtime files');
   }
+  if (manifest.derived !== undefined) {
+    const derived = manifest.derived as Partial<GtfsSnapshotDerived> | null;
+    if (
+      !derived ||
+      typeof derived !== 'object' ||
+      !Number.isInteger(derived.version) ||
+      derived.version! < 1 ||
+      derived.object !== derivedArchiveObject(manifest.agencyId, manifest.version, derived.version!) ||
+      typeof derived.sha256 !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(derived.sha256) ||
+      typeof derived.size !== 'number' ||
+      derived.size <= 0 ||
+      derived.size > MAX_DERIVED_ARCHIVE_BYTES
+    ) {
+      throw new Error('GTFS manifest prepared-data archive is invalid');
+    }
+  }
 
   return manifest as GtfsSnapshotManifest;
 }
@@ -917,6 +959,101 @@ async function snapshotArchiveMatches(
   }
 }
 
+// Fixed entry times make the prepared archive's bytes depend only on its contents, so a rebuild
+// of the same snapshot can be recognised as the archive another run already published.
+const DERIVED_ZIP_MTIME = new Date('2000-01-01T00:00:00Z');
+
+async function zipDirectory(dir: string): Promise<Buffer> {
+  const entries: Zippable = {};
+  for (const entry of await readdir(dir, { recursive: true, withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    const path = join(entry.parentPath, entry.name);
+    const name = relative(dir, path).split(sep).join('/');
+    entries[name] = new Uint8Array(await readFile(path));
+  }
+  const sorted: Zippable = {};
+  for (const name of Object.keys(entries).sort()) sorted[name] = entries[name]!;
+  return Buffer.from(zipSync(sorted, { level: 6, mtime: DERIVED_ZIP_MTIME }));
+}
+
+/** Runs the deploy-time builder (gtfsDerivedBuild.ts) on a snapshot's files and zips its output. */
+async function buildDerivedArchive(agencyId: AgencyId, files: ReadonlyMap<string, Buffer>): Promise<Buffer> {
+  const stagingDir = join(tmpdir(), 'pathly-gtfs-build', `${agencyId}-${randomUUID()}`);
+  const feedDir = join(stagingDir, 'feed');
+  const derivedDir = join(stagingDir, 'derived');
+  try {
+    await mkdir(feedDir, { recursive: true });
+    await Promise.all([...files].map(([name, data]) => writeFile(join(feedDir, name), data)));
+    await buildDerivedData(agencyId, feedDir, derivedDir);
+    return await zipDirectory(derivedDir);
+  } finally {
+    await rm(stagingDir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Uploads a snapshot version's prepared archive. Its object name is fixed by the snapshot and
+ * format versions, so an archive another run already published for them is kept (and described
+ * as-is) rather than replaced underneath instances that may be reading it.
+ */
+async function publishDerivedArchive(
+  storage: ReturnType<typeof bucket>,
+  agencyId: AgencyId,
+  version: string,
+  archive: Buffer,
+): Promise<GtfsSnapshotDerived> {
+  const object = derivedArchiveObject(agencyId, version, DERIVED_VERSION);
+  if (archive.length > MAX_DERIVED_ARCHIVE_BYTES) throw new Error('Prepared GTFS archive exceeds the allowed size');
+  const save = (ifGenerationMatch: number | string) =>
+    storage.file(object).save(archive, {
+      metadata: { cacheControl: 'private, max-age=31536000, immutable', contentType: 'application/zip' },
+      preconditionOpts: { ifGenerationMatch },
+      resumable: archive.length >= 5 * 1024 * 1024,
+      validation: 'crc32c',
+    });
+  const described = (data: Buffer): GtfsSnapshotDerived => ({ version: DERIVED_VERSION, object, sha256: sha256(data), size: data.length });
+
+  try {
+    await save(0);
+    return described(archive);
+  } catch (error) {
+    if (!isPreconditionFailed(error)) throw error;
+  }
+  const [metadata] = await storage.file(object).getMetadata();
+  if (metadata.generation === undefined) throw new Error('Prepared GTFS archive has no storage generation');
+  const size = Number(metadata.size);
+  if (Number.isSafeInteger(size) && size > 0 && size <= MAX_DERIVED_ARCHIVE_BYTES) {
+    const [existing] = await storage.file(object, { generation: metadata.generation }).download();
+    if (existing.length === size) return described(existing);
+  }
+  await save(metadata.generation);
+  return described(archive);
+}
+
+/**
+ * Builds and publishes a snapshot's prepared archive. Never fails the refresh: without it,
+ * instances read the snapshot's raw files (slower, same results).
+ */
+async function tryPublishDerived(
+  storage: ReturnType<typeof bucket>,
+  agencyId: AgencyId,
+  version: string,
+  files: ReadonlyMap<string, Buffer>,
+): Promise<GtfsSnapshotDerived | undefined> {
+  try {
+    const build = derivedArchiveBuilderForTests ?? buildDerivedArchive;
+    return await publishDerivedArchive(storage, agencyId, version, await build(agencyId, files));
+  } catch (error) {
+    logger.error('Could not prepare GTFS snapshot timetable indexes', {
+      agencyId,
+      event: 'gtfs_snapshot_derived_failed',
+      reason: error instanceof Error ? error.message : String(error),
+      version,
+    });
+    return undefined;
+  }
+}
+
 export async function refreshGtfsSnapshot(agencyId: AgencyId): Promise<'published' | 'unchanged'> {
   const config = AGENCY_CONFIGS[agencyId];
   // Capture the publication generation before the network fetch. A slower invocation that
@@ -976,17 +1113,23 @@ export async function refreshGtfsSnapshot(agencyId: AgencyId): Promise<'publishe
     // files. Keep the already-published archive so warm instances do not rehydrate/reindex.
     let archiveChanged = false;
     let refreshedManifest: GtfsSnapshotManifest = current.manifest!;
+    // Snapshots published before prepared output existed (or in an older format) gain it here,
+    // without a new snapshot version, since the freshly downloaded feed has identical content.
+    const backfilledDerived = current.manifest!.derived?.version === DERIVED_VERSION
+      ? undefined
+      : await tryPublishDerived(storage, agencyId, manifest.version, extracted.files);
+    if (backfilledDerived) refreshedManifest = { ...refreshedManifest, derived: backfilledDerived };
     if (!(await snapshotArchiveMatches(storage, current.manifest!))) {
       await ensureSnapshotArchive(storage, manifest, archive);
       archiveChanged = current.manifest!.archiveObject !== manifest.archiveObject;
       refreshedManifest = {
-        ...current.manifest!,
+        ...refreshedManifest,
         archiveObject: manifest.archiveObject,
         archiveSha256: manifest.archiveSha256,
         archiveSize: manifest.archiveSize,
       };
     }
-    if (!archiveChanged && current.manifest!.sourceLastModified === manifest.sourceLastModified) {
+    if (!archiveChanged && !backfilledDerived && current.manifest!.sourceLastModified === manifest.sourceLastModified) {
       logger.info('GTFS snapshot is unchanged', { agencyId, event: 'gtfs_snapshot_unchanged', version: manifest.version });
       return 'unchanged';
     }
@@ -1011,11 +1154,21 @@ export async function refreshGtfsSnapshot(agencyId: AgencyId): Promise<'publishe
       }
       throw new Error('GTFS manifest changed while its source watermark was being refreshed', { cause: error });
     }
+    if (backfilledDerived) {
+      logger.info('Added prepared timetable indexes to GTFS snapshot', {
+        agencyId,
+        derivedVersion: backfilledDerived.version,
+        event: 'gtfs_snapshot_derived_backfilled',
+        version: manifest.version,
+      });
+    }
     logger.info('GTFS snapshot is unchanged', { agencyId, event: 'gtfs_snapshot_unchanged', version: manifest.version });
     return 'unchanged';
   }
 
   await ensureSnapshotArchive(storage, manifest, archive);
+  const derived = await tryPublishDerived(storage, agencyId, manifest.version, extracted.files);
+  if (derived) manifest.derived = derived;
 
   try {
     // Publishing the small manifest last makes the version switch atomic for every reader.
@@ -1086,6 +1239,72 @@ function assertExtractedMatchesManifest(extracted: ExtractedGtfsArchive, manifes
   }
 }
 
+// A prepared archive holds only these files; anything else (or any nested path) is rejected.
+const DERIVED_ENTRY_PATTERN = /^(?:manifest\.json|stop-indexes\.json|(?:stop_times|geometry)\/[^/\\]+\.json)$/;
+
+/**
+ * The snapshot's prepared files, verified against its manifest, or undefined (logged) when they
+ * can't be used — hydration then writes the raw files and the loaders scan them as before.
+ */
+async function tryLoadDerivedFiles(
+  storage: ReturnType<typeof bucket>,
+  manifest: GtfsSnapshotManifest,
+): Promise<Map<string, Uint8Array> | undefined> {
+  const derived = manifest.derived!;
+  try {
+    const [metadata] = await storage.file(derived.object).getMetadata();
+    if (metadata.generation === undefined) throw new Error('prepared archive has no storage generation');
+    const declaredSize = boundedStoredObjectSize(metadata.size, MAX_DERIVED_ARCHIVE_BYTES, 'Prepared GTFS archive');
+    if (declaredSize !== derived.size) throw new Error('prepared archive size does not match its manifest');
+    const [archive] = await storage.file(derived.object, { generation: metadata.generation }).download();
+    if (archive.length !== declaredSize || sha256(archive) !== derived.sha256) {
+      throw new Error('prepared archive does not match its manifest');
+    }
+
+    let extractedBytes = 0;
+    const entries = unzipSync(new Uint8Array(archive), {
+      filter: (file) => {
+        if (!DERIVED_ENTRY_PATTERN.test(file.name)) throw new Error(`unexpected prepared archive entry ${file.name}`);
+        extractedBytes += file.originalSize;
+        if (extractedBytes > MAX_DERIVED_EXTRACTED_BYTES) throw new Error('prepared archive expands beyond the allowed size');
+        return true;
+      },
+    });
+    if (!entries['manifest.json'] || !entries['stop-indexes.json']) throw new Error('prepared archive is incomplete');
+    return new Map(Object.entries(entries));
+  } catch (error) {
+    logger.warn('Using raw GTFS files because prepared timetable indexes are unavailable', {
+      agencyId: manifest.agencyId,
+      event: 'gtfs_snapshot_derived_unavailable',
+      reason: error instanceof Error ? error.message : String(error),
+      version: manifest.version,
+    });
+    return undefined;
+  }
+}
+
+/**
+ * Moves a staged snapshot directory into its content-addressed place. Windows reports an
+ * existing target as EPERM rather than ENOTEMPTY, and can briefly lock just-written folders
+ * (antivirus, search indexer), so a locked rename onto a missing target is retried.
+ */
+async function renameIntoPlace(stagingDir: string, dataDir: string): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await rename(stagingDir, dataDir);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException | null)?.code;
+      // Another hydration in this instance won the race for the same content-addressed path.
+      if (code === 'EEXIST' || code === 'ENOTEMPTY') return;
+      if (code !== 'EPERM' && code !== 'EBUSY' && code !== 'EACCES') throw error;
+      if (existsSync(dataDir)) return;
+      if (attempt >= 10) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+  }
+}
+
 async function hydrateManifest(manifest: GtfsSnapshotManifest): Promise<HydratedGtfsSnapshot> {
   const storage = bucket();
   const [metadata] = await storage.file(manifest.archiveObject).getMetadata();
@@ -1102,25 +1321,30 @@ async function hydrateManifest(manifest: GtfsSnapshotManifest): Promise<Hydrated
   // thousands of stop-time records on a cold request.
   const extracted = extractGtfsArchive(archive, { semanticValidation: false });
   assertExtractedMatchesManifest(extracted, manifest);
+  const derivedFiles = manifest.derived?.version === DERIVED_VERSION ? await tryLoadDerivedFiles(storage, manifest) : undefined;
   const agencyDir = join(tmpdir(), 'pathly-gtfs', manifest.agencyId);
   const dataDir = join(agencyDir, manifest.version);
   const stagingDir = join(agencyDir, `.${manifest.version}.${randomUUID()}.tmp`);
   await mkdir(stagingDir, { recursive: true });
   try {
-    await Promise.all([...extracted.files].map(([name, data]) => writeFile(join(stagingDir, name), data)));
-    try {
-      await rename(stagingDir, dataDir);
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException | null)?.code;
-      if (code !== 'EEXIST' && code !== 'ENOTEMPTY') throw error;
-      // Another hydration in this instance won the race for the same content-addressed path.
+    // With prepared files, leave the raw stop times out (as a deploy does): the loaders then read
+    // only the prepared files, and /tmp (held in memory) stays about the size it was before.
+    const rawFiles = [...extracted.files].filter(([name]) => !derivedFiles || name !== 'stop_times.txt');
+    await Promise.all(rawFiles.map(([name, data]) => writeFile(join(stagingDir, name), data)));
+    if (derivedFiles) {
+      for (const dir of new Set([...derivedFiles.keys()].map((name) => dirname(join(stagingDir, DERIVED_DIR, name))))) {
+        await mkdir(dir, { recursive: true });
+      }
+      await Promise.all([...derivedFiles].map(([name, data]) => writeFile(join(stagingDir, DERIVED_DIR, name), data)));
     }
+    await renameIntoPlace(stagingDir, dataDir);
   } finally {
     await rm(stagingDir, { recursive: true, force: true });
   }
   logger.info('Hydrated GTFS snapshot', {
     agencyId: manifest.agencyId,
     event: 'gtfs_snapshot_hydrated',
+    prepared: derivedFiles !== undefined,
     version: manifest.version,
   });
   return { dataDir, version: manifest.version };
@@ -1185,9 +1409,15 @@ export async function hydrateCurrentGtfsSnapshot(
 export function resetGtfsSnapshotStateForTests(): void {
   snapshotStates.clear();
   storageBucketForTests = undefined;
+  derivedArchiveBuilderForTests = undefined;
 }
 
 /** Unit-test dependency injection only. */
 export function setGtfsSnapshotBucketForTests(value: StorageBucket): void {
   storageBucketForTests = value;
+}
+
+/** Unit-test dependency injection only. */
+export function setGtfsDerivedArchiveBuilderForTests(value: typeof derivedArchiveBuilderForTests): void {
+  derivedArchiveBuilderForTests = value;
 }

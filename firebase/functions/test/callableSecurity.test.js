@@ -172,3 +172,21 @@ test('batched live status bounds its size and answers each route on its own', as
   const { results } = await run({ routes: [{ agencyId: 'subway', routeId: 'no-such-route', direction1StopId: 'x', direction0StopId: 'x' }] });
   assert.deepEqual(results, [{ ok: false, code: 'invalid-argument' }]);
 });
+
+test('a warm-up call is authenticated, rate-limited, and returns no transit data', async () => {
+  const consumed = [];
+  setSharedRateLimitConsumerForTests(async (key, limit, nowMs) => {
+    consumed.push(key.split(':')[0]);
+    return consumeTokenBucket(undefined, limit, nowMs);
+  });
+  for (const [callable, endpoint] of [[findNearbyTransit, 'findNearbyTransit'], [getRouteGeometry, 'getRouteGeometry']]) {
+    await assert.rejects(
+      () => callable.run({ auth: null, data: { warmup: true }, rawRequest: request(null).rawRequest }),
+      (error) => error.code === 'unauthenticated',
+    );
+    const result = await callable.run({ auth: { uid: 'warm-user' }, data: { warmup: true }, rawRequest: request('warm-user').rawRequest });
+    assert.deepEqual(result, { warmed: true });
+    assert.equal(consumed.at(-1), endpoint, `${endpoint} warm-up consumed a rate-limit token`);
+  }
+  assert.deepEqual(consumed, ['findNearbyTransit', 'getRouteGeometry']);
+});

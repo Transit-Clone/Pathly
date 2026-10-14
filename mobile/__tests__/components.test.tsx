@@ -1,11 +1,14 @@
-import { fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render } from '@testing-library/react-native';
 import mockSafeAreaContext from 'react-native-safe-area-context/jest/mock';
-import { Animated, processColor, StyleSheet, Text } from 'react-native';
+import { Animated, Platform, processColor, StyleSheet, Text } from 'react-native';
 
 import { Icon } from '../src/components/Icon';
 import { LiveSignal } from '../src/components/LiveSignal';
 import { MapBackdrop, fitMap } from '../src/components/MapBackdrop';
 import { PressableScale } from '../src/components/PressableScale';
+import { NearbySkeleton } from '../src/components/Skeleton';
+import { TransitCard } from '../src/components/TransitCard';
+import { routeById, type RouteDetail } from '../src/data/transit';
 import { AppSettingsProvider } from '../src/theme/AppSettings';
 import { ScreenTransition } from '../src/theme/motion';
 import { darkColors, lightColors } from '../src/theme/colors';
@@ -110,6 +113,66 @@ describe('LiveSignal', () => {
     for (const arc of [0, 1]) {
       expect(StyleSheet.flatten(screen.getByTestId(`live-gps-arc-${arc}`, { includeHiddenElements: true }).props.style).opacity).toBe(1);
     }
+  });
+});
+
+describe('loading placeholders', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('shows three pulsing card-shaped placeholders, announced once as a group', () => {
+    const loop = jest.spyOn(Animated, 'loop');
+    const screen = render(<AppSettingsProvider><NearbySkeleton /></AppSettingsProvider>);
+    const group = screen.getByLabelText('Loading nearby transit');
+    expect(group.props.accessible).toBe(true);
+    expect(screen.getAllByTestId('nearby-placeholder-card')).toHaveLength(3);
+    for (const card of screen.getAllByTestId('nearby-placeholder-card')) {
+      expect(StyleSheet.flatten(card.props.style)).toEqual(expect.objectContaining({ height: 104, borderRadius: 14, backgroundColor: lightColors.skeleton }));
+    }
+    expect(loop).toHaveBeenCalledTimes(1);
+    screen.unmount();
+  });
+
+  it('fades the placeholders down and back up over time when motion is allowed', () => {
+    // Web drives the fade from JS (no native driver), so its opacity can be sampled here.
+    jest.replaceProperty(Platform, 'OS', 'web');
+    jest.useFakeTimers();
+    try {
+      const screen = render(<AppSettingsProvider><NearbySkeleton /></AppSettingsProvider>);
+      const opacity = () => StyleSheet.flatten(screen.getAllByTestId('nearby-placeholder-card')[0]!.props.style).opacity as number;
+      const samples = [opacity()];
+      for (let step = 0; step < 16; step += 1) {
+        act(() => jest.advanceTimersByTime(100));
+        samples.push(opacity());
+      }
+      expect(samples[0]).toBe(1);
+      expect(Math.min(...samples)).toBeLessThan(0.5);
+      expect(samples.at(-1)!).toBeGreaterThan(0.95);
+      screen.unmount();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('uses the dark placeholder gray in dark mode and holds still under Reduce motion', () => {
+    const loop = jest.spyOn(Animated, 'loop');
+    const screen = render(<AppSettingsProvider initialAppearance="dark" initialReducedMotion={true}><NearbySkeleton /></AppSettingsProvider>);
+    expect(loop).not.toHaveBeenCalled();
+    for (const card of screen.getAllByTestId('nearby-placeholder-card')) {
+      expect(StyleSheet.flatten(card.props.style)).toEqual(expect.objectContaining({ opacity: 1, backgroundColor: darkColors.skeleton }));
+    }
+  });
+
+  it('fills each card time box with a placeholder while its live times load, and a dash if they fail', () => {
+    const base = routeById.ronkonkoma;
+    const [first, second] = base.directions;
+    const waiting: RouteDetail = { ...base, liveStatus: 'loading', directions: [{ ...first, unavailable: true }, { ...second, unavailable: true }] };
+    const screen = render(<AppSettingsProvider><TransitCard onPress={() => undefined} route={waiting} /></AppSettingsProvider>);
+    expect(screen.getAllByTestId('transit-time-placeholder').length).toBeGreaterThan(0);
+    expect(screen.getAllByLabelText(/Loading live data\.$/).length).toBeGreaterThan(0);
+
+    screen.rerender(<AppSettingsProvider><TransitCard onPress={() => undefined} route={{ ...waiting, liveStatus: 'error' }} /></AppSettingsProvider>);
+    expect(screen.queryByTestId('transit-time-placeholder')).toBeNull();
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
   });
 });
 

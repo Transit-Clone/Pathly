@@ -74,3 +74,46 @@ for (const agencyId of Object.keys(AGENCIES)) {
     assert.ok(preparedRoutes[0].byTrip.size > 0, 'the busiest sampled route has trips');
   });
 }
+
+/** A fresh copy of route geometry, reading prepared files or (disabled) computing from the CSVs. */
+function freshGeometry(useDerived) {
+  freshLoaders(useDerived);
+  return require(path.join(LIB, 'gtfsDiscovery')).getRouteGeometry;
+}
+
+for (const agencyId of Object.keys(AGENCIES)) {
+  test(`${agencyId}: prepared route geometry matches computing it from the timetable`, async () => {
+    const routeIds = [...sampleRoutes(agencyId), 'no-such-route'];
+    const requests = routeIds.flatMap((routeId) => [[routeId, 0], [routeId, 1]]);
+
+    // The prepared side must not read the timetable or the shapes (it would just be computing).
+    const originalCreateReadStream = fs.createReadStream;
+    const originalReadFileSync = fs.readFileSync;
+    const feedReads = [];
+    fs.createReadStream = function (file, ...rest) {
+      if (String(file).endsWith('stop_times.txt')) feedReads.push(String(file));
+      return originalCreateReadStream.call(this, file, ...rest);
+    };
+    fs.readFileSync = function (file, ...rest) {
+      if (String(file).endsWith('shapes.txt')) feedReads.push(String(file));
+      return originalReadFileSync.call(this, file, ...rest);
+    };
+    let prepared;
+    try {
+      const getRouteGeometry = freshGeometry(true);
+      prepared = await Promise.all(requests.map(([routeId, direction]) => getRouteGeometry(agencyId, routeId, direction)));
+    } finally {
+      fs.createReadStream = originalCreateReadStream;
+      fs.readFileSync = originalReadFileSync;
+    }
+    assert.deepStrictEqual(feedReads, []);
+
+    const getRouteGeometry = freshGeometry(false);
+    const computed = await Promise.all(requests.map(([routeId, direction]) => getRouteGeometry(agencyId, routeId, direction)));
+    requests.forEach(([routeId, direction], index) => {
+      assert.deepStrictEqual(prepared[index], computed[index], `${agencyId} route ${routeId} direction ${direction}`);
+    });
+    assert.ok(prepared[0]?.stops.length > 0, 'the busiest sampled route has geometry');
+    assert.deepStrictEqual(prepared.slice(-2), [null, null], 'an unknown route has no geometry');
+  });
+}

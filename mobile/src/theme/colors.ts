@@ -12,6 +12,9 @@ export const lightColors = {
   mutedInk: '#657386',
   surface: '#FFFFFF',
   surfaceMuted: '#F2F6FB',
+  /** Loading placeholder cards, and the bars drawn on them. */
+  skeleton: '#E8EDF3',
+  skeletonBar: '#D6DEE8',
   canvas: '#F7FAFF',
   road: '#D7E2EE',
   roadHighlight: '#FFFFFF',
@@ -55,6 +58,8 @@ export const darkColors: Palette = {
   mutedInk: '#A0A8B4',
   surface: '#1B1C1F',
   surfaceMuted: '#121315',
+  skeleton: '#26282C',
+  skeletonBar: '#36393F',
   canvas: '#0D0E10',
   road: '#3A3D44',
   roadHighlight: '#4A4E56',

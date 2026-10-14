@@ -1,14 +1,17 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const test = require('node:test');
 
-const { zipSync, strToU8 } = require('fflate');
+const { unzipSync, zipSync, strToU8 } = require('fflate');
 
 const { refreshGtfsStaticData } = require('../lib');
 const { AGENCY_CONFIGS } = require('../lib/gtfsAgencies');
 const {
   assertGtfsServiceIsCurrent,
   createGtfsSnapshotManifest,
+  derivedArchiveObject,
   daysUntilGtfsServiceEnd,
   extractGtfsArchive,
   hydrateCurrentGtfsSnapshot,
@@ -16,6 +19,7 @@ const {
   refreshAllGtfsSnapshots,
   refreshGtfsSnapshot,
   resetGtfsSnapshotStateForTests,
+  setGtfsDerivedArchiveBuilderForTests,
   setGtfsSnapshotBucketForTests,
   validateAgencySnapshotContract,
 } = require('../lib/gtfsSnapshots');
@@ -300,6 +304,32 @@ test('creates and validates an immutable atomic snapshot manifest', () => {
   assert.throws(() => parseGtfsSnapshotManifest(unsafe, 'lirr'), /archive object is invalid/);
 });
 
+test('validates the optional prepared-data archive in a snapshot manifest', () => {
+  const bytes = archive();
+  const manifest = createGtfsSnapshotManifest('lirr', 'https://example.com/lirr.zip', bytes, extractGtfsArchive(bytes), new Date('2026-10-06T12:00:00.000Z'));
+  assert.equal('derived' in manifest, false);
+  assert.deepEqual(parseGtfsSnapshotManifest(structuredClone(manifest), 'lirr'), manifest);
+
+  const derived = { version: 3, object: derivedArchiveObject('lirr', manifest.version, 3), sha256: 'a'.repeat(64), size: 1024 };
+  const withDerived = { ...manifest, derived };
+  assert.equal(derived.object, `gtfs/v1/lirr/derived/${manifest.version}-v3.zip`);
+  assert.deepEqual(parseGtfsSnapshotManifest(structuredClone(withDerived), 'lirr'), withDerived);
+
+  const invalid = [
+    { ...derived, object: derivedArchiveObject('lirr', 'b'.repeat(64), 3) },
+    { ...derived, object: derivedArchiveObject('subway', manifest.version, 3) },
+    { ...derived, version: 2 },
+    { ...derived, version: 0, object: derivedArchiveObject('lirr', manifest.version, 0) },
+    { ...derived, sha256: 'not-a-hash' },
+    { ...derived, size: 0 },
+    { ...derived, size: 32 * 1024 * 1024 + 1 },
+    null,
+  ];
+  for (const value of invalid) {
+    assert.throws(() => parseGtfsSnapshotManifest({ ...manifest, derived: value }, 'lirr'), /prepared-data archive is invalid/);
+  }
+});
+
 test('uses bundled GTFS outside deployed Cloud Functions', async () => {
   assert.equal(await hydrateCurrentGtfsSnapshot('lirr'), null);
 });
@@ -459,7 +489,7 @@ test('advances the source watermark without activating a logically identical rep
     assert.equal(refreshed.version, firstManifest.version);
     assert.equal(refreshed.archiveSha256, firstManifest.archiveSha256);
     assert.equal(refreshed.sourceLastModified, '2026-10-07T12:00:00.000Z');
-    assert.equal([...fakeBucket.objects.keys()].filter((name) => name.endsWith('.zip')).length, 1);
+    assert.equal([...fakeBucket.objects.keys()].filter((name) => name.startsWith('gtfs/v1/lirr/versions/')).length, 1);
 
     fakeBucket.objects.delete(refreshed.archiveObject);
     const repairRepack = archive({
@@ -603,6 +633,169 @@ test('activates new remote snapshots through the static-data readers and keeps t
     if (originalOverride === undefined) delete process.env.GTFS_USE_CLOUD_STORAGE;
     else process.env.GTFS_USE_CLOUD_STORAGE = originalOverride;
   }
+});
+
+/** Runs `body` with every GTFS download answered by `files` (LIRR's fixture by default). */
+async function withLirrFeed(body, files = currentLirrFiles()) {
+  const originalFetch = global.fetch;
+  global.fetch = async () => new Response(archive(files));
+  try {
+    return await body();
+  } finally {
+    global.fetch = originalFetch;
+  }
+}
+
+function currentManifest(fakeBucket, agencyId = 'lirr') {
+  return JSON.parse(fakeBucket.objects.get(`gtfs/v1/${agencyId}/current.json`).data.toString('utf-8'));
+}
+
+test('publishes prepared timetable indexes alongside a new snapshot', async () => {
+  const fakeBucket = new FakeBucket();
+  setGtfsSnapshotBucketForTests(fakeBucket);
+  await withLirrFeed(async () => assert.equal(await refreshGtfsSnapshot('lirr'), 'published'));
+
+  const manifest = parseGtfsSnapshotManifest(currentManifest(fakeBucket), 'lirr');
+  assert.ok(manifest.derived, 'manifest references the prepared archive');
+  assert.equal(manifest.derived.object, derivedArchiveObject('lirr', manifest.version, manifest.derived.version));
+  const stored = fakeBucket.objects.get(manifest.derived.object).data;
+  assert.equal(stored.length, manifest.derived.size);
+  const entries = unzipSync(new Uint8Array(stored));
+  for (const name of ['manifest.json', 'stop-indexes.json', 'stop_times/10.json', 'geometry/10.json']) {
+    assert.ok(entries[name], `prepared archive contains ${name}`);
+  }
+  const geometry = JSON.parse(Buffer.from(entries['geometry/10.json']).toString('utf-8'));
+  assert.deepEqual(geometry[0].stops.map((stop) => stop.name), ['Huntington', 'Second Stop']);
+  assert.equal(geometry[1], null);
+});
+
+test('still publishes a snapshot when its prepared indexes cannot be built, then backfills them', async () => {
+  const fakeBucket = new FakeBucket();
+  setGtfsSnapshotBucketForTests(fakeBucket);
+  setGtfsDerivedArchiveBuilderForTests(async () => {
+    throw new Error('builder exploded');
+  });
+  await withLirrFeed(async () => assert.equal(await refreshGtfsSnapshot('lirr'), 'published'));
+  const published = currentManifest(fakeBucket);
+  assert.equal('derived' in published, false);
+
+  // The next run sees the same feed, so the timetable version stays put and only gains indexes.
+  setGtfsDerivedArchiveBuilderForTests(undefined);
+  await withLirrFeed(async () => assert.equal(await refreshGtfsSnapshot('lirr'), 'unchanged'));
+  const backfilled = parseGtfsSnapshotManifest(currentManifest(fakeBucket), 'lirr');
+  assert.equal(backfilled.version, published.version);
+  assert.equal(backfilled.archiveObject, published.archiveObject);
+  assert.ok(backfilled.derived);
+  assert.ok(fakeBucket.objects.has(backfilled.derived.object));
+});
+
+test('leaves a snapshot with current prepared indexes untouched', async () => {
+  const fakeBucket = new FakeBucket();
+  setGtfsSnapshotBucketForTests(fakeBucket);
+  await withLirrFeed(async () => assert.equal(await refreshGtfsSnapshot('lirr'), 'published'));
+  const generationBefore = fakeBucket.nextGeneration;
+  let builds = 0;
+  setGtfsDerivedArchiveBuilderForTests(async () => {
+    builds += 1;
+    return Buffer.alloc(0);
+  });
+  await withLirrFeed(async () => assert.equal(await refreshGtfsSnapshot('lirr'), 'unchanged'));
+  assert.equal(builds, 0);
+  assert.equal(fakeBucket.nextGeneration, generationBefore, 'nothing was written');
+});
+
+test('keeps a prepared archive another run already published for the same snapshot', async () => {
+  const fakeBucket = new FakeBucket();
+  setGtfsSnapshotBucketForTests(fakeBucket);
+  await withLirrFeed(async () => assert.equal(await refreshGtfsSnapshot('lirr'), 'published'));
+  const first = currentManifest(fakeBucket);
+  const storedBefore = fakeBucket.objects.get(first.derived.object);
+
+  // Force a rebuild (as after a format bump would) while the object name is already taken.
+  fakeBucket.objects.get('gtfs/v1/lirr/current.json').data = Buffer.from(JSON.stringify({ ...first, derived: undefined }));
+  setGtfsDerivedArchiveBuilderForTests(async () => Buffer.from('a different but equivalent build'));
+  await withLirrFeed(async () => assert.equal(await refreshGtfsSnapshot('lirr'), 'unchanged'));
+  const second = currentManifest(fakeBucket);
+  assert.equal(fakeBucket.objects.get(first.derived.object), storedBefore, 'the published archive was not replaced');
+  assert.deepEqual(second.derived, first.derived);
+});
+
+/** What the LIRR loaders answer for the fixture route, from whichever data the snapshot hydrated. */
+async function lirrAnswers() {
+  const { findNearestStops, getRouteGeometry } = require('../lib/gtfsDiscovery');
+  const { loadRouteStopTimes } = require('../lib/gtfsStaticData');
+  return {
+    // As the callable sends it: JSON drops the fixture's missing (undefined) headsign either way.
+    geometry: JSON.parse(JSON.stringify([await getRouteGeometry('lirr', '10', 0), await getRouteGeometry('lirr', '10', 1)])),
+    nearest: await findNearestStops('lirr', 40.9, -73.1),
+    stopTimes: await loadRouteStopTimes('lirr', '10'),
+    counts: await loadRouteStopCounts('lirr', '10'),
+  };
+}
+
+/** Publishes the LIRR fixture (with prepared indexes unless the builder is stubbed), then hydrates it into a clean /tmp cache. */
+async function hydratePreparedLirr(fakeBucket, tamper) {
+  const originalOverride = process.env.GTFS_USE_CLOUD_STORAGE;
+  process.env.GTFS_USE_CLOUD_STORAGE = 'true';
+  try {
+    await withLirrFeed(async () => assert.equal(await refreshGtfsSnapshot('lirr'), 'published'));
+    const manifest = currentManifest(fakeBucket);
+    if (tamper) tamper(fakeBucket.objects.get(manifest.derived.object));
+    // Hydrated folders are content-addressed and outlive a test run on developer machines.
+    fs.rmSync(path.join(os.tmpdir(), 'pathly-gtfs', 'lirr', manifest.version), { recursive: true, force: true });
+    await prepareAgencyStaticData('lirr', 1_000_000);
+    return { dataDir: path.join(os.tmpdir(), 'pathly-gtfs', 'lirr', manifest.version), answers: await lirrAnswers() };
+  } finally {
+    if (originalOverride === undefined) delete process.env.GTFS_USE_CLOUD_STORAGE;
+    else process.env.GTFS_USE_CLOUD_STORAGE = originalOverride;
+  }
+}
+
+test('hydrates prepared timetable indexes instead of the raw stop times', async () => {
+  const fakeBucket = new FakeBucket();
+  setGtfsSnapshotBucketForTests(fakeBucket);
+  const prepared = await hydratePreparedLirr(fakeBucket);
+  assert.equal(fs.existsSync(path.join(prepared.dataDir, 'derived', 'manifest.json')), true);
+  assert.equal(fs.existsSync(path.join(prepared.dataDir, 'derived', 'geometry', '10.json')), true);
+  assert.equal(fs.existsSync(path.join(prepared.dataDir, 'stop_times.txt')), false);
+  assert.deepEqual(prepared.answers.geometry[0].stops.map((stop) => stop.name), ['Huntington', 'Second Stop']);
+
+  // The same snapshot published without prepared indexes is answered by scanning its raw files,
+  // with identical results.
+  resetGtfsSnapshotStateForTests();
+  resetGtfsStaticDataForTests();
+  const rawBucket = new FakeBucket();
+  setGtfsSnapshotBucketForTests(rawBucket);
+  setGtfsDerivedArchiveBuilderForTests(async () => {
+    throw new Error('no prepared indexes for this comparison');
+  });
+  const raw = await hydratePreparedLirr(rawBucket);
+  assert.equal(raw.dataDir, prepared.dataDir, 'same snapshot version');
+  assert.equal(fs.existsSync(path.join(raw.dataDir, 'stop_times.txt')), true);
+  assert.equal(fs.existsSync(path.join(raw.dataDir, 'derived')), false);
+  assert.deepEqual(raw.answers, prepared.answers);
+});
+
+test('falls back to the raw stop times when a prepared archive fails verification', async () => {
+  const fakeBucket = new FakeBucket();
+  setGtfsSnapshotBucketForTests(fakeBucket);
+  const tampered = await hydratePreparedLirr(fakeBucket, (object) => {
+    object.data = Buffer.from(object.data);
+    object.data[object.data.length - 1] ^= 0xff;
+  });
+  assert.equal(fs.existsSync(path.join(tampered.dataDir, 'derived')), false);
+  assert.equal(fs.existsSync(path.join(tampered.dataDir, 'stop_times.txt')), true);
+  assert.deepEqual(tampered.answers.geometry[0].stops.map((stop) => stop.name), ['Huntington', 'Second Stop']);
+  assert.equal(tampered.answers.geometry[1], null);
+});
+
+test('rejects a prepared archive with unexpected entries', async () => {
+  const fakeBucket = new FakeBucket();
+  setGtfsSnapshotBucketForTests(fakeBucket);
+  setGtfsDerivedArchiveBuilderForTests(async () => Buffer.from(zipSync({ 'manifest.json': strToU8('{}'), 'stop-indexes.json': strToU8('{}'), '../escape.json': strToU8('{}') })));
+  const hydrated = await hydratePreparedLirr(fakeBucket);
+  assert.equal(fs.existsSync(path.join(hydrated.dataDir, 'derived')), false);
+  assert.equal(fs.existsSync(path.join(hydrated.dataDir, 'stop_times.txt')), true);
 });
 
 test('refreshes every agency successfully in one scheduled run', async () => {

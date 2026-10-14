@@ -1,5 +1,4 @@
 import { parse } from 'csv-parse';
-import { parse as parseSync } from 'csv-parse/sync';
 import { createReadStream, existsSync, readFileSync } from 'fs';
 import { readFile, rm } from 'fs/promises';
 import { tmpdir } from 'os';
@@ -7,21 +6,30 @@ import { join, resolve, sep } from 'path';
 import { logger } from 'firebase-functions';
 
 import { agencyConfig, type AgencyId } from './gtfsAgencies';
-import { DERIVED_DIR, DERIVED_VERSION, MANIFEST_FILE, STOP_INDEXES_FILE, STOP_TIMES_DIR, derivedSources, routeFileName, type DerivedManifest, type DerivedStopIndexes } from './gtfsDerived';
+import {
+  DERIVED_DIR,
+  DERIVED_VERSION,
+  GEOMETRY_DIR,
+  MANIFEST_FILE,
+  STOP_INDEXES_FILE,
+  STOP_TIMES_DIR,
+  derivedSources,
+  indexStopTimeRows,
+  routeFileName,
+  type DerivedManifest,
+  type DerivedRouteGeometry,
+  type DerivedStopIndexes,
+  type DerivedStopTimeRow,
+  type RouteStopTimes,
+} from './gtfsDerived';
+import { readAgencyStaticData, readShapes, type AgencyStaticData, type GtfsStopTime, type ShapePoint, type StopTimeRow } from './gtfsFeed';
 import { hydrateCurrentGtfsSnapshot } from './gtfsSnapshots';
+
+export { gtfsTimeToSeconds } from './gtfsFeed';
+export type { GtfsCalendar, GtfsRoute, GtfsStop, GtfsStopTime, GtfsTrip, ShapePoint } from './gtfsFeed';
 
 const STATIC_DATA_ROOT = join(__dirname, '../static_data');
 const activeDataRoots = new Map<AgencyId, { dataDir: string; version: string }>();
-
-/**
- * GTFS times are "HH:MM:SS" and can exceed 24:00:00 for a post-midnight trip of the same
- * service day. Shared by gtfsSchedule.ts and gtfsDiscovery.ts rather than defined twice —
- * both already depend on this module for the underlying stop/trip data.
- */
-export function gtfsTimeToSeconds(hms: string): number {
-  const parts = hms.split(':').map(Number);
-  return (parts[0] ?? 0) * 3600 + (parts[1] ?? 0) * 60 + (parts[2] ?? 0);
-}
 
 function dataDirFor(agencyId: AgencyId): string {
   return activeDataRoots.get(agencyId)?.dataDir ?? join(STATIC_DATA_ROOT, agencyConfig(agencyId).dataDir);
@@ -60,43 +68,6 @@ function useDerived(agencyId: AgencyId): boolean {
   return valid;
 }
 
-function loadCsvSync<T>(agencyId: AgencyId, filename: string): T[] {
-  const path = join(dataDirFor(agencyId), filename);
-  if (!existsSync(path)) return [];
-  return parseSync(readFileSync(path, 'utf-8'), { columns: true }) as T[];
-}
-
-type RouteRow = { route_id: string; route_short_name: string; route_long_name: string; route_color: string };
-type StopRow = { stop_id: string; stop_name: string; stop_lat: string; stop_lon: string; parent_station?: string };
-type TripRow = { trip_id: string; route_id: string; trip_headsign: string; direction_id: string; service_id: string; peak_offpeak?: string; shape_id?: string };
-type ShapeRow = { shape_id: string; shape_pt_lat: string; shape_pt_lon: string; shape_pt_sequence: string };
-type StopTimeRow = { trip_id: string; stop_id: string; arrival_time: string; departure_time: string; stop_sequence: string };
-type CalendarRow = {
-  service_id: string;
-  monday: string; tuesday: string; wednesday: string; thursday: string; friday: string; saturday: string; sunday: string;
-  start_date: string; end_date: string;
-};
-type CalendarDateRow = { service_id: string; date: string; exception_type: string };
-
-export type GtfsStop = { stopId: string; name: string; lat: number; lon: number; parentStation: string | null };
-/** `peakOffpeak` is LIRR's own real schedule classification (trips.txt's peak_offpeak column) — null for agencies whose trips.txt doesn't have that column (e.g. subway, which doesn't have peak/off-peak fares at all). */
-export type GtfsTrip = { tripId: string; routeId: string; headsign: string; directionId: number; serviceId: string; peakOffpeak: boolean | null; shapeId: string | null };
-export type ShapePoint = { lat: number; lon: number };
-export type GtfsRoute = { routeId: string; shortName: string; name: string; color: string };
-/** One scheduled stop event from stop_times.txt — arrival/departure are "HH:MM:SS" local time, can exceed 24:00:00 for a post-midnight trip of the same service day. */
-export type GtfsStopTime = { tripId: string; stopId: string; arrivalTime: string; departureTime: string; stopSequence: number };
-/** A service_id's weekly pattern and the date range it's valid for — absent for agencies (like LIRR) that publish service exclusively via calendar_dates.txt exceptions. */
-export type GtfsCalendar = { daysOfWeek: readonly boolean[]; startDate: string; endDate: string };
-
-type AgencyStaticData = {
-  routesById: Map<string, GtfsRoute>;
-  stopsById: Map<string, GtfsStop>;
-  tripsById: Map<string, GtfsTrip>;
-  calendarByService: Map<string, GtfsCalendar>;
-  /** service_id -> "YYYYMMDD" dates added (exception_type 1) or removed (exception_type 2) on top of the weekly pattern (or, for calendar.txt-less agencies, the *entire* schedule). */
-  calendarExceptionsByService: Map<string, Map<string, '1' | '2'>>;
-};
-
 const staticDataCache = new Map<AgencyId, AgencyStaticData>();
 
 /** Loads and indexes one agency's small-to-medium static GTFS files (not stop_times.txt — see loadRouteStopTimes/loadGlobalStopRouteIndex, both sized for files too big to load whole). Cached per agency. */
@@ -104,55 +75,7 @@ export function loadAgencyStaticData(agencyId: AgencyId): AgencyStaticData {
   const cached = staticDataCache.get(agencyId);
   if (cached) return cached;
 
-  const routesById = new Map<string, GtfsRoute>();
-  for (const row of loadCsvSync<RouteRow>(agencyId, 'routes.txt')) {
-    // LIRR's routes.txt has no route_short_name column at all (not just blank) — fall all the
-    // way back to the route_id itself rather than leaving this undefined.
-    const shortName = row.route_short_name || row.route_long_name || row.route_id;
-    routesById.set(row.route_id, { routeId: row.route_id, shortName, name: row.route_long_name || shortName, color: row.route_color });
-  }
-
-  const stopsById = new Map<string, GtfsStop>();
-  for (const row of loadCsvSync<StopRow>(agencyId, 'stops.txt')) {
-    stopsById.set(row.stop_id, {
-      stopId: row.stop_id,
-      name: row.stop_name,
-      lat: Number(row.stop_lat),
-      lon: Number(row.stop_lon),
-      parentStation: row.parent_station || null,
-    });
-  }
-
-  const tripsById = new Map<string, GtfsTrip>();
-  for (const row of loadCsvSync<TripRow>(agencyId, 'trips.txt')) {
-    tripsById.set(row.trip_id, {
-      tripId: row.trip_id,
-      routeId: row.route_id,
-      headsign: row.trip_headsign,
-      directionId: Number(row.direction_id),
-      serviceId: row.service_id,
-      peakOffpeak: row.peak_offpeak === undefined ? null : row.peak_offpeak === '1',
-      shapeId: row.shape_id || null,
-    });
-  }
-
-  const calendarByService = new Map<string, GtfsCalendar>();
-  for (const row of loadCsvSync<CalendarRow>(agencyId, 'calendar.txt')) {
-    calendarByService.set(row.service_id, {
-      daysOfWeek: [row.sunday, row.monday, row.tuesday, row.wednesday, row.thursday, row.friday, row.saturday].map((v) => v === '1'),
-      startDate: row.start_date,
-      endDate: row.end_date,
-    });
-  }
-
-  const calendarExceptionsByService = new Map<string, Map<string, '1' | '2'>>();
-  for (const row of loadCsvSync<CalendarDateRow>(agencyId, 'calendar_dates.txt')) {
-    const exceptions = calendarExceptionsByService.get(row.service_id) ?? new Map<string, '1' | '2'>();
-    exceptions.set(row.date, row.exception_type === '2' ? '2' : '1');
-    calendarExceptionsByService.set(row.service_id, exceptions);
-  }
-
-  const data: AgencyStaticData = { routesById, stopsById, tripsById, calendarByService, calendarExceptionsByService };
+  const data = readAgencyStaticData(dataDirFor(agencyId));
   staticDataCache.set(agencyId, data);
   return data;
 }
@@ -176,8 +99,6 @@ export function isServiceRunningOn(agencyId: AgencyId, serviceId: string, dateKe
   if (dateKey < calendar.startDate || dateKey > calendar.endDate) return false;
   return calendar.daysOfWeek[dayOfWeek] ?? false;
 }
-
-type RouteStopTimes = { byStop: Map<string, GtfsStopTime[]>; byTrip: Map<string, GtfsStopTime[]> };
 
 // Keyed by `${agencyId}:${routeId}`. Caches the in-flight *promise*, not just the resolved
 // value — several callers (geometry, headsigns, platform lookup, predictions) can ask for the
@@ -237,25 +158,6 @@ type AgencyStopIndexes = {
 };
 
 const agencyStopIndexesCache = new Map<AgencyId, Promise<AgencyStopIndexes>>();
-
-/** One prepared stop_times row: [tripId, stopId, arrivalTime, departureTime, stopSequence]. */
-type DerivedStopTimeRow = [string, string, string, string, number];
-
-/** A route's prepared rows, indexed the same way (and in the same order) as the CSV scan. */
-function indexStopTimeRows(rows: readonly DerivedStopTimeRow[]): RouteStopTimes {
-  const byStop = new Map<string, GtfsStopTime[]>();
-  const byTrip = new Map<string, GtfsStopTime[]>();
-  for (const [tripId, stopId, arrivalTime, departureTime, stopSequence] of rows) {
-    const entry: GtfsStopTime = { tripId, stopId, arrivalTime, departureTime, stopSequence };
-    const stopList = byStop.get(stopId);
-    if (stopList) stopList.push(entry);
-    else byStop.set(stopId, [entry]);
-    const tripList = byTrip.get(tripId);
-    if (tripList) tripList.push(entry);
-    else byTrip.set(tripId, [entry]);
-  }
-  return { byStop, byTrip };
-}
 
 type StopTimeBatch = { routeIds: Set<string>; done: Promise<Map<string, RouteStopTimes>> };
 const pendingStopTimeBatches = new Map<AgencyId, StopTimeBatch>();
@@ -353,6 +255,27 @@ export async function loadRouteStopCounts(agencyId: AgencyId, routeId: string): 
   return (await loadAgencyStopIndexes(agencyId)).stopCountsByRoute.get(routeId) ?? { 0: new Map(), 1: new Map() };
 }
 
+// Keyed by `${agencyId}:${routeId}`, like routeStopTimesCache.
+const routeGeometryCache = new Map<string, Promise<DerivedRouteGeometry | null>>();
+
+/**
+ * A route's prepared geometry (both directions), or null when the route has no prepared file
+ * (no stop times). Undefined when this agency has no usable prepared files, so the caller
+ * computes geometry from the timetable instead.
+ */
+export function loadPreparedRouteGeometry(agencyId: AgencyId, routeId: string): Promise<DerivedRouteGeometry | null> | undefined {
+  if (!useDerived(agencyId)) return undefined;
+  const cacheKey = `${agencyId}:${routeId}`;
+  const cached = routeGeometryCache.get(cacheKey);
+  if (cached) return cached;
+  const path = join(dataDirFor(agencyId), DERIVED_DIR, GEOMETRY_DIR, routeFileName(routeId));
+  const promise = existsSync(path)
+    ? readFile(path, 'utf-8').then((text) => JSON.parse(text) as DerivedRouteGeometry)
+    : Promise.resolve(null);
+  routeGeometryCache.set(cacheKey, promise);
+  return promise;
+}
+
 const shapesCache = new Map<AgencyId, Map<string, ShapePoint[]>>();
 
 /**
@@ -363,14 +286,7 @@ const shapesCache = new Map<AgencyId, Map<string, ShapePoint[]>>();
 export function loadAgencyShapes(agencyId: AgencyId): Map<string, ShapePoint[]> {
   const cached = shapesCache.get(agencyId);
   if (cached) return cached;
-  const withSequence = new Map<string, { sequence: number; point: ShapePoint }[]>();
-  for (const row of loadCsvSync<ShapeRow>(agencyId, 'shapes.txt')) {
-    const list = withSequence.get(row.shape_id) ?? [];
-    list.push({ sequence: Number(row.shape_pt_sequence), point: { lat: Number(row.shape_pt_lat), lon: Number(row.shape_pt_lon) } });
-    withSequence.set(row.shape_id, list);
-  }
-  const shapes = new Map<string, ShapePoint[]>();
-  for (const [shapeId, list] of withSequence) shapes.set(shapeId, list.sort((a, b) => a.sequence - b.sequence).map((entry) => entry.point));
+  const shapes = readShapes(dataDirFor(agencyId));
   shapesCache.set(agencyId, shapes);
   return shapes;
 }
@@ -381,8 +297,10 @@ function clearAgencyCaches(agencyId: AgencyId): void {
   agencyStopIndexesCache.delete(agencyId);
   shapesCache.delete(agencyId);
   pendingStopTimeBatches.delete(agencyId);
-  for (const key of routeStopTimesCache.keys()) {
-    if (key.startsWith(`${agencyId}:`)) routeStopTimesCache.delete(key);
+  for (const cache of [routeStopTimesCache, routeGeometryCache]) {
+    for (const key of cache.keys()) {
+      if (key.startsWith(`${agencyId}:`)) cache.delete(key);
+    }
   }
 }
 
@@ -430,6 +348,7 @@ export function resetGtfsStaticDataForTests(): void {
   derivedValidity.clear();
   staticDataCache.clear();
   routeStopTimesCache.clear();
+  routeGeometryCache.clear();
   agencyStopIndexesCache.clear();
   shapesCache.clear();
   pendingStopTimeBatches.clear();

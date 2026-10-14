@@ -1009,6 +1009,66 @@ describe('Pathly prototype navigation', () => {
     }
   });
 
+  it('shows placeholder cards on a first launch until the nearby search answers', async () => {
+    const callableNamed = (name: string) => {
+      const index = (httpsCallable as jest.Mock).mock.calls.findIndex((call) => call[1] === name);
+      return (httpsCallable as jest.Mock).mock.results[index]!.value as jest.Mock;
+    };
+    const nearby = callableNamed('findNearbyTransit');
+    const nearbyDefault = nearby.getMockImplementation()!;
+    // Nothing saved on the device (earlier tests leave a nearby list there), and the search (not
+    // the warm-up) waits until released.
+    await AsyncStorage.removeItem('pathly.nearby.v1');
+    const held: (() => void)[] = [];
+    let released = false;
+    const answer = () => {
+      released = true;
+      held.splice(0).forEach((release) => release());
+    };
+    nearby.mockImplementation((data?: { warmup?: boolean }) => {
+      if (data?.warmup) return Promise.resolve({ data: { warmed: true } });
+      if (released) return nearbyDefault();
+      return new Promise((resolve) => {
+        held.push(() => resolve(nearbyDefault()));
+      });
+    });
+    try {
+      const screen = render(<App />);
+      expect(await screen.findByLabelText('Loading nearby transit')).toBeTruthy();
+      expect(screen.getAllByTestId('nearby-placeholder-card', { includeHiddenElements: true })).toHaveLength(3);
+      expect(screen.queryByTestId('nearby-routes-empty')).toBeNull();
+
+      // The search goes out after its debounce; placeholders stay until it answers.
+      await waitFor(() => expect(nearby.mock.calls.some(([data]) => !data?.warmup)).toBe(true));
+      expect(screen.getAllByTestId('nearby-placeholder-card', { includeHiddenElements: true })).toHaveLength(3);
+      await act(async () => answer());
+      expect(await screen.findByTestId(`route-card-${PJ_CARD}-primary`)).toBeTruthy();
+      expect(screen.queryByTestId('nearby-routes-loading', { includeHiddenElements: true })).toBeNull();
+    } finally {
+      nearby.mockImplementation(nearbyDefault);
+    }
+  });
+
+  it('shows placeholder departure tiles on a route page until its live times load', async () => {
+    const callableNamed = (name: string) => {
+      const index = (httpsCallable as jest.Mock).mock.calls.findIndex((call) => call[1] === name);
+      return (httpsCallable as jest.Mock).mock.results[index]!.value as jest.Mock;
+    };
+    const single = callableNamed('getRouteLiveStatus');
+    const singleDefault = single.getMockImplementation()!;
+    single.mockImplementation(() => new Promise(() => undefined));
+    try {
+      const screen = render(<App />);
+      fireEvent.press(await screen.findByTestId(`route-card-${PJ_CARD}-primary`));
+      const tiles = await screen.findByTestId('route-predictions-loading');
+      expect(tiles.props.accessibilityLabel).toMatch(/^Loading the next arrival for /);
+      expect(screen.getAllByTestId('route-prediction-placeholder', { includeHiddenElements: true })).toHaveLength(4);
+      expect(screen.queryByTestId('route-predictions-empty')).toBeNull();
+    } finally {
+      single.mockImplementation(singleDefault);
+    }
+  });
+
   it('opens on the last nearby list and live times saved on the device while fresh data loads', async () => {
     const callableNamed = (name: string) => {
       const index = (httpsCallable as jest.Mock).mock.calls.findIndex((call) => call[1] === name);

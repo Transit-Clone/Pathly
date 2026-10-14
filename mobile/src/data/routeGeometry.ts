@@ -1,6 +1,7 @@
 import { httpsCallable } from 'firebase/functions';
 
 import { functions } from '../lib/firebase';
+import { whenWarm } from './backendWarmup';
 import type { LiveSource } from './transit';
 
 /** `offsetMinutes` is this stop's real scheduled time, relative to `stops[0]` — see gtfsDiscovery.ts's getRouteGeometry. */
@@ -28,7 +29,8 @@ export function fetchRouteGeometry(source: LiveSource, directionId: 0 | 1): Prom
   const cached = cache.get(cacheKey);
   if (cached) return cached;
 
-  const promise = getRouteGeometryCallable({ agencyId: source.agencyId, routeId: source.routeId, directionId })
+  const promise = whenWarm('getRouteGeometry')
+    .then(() => getRouteGeometryCallable({ agencyId: source.agencyId, routeId: source.routeId, directionId }))
     .then(({ data }) => data)
     .catch(() => null);
   cache.set(cacheKey, promise);

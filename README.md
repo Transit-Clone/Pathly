@@ -107,8 +107,8 @@ Stop development processes with `Ctrl+C`.
 
 The Functions read each agency's static GTFS feed from `firebase/functions/static_data/`. Scanning the full
 `stop_times.txt` files on every cold start made the first nearby search take about 18 seconds, so a build step
-prepares small per-route files and a stop-to-routes index under `static_data/<agency>/derived/` (generated,
-not committed):
+prepares small per-route stop-times and route-geometry files and a stop-to-routes index under
+`static_data/<agency>/derived/` (generated, not committed):
 
 ```sh
 npm --prefix firebase/functions run build:gtfs
@@ -120,6 +120,8 @@ npm --prefix firebase/functions run build:gtfs
   rebuild everything.
 - Without the index (for example on a fresh checkout), the Functions still work locally by scanning the CSVs,
   just more slowly. `npm --prefix firebase/functions test` builds it and checks it matches the CSVs.
+- The daily static GTFS refresh (below) builds the same files for each snapshot it publishes, so deployed
+  instances keep using them after a newer feed replaces the bundled one.
 
 ## Security and local configuration
 
@@ -153,7 +155,11 @@ feed, uploads an immutable ZIP to `gtfs/v1/<agency>/versions/<archive-sha256>.zi
 `gtfs/v1/<agency>/current.json` with a Cloud Storage generation precondition. Invalid, expired,
 rolled-back, or incompatible feeds leave the last published snapshot untouched. Repacked ZIPs
 whose runtime CSVs are unchanged only advance the trusted source watermark; they do not force
-instances to rehydrate. Callables check the
+instances to rehydrate. Each snapshot also gets a prepared-index archive at
+`gtfs/v1/<agency>/derived/<version>-v<format>.zip` (the timetable indexes above, built from that
+snapshot); a snapshot without a current one gains it on the next run, without a new version. If
+it can't be built or verified, the snapshot is still published and instances scan its raw files
+(`gtfs_snapshot_derived_failed` / `gtfs_snapshot_derived_unavailable`). Callables check the
 manifest at most once every five minutes, hydrate a verified version into ephemeral `/tmp`,
 and retain the last good version for that warm instance. A cold instance falls back to the
 GTFS files bundled with the deployment if Storage is unavailable.
@@ -182,10 +188,18 @@ Production setup for the `pathly-b7f0f` project:
 After the first deploy, manually run the managed Scheduler job once. Confirm that all four
 `current.json` files and their referenced ZIPs exist, and that logs contain four
 `gtfs_snapshot_published` (or `gtfs_snapshot_unchanged`) events with no
-`gtfs_refresh_failed`. Run it a second time and confirm all four are unchanged. Then wait up
+`gtfs_refresh_failed`. After a deploy that changes the prepared-index format, run the job once
+the same way (Cloud Scheduler console → the job → **Force run**) and confirm a
+`gtfs_snapshot_derived_backfilled` event per agency:
+
+```sh
+npx --yes firebase-tools@15.32.1 functions:log --only refreshGtfsStaticData
+```
+ Run it a second time and confirm all four are unchanged. Then wait up
 to five minutes, invoke the authenticated nearby-transit flow, and confirm a
-`gtfs_snapshot_hydrated` event for each agency. Alert on `gtfs_refresh_failed`,
-`gtfs_snapshot_fallback`, and `gtfs_service_expiring`; also alert if no complete refresh
+`gtfs_snapshot_hydrated` event (with `prepared: true`) for each agency. Alert on
+`gtfs_refresh_failed`, `gtfs_snapshot_fallback`, `gtfs_snapshot_derived_failed`, and
+`gtfs_service_expiring`; also alert if no complete refresh
 succeeds (`gtfs_refresh_completed`) within 26 hours. The scheduler retains immutable ZIP
 history rather than deleting archives concurrently with publication; this makes content
 rollback and A-to-B-to-A reuse safe. Do not apply a blanket lifecycle rule that could remove an

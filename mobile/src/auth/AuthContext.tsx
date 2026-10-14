@@ -1,6 +1,7 @@
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
+import { warmBackend } from '../data/backendWarmup';
 import { auth } from '../lib/firebase';
 import { ensureUserProfile } from './userProfile';
 
@@ -20,7 +21,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () =>
       onAuthStateChanged(auth, (nextUser) => {
         // Backfills a missing profile doc; best effort, since nothing in the app reads it yet.
-        if (nextUser) ensureUserProfile(nextUser).catch(() => undefined);
+        if (nextUser) {
+          ensureUserProfile(nextUser).catch(() => undefined);
+          warmBackend(nextUser.uid);
+        }
         setUser(nextUser);
         setInitializing(false);
       }),

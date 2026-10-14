@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
+  Animated,
   Platform,
   ScrollView,
   StyleSheet,
@@ -19,6 +19,7 @@ import { typography } from '../theme/typography';
 import { Icon } from './Icon';
 import { LIVE_SIGNAL_WIDTH, LiveSignal } from './LiveSignal';
 import { PressableScale } from './PressableScale';
+import { useSkeletonPulse } from './Skeleton';
 
 type TransitCardProps = {
   onPress: () => void;
@@ -30,6 +31,17 @@ type TransitCardProps = {
 const CARD_HORIZONTAL_MARGIN = 8;
 // How far a touch/mouse-down has to travel before it's treated as a swipe instead of a tap.
 const SWIPE_THRESHOLD = 24;
+
+/** A pulsing block where the minutes will appear, while the first live times load. */
+function TimePlaceholder({ styles }: { styles: ReturnType<typeof createStyles> }) {
+  const opacity = useSkeletonPulse();
+  return (
+    <Animated.View style={[styles.timePlaceholder, { opacity }]} testID="transit-time-placeholder">
+      <View style={styles.timePlaceholderNumber} />
+      <View style={styles.timePlaceholderUnit} />
+    </Animated.View>
+  );
+}
 
 function PageBody({ index, item, route, styles }: {
   index: number;
@@ -49,7 +61,7 @@ function PageBody({ index, item, route, styles }: {
 
       {item.unavailable ? (
         <View style={styles.timing} testID={`transit-${route.id}-arrival-${index}`}>
-          {route.liveStatus === 'loading' ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.unavailableText}>{'—'}</Text>}
+          {route.liveStatus === 'loading' ? <TimePlaceholder styles={styles} /> : <Text style={styles.unavailableText}>{'—'}</Text>}
         </View>
       ) : (
         <View style={[styles.timing, !item.live && styles.scheduledTiming]}>
@@ -224,6 +236,10 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   },
   timing: { minWidth: 56, alignItems: 'center', justifyContent: 'center' },
   scheduledTiming: { opacity: 0.68 },
+  // Translucent white reads as gray on any route color.
+  timePlaceholder: { alignItems: 'center', gap: 5 },
+  timePlaceholderNumber: { width: 34, height: 28, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.32)' },
+  timePlaceholderUnit: { width: 30, height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.24)' },
   unavailableText: {
     color: colors.white,
     opacity: 0.68,
