@@ -1,0 +1,3 @@
+route_id,agency_id,route_short_name,route_long_name,route_type,route_color,route_text_color
+M15,MTA NYCT,M15,East Side - 1st Av / 2nd Av,3,00AEEF,FFFFFF
+M15+,MTA NYCT,M15-SBS,East Side - 1st Av / 2nd Av Select Bus,3,00AEEF,FFFFFF

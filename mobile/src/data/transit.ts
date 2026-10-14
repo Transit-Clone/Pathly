@@ -87,7 +87,8 @@ export type RouteStop = {
  * anchoring here.
  */
 export type LiveSource = {
-  agencyId: 'lirr' | 'subway' | 'nice' | 'suffolk';
+  /** Mirrors the backend's AgencyId (firebase/functions/src/gtfsAgencies.ts). */
+  agencyId: 'lirr' | 'subway' | 'nice' | 'suffolk' | 'bx' | 'bk' | 'mn' | 'qn' | 'si' | 'busco' | 'nycferry';
   routeId: string;
   direction1StopId: string;
   direction0StopId: string;

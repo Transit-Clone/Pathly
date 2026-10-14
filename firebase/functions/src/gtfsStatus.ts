@@ -55,7 +55,11 @@ export async function getRouteStatus(agencyId: AgencyId, routeId: string): Promi
   const route = routesById.get(routeId);
   if (!route) throw new Error(`Unknown ${agencyId} route_id "${routeId}"`);
 
-  const feedRequests = agencyConfig(agencyId).feedRequestsForRoute(routeId);
+  const config = agencyConfig(agencyId);
+  // A live feed whose key isn't set (MTA Bus Time before its secret exists) isn't asked at all:
+  // the route then shows its timetable, untracked, as when a feed is down.
+  const keyMissing = config.liveFeedSecret !== undefined && !process.env[config.liveFeedSecret];
+  const feedRequests = keyMissing ? [] : config.feedRequestsForRoute(routeId);
   const entityLists = await Promise.all(feedRequests.map((request) => fetchFeedEntities(request.url, request.headers)));
   const entities = entityLists.flat();
   const trips: GtfsTripStatus[] = [];

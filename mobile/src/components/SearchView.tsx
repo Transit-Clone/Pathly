@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../auth/AuthContext';
 import { fetchPlaceDetails, type PlaceKind, type SearchPlace } from '../data/placesSearch';
 import { locationToPlace, recordSearch, removeSearch, subscribeToSearches } from '../data/userData';
+import { normalizeStopName } from '../data/stopSearch';
 import { usePlacesSearch } from '../hooks/usePlacesSearch';
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
@@ -23,12 +24,20 @@ import { PressableScale } from './PressableScale';
 import { badgeLabel, RouteBadge, type TransitMode } from './RouteBadge';
 
 const MAX_RECENT_SEARCHES = 8;
+/** Recent searches shown above the results while typing. */
+const MAX_MATCHING_RECENTS = 3;
+
+/** A recent search matches when every typed word starts a word of its name or address. */
+function recentMatches(place: SearchPlace, query: string): boolean {
+  const words = normalizeStopName(`${place.title} ${place.subtitle}`).split(' ');
+  const typed = normalizeStopName(query).split(' ').filter(Boolean);
+  return typed.length > 0 && typed.every((token) => words.some((word) => word.startsWith(token)));
+}
 /** Badges on a stop row before the rest are summarized as "+N". */
 const MAX_ROW_BADGES = 6;
 
 const KIND_ICONS: Record<Exclude<PlaceKind, 'place'>, IconName> = { subway: 'subway', rail: 'rail', bus: 'bus', ferry: 'ferry' };
-// Ferries have no badge shape of their own yet; their routes draw like bus routes.
-const KIND_BADGE_MODES: Record<Exclude<PlaceKind, 'place'>, TransitMode> = { subway: 'subway', rail: 'rail', bus: 'bus', ferry: 'bus' };
+const KIND_BADGE_MODES: Record<Exclude<PlaceKind, 'place'>, TransitMode> = { subway: 'subway', rail: 'rail', bus: 'bus', ferry: 'ferry' };
 
 /** "Jamaica, LIRR station, lines PJ, RK, and 8 more" for a stop; "name, address" for a place. */
 function rowLabel(place: SearchPlace): string {
@@ -36,7 +45,8 @@ function rowLabel(place: SearchPlace): string {
   const names = place.routes.slice(0, 3).map((route) => badgeLabel({ agency: place.agency ?? '', shortName: route.shortName }));
   const more = place.routes.length - names.length;
   const lines = more > 0 ? `${names.join(', ')}, and ${more} more` : names.join(', ');
-  return `${place.title}, ${place.agency ?? place.subtitle} ${place.kind === 'bus' ? 'stop' : 'station'}, ${place.routes.length === 1 ? 'line' : 'lines'} ${lines}`;
+  const what = place.kind === 'bus' ? 'stop' : place.kind === 'ferry' ? 'landing' : 'station';
+  return `${place.title}, ${place.agency ?? place.subtitle} ${what}, ${place.routes.length === 1 ? 'line' : 'lines'} ${lines}`;
 }
 
 export type SearchViewProps = {
@@ -104,7 +114,8 @@ function SearchResultRow({ onPress, onRemove, place, recent = false, resolving =
           </View>
         ) : null}
         <Text numberOfLines={1} style={styles.resultSubtitle}>
-          {place.subtitle}
+          {/* A recent stop shows its mode icon, so its row says it's recent in words. */}
+          {recent && transitKind ? `Recent · ${place.subtitle}` : place.subtitle}
         </Text>
       </View>
     </PressableScale>
@@ -172,6 +183,10 @@ export function SearchView({ initialQuery = '', near, onCancel, onSelect, onSele
   };
   const { endSession, getSessionToken, retry, status, suggestions } = usePlacesSearch(query, near);
   const isSearching = status !== 'idle';
+  // While typing, recent searches that match come first, as in Google Maps.
+  const matchingRecents = isSearching ? recentPlaces.filter((place) => recentMatches(place, query)).slice(0, MAX_MATCHING_RECENTS) : [];
+  const recentIds = new Set(matchingRecents.map((place) => place.id));
+  const results = suggestions.filter((place) => !recentIds.has(place.id));
 
   // Not an effect dependency, so a parent re-render (new onSelect identity) can't restart the request.
   const finishSelection = useEffectEvent((place: SearchPlace) => {
@@ -246,10 +261,10 @@ export function SearchView({ initialQuery = '', near, onCancel, onSelect, onSele
         </View>
       );
     }
-    if (suggestions.length === 0) {
-      return <Message body="Try a street address, a business, or a station name." title="No places found" />;
+    if (results.length === 0) {
+      return matchingRecents.length > 0 ? null : <Message body="Try a street address, a business, or a station name." title="No places found" />;
     }
-    return suggestions.map((place) => (
+    return results.map((place) => (
       <SearchResultRow
         key={place.id}
         onPress={() => selectSuggestion(place)}
@@ -345,7 +360,14 @@ export function SearchView({ initialQuery = '', near, onCancel, onSelect, onSele
             </PressableScale>
           ) : null}
 
-          {isSearching ? renderSearchState() : recentPlaces.length > 0 ? (
+          {isSearching ? (
+            <>
+              {matchingRecents.map((place) => (
+                <SearchResultRow key={`recent-${place.id}`} onPress={() => selectRecent(place)} place={place} recent={true} />
+              ))}
+              {renderSearchState()}
+            </>
+          ) : recentPlaces.length > 0 ? (
             <>
               <Text accessibilityRole="header" style={styles.heading}>
                 Recent

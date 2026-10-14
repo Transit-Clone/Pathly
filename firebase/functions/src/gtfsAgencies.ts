@@ -5,13 +5,16 @@
  * (gtfsStaticData/gtfsRealtime/gtfsStatus/gtfsSchedule/gtfsDiscovery) reads every agency
  * through this same config, not agency-specific code paths.
  *
- * MTA Bus Time is the one exception this can't cover as-is: it's a SIRI API, not GTFS-RT, so
- * it needs its own fetch/decode adapter. It would still plug into the rest of this engine (the
- * static GTFS side, schedule logic, discovery) by producing the same FeedEntity-shaped output
- * gtfsRealtime.ts already works with — not a reason to fork the whole pipeline again.
+ * MTA Bus Time also publishes GTFS-RT (alongside its SIRI API), so the city buses fit the same
+ * model: one entry per published borough feed, all sharing Bus Time's system-wide live feed.
  */
 
-export type AgencyId = 'lirr' | 'subway' | 'nice' | 'suffolk';
+import type { GtfsSnapshotLimits } from './gtfsSnapshots';
+
+export type AgencyId = 'lirr' | 'subway' | 'nice' | 'suffolk' | BusAgencyId | 'nycferry';
+/** NYC Transit's five borough bus feeds and MTA Bus Company: one agency per published feed. */
+export type BusAgencyId = 'bx' | 'bk' | 'mn' | 'qn' | 'si' | 'busco';
+export const MTA_BUS_AGENCY_IDS: readonly BusAgencyId[] = ['bx', 'bk', 'mn', 'qn', 'si', 'busco'];
 
 /** One GTFS-RT feed to fetch and merge in — most agencies need just one (an agency-wide feed that already bundles trip updates and vehicle positions); Swiftly-hosted agencies publish those as two separate feeds instead. */
 export type FeedRequest = { url: string; headers?: Record<string, string> };
@@ -24,7 +27,7 @@ export type AgencyConfig = {
   /** Official static GTFS ZIP refreshed into Cloud Storage by the scheduled updater. */
   staticFeedUrl: string;
   /** App fallback routes/stops that must remain operational before an update is published. */
-  requiredStaticFallbacks: readonly { routeId: string; stopIds: readonly string[] }[];
+  requiredStaticFallbacks?: readonly { routeId: string; stopIds: readonly string[] }[];
   /**
    * True when opposite directions use distinct stop_ids and direction must be read from which
    * stop a trip hits (with or without a parent_station link). False when one stop_id serves both
@@ -41,8 +44,16 @@ export type AgencyConfig = {
    * but only with departures after the last live one, so a tracked trip isn't listed twice.
    */
   realtimeTripIdsMatchStatic: boolean;
+  /** Raises the snapshot size guards for a feed bigger than the defaults allow. */
+  snapshotLimits?: Partial<GtfsSnapshotLimits>;
+  /**
+   * Route timetables and geometry are fetched from Cloud Storage per route on first use instead of
+   * being copied into every instance's /tmp (held in memory) at hydration: for feeds too big for that.
+   * Such an agency has no committed static_data/ copy, and is skipped until a snapshot is published.
+   */
+  onDemandRouteFiles?: boolean;
   /** Secret (an env var at runtime) the live feed needs; a feed without one is public. */
-  liveFeedSecret?: 'SWIFTLY_API_KEY';
+  liveFeedSecret?: 'SWIFTLY_API_KEY' | 'MTA_BUS_TIME_API_KEY';
   /** Some agencies split their GTFS-RT feed by line group (subway) or by feed type (Swiftly-hosted agencies' trip-updates/vehicle-positions); most publish one combined feed for the whole system (LIRR). */
   feedRequestsForRoute(routeId: string): FeedRequest[];
 };
@@ -72,6 +83,47 @@ function swiftlyFeedRequests(agencyKey: string): FeedRequest[] {
     { url: `https://api.goswift.ly/real-time/${agencyKey}/gtfs-rt-trip-updates`, headers },
     { url: `https://api.goswift.ly/real-time/${agencyKey}/gtfs-rt-vehicle-positions`, headers },
   ];
+}
+
+/**
+ * MTA Bus Time's GTFS-RT: one system-wide feed for every NYCT and MTA Bus Company route, split
+ * into trip updates and vehicle positions. The key goes in the query string, as Bus Time requires
+ * (`firebase functions:secrets:set MTA_BUS_TIME_API_KEY`; injected into `process.env` by the live
+ * callables' `secrets` option). gtfsRealtime.ts leaves the query string out of its error messages.
+ */
+function busTimeFeedRequests(): FeedRequest[] {
+  const key = encodeURIComponent(process.env.MTA_BUS_TIME_API_KEY ?? '');
+  return [
+    { url: `https://gtfsrt.prod.obanyc.com/tripUpdates?key=${key}` },
+    { url: `https://gtfsrt.prod.obanyc.com/vehiclePositions?key=${key}` },
+  ];
+}
+
+/**
+ * Bus feeds measured 2026-10-14: Brooklyn's ZIP is 19.6 MB and unpacks to 164.5 MB with 2.4M stop
+ * times (the largest); limits leave room to grow.
+ */
+const BUS_SNAPSHOT_LIMITS = {
+  archiveBytes: 32 * 1024 * 1024,
+  extractedBytes: 400 * 1024 * 1024,
+  stopTimeRows: 6_000_000,
+} as const;
+
+function mtaBusConfig(id: BusAgencyId, feed: string): AgencyConfig {
+  return {
+    id,
+    displayName: 'MTA Bus',
+    dataDir: id,
+    staticFeedUrl: `https://rrgtfsfeeds.s3.amazonaws.com/${feed}.zip`,
+    // One stop_id per side of the street, with no parent_station (like NICE and Suffolk).
+    directionalStops: true,
+    // Bus Time's trip_ids appear in the borough feeds' trips.txt (sampled 2026-10-14).
+    realtimeTripIdsMatchStatic: true,
+    snapshotLimits: BUS_SNAPSHOT_LIMITS,
+    onDemandRouteFiles: true,
+    liveFeedSecret: 'MTA_BUS_TIME_API_KEY',
+    feedRequestsForRoute: () => busTimeFeedRequests(),
+  };
 }
 
 export const AGENCY_CONFIGS: Record<AgencyId, AgencyConfig> = {
@@ -135,6 +187,27 @@ export const AGENCY_CONFIGS: Record<AgencyId, AgencyConfig> = {
     realtimeTripIdsMatchStatic: true,
     liveFeedSecret: 'SWIFTLY_API_KEY',
     feedRequestsForRoute: () => swiftlyFeedRequests('suffolk-county'),
+  },
+  bx: mtaBusConfig('bx', 'gtfs_bx'),
+  bk: mtaBusConfig('bk', 'gtfs_b'),
+  mn: mtaBusConfig('mn', 'gtfs_m'),
+  qn: mtaBusConfig('qn', 'gtfs_q'),
+  si: mtaBusConfig('si', 'gtfs_si'),
+  busco: mtaBusConfig('busco', 'gtfs_busco'),
+  nycferry: {
+    id: 'nycferry',
+    displayName: 'NYC Ferry',
+    dataDir: 'nycferry',
+    staticFeedUrl: 'https://nycferry.connexionz.net/rtt/public/resource/gtfs.zip',
+    // A landing is one stop for both directions.
+    directionalStops: false,
+    // Trip updates name trips by trips.txt's trip_id (sampled 2026-10-14), but leave route_id
+    // empty; gtfsStatus.ts reads the route from trips.txt.
+    realtimeTripIdsMatchStatic: true,
+    // Tiny, but published like the buses so nothing needs committing.
+    onDemandRouteFiles: true,
+    // Trip updates only: NYC Ferry publishes no vehicle positions.
+    feedRequestsForRoute: () => [{ url: 'https://nycferry.connexionz.net/rtt/public/utility/gtfsrealtime.aspx/tripupdate' }],
   },
 };
 

@@ -30,7 +30,7 @@
 ## Decisions
 
 ### 1. Admin by email, checked on both sides
-- **Backend:** `isAdmin(auth)` returns true when `auth?.token.email` lowercased is in `ADMIN_EMAILS`. That's a comma-separated `defineString` parameter, defaulting to `admin@gmail.com`. Admin callables call `requireAdmin(request)` after `enforceCallableSecurity`, which throws `permission-denied`.
+- **Backend:** `isAdmin(auth)` returns true when `auth?.token.email` lowercased is in `ADMIN_EMAILS`. That's a comma-separated environment variable (set in `firebase/functions/.env`), defaulting to `admin@gmail.com`. It started as a `defineString` deploy parameter, but the CLI then asked for a value on every machine that deploys, so it became a plain variable with a default. Admin callables call `requireAdmin(request)` after `enforceCallableSecurity`, which throws `permission-denied`.
 - **Client:** `useIsAdmin()` compares `user.email` against `EXPO_PUBLIC_ADMIN_EMAILS` (defaulting to the same). It only gates UI, so a tampered client gains nothing but its own local overrides.
 - **Alternative considered:** custom claims set by an Admin SDK script. It's more secure, because it doesn't depend on who registers the email first, but the team chose the simpler email check. Switching later only means changing `isAdmin`.
 
@@ -73,7 +73,7 @@
 
 ## Migration Plan
 
-1. Deploy the functions (the `ADMIN_EMAILS` param uses its default).
+1. Deploy the functions (`ADMIN_EMAILS` uses its default unless set in `firebase/functions/.env`).
 2. The team signs up as admin@gmail.com in the app.
 3. Ship the client.
 4. Rollback: the client hides the admin entry if `getBackendStatus` is missing.

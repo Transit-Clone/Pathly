@@ -171,8 +171,9 @@ required.
 
 ### Static GTFS refresh
 
-The deployed backend refreshes the official LIRR, subway, NICE Bus, and Suffolk County Transit
-static GTFS feeds every day at 04:00 `America/New_York`. A successful run validates the full
+The deployed backend refreshes the official LIRR, subway, NICE Bus, Suffolk County Transit, MTA
+city bus (five boroughs and MTA Bus Company), and NYC Ferry static GTFS feeds every day at 04:00
+`America/New_York`. A successful run validates the full
 feed, uploads an immutable ZIP to `gtfs/v1/<agency>/versions/<archive-sha256>.zip`, then switches
 `gtfs/v1/<agency>/current.json` with a Cloud Storage generation precondition. Invalid, expired,
 rolled-back, or incompatible feeds leave the last published snapshot untouched. Repacked ZIPs
@@ -181,7 +182,18 @@ instances to rehydrate. Each snapshot also gets a prepared-index archive at
 `gtfs/v1/<agency>/derived/<version>-v<format>.zip` (the timetable indexes above, built from that
 snapshot); a snapshot without a current one gains it on the next run, without a new version. If
 it can't be built or verified, the snapshot is still published and instances scan its raw files
-(`gtfs_snapshot_derived_failed` / `gtfs_snapshot_derived_unavailable`). Callables check the
+(`gtfs_snapshot_derived_failed` / `gtfs_snapshot_derived_unavailable`).
+
+The city bus and ferry agencies are too big to copy into every instance, so their prepared
+timetable is split: a small core archive (indexes plus `route-files.json`) and one object per
+route under `gtfs/v1/<agency>/derived/<version>/<format>/`, which instances fetch and verify the
+first time a route is needed. These agencies have no bundled copy; each is skipped until its first
+snapshot is published.
+
+Each publication deletes the version from two publications back (its ZIP, prepared archive, and
+route files) once the version it replaced has been current for a day; the two live versions are
+never touched. Deletion is by name from the manifests, so the writer needs no list permission
+(`gtfs_snapshot_retired`, or `gtfs_snapshot_retire_failed` with the reason). Callables check the
 manifest at most once every five minutes, hydrate a verified version into ephemeral `/tmp`,
 and retain the last good version for that warm instance. A cold instance falls back to the
 GTFS files bundled with the deployment if Storage is unavailable.

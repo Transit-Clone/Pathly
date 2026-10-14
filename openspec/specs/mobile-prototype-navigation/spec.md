@@ -362,7 +362,7 @@ When the app starts with a signed-in rider, or a rider signs in, the app SHALL a
 ### Requirement: Real transit trip planning
 Route Results SHALL show real public-transit itineraries between the chosen origin and destination, computed by a routing service that knows the region's transit schedules (subway, bus, commuter rail, and walking between them). A single search SHALL offer several alternatives when the routing service has them, typically up to four. Each itinerary SHALL describe its ordered steps:
 - walking steps, with duration and distance;
-- transit steps, with the operating agency, the line's name, short name, and color, the vehicle type, the headsign, the boarding and alighting stops with their scheduled times, and the number of stops ridden.
+- transit steps, with the operating agency, the line's name, short name, and color, the vehicle type, the headsign, the boarding and alighting stops with their scheduled times, and the number of stops ridden. When the step matches a scheduled trip in the app's own timetables, it SHALL also list the stops in between, in order, with each stop's name, location, and scheduled time. A step SHALL be matched only when one scheduled trip of a line serving both stops leaves the boarding stop within 2 minutes of the routing service's departure time and reaches the alighting stop after it; otherwise it SHALL carry no intermediate stops rather than a guessed list.
 
 Each itinerary SHALL also give its total duration, its departure and arrival times, its number of transfers, and a fare:
 - the routing service's own fare, when it has one for every step;
@@ -397,6 +397,14 @@ Requests SHALL go through the app's backend, so routing credentials never ship i
 - **WHEN** an endpoint lies outside the NYC, Nassau, and Suffolk service area
 - **THEN** no trips are requested and Route Results explains that the trip is outside the area Pathly covers
 
+#### Scenario: Stops in between come from the timetable
+- **WHEN** a planned trip rides the LIRR Port Jefferson Branch from Stony Brook to Huntington, and the timetable has that departure
+- **THEN** the transit step lists the stops between Stony Brook and Huntington with their scheduled times, and their number matches the step's stop count
+
+#### Scenario: A leg with no timetable match
+- **WHEN** a transit step is on an agency whose timetable the app doesn't have, or no scheduled trip fits its departure time
+- **THEN** the step carries its stop count and no intermediate stops
+
 ### Requirement: Planned trip details provide trip interactions
 The planned trip-detail screen SHALL provide Back navigation, favorite state, current-location recentering, route-leg review, and a trip action using local state.
 
@@ -419,3 +427,33 @@ Ending the active trip SHALL first ask the rider to confirm. Confirming SHALL en
 #### Scenario: Rider uses map actions
 - **WHEN** the rider favorites a trip or activates the current-location control on the trip-detail screen
 - **THEN** the selected control provides visible local state feedback without requiring persistence or location services
+
+### Requirement: City buses and NYC Ferry are covered
+In addition to the subway, LIRR, NICE, and Suffolk County Transit, the app SHALL cover NYC Transit's Bronx, Brooklyn, Manhattan, Queens, and Staten Island buses, MTA Bus Company, and NYC Ferry, each from its operator's official schedule data. Their routes SHALL appear in Nearby, open route detail and departures pages, and take part in every feature built on the app's timetables (such as trip stop lists and stop search), in the same way as the existing agencies.
+
+Live predictions and vehicle positions SHALL come from MTA Bus Time for buses, and live predictions from NYC Ferry's real-time feed for ferries. NYC Ferry publishes no vehicle positions, so ferry routes SHALL show predictions without live vehicles. When a live source is unconfigured or unavailable, these routes SHALL fall back to scheduled times, marked as untracked, as the existing agencies do.
+
+A bus's badge SHALL show its full route name, including any SBS or express designation (for example "SIM3C" or "M15-SBS").
+
+#### Scenario: Rider near a city bus stop
+- **WHEN** the rider is near a Manhattan stop served by the M15 and M15-SBS
+- **THEN** both routes appear in Nearby with their upcoming departures and open their route detail pages
+
+#### Scenario: Ferry route without live boats
+- **WHEN** the rider opens an NYC Ferry route
+- **THEN** its departures show live predictions when the ferry feed has them, and the map shows the route and its landings without vehicle markers
+
+#### Scenario: Bus Time is not configured
+- **WHEN** the backend has no MTA Bus Time key
+- **THEN** city bus routes still appear and show their scheduled departures as untracked, and no technical error is shown
+
+### Requirement: Ferry is a trip mode
+Route Results SHALL recognize ferry legs from the routing service as a ferry mode, not as an unknown vehicle. Ferry legs SHALL be priced with NYC Ferry's published single-ride fare. The Modes control SHALL offer Ferry alongside Subway, Bus, and LIRR; excluding Ferry SHALL hide any itinerary with a ferry leg.
+
+#### Scenario: Trip with a ferry leg
+- **WHEN** an itinerary rides NYC Ferry from Wall St/Pier 11 to East 34th St
+- **THEN** its card shows a ferry badge for that leg and includes the ferry fare in the trip fare
+
+#### Scenario: Rider excludes ferries
+- **WHEN** the rider excludes Ferry in Modes
+- **THEN** itineraries with a ferry leg are hidden

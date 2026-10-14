@@ -7,13 +7,23 @@ For a query of at least two characters, the app SHALL search its own transit sto
 - an icon for its mode (subway, bus, or train);
 - the stop's name as the primary line;
 - the route badges of the lines serving it, in each line's color and mode shape, ordered as the agency lists them, with at most six badges followed by "+N" for the rest;
-- the agency or area as a muted secondary line (for example "LIRR" or "Suffolk County Transit").
+- what it is, as a muted secondary line: "LIRR station", "Subway station", or "Bus stop" with its agency (for example "Bus stop · Suffolk County Transit").
+
+A Google suggestion for a station or stop SHALL also show the lines serving it, taken from the matching stop in the app's own data (same mode, and the same name once words like "Station" are set aside, or one name beginning with the other). A station complex made of several neighboring stations SHALL show all their lines. A Google station with no matching stop keeps its address line and shows no badges.
 
 Stops SHALL be ranked by how well the name matches the query (the whole name, then the start of a word, then anywhere), then by distance from the rider when their location is known.
 
 #### Scenario: Rider searches a bus stop
 - **WHEN** the rider types "nicolls rd"
 - **THEN** stops on Nicolls Rd appear with a bus icon and badges for the Suffolk County Transit routes serving each one
+
+#### Scenario: Google's own station row shows its lines
+- **WHEN** Google suggests "Sutphin Blvd-Archer Av-JFK Airport" as a subway station
+- **THEN** its row shows the subway icon and E, J, and Z badges under the name
+
+#### Scenario: Station complex
+- **WHEN** Google suggests "Times Square-42nd Street"
+- **THEN** its row shows every line that stops in the Times Sq-42 St complex
 
 #### Scenario: Busy station
 - **WHEN** a matching station is served by nine lines
@@ -22,6 +32,17 @@ Stops SHALL be ranked by how well the name matches the query (the whole name, th
 #### Scenario: Two stations with the same name
 - **WHEN** the rider types a name shared by stations in different places, and their location is known
 - **THEN** the station nearer the rider is listed first, and each row's secondary line tells them apart
+
+### Requirement: Matching recent searches lead while typing
+While the rider types, recent searches whose name or address matches every typed word (each word starting a word of the place) SHALL appear first, up to three, before the stop and place suggestions, and SHALL not appear again among them. They SHALL show while suggestions are still loading. A recent search for a transit stop SHALL keep its mode icon and lines and say "Recent" in its secondary line; other recent searches show the clock icon.
+
+#### Scenario: Rider retypes a recent destination
+- **WHEN** the rider, who recently searched Jamaica's LIRR station, types "jamaica"
+- **THEN** Jamaica (marked "Recent · LIRR station") is the first row, followed by other stops and places, with Jamaica listed only once
+
+#### Scenario: No match among recents
+- **WHEN** the rider types "sutphin"
+- **THEN** no recent searches appear above the suggestions
 
 ## MODIFIED Requirements
 

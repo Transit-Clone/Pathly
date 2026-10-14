@@ -13,7 +13,8 @@ export type TripStop = { name: string; location: LatLng; time: string };
 export type WalkStep = { kind: 'walk'; durationSeconds: number; distanceMeters: number; toName: string; path: LatLng[] };
 export type TransitStep = {
   kind: 'transit';
-  mode: TripMode | 'other';
+  /** Google has no ferry travel mode to request, so ferry legs are only ever filtered here. */
+  mode: TripMode | 'ferry' | 'other';
   agency: { name: string; url?: string };
   line: { name: string; shortName?: string; color?: string; textColor?: string; vehicleName?: string };
   headsign?: string;
@@ -238,8 +239,17 @@ export function orderItineraries(itineraries: readonly Itinerary[], preference: 
   return sorted.sort(byArrival);
 }
 
+/**
+ * The modes to ask Google to prefer: the enabled ones it knows (it has no ferry mode). With only
+ * Ferry enabled there's nothing to ask for, so every mode is asked and the app's filter decides.
+ */
+export function requestModes(enabled: readonly TransitMode[]): TripMode[] {
+  const known = enabled.filter((mode): mode is TripMode => mode !== 'ferry');
+  return known.length > 0 ? known : ['subway', 'bus', 'rail'];
+}
+
 /** Itineraries that use only enabled modes; Google treats excluded modes as a preference only. */
-export function filterItinerariesByMode(itineraries: readonly Itinerary[], modes: readonly TripMode[]): Itinerary[] {
+export function filterItinerariesByMode(itineraries: readonly Itinerary[], modes: readonly TransitMode[]): Itinerary[] {
   return itineraries.filter((itinerary) => itinerary.steps.every((step) => step.kind !== 'transit' || step.mode === 'other' || modes.includes(step.mode)));
 }
 
@@ -262,7 +272,7 @@ export function lineBadge(step: TransitStep): string {
   return badgeLabel({ agency: step.agency.name, shortName: short || step.line.name });
 }
 
-/** The badge shape for a leg's mode; other vehicles (ferries, trams) use the bus shape. */
+/** The badge shape for a leg's mode; other vehicles (trams, cable cars) use the bus shape. */
 export function badgeMode(step: TransitStep): TransitMode {
   return step.mode === 'other' ? 'bus' : step.mode;
 }

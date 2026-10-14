@@ -133,6 +133,13 @@ const OWN_TRANSFER_KIND: Record<NonNullable<RouteDetail['liveSource']>['agencyId
   subway: { agency: 'NYC Subway', mode: 'subway' },
   nice: { agency: 'NICE Bus', mode: 'bus' },
   suffolk: { agency: 'Suffolk County Transit', mode: 'bus' },
+  bx: { agency: 'MTA Bus', mode: 'bus' },
+  bk: { agency: 'MTA Bus', mode: 'bus' },
+  mn: { agency: 'MTA Bus', mode: 'bus' },
+  qn: { agency: 'MTA Bus', mode: 'bus' },
+  si: { agency: 'MTA Bus', mode: 'bus' },
+  busco: { agency: 'MTA Bus', mode: 'bus' },
+  nycferry: { agency: 'NYC Ferry', mode: 'ferry' },
 };
 
 /** One connecting line, in its agency's color; subway bullets are round. */
@@ -179,6 +186,7 @@ const TRANSFER_MODE_HEADINGS: readonly { mode: TransferMode; title: string }[] =
   { mode: 'rail', title: 'Rail' },
   { mode: 'subway', title: 'Subway' },
   { mode: 'bus', title: 'Bus' },
+  { mode: 'ferry', title: 'Ferry' },
 ];
 
 /** Every transfer at one station, grouped by mode — opened from a row's `+N`. */

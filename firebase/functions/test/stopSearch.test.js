@@ -1,14 +1,15 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
-const { normalizeStopName, searchStops } = require('../lib/stopSearch');
+const { lookupStations, normalizeStopName, searchStops } = require('../lib/stopSearch');
 
 const STONY_BROOK = { lat: 40.9126, lng: -73.1234 };
 const MIDTOWN = { lat: 40.758, lng: -73.9855 };
 
 test('normalizes punctuation, "&", and street words', () => {
   assert.equal(normalizeStopName('Times Sq-42 St'), 'times sq 42 st');
-  assert.equal(normalizeStopName('Main Street & 5th Avenue'), 'main st and 5th av');
+  assert.equal(normalizeStopName('Main Street & 5th Avenue'), 'main st and 5 av');
+  assert.equal(normalizeStopName('Times Square-42nd Street'), 'times sq 42 st');
   assert.equal(normalizeStopName('Nicolls Rd.'), 'nicolls rd');
 });
 
@@ -82,4 +83,34 @@ test('the callable rejects an over-long query and bad coordinates', async () => 
   resetCallableSecurityForTests();
   await assert.rejects(call({ query: 'x'.repeat(81) }), { code: 'invalid-argument' });
   await assert.rejects(call({ query: 'jamaica', near: { lat: 'north', lng: 0 } }), { code: 'invalid-argument' });
+});
+
+test("finds Google's station suggestions among Pathly's stops, with every line of a complex", async () => {
+  const [jamaica, timesSquare, grandCentral, sutphin, unknown] = await lookupStations([
+    { name: 'Jamaica Station', kind: 'rail' },
+    { name: 'Times Square-42nd Street', kind: 'subway' },
+    { name: 'Grand Central', kind: 'subway' },
+    { name: 'Sutphin Blvd-Archer Av-JFK Airport', kind: 'subway' },
+    { name: 'Nowhere Junction', kind: 'rail' },
+  ], MIDTOWN);
+  assert.equal(jamaica.name, 'Jamaica');
+  assert.equal(jamaica.agencyLabel, 'LIRR');
+  assert.equal(timesSquare.name, 'Times Sq-42 St');
+  assert.ok(['1', '7', 'N', 'S'].every((line) => timesSquare.routes.some((route) => route.shortName === line)));
+  assert.ok(['4', '5', '6', '7', 'S'].every((line) => grandCentral.routes.some((route) => route.shortName === line)));
+  assert.deepEqual(sutphin.routes.map((route) => route.shortName), ['E', 'J', 'Z']);
+  assert.equal(unknown, null);
+});
+
+test('a station complex is one search result', async () => {
+  const names = (await searchStops('grand central', MIDTOWN)).map((stop) => `${stop.agencyLabel}:${stop.name}`);
+  assert.equal(names.filter((name) => name === 'MTA Subway:Grand Central-42 St').length, 1);
+});
+
+test('the callable looks up station names and validates them', async () => {
+  resetCallableSecurityForTests();
+  const { stations } = await call({ stations: [{ name: 'Jamaica Station', kind: 'rail' }] });
+  assert.equal(stations[0].name, 'Jamaica');
+  await assert.rejects(call({ stations: [{ name: 'Jamaica', kind: 'tram' }] }), { code: 'invalid-argument' });
+  await assert.rejects(call({ stations: Array.from({ length: 9 }, () => ({ name: 'Jamaica', kind: 'rail' })) }), { code: 'invalid-argument' });
 });

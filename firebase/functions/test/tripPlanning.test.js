@@ -71,7 +71,7 @@ test('maps Google vehicle types to rider-facing modes', () => {
   assert.ok(steps.some((step) => step.kind === 'transit' && step.mode === 'rail' && step.agency.name === 'Long Island Rail Road'));
   assert.ok(steps.some((step) => step.kind === 'transit' && step.mode === 'bus' && step.agency.name === 'Suffolk County Transit'));
   assert.equal(modeForVehicle('SUBWAY'), 'subway');
-  assert.equal(modeForVehicle('FERRY'), 'other');
+  assert.equal(modeForVehicle('FERRY'), 'ferry');
 });
 
 test('a route without a fare has none, unless the estimator prices it', () => {
@@ -127,3 +127,4 @@ test('decodes Google\'s documented example polyline', () => {
   ]);
   assert.deepEqual(decodePolyline(''), []);
 });
+

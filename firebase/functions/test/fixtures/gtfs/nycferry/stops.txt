@@ -1,0 +1,3 @@
+stop_id,stop_name,stop_lat,stop_lon
+87,Wall St/Pier 11,40.70331,-74.00567
+20,East 34th St,40.74348,-73.97161

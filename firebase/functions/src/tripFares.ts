@@ -1,5 +1,5 @@
 import { haversineMeters } from './geo';
-import { isSuffolk, LIRR_AGENCY } from './tripAgencies';
+import { isSuffolk, LIRR_AGENCY, NYC_FERRY_AGENCY } from './tripAgencies';
 import type { GtfsStop } from './gtfsFeed';
 import type { FareEstimator, TransitStep, TripFare } from './tripPlanning';
 
@@ -15,11 +15,16 @@ import type { FareEstimator, TransitStep, TripFare } from './tripPlanning';
  *   - Suffolk County Transit: $2.25, plus $0.25 once for a transfer ticket covering up to 2 more
  *     buses within 2 hours (Suffolk's GTFS fare_products.txt / fare_transfer_rules.txt), also
  *     onto NICE; NICE transfers are accepted on Suffolk buses.
+ *   - NYC Ferry: $4.50 one way, $5.00 from October 19, 2026 (NYCEDC board vote, September 2026),
+ *     its own ticket with no transfers to or from other systems.
  */
 
 const OMNY_AGENCIES = new Set(['MTA New York City Transit', 'Mta Bus Company', 'MTA Bus Company', 'MTA', 'Nassau Inter-County Express']);
 
 const OMNY_FARE_CENTS = 300;
+/** NYC Ferry one-way: $4.50, then $5.00 from Sunday, October 19, 2026 (NYCEDC fare change). */
+const NYC_FERRY_FARE_CHANGE = Date.parse('2026-10-19T04:00:00Z');
+const nycFerryFareCents = (departsMs: number) => (departsMs >= NYC_FERRY_FARE_CHANGE ? 500 : 450);
 const EXPRESS_BUS_FARE_CENTS = 725;
 const SUFFOLK_FARE_CENTS = 225;
 const SUFFOLK_TRANSFER_CENTS = 25;
@@ -152,6 +157,12 @@ export function createFareEstimator(lirrStops: Iterable<GtfsStop>): FareEstimato
           cents += SUFFOLK_FARE_CENTS;
           transfer = { system: 'suffolk', expiresMs: departsMs + TRANSFER_WINDOW_MS, remaining: 2 };
         }
+        continue;
+      }
+
+      if (step.agency.name === NYC_FERRY_AGENCY) {
+        // Its own ticket: no OMNY or Suffolk transfer applies in either direction.
+        cents += nycFerryFareCents(departsMs);
         continue;
       }
 

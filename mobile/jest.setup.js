@@ -205,9 +205,11 @@ jest.mock('firebase/functions', () => {
       }));
     }
     if (name === 'searchTransitStops') {
-      // Pathly's own stops: Jamaica's LIRR station for "jamaica", nothing otherwise.
-      return jest.fn(({ query }) => Promise.resolve({
-        data: {
+      // Pathly's own stops: Jamaica's LIRR station for "jamaica", nothing otherwise. Station lookups
+      // (Google's station rows) find Sutphin Blvd's subway station.
+      const sutphin = { id: 'subway:G06', name: 'Sutphin Blvd-Archer Av-JFK Airport', agencyLabel: 'MTA Subway', mode: 'subway', location: { lat: 40.7003, lng: -73.8079 }, routes: [{ shortName: 'E', color: '#0062CF' }, { shortName: 'J', color: '#8E5C33' }, { shortName: 'Z', color: '#8E5C33' }] };
+      return jest.fn(({ query, stations }) => Promise.resolve({
+        data: stations ? { stations: stations.map((station) => (station.name.toLowerCase().startsWith('sutphin') ? sutphin : null)) } : {
           stops: String(query).toLowerCase().includes('jamaica')
             ? [{
               id: 'lirr:15',

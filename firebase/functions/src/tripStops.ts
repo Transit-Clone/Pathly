@@ -2,6 +2,7 @@ import { haversineMeters } from './geo';
 import type { AgencyId } from './gtfsAgencies';
 import {
   gtfsTimeToSeconds,
+  isAgencyAvailable,
   isServiceRunningOn,
   loadAgencyStaticData,
   loadGlobalStopRouteIndex,
@@ -9,7 +10,7 @@ import {
   type GtfsStop,
   type GtfsStopTime,
 } from './gtfsStaticData';
-import { agencyIdForStep } from './tripAgencies';
+import { agencyIdsForStep } from './tripAgencies';
 import type { TransitStep, TripStop } from './tripPlanning';
 
 /**
@@ -136,11 +137,21 @@ export function pickTrip(candidates: readonly Candidate[], stopCount: number): C
   return best;
 }
 
-/** The step's stops in between and its trip ID, or undefined when no single trip clearly fits. */
+/**
+ * The step's stops in between and its trip ID, or undefined when no single trip clearly fits. A
+ * city bus is looked for in each borough feed in turn; the first clear match wins.
+ */
 export async function matchTripStops(step: TransitStep): Promise<{ stops: TripStop[]; tripId: string } | undefined> {
-  const agencyId = agencyIdForStep(step);
+  for (const agencyId of agencyIdsForStep(step).filter(isAgencyAvailable)) {
+    const match = await matchInAgency(agencyId, step);
+    if (match) return match;
+  }
+  return undefined;
+}
+
+async function matchInAgency(agencyId: AgencyId, step: TransitStep): Promise<{ stops: TripStop[]; tripId: string } | undefined> {
   const departureMs = Date.parse(step.from.time);
-  if (!agencyId || Number.isNaN(departureMs)) return undefined;
+  if (Number.isNaN(departureMs)) return undefined;
 
   const boarding = candidateStops(agencyId, step.from.location.lat, step.from.location.lng);
   const alighting = candidateStops(agencyId, step.to.location.lat, step.to.location.lng);

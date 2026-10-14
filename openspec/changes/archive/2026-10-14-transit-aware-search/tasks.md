@@ -28,6 +28,11 @@
   - selecting a stop opens Route Results without calling `fetchPlaceDetails`;
   - the stop's recent row shows its badges.
 
+## 3b. Follow-up after review (2026-10-14)
+
+- [x] 3b.1 Stop rows say what they are ("LIRR station", "Subway station", "Bus stop · <agency>"). Google's own station rows get their lines: `searchTransitStops` also takes `stations` (Google station names and kinds) and `lookupStations` matches them to Pathly stops, ignoring station words and treating "42nd" as "42". Station complexes combine their lines (within 300 m) in both search and lookup. Verified with `stopSearch.test.js` (Jamaica Station, Times Square-42nd Street, Grand Central, Sutphin Blvd, no match, the callable's validation) and an App test (Sutphin's Google row shows E, J, and Z).
+- [x] 3b.2 While typing, up to three matching recent searches come first and aren't repeated in the results; a recent stop says "Recent · …". Verified with an App test ("jamaica" shows the recent Jamaica first, once; "sutphin" shows no recents).
+
 ## 4. Integration check
 
 - [ ] 4.1 Run `npm test` and `npm run build` in `firebase/functions`, and `npm run typecheck`, `npm run lint`, and `npm test` in `mobile/`. After deploying, on web at phone width in light and dark: search "jamaica", "stony brook", "penn", and "nicolls rd"; check the icons, badges, and lack of duplicates; pick a stop and confirm Route Results plans to it.

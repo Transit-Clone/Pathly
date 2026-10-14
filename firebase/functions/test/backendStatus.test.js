@@ -12,6 +12,7 @@ const published = async () => ({ state: 'published', version: 'abc', publishedAt
 test.beforeEach(() => resetCallableSecurityForTests());
 test.afterEach(() => {
   delete process.env.SWIFTLY_API_KEY;
+  delete process.env.MTA_BUS_TIME_API_KEY;
 });
 
 test('rejects a non-admin before doing any work', async () => {
@@ -28,6 +29,7 @@ test('rejects a non-admin before doing any work', async () => {
 
 test('reports one entry per agency with snapshot age and live feed health', async () => {
   process.env.SWIFTLY_API_KEY = 'test-key';
+  process.env.MTA_BUS_TIME_API_KEY = 'test-bus-key';
   const agencies = await collectBackendStatus({
     readSnapshot: published,
     readLastRefresh: async () => ({ at: '2026-10-14T05:00:00Z', ok: true, result: 'unchanged' }),
@@ -47,6 +49,7 @@ test('marks a feed without its secret as unconfigured, and never returns secret 
   const agencies = await collectBackendStatus({ readSnapshot: published, readLastRefresh: async () => null, fetch: async () => new Response(''), nowMs: Date.now() });
   const nice = agencies.find((agency) => agency.agencyId === 'nice');
   assert.deepEqual(nice.live, { configured: false });
+  assert.deepEqual(agencies.find((agency) => agency.agencyId === 'bk').live, { configured: false });
   assert.doesNotMatch(JSON.stringify(agencies), /test-key/);
 });
 

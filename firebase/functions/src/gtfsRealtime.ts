@@ -25,7 +25,8 @@ export function fetchFeedEntities(feedUrl: string, headers?: Record<string, stri
 
   const promise = (async () => {
     const response = await fetch(feedUrl, { headers, signal: AbortSignal.timeout(FEED_TIMEOUT_MS) });
-    if (!response.ok) throw new Error(`GTFS-RT request to ${feedUrl} failed: ${response.status}`);
+    // Without the query string: MTA Bus Time takes its API key there, and errors reach the logs.
+    if (!response.ok) throw new Error(`GTFS-RT request to ${feedUrl.split('?')[0]} failed: ${response.status}`);
     const buffer = new Uint8Array(await response.arrayBuffer());
     return transit_realtime.FeedMessage.decode(buffer).entity;
   })();

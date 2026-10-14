@@ -9,6 +9,7 @@ import {
   CURRENT_LOCATION_LABEL,
   fareLabel,
   filterItinerariesByMode,
+  requestModes,
   formatTripClock,
   lineBadge,
   nextOccurrence,
@@ -49,7 +50,7 @@ export type ResultsCriteria = {
 export { CURRENT_LOCATION_LABEL };
 
 export function initialResultsCriteria(destination: string, destinationPlace?: SearchPlace): ResultsCriteria {
-  return { origin: CURRENT_LOCATION_LABEL, destination, destinationPlace, preference: 'fastest', enabledModes: ['subway', 'bus', 'rail'] };
+  return { origin: CURRENT_LOCATION_LABEL, destination, destinationPlace, preference: 'fastest', enabledModes: ['subway', 'bus', 'rail', 'ferry'] };
 }
 
 type RouteResultsViewProps = {
@@ -87,9 +88,11 @@ const transitModes: { id: TransitMode; label: string; icon: IconName }[] = [
   { id: 'subway', label: 'Subway', icon: 'subway' },
   { id: 'bus', label: 'Bus', icon: 'bus' },
   { id: 'rail', label: 'LIRR', icon: 'rail' },
+  // Google can't be asked to avoid ferries, so this one only filters the results.
+  { id: 'ferry', label: 'Ferry', icon: 'ferry' },
 ];
 
-const ALL_MODES: readonly TransitMode[] = ['subway', 'bus', 'rail'];
+const ALL_MODES: readonly TransitMode[] = ['subway', 'bus', 'rail', 'ferry'];
 
 type OptionsPanel = 'modes' | 'filter' | null;
 
@@ -150,7 +153,7 @@ export function RouteResultsView({
     endpoints: { origin, originPlace: criteria.originPlace, destination, destinationPlace: criteria.destinationPlace },
     time: tripTime,
     preference,
-    modes: enabledModes,
+    modes: requestModes(enabledModes),
     location: riderLocation,
     locationPending,
   });

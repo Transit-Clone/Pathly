@@ -39,6 +39,16 @@ describe('RouteBadge', () => {
     expect(transitModeForAgency('MTA Subway')).toBe('subway');
     expect(transitModeForAgency('LIRR')).toBe('rail');
     expect(transitModeForAgency('Suffolk County Transit')).toBe('bus');
+    expect(transitModeForAgency('MTA Bus')).toBe('bus');
+    expect(transitModeForAgency('NYC Ferry')).toBe('ferry');
+  });
+
+  it('draws a ferry as a pill with a boat, announced as a ferry', () => {
+    const screen = render(<RouteBadge agency="NYC Ferry" color="#00839C" shortName="ER" size="large" testID="ferry" />);
+    const badge = screen.getByTestId('ferry');
+    expect(badge.props.accessibilityLabel).toBe('ER ferry');
+    expect(StyleSheet.flatten(badge.props.style).borderRadius).toBe(23);
+    expect(screen.getByText('boat', { includeHiddenElements: true })).toBeTruthy();
   });
 
   it.each([

@@ -140,6 +140,7 @@ The planned trip-detail screen SHALL use the Pathly map-first presentation, rout
 A planned trip SHALL list every step in order:
 - **Walking steps:** walking duration, distance, and the place walked to.
 - **Transit legs:** a card with the line's identity, the operating agency, the headsign, the boarding stop and time, the number of stops, and the alighting stop and time.
+- **Stops in between:** when the leg's intermediate stops are known, its stop count SHALL be a control that expands, between the boarding and alighting rows, into every stop the leg passes, in order, each with its scheduled time. The list SHALL start collapsed and SHALL collapse again when the control is used a second time. When they aren't known, the stop count SHALL be plain text, with no empty list.
 - **Transfers:** a transfer row between consecutive transit legs, showing the walk (if any) and the wait until the next departure.
 
 Each agency name SHALL link to the agency's website when the routing service provides one. Planned trips SHALL NOT show a service-alert status, because no real alert data backs it.
@@ -163,6 +164,14 @@ Each agency name SHALL link to the agency's website when the routing service pro
 #### Scenario: Planned trip shows no invented alerts
 - **WHEN** a rider opens a planned trip
 - **THEN** no "Service alerts · No delays" status is shown
+
+#### Scenario: Rider checks the stops in between
+- **WHEN** the rider opens a trip with a 14-stop LIRR leg whose stops are known and taps "14 stops"
+- **THEN** the leg card lists the stops between boarding and getting off, in travel order, each with its scheduled time, and tapping "14 stops" again hides them
+
+#### Scenario: Stops aren't known for a leg
+- **WHEN** a leg's intermediate stops couldn't be matched to a timetable
+- **THEN** the card shows its stop count as plain text and offers no stop list
 
 ### Requirement: Continuous trip-detail map scroll
 Each planned and recent trip-detail screen SHALL behave as one normal vertical page in which downward scrolling reveals more trip content while showing progressively less of the map, and upward scrolling restores the map. The detail content SHALL remain visible initially, and the trip action SHALL remain anchored immediately above the content boundary without introducing draggable bounds, snap states, or a resize handle.
@@ -212,7 +221,7 @@ The badge text SHALL be the route's short name when it is a single word of up to
 - **THEN** it announces the route's short name and mode (for example, "E train" or "S1 bus")
 
 ### Requirement: Stationary detail map backdrop
-The route-detail and planned/recent trip-detail screens SHALL match the home screen: the map SHALL stay stationary behind the page, and the detail content SHALL scroll continuously over it in one native vertical scroll, without draggable bounds, snap states, or a resize handle. Downward scrolling SHALL cover progressively more of the map without moving the map image. On trip-detail screens, the back, favorite, and current-location controls SHALL stay fixed and reachable at every scroll position, over a bar that fades in once the content reaches the top, and the GO or END action SHALL remain available at every scroll position. On the route-detail screen, the back control and the vertical column of current-location, favorite, and pin controls SHALL sit on the map and scroll away with it, with no bar behind them, so the scrolled page shows only route content. When the route-detail screen shows a real (live) route map, the uncovered map area SHALL respond directly to gestures. Dragging there SHALL pan the map, pinching (or the scroll wheel or trackpad on web) SHALL zoom it, and dragging the detail content SHALL still scroll the page. Illustrated maps and trip-detail maps SHALL remain non-interactive.
+The route-detail and planned/recent trip-detail screens SHALL match the home screen: the map SHALL stay stationary behind the page, and the detail content SHALL scroll continuously over it in one native vertical scroll, without draggable bounds, snap states, or a resize handle. Downward scrolling SHALL cover progressively more of the map without moving the map image. On trip-detail screens, the back, favorite, and current-location controls SHALL stay fixed and reachable at every scroll position, over a bar that fades in once the content reaches the top, and the GO or END action SHALL remain available at every scroll position. On the route-detail screen, the back control and the vertical column of current-location, favorite, and pin controls SHALL sit on the map and scroll away with it, with no bar behind them, so the scrolled page shows only route content. When the route-detail screen shows a real (live) route map, or a planned trip-detail screen shows its trip map, the uncovered map area SHALL respond directly to gestures. Dragging there SHALL pan the map, pinching (or the scroll wheel or trackpad on web) SHALL zoom it, and dragging the detail content SHALL still scroll the page. Illustrated maps SHALL remain non-interactive.
 
 #### Scenario: Map image does not move while scrolling
 - **WHEN** a rider scrolls downward on a route-detail or trip-detail screen
@@ -235,7 +244,7 @@ The route-detail and planned/recent trip-detail screens SHALL match the home scr
 - **THEN** the map and the top of the detail content are both visible
 
 #### Scenario: Rider explores the live route map
-- **WHEN** the rider drags or pinches on the uncovered area of a live route map
+- **WHEN** the rider drags or pinches on the uncovered area of a live route map or a planned trip map
 - **THEN** the map pans or zooms and the page does not scroll
 
 #### Scenario: Rider scrolls from the content
@@ -243,8 +252,8 @@ The route-detail and planned/recent trip-detail screens SHALL match the home scr
 - **THEN** the page scrolls over the map as before and the map does not pan
 
 #### Scenario: Map controls stay tappable
-- **WHEN** the live route map is interactive
-- **THEN** the back, current-location, favorite, and pin controls on the map still respond to taps
+- **WHEN** the live route map or a planned trip map is interactive
+- **THEN** the controls on the map (back, current-location, favorite, and pin on route detail; back, favorite, current-location, and the trip action on trip detail) still respond to taps
 
 ### Requirement: Consistent search sheet heading
 The destination-search screen SHALL use a standard full-screen search layout instead of a sheet. The whole screen SHALL use the theme's surface color (white in the light theme). The search field SHALL be pinned at the top. The results list SHALL start directly below the field and fill the remaining height, scrolling independently of the field and staying above the on-screen keyboard. When the query is empty, the list SHALL show a "Recent" label above recent places. While searching, the list SHALL show place suggestions without a heading or count label. The screen SHALL NOT show a drag handle, rounded sheet edges, or a floating card.
@@ -557,8 +566,9 @@ The planned trip-detail map SHALL be a real map showing the trip's actual path a
 - each transit leg as a line in its transit line's color;
 - walking as a dotted, neutral line;
 - a marker at the start, at each place the rider boards or gets off, and at the destination.
+- a smaller marker, in the line's color, at each stop in between on a leg whose intermediate stops are known.
 
-The map SHALL open framed to the whole trip. Route Results SHALL show the same kind of map for its first itinerary behind the results list, framed to the origin and destination. Like other trip-detail maps, it SHALL stay non-interactive under the scrolling content.
+The map SHALL open framed to the whole trip. Route Results SHALL show the same kind of map for its first itinerary behind the results list, framed to the origin and destination. Both maps SHALL pan and zoom by gesture where content doesn't cover them (see "Stationary detail map backdrop"), and SHALL offer a control that frames the whole trip again once the rider has moved the map.
 
 #### Scenario: Rider opens a planned trip
 - **WHEN** the rider opens an itinerary that walks to the LIRR, rides to Jamaica, and transfers to the E train
@@ -567,3 +577,29 @@ The map SHALL open framed to the whole trip. Route Results SHALL show the same k
 #### Scenario: Results map follows the first itinerary
 - **WHEN** Route Results finishes loading
 - **THEN** the map behind the list shows the origin, the destination, and the first itinerary's path
+
+#### Scenario: Rider zooms into a transfer
+- **WHEN** the rider pinches to zoom in on the transfer point of a planned trip's map
+- **THEN** the map zooms there without the page scrolling, and the re-frame control returns it to the whole trip
+
+### Requirement: Trip map stops are explorable
+On the planned trip-detail map, tapping any stop marker (boarding, transfer, alighting, or a stop in between) SHALL show that stop's name and scheduled time in a small label next to the marker; tapping elsewhere on the map SHALL dismiss it. Tapping a stop row in the trip's expanded stop list SHALL center the map on that stop and show its label, without changing the page's scroll position.
+
+#### Scenario: Rider taps a stop marker
+- **WHEN** the rider taps the marker of a stop in between on the map
+- **THEN** a label next to it shows the stop's name and scheduled time
+
+#### Scenario: Rider finds a listed stop on the map
+- **WHEN** the rider taps "Mineola · 9:14 AM" in a leg's expanded stop list
+- **THEN** the map centers on Mineola and shows its label
+
+### Requirement: Ferry route identity
+Ferry routes SHALL have their own mode identity wherever a route badge or mode icon appears: a boat icon, and a badge shape distinct from the subway circle, the bus rounded square, and the commuter-rail tag. The badge SHALL use the route's color and its short name, and SHALL be announced with its mode (for example "East River ferry").
+
+#### Scenario: Rider sees a ferry leg
+- **WHEN** a trip, route card, or search row includes an NYC Ferry route
+- **THEN** it shows the ferry badge shape and boat icon, distinguishable from bus and rail badges at a glance
+
+#### Scenario: Screen reader announces a ferry
+- **WHEN** a screen reader focuses an NYC Ferry badge
+- **THEN** it announces the route's name followed by "ferry"

@@ -2,7 +2,7 @@
 
 ## 1. Backend
 
-- [x] 1.1 Add `src/admin.ts`: the `ADMIN_EMAILS` param (defaulting to `admin@gmail.com`), `isAdmin(auth)` (a case-insensitive email match), and `requireAdmin(request)` (`permission-denied`). Verify with tests: the admin email in any case passes; other emails, a missing email, and an unauthenticated caller fail.
+- [x] 1.1 Add `src/admin.ts`: the `ADMIN_EMAILS` variable (defaulting to `admin@gmail.com`, never prompted for at deploy), `isAdmin(auth)` (a case-insensitive email match), and `requireAdmin(request)` (`permission-denied`). Verify with tests: the admin email in any case passes; other emails, a missing email, and an unauthenticated caller fail.
 - [x] 1.2 Add the `getBackendStatus` callable: per-agency snapshot version, age, and last refresh, live feed configured/ok/ms (3 s timeout, in parallel, no secret values), and `myRateLimits`. Add `RATE_LIMITS.getBackendStatus = { userPerMinute: 6 }`. Verify with tests: a non-admin is rejected before any work; an admin gets one entry per agency; a hanging feed reports `ok: false` within the timeout. Run `npm test` and `npm run build`.
 
 ## 2. Client foundations

@@ -2,6 +2,7 @@ import { haversineMeters } from './geo';
 import { AGENCY_CONFIGS, agencyConfig, type AgencyId } from './gtfsAgencies';
 import { computeRouteGeometry, type RouteGeometry } from './gtfsGeometry';
 import {
+  availableAgencyIds,
   loadAgencyShapes,
   loadAgencyStaticData,
   loadGlobalStopRouteIndex,
@@ -163,6 +164,7 @@ const MAX_NEARBY_DISTANCE_METERS: Partial<Record<AgencyId, number>> = {
   lirr: 8_000, // ~5 miles — LIRR branches are sparse; riders commonly drive to a station.
   nice: 2_400, // ~1.5 miles — suburban bus stops are sparser than subway but denser than LIRR.
   suffolk: 2_400,
+  nycferry: 2_400, // ferry landings are few and far between, like LIRR stations but on foot.
 };
 const DEFAULT_MAX_NEARBY_DISTANCE_METERS = 1_600;
 
@@ -179,6 +181,7 @@ const MAX_NEARBY_CAP_METERS: Partial<Record<AgencyId, number>> = {
   lirr: 30_000,
   nice: 12_000,
   suffolk: 12_000,
+  nycferry: 12_000,
 };
 const DEFAULT_MAX_NEARBY_CAP_METERS = 6_000;
 
@@ -214,7 +217,8 @@ export function pickNearbyRoutes(
  * it show up here automatically.
  */
 export async function findNearbyTransit(lat: number, lon: number, limit = MAX_NEARBY_ROUTES): Promise<DiscoveredRoute[]> {
-  const agencyIds = Object.keys(AGENCY_CONFIGS) as AgencyId[];
+  // Agencies without readable data on this instance (an on-demand one not yet published) are skipped.
+  const agencyIds = availableAgencyIds();
   const baseRadius = (agencyId: AgencyId) => MAX_NEARBY_DISTANCE_METERS[agencyId] ?? DEFAULT_MAX_NEARBY_DISTANCE_METERS;
   const capRadius = (agencyId: AgencyId) => MAX_NEARBY_CAP_METERS[agencyId] ?? DEFAULT_MAX_NEARBY_CAP_METERS;
   const candidateStops = new Map(

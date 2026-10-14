@@ -42,20 +42,25 @@
 - **Feeds:** a shared `busTimeFeedRequests()` returns the `tripUpdates` and `vehiclePositions` URLs with `key=${process.env.MTA_BUS_TIME_API_KEY}`, the same shape as `swiftlyFeedRequests`. The per-route filter that already runs over agency-wide feeds keeps only that route's entities.
 - **Ferry config:** a trip-updates-only feed. The live map's vehicle layer simply gets no vehicles.
 
-### 2. Per-agency limits and streamed stop times
-- `AgencyConfig` gains optional `snapshotLimits` to override the archive, extracted, and derived byte caps and the stop-time row cap. The bus agencies get about 32 MB archive, 400 MB extracted, and 8M rows. The exact numbers are set from task 1.1's measurement, with headroom.
-- Derived stop times are written per route while streaming `stop_times.txt` line by line, using the existing `readCsv` boundary but not holding all rows. Each route's rows are buffered by `trip_id` order and flushed to `derived/stop_times/<route>.json` when the route's trips finish (stop times are grouped by trip in MTA feeds; a fallback spills out-of-order rows to a temporary file). The 1M row cap was a memory guard, so it's replaced by a peak-memory test instead.
-- The updater function's memory rises to the smallest size that passes the Brooklyn feed in task 1.1. The other callables don't change, because instances hydrate prepared per-route files lazily.
+### 2. Per-agency limits and spilled stop-time derivation
+- `AgencyConfig` gains optional `snapshotLimits` overriding the archive, extracted, and derived byte caps and the stop-time row cap. The bus agencies use 32 MB archive, 400 MB extracted, and 6M rows, from task 1.1's measurements (Brooklyn: 19.6 MB, 164.5 MB, 2.4M) with headroom. The derived-archive caps don't apply to on-demand agencies (decision 3), whose route files are published one by one.
+- **Derivation** (`buildDerivedData`) no longer holds every row in memory: while scanning `stop_times.txt`, rows are appended to one spill file per route (newline-delimited JSON, flushed in batches). After the scan, each route's spill is read back alone to write its `stop_times/<route>.json` and geometry, so peak memory is one route plus the indexes. Output is byte-identical to today's for the existing agencies.
+- **Updater size:** the scheduled refresh gets 4 GiB and a 30-minute timeout (from 1 GiB and 9 minutes). It stages each feed and its prepared output in `/tmp`, which is held in memory, and uploads a big feed's route files one by one. This wasn't measured end to end, since task 1.1 found today's pipeline rejected these feeds, so check the first runs' memory and duration in the logs. Callables keep 1 GiB, because on-demand agencies hydrate only their small files.
 
-### 3. No committed static data for the new agencies
-- `requiredStaticFallbacks` becomes optional. For the new agencies, the fallback is a small fixture (a few routes and stops) under `test/fixtures/gtfs/<agency>/`, used only by tests.
-- In production, a missing snapshot means that agency is skipped in discovery, the same as an agency whose snapshot failed validation. It doesn't crash. This keeps the repository from growing by around 300 MB.
+### 3. On-demand route files for the new agencies (option A, chosen 2026-10-14)
+- **Why:** prepared stop times for the six bus feeds total about 500 MB as JSON (task 1.1). Writing them all into each instance's `/tmp` (held in memory) doesn't fit 1 GiB instances, and more memory would slow every cold start.
+- **Config:** `AgencyConfig.onDemandRouteFiles: true` for the seven new agencies. The existing four keep today's archive-and-hydrate behavior.
+- **Publishing** (scheduled refresh): an on-demand agency's prepared output is split. `manifest.json`, `stop-indexes.json`, and a new `route-files.json` (each route file's name, size, and sha256) form a small core archive, published as today's derived archive. Each `stop_times/<route>.json` and `geometry/<route>.json` is uploaded as its own object under `gtfs/v1/<agency>/derived/<version>/<derivedVersion>/`. The snapshot manifest's `derived` gains `routeFilesPrefix`.
+- **Hydration:** an on-demand agency writes only the core files and the small raw files (routes, stops, trips, calendars, shapes) to `/tmp`. `stop_times.txt` isn't even extracted (the archive is unzipped with it filtered out, and its hash check is skipped, since the core's route-file hashes cover what's actually read).
+- **Loading:** `loadRouteStopTimes` and `loadPreparedRouteGeometry` read a route's file from Cloud Storage on first use, verify its sha256 against `route-files.json`, and keep the parsed result in an LRU cache bounded by stop-time rows (1.5M rows across on-demand routes, about 150 MB). A missing or failed file reads as "no timetable" for that route, as for an unprepared route today.
+- **No committed data:** the new agencies have no `static_data/` copy. `requiredStaticFallbacks` becomes optional. An on-demand agency without a published snapshot is skipped everywhere (discovery, search, status) instead of failing. Tests use small fixtures under `test/fixtures/gtfs/<agency>/` through a test-only data-directory override.
+- **Cost:** a Cloud Storage read per route per instance on first use (Class B operations, effectively free at this scale). The first open of a bus route on a fresh instance adds one fetch, expected well under a second.
 
 ### 4. Ferry mode end to end
 - `TransitMode` and `TripMode` gain `'ferry'`. `modeForVehicle('FERRY') → 'ferry'`.
 - **Badge:** a fully rounded pill with a boat glyph before the name. Its shape and icon set it apart from the subway circle, bus rounded square, and rail tag. The icon is Ionicons `boat` / `boat-outline`, added as `ferry`.
 - **Modes chip:** "Ferry". Google's `allowedTravelModes` has no ferry option, so excluding Ferry only filters on the client. When Ferry is the only excluded mode, all modes are still sent to Google.
-- **Fare:** NYC Ferry's published one-way fare, with its source and effective date in `tripFares.ts`. A ferry leg doesn't take part in OMNY transfers.
+- **Fare:** NYC Ferry's one-way fare by trip date: $4.50 before October 19, 2026 and $5.00 from then (NYCEDC fare change approved September 2026). A ferry leg doesn't take part in OMNY transfers.
 
 ### 5. Recognizing MTA bus agencies from Google
 - `tripFares.ts`'s `OMNY_AGENCIES` already lists "MTA New York City Transit" and "MTA Bus Company".
@@ -79,8 +84,5 @@
 ## Open Questions
 
 - Should the Staten Island Ferry (NYC DOT's GTFS on data.gov) come in now as an eighth agency? It's small and has no realtime feed. It's left out unless asked for.
-- **Found while measuring (task 1.1):** prepared stop times for the six bus feeds total about 500 MB, and instances currently write every agency's prepared files into `/tmp`, which is held in memory. Before decision 2 can land, instances need one of:
-  - reading per-route prepared files from Cloud Storage on demand, instead of hydrating them all;
-  - more memory per transit instance;
-  - a smaller bus timetable (per-route stop patterns plus headways instead of every trip's times), which would drop exact scheduled bus times and stop lists.
 
+- **Resolved:** the memory problem found in task 1.1 is handled by decision 3 (option A, on-demand route files), chosen over bigger instances and a lighter bus timetable.

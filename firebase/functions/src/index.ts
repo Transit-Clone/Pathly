@@ -10,11 +10,11 @@ import { findNearbyTransit as findNearbyTransitDiscovery, getNearestStopForRoute
 import { AGENCY_CONFIGS, type AgencyId } from './gtfsAgencies';
 import { getStopPredictions } from './gtfsSchedule';
 import { refreshAllGtfsSnapshots } from './gtfsSnapshots';
-import { loadAgencyStaticData, loadGlobalStopRouteIndex, prepareAgencyStaticData } from './gtfsStaticData';
+import { isAgencyAvailable, loadAgencyStaticData, loadGlobalStopRouteIndex, prepareAgencyStaticData } from './gtfsStaticData';
 import { getRouteStatus } from './gtfsStatus';
 import { isInServiceArea } from './serviceArea';
-import { searchStops } from './stopSearch';
-import { agencyIdForStep } from './tripAgencies';
+import { lookupStations, searchStops, type StationLookup } from './stopSearch';
+import { agencyIdsForStep } from './tripAgencies';
 import { createFareEstimator } from './tripFares';
 import {
   buildRoutesRequest,
@@ -37,6 +37,8 @@ const GTFS_WRITER_SERVICE_ACCOUNT = 'pathly-gtfs-writer@pathly-b7f0f.iam.gservic
 const googleMapsApiKey = defineSecret('GOOGLE_MAPS_API_KEY');
 /** Set once with: firebase functions:secrets:set SWIFTLY_API_KEY. Needed for NICE Bus/Suffolk County Transit's real-time feeds (hosted by Swiftly, a third-party provider); not used by LIRR or subway. */
 const swiftlyApiKey = defineSecret('SWIFTLY_API_KEY');
+/** Set once with: firebase functions:secrets:set MTA_BUS_TIME_API_KEY. MTA Bus Time's live feed for every NYC city bus. */
+const mtaBusTimeApiKey = defineSecret('MTA_BUS_TIME_API_KEY');
 
 // Keep false until web and native releases are producing valid App Check tokens. This is
 // version-controlled deliberately so a deploy from a machine missing local config cannot
@@ -87,13 +89,15 @@ export const refreshGtfsStaticData = onSchedule(
     concurrency: 1,
     maxBackoffSeconds: 300,
     maxInstances: 1,
-    memory: '1GiB',
+    // City bus feeds (Brooklyn: 164 MB unpacked, 2.4M stop times) are staged and prepared in /tmp,
+    // which is held in memory, and their route files uploaded one by one: room for both, once a day.
+    memory: '4GiB',
     minBackoffSeconds: 60,
     retryCount: 3,
     schedule: '0 4 * * *',
     serviceAccount: GTFS_WRITER_SERVICE_ACCOUNT,
     timeZone: 'America/New_York',
-    timeoutSeconds: 540,
+    timeoutSeconds: 1800,
   },
   refreshAllGtfsSnapshots,
 );
@@ -113,6 +117,8 @@ function requiredAgencyId(value: unknown): AgencyId {
 
 function requiredRouteId(agencyId: AgencyId, value: unknown): string {
   const routeId = requiredString(value, 'routeId');
+  // An agency whose timetable isn't published yet (a new on-demand one) has no routes to serve.
+  if (!isAgencyAvailable(agencyId)) throw new HttpsError('unavailable', `agencyId "${agencyId}" has no timetable yet`);
   if (!loadAgencyStaticData(agencyId).routesById.has(routeId)) {
     throw new HttpsError('invalid-argument', `routeId is not supported for agencyId "${agencyId}"`);
   }
@@ -151,7 +157,7 @@ type RouteLiveStatusRequest = { agencyId: AgencyId; routeId: string; direction1S
  * (For agencies where one stop_id serves a station regardless of direction, pass the same id
  * for both direction1StopId and direction0StopId.)
  */
-export const getRouteLiveStatus = onCall<RouteLiveStatusRequest>({ ...liveStatusCallableOptions, secrets: [swiftlyApiKey] }, async (request) => {
+export const getRouteLiveStatus = onCall<RouteLiveStatusRequest>({ ...liveStatusCallableOptions, secrets: [swiftlyApiKey, mtaBusTimeApiKey] }, async (request) => {
   await enforceCallableSecurity(request, 'getRouteLiveStatus', RATE_LIMITS.getRouteLiveStatus);
   const data = request.data ?? ({} as RouteLiveStatusRequest);
   await prepareAgencyStaticData(requiredAgencyId(data.agencyId));
@@ -193,7 +199,7 @@ type RoutesLiveStatusRequest = { routes: Omit<RouteLiveStatusRequest, 'lat' | 'l
  * response) or `{ ok: false, code }`.
  * Client call: httpsCallable(functions, 'getRoutesLiveStatus')({ routes: [{ agencyId, routeId, direction1StopId, direction0StopId }, ...], lat, lon }).
  */
-export const getRoutesLiveStatus = onCall<RoutesLiveStatusRequest>({ ...liveStatusCallableOptions, secrets: [swiftlyApiKey] }, async (request) => {
+export const getRoutesLiveStatus = onCall<RoutesLiveStatusRequest>({ ...liveStatusCallableOptions, secrets: [swiftlyApiKey, mtaBusTimeApiKey] }, async (request) => {
   await enforceCallableSecurity(request, 'getRoutesLiveStatus', RATE_LIMITS.getRoutesLiveStatus);
   const data = request.data ?? ({} as RoutesLiveStatusRequest);
   if (!Array.isArray(data.routes) || data.routes.length === 0 || data.routes.length > MAX_BATCH_ROUTES) {
@@ -234,7 +240,7 @@ const FULL_DEPARTURES_LIMIT = 200;
  * Client call: httpsCallable(functions, 'getStopDepartures')({ agencyId, routeId, direction1StopId, direction0StopId, directionId }).
  */
 // Reads the same live feeds as getRouteLiveStatus, so it shares that instance's feed cache and quota.
-export const getStopDepartures = onCall<StopDeparturesRequest>({ ...liveStatusCallableOptions, secrets: [swiftlyApiKey] }, async (request) => {
+export const getStopDepartures = onCall<StopDeparturesRequest>({ ...liveStatusCallableOptions, secrets: [swiftlyApiKey, mtaBusTimeApiKey] }, async (request) => {
   await enforceCallableSecurity(request, 'getStopDepartures', RATE_LIMITS.getStopDepartures);
   const data = request.data ?? ({} as StopDeparturesRequest);
   const agencyId = requiredAgencyId(data.agencyId);
@@ -264,6 +270,7 @@ async function warmTransitInstance({ stopIndexes }: { stopIndexes: boolean }): P
   // Sequential for the same reason as findNearbyTransit's hydration below.
   for (const agencyId of Object.keys(AGENCY_CONFIGS) as AgencyId[]) {
     await prepareAgencyStaticData(agencyId);
+    if (!isAgencyAvailable(agencyId)) continue;
     loadAgencyStaticData(agencyId);
     if (stopIndexes) await loadGlobalStopRouteIndex(agencyId);
   }
@@ -437,8 +444,8 @@ export const planTrip = onCall<PlanTripRequest, Promise<{ itineraries: Itinerary
     const itineraries = normalizeRoutesResponse(body, requestTime, trip.destination.label, estimateFare);
     // Stops in between come from Pathly's own timetables (Google gives only a count); any leg not
     // matched within the budget simply goes without.
-    const agencies = new Set(itineraries.flatMap((itinerary) => itinerary.steps.flatMap((step) => (step.kind === 'transit' ? [agencyIdForStep(step)] : []))));
-    for (const agencyId of agencies) if (agencyId) await prepareAgencyStaticData(agencyId);
+    const agencies = new Set(itineraries.flatMap((itinerary) => itinerary.steps.flatMap((step) => (step.kind === 'transit' ? agencyIdsForStep(step) : []))));
+    for (const agencyId of agencies) await prepareAgencyStaticData(agencyId);
     return { itineraries: await addTripStops(itineraries, TRIP_STOPS_BUDGET_MS, tripStopMatcher) };
   },
 );
@@ -491,23 +498,39 @@ export const geocodeAddress = onCall<GeocodeRequest, Promise<GeocodeResult>>(
  * last scheduled refresh, whether its live feed answers, and the caller's own rate-limit allowance.
  * Client call: httpsCallable(functions, 'getBackendStatus')().
  */
-export const getBackendStatus = onCall({ ...protectedCallableOptions, secrets: [swiftlyApiKey] }, async (request) => {
+export const getBackendStatus = onCall({ ...protectedCallableOptions, secrets: [swiftlyApiKey, mtaBusTimeApiKey] }, async (request) => {
   const uid = await enforceCallableSecurity(request, 'getBackendStatus', RATE_LIMITS.getBackendStatus);
   requireAdmin(request);
   const [agencies, myRateLimits] = await Promise.all([collectBackendStatus(), peekRateLimits(uid, RATE_LIMITS)]);
   return { checkedAt: new Date().toISOString(), agencies, myRateLimits };
 });
 
-type SearchTransitStopsRequest = { query: string; near?: { lat: number; lng: number } };
+type SearchTransitStopsRequest = { query?: string; near?: { lat: number; lng: number }; stations?: StationLookup[] };
+
+const MAX_STATION_LOOKUPS = 8;
+const STATION_KINDS = new Set(['subway', 'rail', 'bus', 'ferry']);
+
+function requiredStations(value: unknown): StationLookup[] {
+  if (!Array.isArray(value) || value.length > MAX_STATION_LOOKUPS) {
+    throw new HttpsError('invalid-argument', `stations must be a list of at most ${MAX_STATION_LOOKUPS}`);
+  }
+  return value.map((station: unknown) => {
+    const { name, kind } = (station ?? {}) as Partial<StationLookup>;
+    if (typeof kind !== 'string' || !STATION_KINDS.has(kind)) throw new HttpsError('invalid-argument', 'station kind is invalid');
+    return { name: requiredString(name, 'station name', 120), kind };
+  });
+}
 
 /**
  * Pathly's own stops whose names match a search query, each with the lines serving it, for the
- * destination search screen (Google's suggestions don't say which lines stop at a station).
- * Client call: httpsCallable(functions, 'searchTransitStops')({ query, near? }).
+ * destination search screen (Google's suggestions don't say which lines stop at a station). With
+ * `stations` instead, finds the Pathly stop for each of Google's station suggestions.
+ * Client call: httpsCallable(functions, 'searchTransitStops')({ query, near? } | { stations, near? }).
  */
 export const searchTransitStops = onCall<SearchTransitStopsRequest>(protectedCallableOptions, async (request) => {
   await enforceCallableSecurity(request, 'searchTransitStops', RATE_LIMITS.searchTransitStops);
-  const query = requiredString(request.data?.query, 'query', 80);
+  const stations = request.data?.stations === undefined ? undefined : requiredStations(request.data.stations);
+  const query = stations ? undefined : requiredString(request.data?.query, 'query', 80);
   const near = request.data?.near;
   const point = near === undefined ? undefined : (() => {
     const { lat, lon } = requiredCoordinates(near?.lat, near?.lng);
@@ -517,5 +540,6 @@ export const searchTransitStops = onCall<SearchTransitStopsRequest>(protectedCal
   for (const agencyId of Object.keys(AGENCY_CONFIGS) as AgencyId[]) {
     await prepareAgencyStaticData(agencyId);
   }
-  return { stops: await searchStops(query, point) };
+  if (stations) return { stations: await lookupStations(stations, point) };
+  return { stops: await searchStops(query!, point) };
 });

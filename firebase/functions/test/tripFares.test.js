@@ -98,3 +98,18 @@ test('every recorded itinerary gets a fare', () => {
     assert.ok(itineraries.every((itinerary) => itinerary.fare?.estimated === true), name);
   }
 });
+
+test('MTA buses: SBS is a local fare, SIM express buses cost $7.25', () => {
+  assert.equal(estimate([leg('MTA New York City Transit', { at: OFF_PEAK, shortName: 'M15-SBS' })]).cents, 300);
+  assert.equal(estimate([leg('MTA Bus Company', { at: OFF_PEAK, shortName: 'SIM3C' })]).cents, 725);
+  // A subway ride then a local bus within two hours is one fare.
+  assert.equal(estimate([leg('MTA New York City Transit', { at: OFF_PEAK, mode: 'subway', shortName: '4' }), leg('MTA New York City Transit', { at: later(OFF_PEAK, 40), shortName: 'Bx12' })]).cents, 300);
+});
+
+test('NYC Ferry costs $4.50, then $5.00 from October 19, 2026, with no transfers', () => {
+  const ferry = (at) => leg('NYC Ferry', { at, mode: 'ferry', shortName: 'ER' });
+  assert.equal(estimate([ferry('2026-10-18T15:00:00Z')]).cents, 450);
+  assert.equal(estimate([ferry('2026-10-19T15:00:00Z')]).cents, 500);
+  // The ferry doesn't take or give an OMNY transfer: subway + ferry is both fares.
+  assert.equal(estimate([leg('MTA New York City Transit', { at: '2026-10-19T15:00:00Z', mode: 'subway', shortName: 'F' }), ferry(later('2026-10-19T15:00:00Z', 20))]).cents, 800);
+});

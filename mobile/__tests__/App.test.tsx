@@ -336,11 +336,14 @@ describe('Pathly prototype navigation', () => {
       // The stop: a rail icon, six of its eight branches as badges, and "+2".
       const stopRow = screen.getByTestId('search-result-stop:lirr:15');
       expect(stopRow.props.accessibilityLabel).toBe('Jamaica, LIRR station, lines BY, FR, HM, and 5 more');
+      expect(within(stopRow).getByText('LIRR station', hidden)).toBeTruthy();
       expect(within(stopRow).getByTestId('search-kind-icon-rail', hidden)).toBeTruthy();
       expect(within(screen.getByTestId('search-routes-stop:lirr:15', hidden)).getByLabelText('BY rail', hidden)).toBeTruthy();
       expect(within(stopRow).getByText('+2', hidden)).toBeTruthy();
-      // Google's own station row carries its kind's icon; a plain place keeps the pin.
+      // Google's own station row carries its kind's icon and, from Pathly's stops, its lines; a plain place keeps the pin.
       expect(within(screen.getByTestId('search-result-g-sutphin')).getByTestId('search-kind-icon-subway', hidden)).toBeTruthy();
+      await waitFor(() => expect(within(screen.getByTestId('search-result-g-sutphin')).getByLabelText('J train', hidden)).toBeTruthy());
+      expect(screen.getByTestId('search-result-g-sutphin').props.accessibilityLabel).toBe('Sutphin Blvd-Archer Av-JFK Airport, MTA Subway station, lines E, J, Z');
       expect(within(screen.getByTestId('search-result-g-jamaica-ave')).getByTestId('search-kind-icon-place', hidden)).toBeTruthy();
 
       // Picking the stop needs no details request, and plans to the stop itself.
@@ -356,6 +359,15 @@ describe('Pathly prototype navigation', () => {
       const recent = await screen.findByTestId('search-result-stop:lirr:15');
       expect(within(recent).getByTestId('search-kind-icon-rail', hidden)).toBeTruthy();
       expect(within(recent).getByText('+2', hidden)).toBeTruthy();
+
+      // Typing again: the matching recent comes first (once), above stops and Google places.
+      fireEvent.changeText(screen.getByTestId('search-input'), 'jamaica');
+      expect(within(screen.getAllByTestId(/^search-result-[^r]/)[0]!).getByText('Recent · LIRR station', hidden)).toBeTruthy();
+      await waitFor(() => expect(screen.getByTestId('search-result-g-jamaica-ave')).toBeTruthy());
+      expect(screen.getAllByTestId('search-result-stop:lirr:15')).toHaveLength(1);
+      // A non-matching query leaves recents out.
+      fireEvent.changeText(screen.getByTestId('search-input'), 'sutphin');
+      expect(screen.queryByTestId('search-result-stop:lirr:15')).toBeNull();
     } finally {
       mockAutocompletePlaces.mockImplementation(originalAutocomplete);
     }
@@ -514,6 +526,32 @@ describe('Pathly prototype navigation', () => {
     await waitFor(() => expect(planTripMock()).toHaveBeenLastCalledWith(expect.objectContaining({ time: { mode: 'depart', at: '2026-10-15T11:00:00.000Z' } })));
   });
 
+  it('hides ferry trips when Ferry is excluded, without changing what Google is asked', async () => {
+    const ferryTrip: Itinerary = {
+      ...BUS_TRIP,
+      id: 'ferryferryfe',
+      steps: BUS_TRIP.steps.map((step, index) => (step.kind === 'transit' && index === BUS_TRIP.steps.findIndex((first) => first.kind === 'transit')
+        ? { ...step, mode: 'ferry', agency: { name: 'NYC Ferry' }, line: { name: 'East River', shortName: 'ER', color: '#00839C' } }
+        : step)),
+    };
+    planTripMock().mockResolvedValue({ data: { itineraries: [LIRR_TRIP, ferryTrip] } });
+    try {
+      const screen = await openResults();
+      expect(await screen.findByTestId('itinerary-ferryferryfe')).toBeTruthy();
+      expect(within(screen.getByTestId('itinerary-ferryferryfe')).getByLabelText('ER ferry', { includeHiddenElements: true })).toBeTruthy();
+      const calls = planTripMock().mock.calls.length;
+      fireEvent.press(screen.getByTestId('modes-control'));
+      fireEvent.press(screen.getByTestId('mode-ferry'));
+      expect(screen.getByText('Modes · 3')).toBeTruthy();
+      await waitFor(() => expect(screen.queryByTestId('itinerary-ferryferryfe')).toBeNull());
+      expect(screen.getByTestId(`itinerary-${LIRR_TRIP.id}`)).toBeTruthy();
+      // Google has no ferry mode: its request is the same as with every mode on.
+      expect(planTripMock().mock.calls.slice(calls).every(([request]) => JSON.stringify(request.modes) === JSON.stringify(['subway', 'bus', 'rail']))).toBe(true);
+    } finally {
+      planTripMock().mockImplementation(() => Promise.resolve({ data: { itineraries: realItineraries.map((itinerary) => ({ ...itinerary })) } }));
+    }
+  });
+
   it('filters itineraries by mode, asks for the remaining modes, and orders by preference', async () => {
     const screen = await openResults();
     fireEvent.press(screen.getByTestId('modes-control'));
@@ -522,7 +560,7 @@ describe('Pathly prototype navigation', () => {
 
     // Both trips ride the LIRR, so excluding rail hides both, even though Google may return them.
     fireEvent.press(screen.getByTestId('mode-rail'));
-    expect(screen.getByText('Modes · 2')).toBeTruthy();
+    expect(screen.getByText('Modes · 3')).toBeTruthy();
     await waitFor(() => expect(planTripMock()).toHaveBeenLastCalledWith(expect.objectContaining({ modes: ['subway', 'bus'] })));
     expect(await screen.findByTestId('results-empty')).toBeTruthy();
     fireEvent.press(screen.getByTestId('results-reset-modes'));

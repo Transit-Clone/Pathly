@@ -1,6 +1,6 @@
 import { haversineMeters } from './geo';
 import { AGENCY_CONFIGS, type AgencyId } from './gtfsAgencies';
-import { loadAgencyStaticData, loadGlobalStopRouteIndex, type GtfsRoute } from './gtfsStaticData';
+import { availableAgencyIds, loadAgencyStaticData, loadGlobalStopRouteIndex, type GtfsRoute } from './gtfsStaticData';
 
 /**
  * Searching Pathly's own transit stops by name, so search can show stations and bus stops with
@@ -13,7 +13,7 @@ export type StopSuggestion = {
   id: string;
   name: string;
   agencyLabel: string;
-  mode: 'subway' | 'bus' | 'rail';
+  mode: 'subway' | 'bus' | 'rail' | 'ferry';
   location: { lat: number; lng: number };
   routes: { shortName: string; color: string }[];
 };
@@ -22,13 +22,18 @@ type IndexedStop = StopSuggestion & { normalized: string; tokens: string[] };
 
 const MAX_RESULTS = 4;
 const MERGE_RADIUS_METERS = 150;
+const COMPLEX_RADIUS_METERS = 300;
 const MIN_QUERY_LENGTH = 2;
 
-const AGENCY_MODES: Record<AgencyId, StopSuggestion['mode']> = { lirr: 'rail', subway: 'subway', nice: 'bus', suffolk: 'bus' };
+const AGENCY_MODES: Record<AgencyId, StopSuggestion['mode']> = {
+  lirr: 'rail', subway: 'subway', nice: 'bus', suffolk: 'bus',
+  bx: 'bus', bk: 'bus', mn: 'bus', qn: 'bus', si: 'bus', busco: 'bus',
+  nycferry: 'ferry',
+};
 
 const WORD_FORMS: Record<string, string> = { street: 'st', avenue: 'av', ave: 'av', road: 'rd', boulevard: 'blvd', place: 'pl', parkway: 'pkwy', square: 'sq', station: 'sta' };
 
-/** Lowercase, "&" as "and", punctuation dropped, and common street words in one form ("ave" = "avenue"). */
+/** Lowercase, "&" as "and", punctuation dropped, common street words in one form ("ave" = "avenue"), and ordinals as numbers ("42nd" = "42"). */
 export function normalizeStopName(name: string): string {
   return name
     .toLowerCase()
@@ -36,7 +41,7 @@ export function normalizeStopName(name: string): string {
     .replace(/[^a-z0-9 ]+/g, ' ')
     .split(/\s+/)
     .filter(Boolean)
-    .map((word) => WORD_FORMS[word] ?? word)
+    .map((word) => WORD_FORMS[word] ?? word.replace(/^(\d+)(st|nd|rd|th)$/, '$1'))
     .join(' ');
 }
 
@@ -62,7 +67,9 @@ function buildAgencyIndex(agencyId: AgencyId, routeIndex: Map<string, Set<string
     const station = stopsById.get(key) ?? stopsById.get(stopIds[0]!)!;
     const name = normalizeStopName(station.name);
     const nearby = byName.get(name) ?? [];
-    const match = nearby.find((entry) => haversineMeters(entry.lat, entry.lon, station.lat, station.lon) <= MERGE_RADIUS_METERS);
+    // Stations (platforms under a parent) can sit farther apart in one complex than a bus stop's two sides.
+    const radius = stopsById.get(key)?.stopId === stopIds[0] && stopIds.length === 1 ? MERGE_RADIUS_METERS : COMPLEX_RADIUS_METERS;
+    const match = nearby.find((entry) => haversineMeters(entry.lat, entry.lon, station.lat, station.lon) <= radius);
     if (match) {
       members.get(match.key)!.push(...stopIds);
     } else {
@@ -101,12 +108,18 @@ function buildAgencyIndex(agencyId: AgencyId, routeIndex: Map<string, Set<string
 }
 
 let indexPromise: Promise<IndexedStop[]> | undefined;
+let indexedAgencies = '';
 
-/** Every agency's searchable stops, built once per instance on first use. */
+/** Every readable agency's searchable stops, built on first use and again when that set changes. */
 function stopIndex(): Promise<IndexedStop[]> {
+  const agencies = availableAgencyIds();
+  if (agencies.join(',') !== indexedAgencies) {
+    indexPromise = undefined;
+    indexedAgencies = agencies.join(',');
+  }
   indexPromise ??= (async () => {
     const all: IndexedStop[] = [];
-    for (const agencyId of Object.keys(AGENCY_CONFIGS) as AgencyId[]) {
+    for (const agencyId of agencies) {
       all.push(...buildAgencyIndex(agencyId, await loadGlobalStopRouteIndex(agencyId)));
     }
     return all;
@@ -145,7 +158,45 @@ export async function searchStops(query: string, near?: { lat: number; lng: numb
   return scored.slice(0, MAX_RESULTS).map(({ entry: { normalized: _normalized, tokens: _tokens, ...suggestion } }) => suggestion);
 }
 
+/** A Google station suggestion to find in Pathly's stops: its name and the mode Google gave it. */
+export type StationLookup = { name: string; kind: 'subway' | 'rail' | 'bus' | 'ferry' };
+
+// Google often names a station with a suffix the timetables don't ("Jamaica Station", "Penn Station LIRR").
+const STATION_SUFFIXES = /( (sta|terminal|lirr|subway|bus|stop|rr))+$/;
+const comparable = (name: string) => normalizeStopName(name).replace(STATION_SUFFIXES, '');
+
+/**
+ * Each Google station suggestion's Pathly stop, or null: a stop of the same mode whose name is the
+ * same once station words are set aside, or where one name begins with the other ("Jamaica" for
+ * "Jamaica Station"). Nearest to `near` when several fit. Gives Google's own station rows their lines.
+ */
+export async function lookupStations(stations: readonly StationLookup[], near?: { lat: number; lng: number }): Promise<(StopSuggestion | null)[]> {
+  const index = await stopIndex();
+  return stations.map(({ name, kind }) => {
+    const wanted = comparable(name);
+    if (wanted.length < MIN_QUERY_LENGTH) return null;
+    const matches = index.filter((entry) => {
+      if (entry.mode !== kind && !(kind === 'rail' && entry.mode === 'subway')) return false;
+      const candidate = comparable(entry.name);
+      return candidate === wanted || candidate.startsWith(`${wanted} `) || wanted.startsWith(`${candidate} `);
+    });
+    if (matches.length === 0) return null;
+    const exact = matches.filter((entry) => comparable(entry.name) === wanted);
+    const pool = exact.length > 0 ? exact : matches;
+    const meters = (entry: IndexedStop) => (near ? haversineMeters(near.lat, near.lng, entry.location.lat, entry.location.lng) : 0);
+    const { normalized: _normalized, tokens: _tokens, ...best } = [...pool].sort((a, b) => meters(a) - meters(b))[0]!;
+    // A station complex can be several timetable stations side by side (Grand Central's 4/5/6, 7,
+    // and shuttle): Google's one station gets all their lines.
+    const sameComplex = matches.filter((entry) => entry.mode === best.mode
+      && haversineMeters(entry.location.lat, entry.location.lng, best.location.lat, best.location.lng) <= COMPLEX_RADIUS_METERS);
+    const routes = new Map(best.routes.map((route) => [route.shortName, route]));
+    for (const entry of sameComplex) for (const route of entry.routes) if (!routes.has(route.shortName)) routes.set(route.shortName, route);
+    return { ...best, routes: [...routes.values()].sort((a, b) => routeOrder.compare(a.shortName, b.shortName)) };
+  });
+}
+
 /** Unit-test isolation only. */
 export function resetStopSearchForTests(): void {
   indexPromise = undefined;
+  indexedAgencies = '';
 }

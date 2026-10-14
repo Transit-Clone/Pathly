@@ -5,7 +5,7 @@ import { tmpdir } from 'os';
 import { join, resolve, sep } from 'path';
 import { logger } from 'firebase-functions';
 
-import { agencyConfig, type AgencyId } from './gtfsAgencies';
+import { AGENCY_CONFIGS, agencyConfig, type AgencyId } from './gtfsAgencies';
 import {
   DERIVED_DIR,
   DERIVED_VERSION,
@@ -23,13 +23,141 @@ import {
   type RouteStopTimes,
 } from './gtfsDerived';
 import { readAgencyStaticData, readShapes, type AgencyStaticData, type GtfsStopTime, type ShapePoint, type StopTimeRow } from './gtfsFeed';
-import { hydrateCurrentGtfsSnapshot } from './gtfsSnapshots';
+import { downloadRouteFile, hydrateCurrentGtfsSnapshot, ROUTE_FILES_INDEX, type RouteFileIndex } from './gtfsSnapshots';
 
 export { gtfsTimeToSeconds } from './gtfsFeed';
 export type { GtfsCalendar, GtfsRoute, GtfsStop, GtfsStopTime, GtfsTrip, ShapePoint } from './gtfsFeed';
 
 const STATIC_DATA_ROOT = join(__dirname, '../static_data');
-const activeDataRoots = new Map<AgencyId, { dataDir: string; version: string }>();
+const activeDataRoots = new Map<AgencyId, { dataDir: string; version: string; routeFilesPrefix?: string }>();
+
+/**
+ * Whether an agency's timetable can be read on this instance. Every agency with a committed copy
+ * always can; an on-demand agency (no committed copy) only once its snapshot is hydrated.
+ */
+export function isAgencyAvailable(agencyId: AgencyId): boolean {
+  const root = activeDataRoots.get(agencyId);
+  if (root) return existsSync(join(root.dataDir, 'routes.txt'));
+  return !agencyConfig(agencyId).onDemandRouteFiles && existsSync(join(STATIC_DATA_ROOT, agencyConfig(agencyId).dataDir, 'routes.txt'));
+}
+
+/** The configured agencies whose timetables this instance can read (call after preparing them). */
+export function availableAgencyIds(): AgencyId[] {
+  return (Object.keys(AGENCY_CONFIGS) as AgencyId[]).filter(isAgencyAvailable);
+}
+
+// ---------------------------------------------------------------------------------------------
+// On-demand route files: an agency whose snapshot carries a route-files prefix reads each route's
+// prepared stop times and geometry from Cloud Storage the first time it's needed, verified against
+// the core archive's route-files.json, and keeps the parsed results in a bounded LRU.
+
+/** Stop-time rows kept across all on-demand routes (about 100 bytes each when parsed). */
+const ON_DEMAND_ROW_BUDGET = 1_500_000;
+/** Route geometries kept across all on-demand routes. */
+const ON_DEMAND_GEOMETRY_ROUTES = 300;
+
+const routeFileIndexes = new Map<AgencyId, Promise<RouteFileIndex | null>>();
+
+function routeFileIndex(agencyId: AgencyId): Promise<RouteFileIndex | null> {
+  let index = routeFileIndexes.get(agencyId);
+  if (!index) {
+    const path = join(dataDirFor(agencyId), DERIVED_DIR, ROUTE_FILES_INDEX);
+    index = existsSync(path) ? readFile(path, 'utf-8').then((text) => JSON.parse(text) as RouteFileIndex) : Promise.resolve(null);
+    routeFileIndexes.set(agencyId, index);
+  }
+  return index;
+}
+
+function isOnDemand(agencyId: AgencyId): boolean {
+  return activeDataRoots.get(agencyId)?.routeFilesPrefix !== undefined;
+}
+
+/**
+ * A route's prepared file ("stop_times/<route>.json" or "geometry/<route>.json"): on disk for
+ * agencies hydrated whole, from Cloud Storage for on-demand ones. Null when the route has none.
+ */
+async function readPreparedRouteFile(agencyId: AgencyId, dir: string, routeId: string): Promise<string | null> {
+  const name = `${dir}/${routeFileName(routeId)}`;
+  const root = activeDataRoots.get(agencyId);
+  if (root?.routeFilesPrefix !== undefined) {
+    const expected = (await routeFileIndex(agencyId))?.[name];
+    if (!expected) return null;
+    try {
+      return (await downloadRouteFile(`${root.routeFilesPrefix}/${name}`, expected)).toString('utf-8');
+    } catch (error) {
+      logger.warn('Could not load an on-demand GTFS route file', {
+        agencyId,
+        event: 'gtfs_route_file_failed',
+        file: name,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+  const path = join(dataDirFor(agencyId), DERIVED_DIR, dir, routeFileName(routeId));
+  return existsSync(path) ? readFile(path, 'utf-8') : null;
+}
+
+type LruEntry<T> = { promise: Promise<T>; weight: number };
+
+/** Least-recently-used promises, evicted once their summed weight passes `budget`. */
+export class WeightedLru<T> {
+  private readonly entries = new Map<string, LruEntry<T>>();
+  private total = 0;
+
+  constructor(private readonly budget: number, private readonly weigh: (value: T) => number) {}
+
+  get(key: string): Promise<T> | undefined {
+    const entry = this.entries.get(key);
+    if (!entry) return undefined;
+    this.entries.delete(key);
+    this.entries.set(key, entry);
+    return entry.promise;
+  }
+
+  set(key: string, promise: Promise<T>): void {
+    const entry: LruEntry<T> = { promise, weight: 0 };
+    this.entries.set(key, entry);
+    promise.then((value) => {
+      if (this.entries.get(key) !== entry) return;
+      entry.weight = this.weigh(value);
+      this.total += entry.weight;
+      for (const [oldKey, old] of this.entries) {
+        if (this.total <= this.budget || old === entry) break;
+        this.entries.delete(oldKey);
+        this.total -= old.weight;
+      }
+    }, () => {
+      if (this.entries.get(key) === entry) this.entries.delete(key);
+    });
+  }
+
+  deleteWhere(matches: (key: string) => boolean): void {
+    for (const [key, entry] of this.entries) {
+      if (!matches(key)) continue;
+      this.entries.delete(key);
+      this.total -= entry.weight;
+    }
+  }
+
+  get size(): number {
+    return this.entries.size;
+  }
+}
+
+const onDemandStopTimes = new WeightedLru<RouteStopTimes>(ON_DEMAND_ROW_BUDGET, (times) => [...times.byTrip.values()].reduce((sum, rows) => sum + rows.length, 0));
+const onDemandGeometry = new WeightedLru<DerivedRouteGeometry | null>(ON_DEMAND_GEOMETRY_ROUTES, () => 1);
+
+/** Unit-test introspection only: how many on-demand routes' stop times are cached. */
+export function onDemandCachedRoutesForTests(): number {
+  return onDemandStopTimes.size;
+}
+
+/** Unit-test dependency injection only: an agency's active data as if hydrated from a snapshot. */
+export function setAgencyDataForTests(agencyId: AgencyId, dataDir: string, routeFilesPrefix?: string): void {
+  activeDataRoots.set(agencyId, { dataDir, version: `test-${dataDir}`, ...(routeFilesPrefix ? { routeFilesPrefix } : {}) });
+  clearAgencyCaches(agencyId);
+}
 
 function dataDirFor(agencyId: AgencyId): string {
   return activeDataRoots.get(agencyId)?.dataDir ?? join(STATIC_DATA_ROOT, agencyConfig(agencyId).dataDir);
@@ -115,15 +243,23 @@ const routeStopTimesCache = new Map<string, Promise<RouteStopTimes>>();
  */
 export function loadRouteStopTimes(agencyId: AgencyId, routeId: string): Promise<RouteStopTimes> {
   const cacheKey = `${agencyId}:${routeId}`;
+  if (isOnDemand(agencyId)) {
+    const cachedOnDemand = onDemandStopTimes.get(cacheKey);
+    if (cachedOnDemand) return cachedOnDemand;
+    const promise = readPreparedRouteFile(agencyId, STOP_TIMES_DIR, routeId).then((text) => (
+      text ? indexStopTimeRows((JSON.parse(text) as { rows: DerivedStopTimeRow[] }).rows) : { byStop: new Map(), byTrip: new Map() }
+    ));
+    onDemandStopTimes.set(cacheKey, promise);
+    return promise;
+  }
   const cached = routeStopTimesCache.get(cacheKey);
   if (cached) return cached;
 
   // Prepared per-route file: read just this route instead of scanning the whole feed.
   if (useDerived(agencyId)) {
-    const path = join(dataDirFor(agencyId), DERIVED_DIR, STOP_TIMES_DIR, routeFileName(routeId));
-    const promise = existsSync(path)
-      ? readFile(path, 'utf-8').then((text) => indexStopTimeRows((JSON.parse(text) as { rows: DerivedStopTimeRow[] }).rows))
-      : Promise.resolve<RouteStopTimes>({ byStop: new Map(), byTrip: new Map() });
+    const promise = readPreparedRouteFile(agencyId, STOP_TIMES_DIR, routeId).then((text) => (
+      text ? indexStopTimeRows((JSON.parse(text) as { rows: DerivedStopTimeRow[] }).rows) : { byStop: new Map(), byTrip: new Map() }
+    ));
     routeStopTimesCache.set(cacheKey, promise);
     return promise;
   }
@@ -266,13 +402,12 @@ const routeGeometryCache = new Map<string, Promise<DerivedRouteGeometry | null>>
 export function loadPreparedRouteGeometry(agencyId: AgencyId, routeId: string): Promise<DerivedRouteGeometry | null> | undefined {
   if (!useDerived(agencyId)) return undefined;
   const cacheKey = `${agencyId}:${routeId}`;
-  const cached = routeGeometryCache.get(cacheKey);
+  const onDemand = isOnDemand(agencyId);
+  const cached = onDemand ? onDemandGeometry.get(cacheKey) : routeGeometryCache.get(cacheKey);
   if (cached) return cached;
-  const path = join(dataDirFor(agencyId), DERIVED_DIR, GEOMETRY_DIR, routeFileName(routeId));
-  const promise = existsSync(path)
-    ? readFile(path, 'utf-8').then((text) => JSON.parse(text) as DerivedRouteGeometry)
-    : Promise.resolve(null);
-  routeGeometryCache.set(cacheKey, promise);
+  const promise = readPreparedRouteFile(agencyId, GEOMETRY_DIR, routeId).then((text) => (text ? JSON.parse(text) as DerivedRouteGeometry : null));
+  if (onDemand) onDemandGeometry.set(cacheKey, promise);
+  else routeGeometryCache.set(cacheKey, promise);
   return promise;
 }
 
@@ -297,6 +432,9 @@ function clearAgencyCaches(agencyId: AgencyId): void {
   agencyStopIndexesCache.delete(agencyId);
   shapesCache.delete(agencyId);
   pendingStopTimeBatches.delete(agencyId);
+  routeFileIndexes.delete(agencyId);
+  onDemandStopTimes.deleteWhere((key) => key.startsWith(`${agencyId}:`));
+  onDemandGeometry.deleteWhere((key) => key.startsWith(`${agencyId}:`));
   for (const cache of [routeStopTimesCache, routeGeometryCache]) {
     for (const key of cache.keys()) {
       if (key.startsWith(`${agencyId}:`)) cache.delete(key);
@@ -311,6 +449,9 @@ function clearAgencyCaches(agencyId: AgencyId): void {
  */
 export async function prepareAgencyStaticData(agencyId: AgencyId, nowMs = Date.now()): Promise<void> {
   const snapshot = await hydrateCurrentGtfsSnapshot(agencyId, nowMs);
+  // An on-demand agency has no committed copy to fall back to: without a snapshot it stays
+  // unavailable (isAgencyAvailable), and callers skip it.
+  if (!snapshot && agencyConfig(agencyId).onDemandRouteFiles) return;
   const next = snapshot ?? {
     dataDir: join(STATIC_DATA_ROOT, agencyConfig(agencyId).dataDir),
     version: 'bundled',
@@ -345,6 +486,9 @@ export async function prepareAgencyStaticData(agencyId: AgencyId, nowMs = Date.n
 /** Unit-test isolation only. */
 export function resetGtfsStaticDataForTests(): void {
   activeDataRoots.clear();
+  routeFileIndexes.clear();
+  onDemandStopTimes.deleteWhere(() => true);
+  onDemandGeometry.deleteWhere(() => true);
   derivedValidity.clear();
   staticDataCache.clear();
   routeStopTimesCache.clear();

@@ -77,6 +77,14 @@ const AGENCY_FIXTURES = {
     { routeId: '6859', stopIds: ['11420858', '11259869'] },
     { routeId: '6868', stopIds: ['11283786', '11283946'] },
   ],
+  // New agencies have no required fallbacks; any small valid feed will do.
+  bx: [{ routeId: 'BX12', stopIds: ['100', '101'] }],
+  bk: [{ routeId: 'B44', stopIds: ['200', '201'] }],
+  mn: [{ routeId: 'M15', stopIds: ['300', '301'] }],
+  qn: [{ routeId: 'Q44', stopIds: ['400', '401'] }],
+  si: [{ routeId: 'S79', stopIds: ['500', '501'] }],
+  busco: [{ routeId: 'BXM10', stopIds: ['600', '601'] }],
+  nycferry: [{ routeId: 'ER', stopIds: ['87', '20'] }],
 };
 
 function currentAgencyFiles(agencyId) {
@@ -125,6 +133,7 @@ class FakeBucket {
     return {
       delete: async (deleteOptions = {}) => {
         const object = this.objects.get(name);
+        if (!object && deleteOptions.ignoreNotFound) return;
         if (!object) throw storageError(404);
         if (
           deleteOptions.ifGenerationMatch !== undefined &&
@@ -734,7 +743,7 @@ async function lirrAnswers() {
 }
 
 /** Publishes the LIRR fixture (with prepared indexes unless the builder is stubbed), then hydrates it into a clean /tmp cache. */
-async function hydratePreparedLirr(fakeBucket, tamper) {
+async function hydratePreparedLirr(fakeBucket, tamper, { answers = true } = {}) {
   const originalOverride = process.env.GTFS_USE_CLOUD_STORAGE;
   process.env.GTFS_USE_CLOUD_STORAGE = 'true';
   try {
@@ -744,7 +753,7 @@ async function hydratePreparedLirr(fakeBucket, tamper) {
     // Hydrated folders are content-addressed and outlive a test run on developer machines.
     fs.rmSync(path.join(os.tmpdir(), 'pathly-gtfs', 'lirr', manifest.version), { recursive: true, force: true });
     await prepareAgencyStaticData('lirr', 1_000_000);
-    return { dataDir: path.join(os.tmpdir(), 'pathly-gtfs', 'lirr', manifest.version), answers: await lirrAnswers() };
+    return { dataDir: path.join(os.tmpdir(), 'pathly-gtfs', 'lirr', manifest.version), answers: answers ? await lirrAnswers() : undefined };
   } finally {
     if (originalOverride === undefined) delete process.env.GTFS_USE_CLOUD_STORAGE;
     else process.env.GTFS_USE_CLOUD_STORAGE = originalOverride;
@@ -885,14 +894,237 @@ test('falls back before stalled Storage retries can outlive the callable', async
 
 test('exports a bounded daily scheduled function', () => {
   const endpoint = refreshGtfsStaticData.__endpoint;
-  assert.equal(endpoint.availableMemoryMb, 1024);
+  assert.equal(endpoint.availableMemoryMb, 4096);
   assert.equal(endpoint.concurrency, 1);
   assert.equal(endpoint.maxInstances, 1);
   assert.equal(endpoint.serviceAccountEmail, 'pathly-gtfs-writer@pathly-b7f0f.iam.gserviceaccount.com');
-  assert.equal(endpoint.timeoutSeconds, 540);
+  assert.equal(endpoint.timeoutSeconds, 1800);
   assert.equal(endpoint.scheduleTrigger.schedule, '0 4 * * *');
   assert.equal(endpoint.scheduleTrigger.timeZone, 'America/New_York');
   assert.equal(endpoint.scheduleTrigger.retryConfig.retryCount, 3);
   assert.equal(endpoint.scheduleTrigger.retryConfig.minBackoffSeconds, 60);
   assert.equal(endpoint.scheduleTrigger.retryConfig.maxBackoffSeconds, 300);
+});
+
+/** Runs `body` with LIRR treated as an on-demand agency (as the city bus feeds are). */
+async function asOnDemandLirr(body) {
+  const config = AGENCY_CONFIGS.lirr;
+  const original = config.onDemandRouteFiles;
+  config.onDemandRouteFiles = true;
+  try {
+    return await body();
+  } finally {
+    if (original === undefined) delete config.onDemandRouteFiles;
+    else config.onDemandRouteFiles = original;
+  }
+}
+
+/** Counts downloads per object, to see what an instance actually fetches. */
+function countDownloads(fakeBucket) {
+  const counts = new Map();
+  const file = fakeBucket.file.bind(fakeBucket);
+  fakeBucket.file = (name, options) => {
+    const handle = file(name, options);
+    const download = handle.download;
+    handle.download = async () => {
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+      return download();
+    };
+    return handle;
+  };
+  return counts;
+}
+
+test('an on-demand agency publishes each route file on its own and loads it only when asked', async () => {
+  await asOnDemandLirr(async () => {
+    const fakeBucket = new FakeBucket();
+    setGtfsSnapshotBucketForTests(fakeBucket);
+    const downloads = countDownloads(fakeBucket);
+    const onDemand = await hydratePreparedLirr(fakeBucket, undefined, { answers: false });
+    const manifest = parseGtfsSnapshotManifest(currentManifest(fakeBucket), 'lirr');
+    const prefix = manifest.derived.routeFilesPrefix;
+    assert.ok(prefix, 'manifest points at the route files');
+    assert.ok(fakeBucket.objects.has(`${prefix}/stop_times/10.json`));
+    assert.ok(fakeBucket.objects.has(`${prefix}/geometry/10.json`));
+    const core = Object.keys(unzipSync(fakeBucket.objects.get(manifest.derived.object).data)).sort();
+    assert.deepEqual(core, ['manifest.json', 'route-files.json', 'stop-indexes.json']);
+
+    // Hydration wrote neither the raw stop times nor any route file.
+    assert.equal(fs.existsSync(path.join(onDemand.dataDir, 'stop_times.txt')), false);
+    assert.equal(fs.existsSync(path.join(onDemand.dataDir, 'derived', 'stop_times')), false);
+    assert.equal(downloads.get(`${prefix}/stop_times/10.json`), undefined);
+
+    // First use fetches the route; the second is served from the cache. Answers match a whole hydration.
+    const answers = await lirrAnswers();
+    await lirrAnswers();
+    assert.equal(downloads.get(`${prefix}/stop_times/10.json`), 1);
+    assert.equal(downloads.get(`${prefix}/geometry/10.json`), 1);
+    resetGtfsSnapshotStateForTests();
+    resetGtfsStaticDataForTests();
+    const wholeBucket = new FakeBucket();
+    setGtfsSnapshotBucketForTests(wholeBucket);
+    AGENCY_CONFIGS.lirr.onDemandRouteFiles = false;
+    const whole = await hydratePreparedLirr(wholeBucket);
+    AGENCY_CONFIGS.lirr.onDemandRouteFiles = true;
+    assert.deepEqual(answers, whole.answers);
+  });
+});
+
+test('a tampered on-demand route file is rejected', async () => {
+  await asOnDemandLirr(async () => {
+    const fakeBucket = new FakeBucket();
+    setGtfsSnapshotBucketForTests(fakeBucket);
+    await hydratePreparedLirr(fakeBucket, undefined, { answers: false });
+    const prefix = currentManifest(fakeBucket).derived.routeFilesPrefix;
+    const object = fakeBucket.objects.get(`${prefix}/geometry/10.json`);
+    object.data = Buffer.from(object.data.toString('utf-8').replace('Huntington', 'Elsewhere!'));
+    const { loadPreparedRouteGeometry } = require('../lib/gtfsStaticData');
+    assert.equal(await loadPreparedRouteGeometry('lirr', '10'), null);
+  });
+});
+
+test('an on-demand agency without a published snapshot is skipped', async () => {
+  await asOnDemandLirr(async () => {
+    setGtfsSnapshotBucketForTests(new FakeBucket());
+    const originalOverride = process.env.GTFS_USE_CLOUD_STORAGE;
+    process.env.GTFS_USE_CLOUD_STORAGE = 'true';
+    try {
+      await prepareAgencyStaticData('lirr', 1_000_000);
+    } finally {
+      if (originalOverride === undefined) delete process.env.GTFS_USE_CLOUD_STORAGE;
+      else process.env.GTFS_USE_CLOUD_STORAGE = originalOverride;
+    }
+    const { availableAgencyIds, isAgencyAvailable } = require('../lib/gtfsStaticData');
+    assert.equal(isAgencyAvailable('lirr'), false);
+    assert.equal(availableAgencyIds().includes('lirr'), false);
+    assert.equal(availableAgencyIds().includes('subway'), true);
+  });
+});
+
+test('the on-demand cache evicts the least recently used routes beyond its budget', async () => {
+  const { WeightedLru } = require('../lib/gtfsStaticData');
+  const cache = new WeightedLru(10, (value) => value);
+  cache.set('a', Promise.resolve(4));
+  cache.set('b', Promise.resolve(4));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(cache.get('a'), 'touching a makes b the oldest');
+  cache.set('c', Promise.resolve(4));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(cache.get('b'), undefined);
+  assert.ok(cache.get('a'));
+  assert.ok(cache.get('c'));
+  // A failed load isn't kept.
+  cache.set('d', Promise.reject(new Error('offline')));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(cache.get('d'), undefined);
+});
+
+/** Publishes the LIRR fixture under `routeName` (each name is a new version). */
+async function publishLirrVersion(routeName) {
+  return withLirrFeed(() => refreshGtfsSnapshot('lirr'), currentLirrFiles(routeName));
+}
+
+/** Makes the current manifest look `days` old, as if a day or more had passed since it was published. */
+function ageCurrentManifest(fakeBucket, days) {
+  const object = fakeBucket.objects.get('gtfs/v1/lirr/current.json');
+  const manifest = JSON.parse(object.data.toString('utf-8'));
+  manifest.publishedAt = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  object.data = Buffer.from(JSON.stringify(manifest));
+}
+
+test('deletes the version from two publications back, keeping the live two', async () => {
+  const fakeBucket = new FakeBucket();
+  setGtfsSnapshotBucketForTests(fakeBucket);
+  await publishLirrVersion('First');
+  const first = currentManifest(fakeBucket);
+  await publishLirrVersion('Second');
+  const second = currentManifest(fakeBucket);
+  assert.deepEqual(second.previousDerived, { object: first.derived.object });
+  ageCurrentManifest(fakeBucket, 2);
+  await publishLirrVersion('Third');
+  const third = currentManifest(fakeBucket);
+
+  assert.equal(fakeBucket.objects.has(first.archiveObject), false);
+  assert.equal(fakeBucket.objects.has(first.derived.object), false);
+  for (const live of [second.archiveObject, second.derived.object, third.archiveObject, third.derived.object]) {
+    assert.ok(fakeBucket.objects.has(live), `${live} is kept`);
+  }
+});
+
+test('waits a day before deleting a retired version', async () => {
+  const fakeBucket = new FakeBucket();
+  setGtfsSnapshotBucketForTests(fakeBucket);
+  await publishLirrVersion('First');
+  const first = currentManifest(fakeBucket);
+  await publishLirrVersion('Second');
+  await publishLirrVersion('Third');
+  assert.ok(fakeBucket.objects.has(first.archiveObject));
+  assert.ok(fakeBucket.objects.has(first.derived.object));
+});
+
+test('never deletes content a live version uses again', async () => {
+  const fakeBucket = new FakeBucket();
+  setGtfsSnapshotBucketForTests(fakeBucket);
+  await publishLirrVersion('First');
+  const first = currentManifest(fakeBucket);
+  await publishLirrVersion('Second');
+  ageCurrentManifest(fakeBucket, 2);
+  await publishLirrVersion('First');
+  assert.equal(currentManifest(fakeBucket).archiveObject, first.archiveObject);
+  assert.ok(fakeBucket.objects.has(first.archiveObject));
+  assert.ok(fakeBucket.objects.has(first.derived.object));
+});
+
+test("deletes an on-demand agency's retired route files by name", async () => {
+  await asOnDemandLirr(async () => {
+    const fakeBucket = new FakeBucket();
+    setGtfsSnapshotBucketForTests(fakeBucket);
+    await publishLirrVersion('First');
+    const first = currentManifest(fakeBucket);
+    const firstPrefix = first.derived.routeFilesPrefix;
+    assert.ok(fakeBucket.objects.has(`${firstPrefix}/stop_times/10.json`));
+    await publishLirrVersion('Second');
+    ageCurrentManifest(fakeBucket, 2);
+    await publishLirrVersion('Third');
+    const third = currentManifest(fakeBucket);
+    assert.equal([...fakeBucket.objects.keys()].some((name) => name.startsWith(`${firstPrefix}/`)), false);
+    assert.ok(fakeBucket.objects.has(`${third.derived.routeFilesPrefix}/stop_times/10.json`));
+    assert.ok(fakeBucket.objects.has(`${third.previousDerived.routeFilesPrefix}/geometry/10.json`));
+  });
+});
+
+test('rejects a manifest whose cleanup reference points outside its prepared data', () => {
+  const bytes = archive(currentLirrFiles());
+  const manifest = createGtfsSnapshotManifest('lirr', 'https://rrgtfsfeeds.s3.amazonaws.com/gtfslirr.zip', bytes, extractGtfsArchive(bytes));
+  assert.throws(() => parseGtfsSnapshotManifest({ ...manifest, previousDerived: { object: 'gtfs/v1/subway/current.json' } }, 'lirr'), /previous prepared-data reference/);
+  assert.throws(() => parseGtfsSnapshotManifest({ ...manifest, previousDerived: { object: `gtfs/v1/lirr/derived/${'a'.repeat(64)}-v3.zip`, routeFilesPrefix: 'gtfs/v1' } }, 'lirr'), /previous prepared-data reference/);
+  assert.ok(parseGtfsSnapshotManifest({ ...manifest, previousDerived: { object: `gtfs/v1/lirr/derived/${'a'.repeat(64)}-v3.zip`, routeFilesPrefix: `gtfs/v1/lirr/derived/${'a'.repeat(64)}/3` } }, 'lirr'));
+});
+
+test('an identical feed whose Last-Modified jitters backward is unchanged, not a rollback', async () => {
+  const fakeBucket = new FakeBucket();
+  setGtfsSnapshotBucketForTests(fakeBucket);
+  const originalFetch = global.fetch;
+  const bytes = archive(currentLirrFiles());
+  try {
+    global.fetch = async () => new Response(bytes, { headers: { 'last-modified': 'Mon, 14 Sep 2026 15:24:18 GMT' } });
+    assert.equal(await refreshGtfsSnapshot('lirr'), 'published');
+    // NICE's server reports a second earlier on some requests.
+    global.fetch = async () => new Response(bytes, { headers: { 'last-modified': 'Mon, 14 Sep 2026 15:24:17 GMT' } });
+    assert.equal(await refreshGtfsSnapshot('lirr'), 'unchanged');
+    assert.equal(currentManifest(fakeBucket).sourceLastModified, '2026-09-14T15:24:18.000Z');
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('an empty optional file counts as absent (NYC Ferry ships an empty calendar_dates.txt)', () => {
+  const files = { ...validFiles(), 'calendar_dates.txt': strToU8('service_id,date,exception_type\n') };
+  const extracted = extractGtfsArchive(archive(files));
+  assert.equal(extracted.files.has('calendar_dates.txt'), false);
+  assert.ok(extracted.files.has('calendar.txt'));
+  const zeroBytes = { ...validFiles(), 'shapes.txt': new Uint8Array(0) };
+  assert.equal(extractGtfsArchive(archive(zeroBytes)).files.has('shapes.txt'), false);
+  // A required file still may not be empty.
+  assert.throws(() => extractGtfsArchive(archive({ ...validFiles(), 'routes.txt': strToU8('route_id\n') })), /routes\.txt/);
 });

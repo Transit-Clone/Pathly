@@ -5,15 +5,16 @@ import type { Palette } from '../theme/colors';
 import { fontFamilies } from '../theme/typography';
 import { Icon } from './Icon';
 
-export type TransitMode = 'subway' | 'bus' | 'rail';
+export type TransitMode = 'subway' | 'bus' | 'rail' | 'ferry';
 
 export function transitModeForAgency(agency: string): TransitMode {
   if (agency === 'MTA Subway') return 'subway';
   if (agency === 'LIRR') return 'rail';
+  if (agency === 'NYC Ferry') return 'ferry';
   return 'bus';
 }
 
-const modeLabels: Record<TransitMode, string> = { subway: 'train', bus: 'bus', rail: 'rail' };
+const modeLabels: Record<TransitMode, string> = { subway: 'train', bus: 'bus', rail: 'rail', ferry: 'ferry' };
 
 const MAX_BADGE_LABEL = 4;
 // LIRR publishes no route_short_name, so discovered branches carry their long name; these are the
@@ -86,7 +87,8 @@ export function RouteBadge({
   const { colors } = useTheme();
   const mode = modeOverride ?? transitModeForAgency(agency);
   const metrics = sizes[size];
-  const showIcon = mode === 'rail' || (mode === 'bus' && withModeIcon);
+  // Ferries always carry the boat: with the pill shape, it's what sets them apart from buses.
+  const showIcon = mode === 'rail' || mode === 'ferry' || (mode === 'bus' && withModeIcon);
 
   return (
     <View
@@ -98,11 +100,12 @@ export function RouteBadge({
         mode === 'subway' && { width: metrics.height, borderRadius: metrics.height / 2 },
         mode === 'bus' && { paddingHorizontal: metrics.padding, borderRadius: Math.round(metrics.height * 0.25) },
         mode === 'rail' && { paddingHorizontal: metrics.padding, borderRadius: 4 },
+        mode === 'ferry' && { paddingHorizontal: metrics.padding, borderRadius: metrics.height / 2 },
         style,
       ]}
       testID={testID}
     >
-      {showIcon ? <Icon color={textColor ?? colors.white} filled={true} name={mode === 'rail' ? 'rail' : 'bus'} size={metrics.icon} /> : null}
+      {showIcon ? <Icon color={textColor ?? colors.white} filled={true} name={mode === 'rail' ? 'rail' : mode === 'ferry' ? 'ferry' : 'bus'} size={metrics.icon} /> : null}
       <Text style={[styles.text, { fontSize: metrics.fontSize }, textColor ? { color: textColor } : null]}>{shortName}</Text>
     </View>
   );

@@ -2,7 +2,7 @@
 // when schedules change. Lines stopping within 400 m of each Port Jefferson Branch station,
 // from the official static GTFS feeds of LIRR, Suffolk County Transit, NICE Bus, NYC Subway, and MTA Bus.
 
-export type TransferMode = 'rail' | 'subway' | 'bus';
+export type TransferMode = 'rail' | 'subway' | 'bus' | 'ferry';
 
 export type StationTransfer = {
   agency: string;

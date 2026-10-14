@@ -32,8 +32,14 @@ const defaultDeps = (): BackendStatusDeps => ({
 async function checkLiveFeed(agencyId: AgencyId, deps: BackendStatusDeps): Promise<LiveFeedCheck> {
   const config = AGENCY_CONFIGS[agencyId];
   if (config.liveFeedSecret && !process.env[config.liveFeedSecret]) return { configured: false };
-  const routeId = config.requiredStaticFallbacks[0]?.routeId;
-  const feed = routeId ? config.feedRequestsForRoute(routeId)[0] : undefined;
+  // Agency-wide feeds ignore the route; split ones (subway) are probed through a known route.
+  const routeId = config.requiredStaticFallbacks?.[0]?.routeId ?? '';
+  let feed;
+  try {
+    feed = config.feedRequestsForRoute(routeId)[0];
+  } catch {
+    feed = undefined;
+  }
   if (!feed) return { configured: false };
   const started = Date.now();
   try {

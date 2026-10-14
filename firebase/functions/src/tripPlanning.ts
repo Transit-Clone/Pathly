@@ -25,7 +25,8 @@ export type TripStop = { name: string; location: LatLng; time: string };
 export type WalkStep = { kind: 'walk'; durationSeconds: number; distanceMeters: number; toName: string; path: LatLng[] };
 export type TransitStep = {
   kind: 'transit';
-  mode: TravelModeOption | 'other';
+  /** Ferry legs can't be requested or excluded at Google (it has no ferry travel mode); the app filters them. */
+  mode: TravelModeOption | 'ferry' | 'other';
   agency: { name: string; url?: string };
   line: { name: string; shortName?: string; color?: string; textColor?: string; vehicleName?: string };
   headsign?: string;
@@ -142,6 +143,8 @@ export function modeForVehicle(type: string | undefined): TransitStep['mode'] {
       return 'bus';
     case 'RAIL': case 'COMMUTER_TRAIN': case 'HEAVY_RAIL': case 'HIGH_SPEED_TRAIN': case 'LONG_DISTANCE_TRAIN':
       return 'rail';
+    case 'FERRY':
+      return 'ferry';
     default:
       return 'other';
   }
