@@ -1,0 +1,2592 @@
+{
+  "routes": [
+    {
+      "legs": [
+        {
+          "startLocation": {
+            "latLng": {
+              "latitude": 40.9125869,
+              "longitude": -73.1234711
+            }
+          },
+          "endLocation": {
+            "latLng": {
+              "latitude": 40.750586999999996,
+              "longitude": -73.993584
+            }
+          },
+          "steps": [
+            {
+              "distanceMeters": 22,
+              "staticDuration": "19s",
+              "polyline": {
+                "encodedPolyline": "uvuxFt|h}Ld@P"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9125869,
+                  "longitude": -73.1234711
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.912397299999995,
+                  "longitude": -73.1235578
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 28,
+              "staticDuration": "21s",
+              "polyline": {
+                "encodedPolyline": "ouuxFf}h}LN|@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.912397299999995,
+                  "longitude": -73.1235578
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9123188,
+                  "longitude": -73.1238719
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 97,
+              "staticDuration": "80s",
+              "polyline": {
+                "encodedPolyline": "_uuxFd_i}L]r@Ql@k@n@Cb@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9123188,
+                  "longitude": -73.1238719
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9128039,
+                  "longitude": -73.12478209999999
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 156,
+              "staticDuration": "125s",
+              "polyline": {
+                "encodedPolyline": "_xuxFzdi}Lu@^oDk@QBQIE?"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9128039,
+                  "longitude": -73.12478209999999
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9141562,
+                  "longitude": -73.124686
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 98,
+              "staticDuration": "73s",
+              "polyline": {
+                "encodedPolyline": "o`vxFhdi}LmDc@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9141562,
+                  "longitude": -73.124686
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9150315,
+                  "longitude": -73.1245125
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 36,
+              "staticDuration": "26s",
+              "polyline": {
+                "encodedPolyline": "}evxFdci}L_@XQX"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9150315,
+                  "longitude": -73.1245125
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.915281,
+                  "longitude": -73.1247715
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 10,
+              "staticDuration": "7s",
+              "polyline": {
+                "encodedPolyline": "ogvxFxdi}LQC"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.915281,
+                  "longitude": -73.1247715
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9153698,
+                  "longitude": -73.124752
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 89,
+              "staticDuration": "68s",
+              "polyline": {
+                "encodedPolyline": "ahvxFtdi}LYnE"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9153698,
+                  "longitude": -73.124752
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.915496200000007,
+                  "longitude": -73.1257948
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 11,
+              "staticDuration": "9s",
+              "polyline": {
+                "encodedPolyline": "{hvxFdki}LKDAF"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.915496200000007,
+                  "longitude": -73.1257948
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9155705,
+                  "longitude": -73.1258624
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 225,
+              "staticDuration": "190s",
+              "polyline": {
+                "encodedPolyline": "iivxFrki}LkAIMxAEn@GDCNwAMIHS@UL]E?BUD"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9155705,
+                  "longitude": -73.1258624
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.917069399999995,
+                  "longitude": -73.1266891
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 414,
+              "staticDuration": "325s",
+              "polyline": {
+                "encodedPolyline": "urvxFxpi}LIYCCeAGqASIJg@p@OJwAPa@X}A~AqAnAmAn@QLKT"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.917069399999995,
+                  "longitude": -73.1266891
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.920263000000006,
+                  "longitude": -73.12828549999999
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 11,
+              "staticDuration": "10s",
+              "polyline": {
+                "encodedPolyline": "sfwxFxzi}LQM"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.920263000000006,
+                  "longitude": -73.12828549999999
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9203507,
+                  "longitude": -73.1282172
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 89,
+              "staticDuration": "82s",
+              "polyline": {
+                "encodedPolyline": "egwxFjzi}LM^XRK\\[OQj@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9203507,
+                  "longitude": -73.1282172
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9205824,
+                  "longitude": -73.1287663
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 134,
+              "staticDuration": "109s",
+              "polyline": {
+                "encodedPolyline": "shwxFx}i}LmBw@wAmAKM"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9205824,
+                  "longitude": -73.1287663
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9216312,
+                  "longitude": -73.12803439999999
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 45608,
+              "staticDuration": "3120s",
+              "polyline": {
+                "encodedPolyline": "_gwxFl|i}L?@zIhFrB`BhCbCbAhAtClDjApB|BdExG|Mv@hAj@n@VT~@p@~CnAvBLjAEx@GrMwCdAQtAIf@?hBRtA`@jAl@d@\\jAfAjJnKrAlAdAn@hDxAdr@xUzBnAlBbBn@v@|Z|d@j[je@~CrEjFfIzAvB`M`R`@p@fYpb@zHfL|\\ng@bd@xp@|AfCjGzKtBpDjClFxCpFf@bA~@rCj@~BtFx[dDtQj@vDNtBDbBEdGKhFQxB]`C]|AkAbDwLrXwAlDm@vBuCnPu@nDY|@o@pAiA~Ag@j@qNdOeCpCcAbBoBvE}GdQu@zAsArBaAbAuAbAyX|MkCdBs@l@_BpBoAlB{m@tqAyFnLgBfEy@bCUx@UjA_@rCOxCEbDBtCf@v]B\\f@l\\lAbz@tBnwAv@bh@PxMdBvgAp@bg@V|NfA`u@b@bXL`E@vCF`FLpCPtCf@zDv@tDt@tCx@lC\\t@vApCdG~JdS~[tGrHv@~AVp@`@rAXvARtAtApSlB|WX~BnWngAjR|w@vRfy@rSx|@jOxp@~CtMtArG~EzSj@dBjA|BhC`E`KnOjInLdJfNrCrEvAjBbc@ro@`IpLlA~Bp@jBf@|BXnBLtBDrBCpCKjBMtAWxAa@dBiAnDsFbPa@~A_@lBQbBg@rGChB@`CDlATzBVzAh@vBb@lAz@`BhA~A|@x@tDlCvJvGxCvBpDrCzAdA~@~@z@hAbAbBpChGhCdHj@bC^rEb@vG\\dELxGIvNZvKn@jQl@bMzAlY~Bj_@b@tG~Bd`@|Bf^~AzVV~CXrBd@`Cr@jCt@nBtBrE~EtJfA`Bt@z@r@r@dCdB`IbFjF|C`XvPbHfEfClAdCx@xA`@hFx@xqA|NhwB`VlZbDdC`@jCt@zAl@rBjAnB~AbBbBtAfBlAjBt@dB\\hAd@bChE`Y"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.920322,
+                  "longitude": -73.128548000000009
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.767174,
+                  "longitude": -73.528534
+                }
+              },
+              "transitDetails": {
+                "stopDetails": {
+                  "arrivalStop": {
+                    "name": "Hicksville",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.767174,
+                        "longitude": -73.528534
+                      }
+                    }
+                  },
+                  "arrivalTime": "2026-10-14T14:04:00Z",
+                  "departureStop": {
+                    "name": "Stony Brook",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.920322,
+                        "longitude": -73.128548000000009
+                      }
+                    }
+                  },
+                  "departureTime": "2026-10-14T13:12:00Z"
+                },
+                "localizedValues": {
+                  "arrivalTime": {
+                    "time": {
+                      "text": "10:04 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  },
+                  "departureTime": {
+                    "time": {
+                      "text": "9:12 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  }
+                },
+                "headsign": "Hicksville",
+                "transitLine": {
+                  "agencies": [
+                    {
+                      "name": "Long Island Rail Road",
+                      "phoneNumber": "+1 718-217-5477",
+                      "uri": "http://www.mta.info/lirr"
+                    }
+                  ],
+                  "name": "Port Jefferson Branch",
+                  "color": "#006ec7",
+                  "nameShort": "LIRR",
+                  "textColor": "#ffffff",
+                  "vehicle": {
+                    "name": {
+                      "text": "Train"
+                    },
+                    "type": "HEAVY_RAIL",
+                    "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/rail2.png"
+                  }
+                },
+                "stopCount": 7
+              },
+              "travelMode": "TRANSIT"
+            },
+            {
+              "distanceMeters": 42936,
+              "staticDuration": "2580s",
+              "polyline": {
+                "encodedPolyline": "yiywFh`x_MzBbOdAxFzItk@~SnwA|BjPfKnr@zBnNjyAfzJ`Hld@xJjp@|ChTfClQzEt[`Ltt@`n@xcE~Izm@zBrNtGfc@zC`Th`@~iCnbApvGdK~q@lJtn@bBtI~DdXv@vEbDbQ~@bF~AjHzD~SdAvGx@zFZvDHtBEnDKzB_@~Ck@lCeAfDsAbDiAvB{BjDaCxC_yAbcBqCvDoCjE_CrEuB~EmBlFs@~BwY~gA}x@f}CqFlSgDvK}O|f@kDbJgBzDkBbDiBjC}IdKcg@pj@gB~BgBxCeBlDkAxCaA`Dk@hCc@dDYvDMbEAtCFbDT|Ez@jKlEla@|KhcAxAvKpAtHbArEfD`LtInXlBrG|EpQp@fCb@|Bd@dD^xELbD?xBGpD{@tNuBv`@iG`iASlAg@lB}Yx~@cS~n@pBpB"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.767174,
+                  "longitude": -73.528534
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.750586999999996,
+                  "longitude": -73.993584
+                }
+              },
+              "transitDetails": {
+                "stopDetails": {
+                  "arrivalStop": {
+                    "name": "Penn Station",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.750586999999996,
+                        "longitude": -73.993584
+                      }
+                    }
+                  },
+                  "arrivalTime": "2026-10-14T14:51:00Z",
+                  "departureStop": {
+                    "name": "Hicksville",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.767174,
+                        "longitude": -73.528534
+                      }
+                    }
+                  },
+                  "departureTime": "2026-10-14T14:08:00Z"
+                },
+                "localizedValues": {
+                  "arrivalTime": {
+                    "time": {
+                      "text": "10:51 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  },
+                  "departureTime": {
+                    "time": {
+                      "text": "10:08 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  }
+                },
+                "headsign": "Penn Station",
+                "transitLine": {
+                  "agencies": [
+                    {
+                      "name": "Long Island Rail Road",
+                      "phoneNumber": "+1 718-217-5477",
+                      "uri": "http://www.mta.info/lirr"
+                    }
+                  ],
+                  "name": "Ronkonkoma Branch",
+                  "color": "#a626aa",
+                  "nameShort": "LIRR",
+                  "textColor": "#ffffff",
+                  "vehicle": {
+                    "name": {
+                      "text": "Train"
+                    },
+                    "type": "HEAVY_RAIL",
+                    "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/rail2.png"
+                  }
+                },
+                "stopCount": 4
+              },
+              "travelMode": "TRANSIT"
+            }
+          ]
+        }
+      ],
+      "distanceMeters": 89964,
+      "duration": "7085s",
+      "travelAdvisory": {
+        "transitFare": {}
+      },
+      "localizedValues": {
+        "transitFare": {}
+      }
+    },
+    {
+      "legs": [
+        {
+          "startLocation": {
+            "latLng": {
+              "latitude": 40.9125869,
+              "longitude": -73.1234711
+            }
+          },
+          "endLocation": {
+            "latLng": {
+              "latitude": 40.750586999999996,
+              "longitude": -73.993584
+            }
+          },
+          "steps": [
+            {
+              "distanceMeters": 22,
+              "staticDuration": "19s",
+              "polyline": {
+                "encodedPolyline": "uvuxFt|h}Ld@P"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9125869,
+                  "longitude": -73.1234711
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.912397299999995,
+                  "longitude": -73.1235578
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 61,
+              "staticDuration": "47s",
+              "polyline": {
+                "encodedPolyline": "ouuxFf}h}LXbBRX"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.912397299999995,
+                  "longitude": -73.1235578
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.912167,
+                  "longitude": -73.1241897
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 40,
+              "staticDuration": "32s",
+              "polyline": {
+                "encodedPolyline": "atuxFdai}LPn@LRHD"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.912167,
+                  "longitude": -73.1241897
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9119574,
+                  "longitude": -73.1245607
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 9,
+              "staticDuration": "8s",
+              "polyline": {
+                "encodedPolyline": "wruxFnci}LAT"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9119574,
+                  "longitude": -73.1245607
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.911972399999996,
+                  "longitude": -73.1246714
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 149,
+              "staticDuration": "129s",
+              "polyline": {
+                "encodedPolyline": "yruxFddi}LT^RLz@jAFlBNv@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.911972399999996,
+                  "longitude": -73.1246714
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9113434,
+                  "longitude": -73.126107699999991
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 32,
+              "staticDuration": "32s",
+              "polyline": {
+                "encodedPolyline": "{nuxFdmi}Ln@f@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9113434,
+                  "longitude": -73.126107699999991
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.911097399999996,
+                  "longitude": -73.1263087
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 13,
+              "staticDuration": "11s",
+              "polyline": {
+                "encodedPolyline": "kmuxFlni}LKX"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.911097399999996,
+                  "longitude": -73.1263087
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9111602,
+                  "longitude": -73.1264408
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 17772,
+              "staticDuration": "2580s",
+              "polyline": {
+                "encodedPolyline": "mmuxFpoi}LKGjAeDh@sBl@qCb@}AJGTg@`@i@PEPWAWKSIEQcBKc@h@wI@gBAo@Im@GQc@s@e@WoBI}@O{Bo@{@M_BE_@BqARyBj@_APm@B}@GeB[P{ATiAjAoD\\oAX_BXwB`BqKFU`@y@`@a@n@Yn@GzBXvBT~A@dBUjA_@~@c@bIuExEkCrA[d@Ej@?`ALl@Np@\\v@l@n@v@n@jA`@tATnAH`A@vCAbGBj@d@zB^zAtAg@p@a@hIwDfDmA|DiAx}@yTjDaAjDqAbD}AtC_BnH_F|EiD`Am@j@IZCXJLHNBz_@zv@fAtBfE`JpDlHrAbChGbNbDxHtBpFj@tAhBpDjB`E~A`E~CnHjAdChAlCxDfItAfC~@zAjAlAb@KFKdF{@c@iFpCa@k@yGS[QwA_Ev@R|BfAKfAnN|RaD`@EAo[t@}VPqITcEjA_OvBqW`BuRPkBrEt@bAZbI|DnBdArGrB|@TbAJbA?dOkAx@CzI{@pReBzSyBnNoBlGeA`@Or@i@j@q@nCwDtAuBbAS`KgDbCw@~@SvIgAdMwA~NoB|Eq@zADLFnGLjD?FEvFLtl@nANL|@@tIPbEHLI~DF~Fg@jD]|CWHQIiBDA"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.911106,
+                  "longitude": -73.126486
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.808082999999996,
+                  "longitude": -73.10713299999999
+                }
+              },
+              "transitDetails": {
+                "stopDetails": {
+                  "arrivalStop": {
+                    "name": "Ronkonkoma LIRR",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.808082999999996,
+                        "longitude": -73.10713299999999
+                      }
+                    }
+                  },
+                  "arrivalTime": "2026-10-14T13:34:00Z",
+                  "departureStop": {
+                    "name": "Circle Rd/Engineering Dr",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.911106,
+                        "longitude": -73.126486
+                      }
+                    }
+                  },
+                  "departureTime": "2026-10-14T12:51:00Z"
+                },
+                "localizedValues": {
+                  "arrivalTime": {
+                    "time": {
+                      "text": "9:34 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  },
+                  "departureTime": {
+                    "time": {
+                      "text": "8:51 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  }
+                },
+                "headsign": "Patchogue RR",
+                "transitLine": {
+                  "agencies": [
+                    {
+                      "name": "Suffolk County Transit",
+                      "phoneNumber": "+1 631-852-5200",
+                      "uri": "https://sctbus.org/"
+                    }
+                  ],
+                  "name": "51 - Patchogue RR to Port Jefferson Station",
+                  "color": "#c63f49",
+                  "nameShort": "51",
+                  "textColor": "#ffffff",
+                  "vehicle": {
+                    "name": {
+                      "text": "Bus"
+                    },
+                    "type": "BUS",
+                    "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/bus2.png"
+                  }
+                },
+                "stopCount": 31
+              },
+              "travelMode": "TRANSIT"
+            },
+            {
+              "distanceMeters": 62,
+              "staticDuration": "62s",
+              "polyline": {
+                "encodedPolyline": "iiaxFpve}LSqC"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.8080457,
+                  "longitude": -73.1071257
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.808150999999995,
+                  "longitude": -73.1064
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 39,
+              "staticDuration": "40s",
+              "polyline": {
+                "encodedPolyline": "}iaxF~qe}LJ{A"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.808150999999995,
+                  "longitude": -73.1064
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.808085999999996,
+                  "longitude": -73.105942
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 81233,
+              "staticDuration": "4740s",
+              "polyline": {
+                "encodedPolyline": "qiaxFboe}LH?p@lQNtGtBnj@h@hPz@xSTnDb@lEjy@|wG`RrzAzGbi@~Ffe@dErYvkBv~MdcCbcQh}@jqGbDrVlw@pwFf@|ER~DDlDC`ES`E_@pDk@nDS|@oApEy@|BwAzC{r@nnAsMrUcl@bdAw^no@weAfkBu@jBc@bBYjBOvB?lBJxBx@tH`Gd`@dAxFzItk@~SnwA|BjPfKnr@zBnNjyAfzJ`Hld@xJjp@|ChTfClQzEt[`Ltt@`n@xcE~Izm@zBrNtGfc@zC`Th`@~iCnbApvGdK~q@lJtn@bBtI~DdXv@vEbDbQ~@bF~AjHzD~SdAvGx@zFZvDHtBEnDKzB_@~Ck@lCeAfDsAbDiAvB{BjDaCxC_yAbcBqCvDoCjE_CrEuB~EmBlFs@~BwY~gA}x@f}CqFlSgDvK}O|f@kDbJgBzDkBbDiBjC}IdKcg@pj@gB~BgBxCeBlDkAxCaA`Dk@hCc@dDYvDMbEAtCFbDT|Ez@jKlEla@|KhcAxAvKpAtHbArEfD`LtInXlBrG|EpQp@fCb@|Bd@dD^xELbD?xBGpD{@tNuBv`@iG`iASlAg@lB}Yx~@cS~n@pBpB"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.808085999999996,
+                  "longitude": -73.105942
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.750586999999996,
+                  "longitude": -73.993584
+                }
+              },
+              "transitDetails": {
+                "stopDetails": {
+                  "arrivalStop": {
+                    "name": "Penn Station",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.750586999999996,
+                        "longitude": -73.993584
+                      }
+                    }
+                  },
+                  "arrivalTime": "2026-10-14T15:22:00Z",
+                  "departureStop": {
+                    "name": "Ronkonkoma",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.808085999999996,
+                        "longitude": -73.105942
+                      }
+                    }
+                  },
+                  "departureTime": "2026-10-14T14:03:00Z"
+                },
+                "localizedValues": {
+                  "arrivalTime": {
+                    "time": {
+                      "text": "11:22 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  },
+                  "departureTime": {
+                    "time": {
+                      "text": "10:03 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  }
+                },
+                "headsign": "Penn Station",
+                "transitLine": {
+                  "agencies": [
+                    {
+                      "name": "Long Island Rail Road",
+                      "phoneNumber": "+1 718-217-5477",
+                      "uri": "http://www.mta.info/lirr"
+                    }
+                  ],
+                  "name": "Ronkonkoma Branch",
+                  "color": "#a626aa",
+                  "nameShort": "LIRR",
+                  "textColor": "#ffffff",
+                  "vehicle": {
+                    "name": {
+                      "text": "Train"
+                    },
+                    "type": "HEAVY_RAIL",
+                    "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/rail2.png"
+                  }
+                },
+                "stopCount": 10
+              },
+              "travelMode": "TRANSIT"
+            }
+          ]
+        }
+      ],
+      "distanceMeters": 99432,
+      "duration": "9338s",
+      "travelAdvisory": {
+        "transitFare": {}
+      },
+      "localizedValues": {
+        "transitFare": {}
+      }
+    },
+    {
+      "legs": [
+        {
+          "startLocation": {
+            "latLng": {
+              "latitude": 40.9125869,
+              "longitude": -73.1234711
+            }
+          },
+          "endLocation": {
+            "latLng": {
+              "latitude": 40.750586999999996,
+              "longitude": -73.993584
+            }
+          },
+          "steps": [
+            {
+              "distanceMeters": 22,
+              "staticDuration": "19s",
+              "polyline": {
+                "encodedPolyline": "uvuxFt|h}Ld@P"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9125869,
+                  "longitude": -73.1234711
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.912397299999995,
+                  "longitude": -73.1235578
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 28,
+              "staticDuration": "21s",
+              "polyline": {
+                "encodedPolyline": "ouuxFf}h}LN|@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.912397299999995,
+                  "longitude": -73.1235578
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9123188,
+                  "longitude": -73.1238719
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 97,
+              "staticDuration": "80s",
+              "polyline": {
+                "encodedPolyline": "_uuxFd_i}L]r@Ql@k@n@Cb@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9123188,
+                  "longitude": -73.1238719
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9128039,
+                  "longitude": -73.12478209999999
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 156,
+              "staticDuration": "125s",
+              "polyline": {
+                "encodedPolyline": "_xuxFzdi}Lu@^oDk@QBQIE?"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9128039,
+                  "longitude": -73.12478209999999
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9141562,
+                  "longitude": -73.124686
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 98,
+              "staticDuration": "73s",
+              "polyline": {
+                "encodedPolyline": "o`vxFhdi}LmDc@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9141562,
+                  "longitude": -73.124686
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9150315,
+                  "longitude": -73.1245125
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 36,
+              "staticDuration": "26s",
+              "polyline": {
+                "encodedPolyline": "}evxFdci}L_@XQX"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9150315,
+                  "longitude": -73.1245125
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.915281,
+                  "longitude": -73.1247715
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 10,
+              "staticDuration": "7s",
+              "polyline": {
+                "encodedPolyline": "ogvxFxdi}LQC"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.915281,
+                  "longitude": -73.1247715
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9153698,
+                  "longitude": -73.124752
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 89,
+              "staticDuration": "68s",
+              "polyline": {
+                "encodedPolyline": "ahvxFtdi}LYnE"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9153698,
+                  "longitude": -73.124752
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.915496200000007,
+                  "longitude": -73.1257948
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 11,
+              "staticDuration": "9s",
+              "polyline": {
+                "encodedPolyline": "{hvxFdki}LKDAF"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.915496200000007,
+                  "longitude": -73.1257948
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9155705,
+                  "longitude": -73.1258624
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 225,
+              "staticDuration": "190s",
+              "polyline": {
+                "encodedPolyline": "iivxFrki}LkAIMxAEn@GDCNwAMIHS@UL]E?BUD"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9155705,
+                  "longitude": -73.1258624
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.917069399999995,
+                  "longitude": -73.1266891
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 414,
+              "staticDuration": "325s",
+              "polyline": {
+                "encodedPolyline": "urvxFxpi}LIYCCeAGqASIJg@p@OJwAPa@X}A~AqAnAmAn@QLKT"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.917069399999995,
+                  "longitude": -73.1266891
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.920263000000006,
+                  "longitude": -73.12828549999999
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 11,
+              "staticDuration": "10s",
+              "polyline": {
+                "encodedPolyline": "sfwxFxzi}LQM"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.920263000000006,
+                  "longitude": -73.12828549999999
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9203507,
+                  "longitude": -73.1282172
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 89,
+              "staticDuration": "82s",
+              "polyline": {
+                "encodedPolyline": "egwxFjzi}LM^XRK\\[OQj@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9203507,
+                  "longitude": -73.1282172
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9205824,
+                  "longitude": -73.1287663
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 134,
+              "staticDuration": "109s",
+              "polyline": {
+                "encodedPolyline": "shwxFx}i}LmBw@wAmAKM"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9205824,
+                  "longitude": -73.1287663
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9216312,
+                  "longitude": -73.12803439999999
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 29429,
+              "staticDuration": "2220s",
+              "polyline": {
+                "encodedPolyline": "_gwxFl|i}L?@zIhFrB`BhCbCbAhAtClDjApB|BdExG|Mv@hAj@n@VT~@p@~CnAvBLjAEx@GrMwCdAQtAIf@?hBRtA`@jAl@d@\\jAfAjJnKrAlAdAn@hDxAdr@xUzBnAlBbBn@v@|Z|d@j[je@~CrEjFfIzAvB`M`R`@p@fYpb@zHfL|\\ng@bd@xp@|AfCjGzKtBpDjClFxCpFf@bA~@rCj@~BtFx[dDtQj@vDNtBDbBEdGKhFQxB]`C]|AkAbDwLrXwAlDm@vBuCnPu@nDY|@o@pAiA~Ag@j@qNdOeCpCcAbBoBvE}GdQu@zAsArBaAbAuAbAyX|MkCdBs@l@_BpBoAlB{m@tqAyFnLgBfEy@bCUx@UjA_@rCOxCEbDBtCf@v]B\\f@l\\lAbz@tBnwAv@bh@PxMdBvgAp@bg@V|NfA`u@b@bXL`E@vCF`FLpCPtCf@zDv@tDt@tCx@lC\\t@vApCdG~JdS~[tGrHv@~AVp@`@rAXvARtAtApSlB|WX~BnWngAjR|w@vRfy@rSx|@jOxp@~CtMtArG|AzGBA"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.920322,
+                  "longitude": -73.128548000000009
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.853007999999996,
+                  "longitude": -73.409523
+                }
+              },
+              "transitDetails": {
+                "stopDetails": {
+                  "arrivalStop": {
+                    "name": "Huntington",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.853007999999996,
+                        "longitude": -73.409523
+                      }
+                    }
+                  },
+                  "arrivalTime": "2026-10-14T13:49:00Z",
+                  "departureStop": {
+                    "name": "Stony Brook",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.920322,
+                        "longitude": -73.128548000000009
+                      }
+                    }
+                  },
+                  "departureTime": "2026-10-14T13:12:00Z"
+                },
+                "localizedValues": {
+                  "arrivalTime": {
+                    "time": {
+                      "text": "9:49 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  },
+                  "departureTime": {
+                    "time": {
+                      "text": "9:12 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  }
+                },
+                "headsign": "Hicksville",
+                "transitLine": {
+                  "agencies": [
+                    {
+                      "name": "Long Island Rail Road",
+                      "phoneNumber": "+1 718-217-5477",
+                      "uri": "http://www.mta.info/lirr"
+                    }
+                  ],
+                  "name": "Port Jefferson Branch",
+                  "color": "#006ec7",
+                  "nameShort": "LIRR",
+                  "textColor": "#ffffff",
+                  "vehicle": {
+                    "name": {
+                      "text": "Train"
+                    },
+                    "type": "HEAVY_RAIL",
+                    "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/rail2.png"
+                  }
+                },
+                "stopCount": 6
+              },
+              "travelMode": "TRANSIT"
+            },
+            {
+              "distanceMeters": 59113,
+              "staticDuration": "4020s",
+              "polyline": {
+                "encodedPolyline": "ibjxFnx`_MC@`C~Jj@dBjA|BhC`E`KnOjInLdJfNrCrEvAjBbc@ro@`IpLlA~Bp@jBf@|BXnBLtBDrBCpCKjBMtAWxAa@dBiAnDsFbPa@~A_@lBQbBg@rGChB@`CDlATzBVzAh@vBb@lAz@`BhA~A|@x@tDlCvJvGxCvBpDrCzAdA~@~@z@hAbAbBpChGhCdHj@bC^rEb@vG\\dELxGIvNZvKn@jQl@bMzAlY~Bj_@b@tG~Bd`@|Bf^~AzVV~CXrBd@`Cr@jCt@nBtBrE~EtJfA`Bt@z@r@r@dCdB`IbFjF|C`XvPbHfEfClAdCx@xA`@hFx@xqA|NhwB`VlZbDdC`@jCt@zAl@rBjAnB~AbBbBtAfBlAjBt@dB\\hAd@bC~Hhh@pAbH|@vFzMh}@xC~RhIxj@fBdMXnArMt|@lNn_AxBfOHd@TbBhAhH`@xCnIxj@hU||A`Jjm@?HVzBtA`J|@bFzf@tfDdHbf@bGn`@fCfPxRvqA~Lvy@fHpe@jFp]fNz_A|Ev[lCrQjAbIpc@lwCbhAvoH~Mh}@`@hBXlB`@lB|@lFx@jEzDvWH~@hBvIp@rEZrBjAnGdBpG`EnTf@rEJxAhA~JJzBBdAEjCKhBY|Bk@fC_@vAaAnC_AvBuAhC_CpDsBlCmBvBkPnRqZl]iInJuPpRsB`CgDtDaDxDw@bAaCnD}@zAsCnFkDnI_BfFcCdJoRjt@sM`g@iGvUkHbXsIt[iCzJqFpS_Mbe@mC`JeL`^wIjWgCdFONiBvCkDjEsE|E{@t@_FxFgIdJoHjIeHrHuA`BqBvCiAhBoB|DuAlDy@pCe@xBWbB]dDKzAKlCEfE@l@HlBDbBXpEr@fHVpDhI`v@tGnl@`AfHdArGdAbF~@jDpLd`@pC~IhG~Tb@tBd@lD^xELbD@x@ExDuDdr@eGbhAOlA_@~Aki@pcBsCnM~At@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.853007999999996,
+                  "longitude": -73.409523
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.750586999999996,
+                  "longitude": -73.993584
+                }
+              },
+              "transitDetails": {
+                "stopDetails": {
+                  "arrivalStop": {
+                    "name": "Penn Station",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.750586999999996,
+                        "longitude": -73.993584
+                      }
+                    }
+                  },
+                  "arrivalTime": "2026-10-14T15:07:00Z",
+                  "departureStop": {
+                    "name": "Huntington",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.853007999999996,
+                        "longitude": -73.409523
+                      }
+                    }
+                  },
+                  "departureTime": "2026-10-14T14:00:00Z"
+                },
+                "localizedValues": {
+                  "arrivalTime": {
+                    "time": {
+                      "text": "11:07 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  },
+                  "departureTime": {
+                    "time": {
+                      "text": "10:00 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  }
+                },
+                "headsign": "Penn Station",
+                "transitLine": {
+                  "agencies": [
+                    {
+                      "name": "Long Island Rail Road",
+                      "phoneNumber": "+1 718-217-5477",
+                      "uri": "http://www.mta.info/lirr"
+                    }
+                  ],
+                  "name": "Port Jefferson Branch",
+                  "color": "#006ec7",
+                  "nameShort": "LIRR",
+                  "textColor": "#ffffff",
+                  "vehicle": {
+                    "name": {
+                      "text": "Train"
+                    },
+                    "type": "HEAVY_RAIL",
+                    "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/rail2.png"
+                  }
+                },
+                "stopCount": 11
+              },
+              "travelMode": "TRANSIT"
+            }
+          ]
+        }
+      ],
+      "distanceMeters": 89962,
+      "duration": "8045s",
+      "travelAdvisory": {
+        "transitFare": {}
+      },
+      "localizedValues": {
+        "transitFare": {}
+      }
+    },
+    {
+      "legs": [
+        {
+          "startLocation": {
+            "latLng": {
+              "latitude": 40.9125869,
+              "longitude": -73.1234711
+            }
+          },
+          "endLocation": {
+            "latLng": {
+              "latitude": 40.750586999999996,
+              "longitude": -73.993584
+            }
+          },
+          "steps": [
+            {
+              "distanceMeters": 22,
+              "staticDuration": "19s",
+              "polyline": {
+                "encodedPolyline": "uvuxFt|h}Ld@P"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9125869,
+                  "longitude": -73.1234711
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.912397299999995,
+                  "longitude": -73.1235578
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 61,
+              "staticDuration": "47s",
+              "polyline": {
+                "encodedPolyline": "ouuxFf}h}LXbBRX"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.912397299999995,
+                  "longitude": -73.1235578
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.912167,
+                  "longitude": -73.1241897
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 40,
+              "staticDuration": "32s",
+              "polyline": {
+                "encodedPolyline": "atuxFdai}LPn@LRHD"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.912167,
+                  "longitude": -73.1241897
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9119574,
+                  "longitude": -73.1245607
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 9,
+              "staticDuration": "8s",
+              "polyline": {
+                "encodedPolyline": "wruxFnci}LAT"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9119574,
+                  "longitude": -73.1245607
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.911972399999996,
+                  "longitude": -73.1246714
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 149,
+              "staticDuration": "129s",
+              "polyline": {
+                "encodedPolyline": "yruxFddi}LT^RLz@jAFlBNv@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.911972399999996,
+                  "longitude": -73.1246714
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9113434,
+                  "longitude": -73.126107699999991
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 32,
+              "staticDuration": "32s",
+              "polyline": {
+                "encodedPolyline": "{nuxFdmi}Ln@f@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9113434,
+                  "longitude": -73.126107699999991
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.911097399999996,
+                  "longitude": -73.1263087
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 13,
+              "staticDuration": "11s",
+              "polyline": {
+                "encodedPolyline": "kmuxFlni}LKX"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.911097399999996,
+                  "longitude": -73.1263087
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9111602,
+                  "longitude": -73.1264408
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 17772,
+              "staticDuration": "2580s",
+              "polyline": {
+                "encodedPolyline": "mmuxFpoi}LKGjAeDh@sBl@qCb@}AJGTg@`@i@PEPWAWKSIEQcBKc@h@wI@gBAo@Im@GQc@s@e@WoBI}@O{Bo@{@M_BE_@BqARyBj@_APm@B}@GeB[P{ATiAjAoD\\oAX_BXwB`BqKFU`@y@`@a@n@Yn@GzBXvBT~A@dBUjA_@~@c@bIuExEkCrA[d@Ej@?`ALl@Np@\\v@l@n@v@n@jA`@tATnAH`A@vCAbGBj@d@zB^zAtAg@p@a@hIwDfDmA|DiAx}@yTjDaAjDqAbD}AtC_BnH_F|EiD`Am@j@IZCXJLHNBz_@zv@fAtBfE`JpDlHrAbChGbNbDxHtBpFj@tAhBpDjB`E~A`E~CnHjAdChAlCxDfItAfC~@zAjAlAb@KFKdF{@c@iFpCa@k@yGS[QwA_Ev@R|BfAKfAnN|RaD`@EAo[t@}VPqITcEjA_OvBqW`BuRPkBrEt@bAZbI|DnBdArGrB|@TbAJbA?dOkAx@CzI{@pReBzSyBnNoBlGeA`@Or@i@j@q@nCwDtAuBbAS`KgDbCw@~@SvIgAdMwA~NoB|Eq@zADLFnGLjD?FEvFLtl@nANL|@@tIPbEHLI~DF~Fg@jD]|CWHQIiBDA"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.911106,
+                  "longitude": -73.126486
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.808082999999996,
+                  "longitude": -73.10713299999999
+                }
+              },
+              "transitDetails": {
+                "stopDetails": {
+                  "arrivalStop": {
+                    "name": "Ronkonkoma LIRR",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.808082999999996,
+                        "longitude": -73.10713299999999
+                      }
+                    }
+                  },
+                  "arrivalTime": "2026-10-14T14:04:00Z",
+                  "departureStop": {
+                    "name": "Circle Rd/Engineering Dr",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.911106,
+                        "longitude": -73.126486
+                      }
+                    }
+                  },
+                  "departureTime": "2026-10-14T13:21:00Z"
+                },
+                "localizedValues": {
+                  "arrivalTime": {
+                    "time": {
+                      "text": "10:04 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  },
+                  "departureTime": {
+                    "time": {
+                      "text": "9:21 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  }
+                },
+                "headsign": "Patchogue RR",
+                "transitLine": {
+                  "agencies": [
+                    {
+                      "name": "Suffolk County Transit",
+                      "phoneNumber": "+1 631-852-5200",
+                      "uri": "https://sctbus.org/"
+                    }
+                  ],
+                  "name": "51 - Patchogue RR to Port Jefferson Station",
+                  "color": "#c63f49",
+                  "nameShort": "51",
+                  "textColor": "#ffffff",
+                  "vehicle": {
+                    "name": {
+                      "text": "Bus"
+                    },
+                    "type": "BUS",
+                    "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/bus2.png"
+                  }
+                },
+                "stopCount": 31
+              },
+              "travelMode": "TRANSIT"
+            },
+            {
+              "distanceMeters": 62,
+              "staticDuration": "62s",
+              "polyline": {
+                "encodedPolyline": "iiaxFpve}LSqC"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.8080457,
+                  "longitude": -73.1071257
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.808150999999995,
+                  "longitude": -73.1064
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 39,
+              "staticDuration": "40s",
+              "polyline": {
+                "encodedPolyline": "}iaxF~qe}LJ{A"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.808150999999995,
+                  "longitude": -73.1064
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.808085999999996,
+                  "longitude": -73.105942
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 81233,
+              "staticDuration": "4860s",
+              "polyline": {
+                "encodedPolyline": "qiaxFboe}LH?p@lQNtGtBnj@h@hPz@xSTnDb@lEjy@|wG`RrzAzGbi@~Ffe@dErYvkBv~MdcCbcQh}@jqGbDrVlw@pwFf@|ER~DDlDC`ES`E_@pDk@nDS|@oApEy@|BwAzC{r@nnAsMrUcl@bdAw^no@weAfkBu@jBc@bBYjBOvB?lBJxBx@tH`Gd`@dAxFzItk@~SnwA|BjPfKnr@zBnNjyAfzJ`Hld@xJjp@|ChTfClQzEt[`Ltt@`n@xcE~Izm@zBrNtGfc@zC`Th`@~iCnbApvGdK~q@lJtn@bBtI~DdXv@vEbDbQ~@bF~AjHzD~SdAvGx@zFZvDHtBEnDKzB_@~Ck@lCeAfDsAbDiAvB{BjDaCxC_yAbcBqCvDoCjE_CrEuB~EmBlFs@~BwY~gA}x@f}CqFlSgDvK}O|f@kDbJgBzDkBbDiBjC}IdKcg@pj@gB~BgBxCeBlDkAxCaA`Dk@hCc@dDYvDMbEAtCFbDT|Ez@jKlEla@|KhcAxAvKpAtHbArEfD`LtInXlBrG|EpQp@fCb@|Bd@dD^xELbD?xBGpD{@tNuBv`@iG`iASlAg@lB}Yx~@cS~n@pBpB"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.808085999999996,
+                  "longitude": -73.105942
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.750586999999996,
+                  "longitude": -73.993584
+                }
+              },
+              "transitDetails": {
+                "stopDetails": {
+                  "arrivalStop": {
+                    "name": "Penn Station",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.750586999999996,
+                        "longitude": -73.993584
+                      }
+                    }
+                  },
+                  "arrivalTime": "2026-10-14T15:51:00Z",
+                  "departureStop": {
+                    "name": "Ronkonkoma",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.808085999999996,
+                        "longitude": -73.105942
+                      }
+                    }
+                  },
+                  "departureTime": "2026-10-14T14:30:00Z"
+                },
+                "localizedValues": {
+                  "arrivalTime": {
+                    "time": {
+                      "text": "11:51 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  },
+                  "departureTime": {
+                    "time": {
+                      "text": "10:30 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  }
+                },
+                "headsign": "Penn Station",
+                "transitLine": {
+                  "agencies": [
+                    {
+                      "name": "Long Island Rail Road",
+                      "phoneNumber": "+1 718-217-5477",
+                      "uri": "http://www.mta.info/lirr"
+                    }
+                  ],
+                  "name": "Ronkonkoma Branch",
+                  "color": "#a626aa",
+                  "nameShort": "LIRR",
+                  "textColor": "#ffffff",
+                  "vehicle": {
+                    "name": {
+                      "text": "Train"
+                    },
+                    "type": "HEAVY_RAIL",
+                    "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/rail2.png"
+                  }
+                },
+                "stopCount": 11
+              },
+              "travelMode": "TRANSIT"
+            }
+          ]
+        }
+      ],
+      "distanceMeters": 99432,
+      "duration": "9278s",
+      "travelAdvisory": {
+        "transitFare": {}
+      },
+      "localizedValues": {
+        "transitFare": {}
+      }
+    },
+    {
+      "legs": [
+        {
+          "startLocation": {
+            "latLng": {
+              "latitude": 40.9125869,
+              "longitude": -73.1234711
+            }
+          },
+          "endLocation": {
+            "latLng": {
+              "latitude": 40.750586999999996,
+              "longitude": -73.993584
+            }
+          },
+          "steps": [
+            {
+              "distanceMeters": 22,
+              "staticDuration": "19s",
+              "polyline": {
+                "encodedPolyline": "uvuxFt|h}Ld@P"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9125869,
+                  "longitude": -73.1234711
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.912397299999995,
+                  "longitude": -73.1235578
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 61,
+              "staticDuration": "47s",
+              "polyline": {
+                "encodedPolyline": "ouuxFf}h}LXbBRX"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.912397299999995,
+                  "longitude": -73.1235578
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.912167,
+                  "longitude": -73.1241897
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 40,
+              "staticDuration": "32s",
+              "polyline": {
+                "encodedPolyline": "atuxFdai}LPn@LRHD"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.912167,
+                  "longitude": -73.1241897
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9119574,
+                  "longitude": -73.1245607
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 9,
+              "staticDuration": "8s",
+              "polyline": {
+                "encodedPolyline": "wruxFnci}LAT"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9119574,
+                  "longitude": -73.1245607
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.911972399999996,
+                  "longitude": -73.1246714
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 149,
+              "staticDuration": "129s",
+              "polyline": {
+                "encodedPolyline": "yruxFddi}LT^RLz@jAFlBNv@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.911972399999996,
+                  "longitude": -73.1246714
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9113434,
+                  "longitude": -73.126107699999991
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 32,
+              "staticDuration": "32s",
+              "polyline": {
+                "encodedPolyline": "{nuxFdmi}Ln@f@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9113434,
+                  "longitude": -73.126107699999991
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.911097399999996,
+                  "longitude": -73.1263087
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 13,
+              "staticDuration": "11s",
+              "polyline": {
+                "encodedPolyline": "kmuxFlni}LKX"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.911097399999996,
+                  "longitude": -73.1263087
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9111602,
+                  "longitude": -73.1264408
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 9068,
+              "staticDuration": "1560s",
+              "polyline": {
+                "encodedPolyline": "mmuxFpoi}LKGjAeDh@sBl@qCb@}AJGTg@`@i@PEPWAWKSIEQcBKc@h@wI@gBAo@Im@GQc@s@e@WoBI}@O{Bo@{@M_BE_@BqARyBj@_APm@B}@GeB[P{ATiAjAoD\\oAX_BXwB`BqKFU`@y@`@a@n@Yn@GzBXvBT~A@dBUjA_@~@c@bIuExEkCrA[d@Ej@?`ALl@Np@\\v@l@n@v@n@jA`@tATnAH`A@vCAbGBj@d@zB^zAtAg@p@a@hIwDfDmA|DiAx}@yTjDaAjDqAbD}AtC_BnH_F|EiD`Am@j@IZCXJLHNBz_@zv@fAtBfE`JpDlHrAbChGbNbDxHtBpFj@tAhBpDjB`E~A`E~CnHjAdChAlCxDfItAfC~@zAjAlAb@KFKdF{@c@iFpCa@SkCLC"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.911106,
+                  "longitude": -73.126486
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.864931999999996,
+                  "longitude": -73.13271499999999
+                }
+              },
+              "transitDetails": {
+                "stopDetails": {
+                  "arrivalStop": {
+                    "name": "Smith Haven Mall (51SB)",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.864931999999996,
+                        "longitude": -73.13271499999999
+                      }
+                    }
+                  },
+                  "arrivalTime": "2026-10-14T13:17:00Z",
+                  "departureStop": {
+                    "name": "Circle Rd/Engineering Dr",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.911106,
+                        "longitude": -73.126486
+                      }
+                    }
+                  },
+                  "departureTime": "2026-10-14T12:51:00Z"
+                },
+                "localizedValues": {
+                  "arrivalTime": {
+                    "time": {
+                      "text": "9:17 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  },
+                  "departureTime": {
+                    "time": {
+                      "text": "8:51 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  }
+                },
+                "headsign": "Patchogue RR",
+                "transitLine": {
+                  "agencies": [
+                    {
+                      "name": "Suffolk County Transit",
+                      "phoneNumber": "+1 631-852-5200",
+                      "uri": "https://sctbus.org/"
+                    }
+                  ],
+                  "name": "51 - Patchogue RR to Port Jefferson Station",
+                  "color": "#c63f49",
+                  "nameShort": "51",
+                  "textColor": "#ffffff",
+                  "vehicle": {
+                    "name": {
+                      "text": "Bus"
+                    },
+                    "type": "BUS",
+                    "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/bus2.png"
+                  }
+                },
+                "stopCount": 13
+              },
+              "travelMode": "TRANSIT"
+            },
+            {
+              "distanceMeters": 69,
+              "staticDuration": "69s",
+              "polyline": {
+                "encodedPolyline": "{llxFnvj}LWaD"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.8649428,
+                  "longitude": -73.1327179
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.8650551,
+                  "longitude": -73.1319099
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 15,
+              "staticDuration": "16s",
+              "polyline": {
+                "encodedPolyline": "smlxFlqj}LD`@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.8650551,
+                  "longitude": -73.1319099
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.865026,
+                  "longitude": -73.132085
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 10185,
+              "staticDuration": "960s",
+              "polyline": {
+                "encodedPolyline": "mmlxFnrj}LMBEUQUQwA_Ev@R|BfAKfAnNgF|@EHc@JxBfCxBvBpCvB|CjB|@^xEhCfEbCbSnK`C`BzBjBvCtClBzBpAfBpCdFlAhCtAtD`AhDl@dC`A|Ep@dFd@lFlCvg@j@lKXbDZ|Bh@rCbA`EfAhDpDpJjAtCzDdK`EzK|@xBj@fA|AhC~B`DjBjBxPxN`BdB~AvBrAxBvE~I`L|SnMhVvA~CpAlDvAzEzMbb@dFtO~DbM|Nja@tCxHb@rArBhFt@rCf@vCRhBFv@f@dS?xEA~JDdETtJRpGF`C`@A`ADzCAn@HbB`@tAHtDB?L"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.865026,
+                  "longitude": -73.132085
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.82111,
+                  "longitude": -73.222774
+                }
+              },
+              "transitDetails": {
+                "stopDetails": {
+                  "arrivalStop": {
+                    "name": "Suffolk County Dennison Bldg",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.82111,
+                        "longitude": -73.222774
+                      }
+                    }
+                  },
+                  "arrivalTime": "2026-10-14T13:49:00Z",
+                  "departureStop": {
+                    "name": "Smith Haven Mall (58EB, 62)",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.865026,
+                        "longitude": -73.132085
+                      }
+                    }
+                  },
+                  "departureTime": "2026-10-14T13:33:00Z"
+                },
+                "localizedValues": {
+                  "arrivalTime": {
+                    "time": {
+                      "text": "9:49 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  },
+                  "departureTime": {
+                    "time": {
+                      "text": "9:33 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  }
+                },
+                "headsign": "Hauppauge",
+                "transitLine": {
+                  "agencies": [
+                    {
+                      "name": "Suffolk County Transit",
+                      "phoneNumber": "+1 631-852-5200",
+                      "uri": "https://sctbus.org/"
+                    }
+                  ],
+                  "name": "62 - Hauppauge to Riverhead RR",
+                  "color": "#0454a2",
+                  "nameShort": "62",
+                  "textColor": "#ffffff",
+                  "vehicle": {
+                    "name": {
+                      "text": "Bus"
+                    },
+                    "type": "BUS",
+                    "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/bus2.png"
+                  }
+                },
+                "stopCount": 11
+              },
+              "travelMode": "TRANSIT"
+            },
+            {
+              "distanceMeters": 12106,
+              "staticDuration": "1920s",
+              "polyline": {
+                "encodedPolyline": "}zcxFhi|}L?M`J?dJgAxIaAbC[`@?|@T`BjAbB~@j@RzCr@TVP\\K|Bq@pKEpAD|BVxCh@|DtB~K\\jAv@jBvArCfA`D@HQh@ONS@_F{AwCa@QD_DIqIDwBTr@|J?hBkKtzA?~ANrAPv@jCzH^jBNdAD|AKjz@IlBWjCg@`Ck@jB}AbDuBxDhB`E~@vCn@tCDVrA_@nBo@z@ExDJzMd@jJXdQkCjGeAvDg@o@iP]gLMqCeB_h@i@uN[mLKkCKUa@}MEqAva@gCt_AuFdNy@tXcBvEAfS?iCsQJE"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.82111,
+                  "longitude": -73.222774
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.781061000000008,
+                  "longitude": -73.24315399999999
+                }
+              },
+              "transitDetails": {
+                "stopDetails": {
+                  "arrivalStop": {
+                    "name": "Brentwood LIRR (11SB)",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.781061000000008,
+                        "longitude": -73.24315399999999
+                      }
+                    }
+                  },
+                  "arrivalTime": "2026-10-14T14:34:00Z",
+                  "departureStop": {
+                    "name": "Suffolk County Dennison Bldg",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.82111,
+                        "longitude": -73.222774
+                      }
+                    }
+                  },
+                  "departureTime": "2026-10-14T14:02:00Z"
+                },
+                "localizedValues": {
+                  "arrivalTime": {
+                    "time": {
+                      "text": "10:34 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  },
+                  "departureTime": {
+                    "time": {
+                      "text": "10:02 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  }
+                },
+                "headsign": "Bay Shore",
+                "transitLine": {
+                  "agencies": [
+                    {
+                      "name": "Suffolk County Transit",
+                      "phoneNumber": "+1 631-852-5200",
+                      "uri": "https://sctbus.org/"
+                    }
+                  ],
+                  "name": "11 - Bay Shore to Hauppauge",
+                  "color": "#c63f49",
+                  "nameShort": "11",
+                  "textColor": "#ffffff",
+                  "vehicle": {
+                    "name": {
+                      "text": "Bus"
+                    },
+                    "type": "BUS",
+                    "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/bus2.png"
+                  }
+                },
+                "stopCount": 25
+              },
+              "travelMode": "TRANSIT"
+            },
+            {
+              "distanceMeters": 80,
+              "staticDuration": "80s",
+              "polyline": {
+                "encodedPolyline": "s`|wFth`~LJ}D"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.7810561,
+                  "longitude": -73.243152
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.7809964,
+                  "longitude": -73.2421993
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 69232,
+              "staticDuration": "4140s",
+              "polyline": {
+                "encodedPolyline": "e_|wFpk`~L@?vx@b}Fh{Bp`Ph}@jqGbDrVlw@pwFf@|ER~DDlDC`ES`E_@pDk@nDS|@oApEy@|BwAzC{r@nnAsMrUcl@bdAw^no@weAfkBu@jBc@bBYjBOvB?lBJxBx@tH`Gd`@dAxFzItk@~SnwA|BjPfKnr@zBnNjyAfzJ`Hld@xJjp@|ChTfClQzEt[`Ltt@`n@xcE~Izm@zBrNtGfc@zC`Th`@~iCnbApvGdK~q@lJtn@bBtI~DdXv@vEbDbQ~@bF~AjHzD~SdAvGx@zFZvDHtBEnDKzB_@~Ck@lCeAfDsAbDiAvB{BjDaCxC_yAbcBqCvDoCjE_CrEuB~EmBlFs@~BwY~gA}x@f}CqFlSgDvK}O|f@kDbJgBzDkBbDiBjC}IdKcg@pj@gB~BgBxCeBlDkAxCaA`Dk@hCc@dDYvDMbEAtCFbDT|Ez@jKlEla@|KhcAxAvKpAtHbArEfD`LtInXlBrG|EpQp@fCb@|Bd@dD^xELbD?xBGpD{@tNuBv`@iG`iASlAg@lB}Yx~@cS~n@pBpB"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.780834,
+                  "longitude": -73.243614
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.750586999999996,
+                  "longitude": -73.993584
+                }
+              },
+              "transitDetails": {
+                "stopDetails": {
+                  "arrivalStop": {
+                    "name": "Penn Station",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.750586999999996,
+                        "longitude": -73.993584
+                      }
+                    }
+                  },
+                  "arrivalTime": "2026-10-14T15:51:00Z",
+                  "departureStop": {
+                    "name": "Brentwood",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.780834,
+                        "longitude": -73.243614
+                      }
+                    }
+                  },
+                  "departureTime": "2026-10-14T14:42:00Z"
+                },
+                "localizedValues": {
+                  "arrivalTime": {
+                    "time": {
+                      "text": "11:51 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  },
+                  "departureTime": {
+                    "time": {
+                      "text": "10:42 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  }
+                },
+                "headsign": "Penn Station",
+                "transitLine": {
+                  "agencies": [
+                    {
+                      "name": "Long Island Rail Road",
+                      "phoneNumber": "+1 718-217-5477",
+                      "uri": "http://www.mta.info/lirr"
+                    }
+                  ],
+                  "name": "Ronkonkoma Branch",
+                  "color": "#a626aa",
+                  "nameShort": "LIRR",
+                  "textColor": "#ffffff",
+                  "vehicle": {
+                    "name": {
+                      "text": "Train"
+                    },
+                    "type": "HEAVY_RAIL",
+                    "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/rail2.png"
+                  }
+                },
+                "stopCount": 9
+              },
+              "travelMode": "TRANSIT"
+            }
+          ]
+        }
+      ],
+      "distanceMeters": 101081,
+      "duration": "11078s",
+      "travelAdvisory": {
+        "transitFare": {}
+      },
+      "localizedValues": {
+        "transitFare": {}
+      }
+    },
+    {
+      "legs": [
+        {
+          "startLocation": {
+            "latLng": {
+              "latitude": 40.9125869,
+              "longitude": -73.1234711
+            }
+          },
+          "endLocation": {
+            "latLng": {
+              "latitude": 40.750586999999996,
+              "longitude": -73.993584
+            }
+          },
+          "steps": [
+            {
+              "distanceMeters": 22,
+              "staticDuration": "19s",
+              "polyline": {
+                "encodedPolyline": "uvuxFt|h}Ld@P"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9125869,
+                  "longitude": -73.1234711
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.912397299999995,
+                  "longitude": -73.1235578
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 61,
+              "staticDuration": "47s",
+              "polyline": {
+                "encodedPolyline": "ouuxFf}h}LXbBRX"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.912397299999995,
+                  "longitude": -73.1235578
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.912167,
+                  "longitude": -73.1241897
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 40,
+              "staticDuration": "32s",
+              "polyline": {
+                "encodedPolyline": "atuxFdai}LPn@LRHD"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.912167,
+                  "longitude": -73.1241897
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9119574,
+                  "longitude": -73.1245607
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 9,
+              "staticDuration": "8s",
+              "polyline": {
+                "encodedPolyline": "wruxFnci}LAT"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9119574,
+                  "longitude": -73.1245607
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.911972399999996,
+                  "longitude": -73.1246714
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 149,
+              "staticDuration": "129s",
+              "polyline": {
+                "encodedPolyline": "yruxFddi}LT^RLz@jAFlBNv@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.911972399999996,
+                  "longitude": -73.1246714
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9113434,
+                  "longitude": -73.126107699999991
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 32,
+              "staticDuration": "32s",
+              "polyline": {
+                "encodedPolyline": "{nuxFdmi}Ln@f@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9113434,
+                  "longitude": -73.126107699999991
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.911097399999996,
+                  "longitude": -73.1263087
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 13,
+              "staticDuration": "11s",
+              "polyline": {
+                "encodedPolyline": "kmuxFlni}LKX"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.911097399999996,
+                  "longitude": -73.1263087
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9111602,
+                  "longitude": -73.1264408
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 17772,
+              "staticDuration": "2400s",
+              "polyline": {
+                "encodedPolyline": "mmuxFpoi}LKGjAeDh@sBl@qCb@}AJGTg@`@i@PEPWAWKSIEQcBKc@h@wI@gBAo@Im@GQc@s@e@WoBI}@O{Bo@{@M_BE_@BqARyBj@_APm@B}@GeB[P{ATiAjAoD\\oAX_BXwB`BqKFU`@y@`@a@n@Yn@GzBXvBT~A@dBUjA_@~@c@bIuExEkCrA[d@Ej@?`ALl@Np@\\v@l@n@v@n@jA`@tATnAH`A@vCAbGBj@d@zB^zAtAg@p@a@hIwDfDmA|DiAx}@yTjDaAjDqAbD}AtC_BnH_F|EiD`Am@j@IZCXJLHNBz_@zv@fAtBfE`JpDlHrAbChGbNbDxHtBpFj@tAhBpDjB`E~A`E~CnHjAdChAlCxDfItAfC~@zAjAlAb@KFKdF{@c@iFpCa@k@yGS[QwA_Ev@R|BfAKfAnN|RaD`@EAo[t@}VPqITcEjA_OvBqW`BuRPkBrEt@bAZbI|DnBdArGrB|@TbAJbA?dOkAx@CzI{@pReBzSyBnNoBlGeA`@Or@i@j@q@nCwDtAuBbAS`KgDbCw@~@SvIgAdMwA~NoB|Eq@zADLFnGLjD?FEvFLtl@nANL|@@tIPbEHLI~DF~Fg@jD]|CWHQIiBDA"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.911106,
+                  "longitude": -73.126486
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.808082999999996,
+                  "longitude": -73.10713299999999
+                }
+              },
+              "transitDetails": {
+                "stopDetails": {
+                  "arrivalStop": {
+                    "name": "Ronkonkoma LIRR",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.808082999999996,
+                        "longitude": -73.10713299999999
+                      }
+                    }
+                  },
+                  "arrivalTime": "2026-10-14T14:33:00Z",
+                  "departureStop": {
+                    "name": "Circle Rd/Engineering Dr",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.911106,
+                        "longitude": -73.126486
+                      }
+                    }
+                  },
+                  "departureTime": "2026-10-14T13:53:00Z"
+                },
+                "localizedValues": {
+                  "arrivalTime": {
+                    "time": {
+                      "text": "10:33 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  },
+                  "departureTime": {
+                    "time": {
+                      "text": "9:53 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  }
+                },
+                "headsign": "Patchogue RR",
+                "transitLine": {
+                  "agencies": [
+                    {
+                      "name": "Suffolk County Transit",
+                      "phoneNumber": "+1 631-852-5200",
+                      "uri": "https://sctbus.org/"
+                    }
+                  ],
+                  "name": "51 - Patchogue RR to Port Jefferson Station",
+                  "color": "#c63f49",
+                  "nameShort": "51",
+                  "textColor": "#ffffff",
+                  "vehicle": {
+                    "name": {
+                      "text": "Bus"
+                    },
+                    "type": "BUS",
+                    "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/bus2.png"
+                  }
+                },
+                "stopCount": 31
+              },
+              "travelMode": "TRANSIT"
+            },
+            {
+              "distanceMeters": 62,
+              "staticDuration": "62s",
+              "polyline": {
+                "encodedPolyline": "iiaxFpve}LSqC"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.8080457,
+                  "longitude": -73.1071257
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.808150999999995,
+                  "longitude": -73.1064
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 39,
+              "staticDuration": "40s",
+              "polyline": {
+                "encodedPolyline": "}iaxF~qe}LJ{A"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.808150999999995,
+                  "longitude": -73.1064
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.808085999999996,
+                  "longitude": -73.105942
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 81233,
+              "staticDuration": "4740s",
+              "polyline": {
+                "encodedPolyline": "qiaxFboe}LH?p@lQNtGtBnj@h@hPz@xSTnDb@lEjy@|wG`RrzAzGbi@~Ffe@dErYvkBv~MdcCbcQh}@jqGbDrVlw@pwFf@|ER~DDlDC`ES`E_@pDk@nDS|@oApEy@|BwAzC{r@nnAsMrUcl@bdAw^no@weAfkBu@jBc@bBYjBOvB?lBJxBx@tH`Gd`@dAxFzItk@~SnwA|BjPfKnr@zBnNjyAfzJ`Hld@xJjp@|ChTfClQzEt[`Ltt@`n@xcE~Izm@zBrNtGfc@zC`Th`@~iCnbApvGdK~q@lJtn@bBtI~DdXv@vEbDbQ~@bF~AjHzD~SdAvGx@zFZvDHtBEnDKzB_@~Ck@lCeAfDsAbDiAvB{BjDaCxC_yAbcBqCvDoCjE_CrEuB~EmBlFs@~BwY~gA}x@f}CqFlSgDvK}O|f@kDbJgBzDkBbDiBjC}IdKcg@pj@gB~BgBxCeBlDkAxCaA`Dk@hCc@dDYvDMbEAtCFbDT|Ez@jKlEla@|KhcAxAvKpAtHbArEfD`LtInXlBrG|EpQp@fCb@|Bd@dD^xELbD?xBGpD{@tNuBv`@iG`iASlAg@lB}Yx~@cS~n@pBpB"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.808085999999996,
+                  "longitude": -73.105942
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.750586999999996,
+                  "longitude": -73.993584
+                }
+              },
+              "transitDetails": {
+                "stopDetails": {
+                  "arrivalStop": {
+                    "name": "Penn Station",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.750586999999996,
+                        "longitude": -73.993584
+                      }
+                    }
+                  },
+                  "arrivalTime": "2026-10-14T16:22:00Z",
+                  "departureStop": {
+                    "name": "Ronkonkoma",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.808085999999996,
+                        "longitude": -73.105942
+                      }
+                    }
+                  },
+                  "departureTime": "2026-10-14T15:03:00Z"
+                },
+                "localizedValues": {
+                  "arrivalTime": {
+                    "time": {
+                      "text": "12:22 PM"
+                    },
+                    "timeZone": "America/New_York"
+                  },
+                  "departureTime": {
+                    "time": {
+                      "text": "11:03 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  }
+                },
+                "headsign": "Penn Station",
+                "transitLine": {
+                  "agencies": [
+                    {
+                      "name": "Long Island Rail Road",
+                      "phoneNumber": "+1 718-217-5477",
+                      "uri": "http://www.mta.info/lirr"
+                    }
+                  ],
+                  "name": "Ronkonkoma Branch",
+                  "color": "#a626aa",
+                  "nameShort": "LIRR",
+                  "textColor": "#ffffff",
+                  "vehicle": {
+                    "name": {
+                      "text": "Train"
+                    },
+                    "type": "HEAVY_RAIL",
+                    "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/rail2.png"
+                  }
+                },
+                "stopCount": 10
+              },
+              "travelMode": "TRANSIT"
+            }
+          ]
+        }
+      ],
+      "distanceMeters": 99432,
+      "duration": "9218s",
+      "travelAdvisory": {
+        "transitFare": {}
+      },
+      "localizedValues": {
+        "transitFare": {}
+      }
+    }
+  ]
+}

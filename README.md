@@ -123,6 +123,28 @@ npm --prefix firebase/functions run build:gtfs
 - The daily static GTFS refresh (below) builds the same files for each snapshot it publishes, so deployed
   instances keep using them after a newer feed replaces the bundled one.
 
+## Trip planning (Google Routes API)
+
+Route Results gets real transit itineraries from the `planTrip` Cloud Function. It calls the Google
+Routes API (`computeRoutes` in transit mode, with alternatives), using the same `GOOGLE_MAPS_API_KEY`
+secret as the other backend proxies, so the key never ships in the app.
+
+- **Enable the API:** in the Google Cloud console for `pathly-b7f0f`, open **APIs & Services → Library**,
+  find **Routes API**, and select **Enable**. If the server key has API restrictions (**APIs & Services →
+  Credentials** → the key → **API restrictions**), add **Routes API** to the allowed list.
+- **Cost:** transit requests bill as **Routes: Compute Routes Essentials**, which includes 10,000 free requests
+  per month (then $5 per 1,000). Each plan is one request, and the app keeps plans for 2 minutes and
+  limits each rider to 20 plans per minute.
+- **Cap it:** so a bug can't run past the free tier, lower the Routes API's per-day request quota in
+  **Google Maps Platform → Quotas**: select **Routes API**, check the per-day quota, choose **Edit**, and
+  enter a value such as 300 (about 9,000 a month).
+- **Fares:** Google returns fares for NYC subway and bus trips only. For trips involving the LIRR, NICE, or
+  Suffolk County Transit, `firebase/functions/src/tripFares.ts` estimates the fare from the agencies'
+  published 2026 fares (the LIRR zone chart, flat bus fares, and transfer rules), and the app labels it
+  as an estimate ("~$18.25"). Update those tables when fares change.
+- If planning fails, the function logs `trip_planning_unavailable` with Google's status (for example
+  `PERMISSION_DENIED` when the API isn't enabled or the key isn't allowed to call it).
+
 ## Security and local configuration
 
 Copy `mobile/.env.example` to `mobile/.env` and fill in the Firebase and platform-restricted

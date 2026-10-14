@@ -135,15 +135,34 @@ The visual update SHALL preserve the current screens and navigation paths while 
 - **THEN** users can still open destination search, switch nearby-transit tabs, open the Ronkonkoma route, inspect predictions, and return home
 
 ### Requirement: Consistent trip-detail presentation
-Planned and recent trip-detail screens SHALL use the same Pathly map-first presentation, route identity treatment, prominent fare and duration summary, obvious leave and arrive times, map actions, anchored trip action, and individually separated route-leg cards. Recent trips SHALL remain visually distinguishable through completed-trip context, historical timing, and recency information without reverting to a different layout system.
+The planned trip-detail screen SHALL use the Pathly map-first presentation, route identity treatment, prominent fare and duration summary, obvious leave and arrive times, map actions, anchored trip action, and individually separated route-leg cards. When the fare is known, a note SHALL say it is the full adult one-way fare.
+
+A planned trip SHALL list every step in order:
+- **Walking steps:** walking duration, distance, and the place walked to.
+- **Transit legs:** a card with the line's identity, the operating agency, the headsign, the boarding stop and time, the number of stops, and the alighting stop and time.
+- **Transfers:** a transfer row between consecutive transit legs, showing the walk (if any) and the wait until the next departure.
+
+Each agency name SHALL link to the agency's website when the routing service provides one. Planned trips SHALL NOT show a service-alert status, because no real alert data backs it.
 
 #### Scenario: Rider compares planned and recent details
-- **WHEN** a rider opens a planned trip and then opens a recent trip
-- **THEN** both screens use the same information hierarchy and controls while the recent trip clearly communicates that its displayed journey is historical
+- **WHEN** a rider opens a planned trip, now that the sample recent trips are removed
+- **THEN** it uses the shared trip-detail hierarchy and controls, and no separate recent-trip detail screen exists until real trips are recorded
+
+#### Scenario: Rider checks what the fare covers
+- **WHEN** a rider opens a planned trip with a known fare
+- **THEN** below the leave and arrive times, a note says the shown amount is the full adult one-way fare
 
 #### Scenario: Rider reviews transfers
 - **WHEN** a trip contains more than one transit leg
-- **THEN** every leg is displayed in a distinct card with its own route identity, boarding or transfer context, direction, duration, endpoints, and times
+- **THEN** every leg is displayed in a distinct card with its own route identity, agency, headsign, boarding and alighting stops and times, stop count, and duration, and a transfer row between legs shows the walk and the wait for the next departure
+
+#### Scenario: Rider reviews walking
+- **WHEN** a planned trip starts with a walk to the first stop
+- **THEN** the first step reads as a walk with its duration, distance, and destination stop, before the first transit leg card
+
+#### Scenario: Planned trip shows no invented alerts
+- **WHEN** a rider opens a planned trip
+- **THEN** no "Service alerts · No delays" status is shown
 
 ### Requirement: Continuous trip-detail map scroll
 Each planned and recent trip-detail screen SHALL behave as one normal vertical page in which downward scrolling reveals more trip content while showing progressively less of the map, and upward scrolling restores the map. The detail content SHALL remain visible initially, and the trip action SHALL remain anchored immediately above the content boundary without introducing draggable bounds, snap states, or a resize handle.
@@ -178,28 +197,19 @@ Every icon in the mobile interface SHALL be a vector pictogram with matching str
 ### Requirement: Mode-aware route badge
 Every route identity marker outside the nearby-transit cards SHALL use one shared badge whose shape identifies the mode: a circle for subway lines, a rounded square for bus routes, and a rectangular tag for commuter rail. The badge SHALL use the route identity color and white text, and SHALL come in a consistent small, medium, and large size scale. The agency used to choose the shape SHALL come from route data, never be inferred from the route's short name.
 
+The badge text SHALL be the route's short name when it is a single word of up to seven characters (`E`, `51`, `SIM3C`, `BxM10`, `Q44-SBS`). Only longer or multi-word names SHALL be abbreviated (LIRR branch codes, or initials), so a badge never names a different route.
+
 #### Scenario: Rider distinguishes modes in a multi-leg trip
-- **WHEN** a recent trip, planned trip, or route result contains legs on different modes
+- **WHEN** a planned trip or route result contains legs on different modes
 - **THEN** each leg's badge shape reflects its mode, and badges of the same size share identical height
+
+#### Scenario: Express bus keeps its full route code
+- **WHEN** an itinerary rides the SIM3C express bus
+- **THEN** its badge reads "SIM3C", not "S"
 
 #### Scenario: Badge is announced meaningfully
 - **WHEN** a screen reader focuses a route badge
 - **THEN** it announces the route's short name and mode (for example, "E train" or "S1 bus")
-
-### Requirement: Recent trip card presentation
-Each card in the Recents tab SHALL show, in a consistent layout: the trip's leg route badges in travel order separated by a direction chevron, the destination as the primary text, the origin as supporting text, the first boarding time through the final alighting time, the total duration in minutes, the fare, and a recency chip. Each card SHALL show a Go action with an icon, or an End action when that trip is in progress. An in-progress trip SHALL be visually highlighted and SHALL show an "In progress" chip in place of its recency. The Recents tab SHALL keep the shared tab resting height.
-
-#### Scenario: Rider scans a multi-leg recent trip
-- **WHEN** the Recents tab shows a trip with more than one leg
-- **THEN** its card shows each leg's badge in order with chevrons between them, plus its time range, duration, fare, and recency
-
-#### Scenario: Rider starts a recent trip
-- **WHEN** the rider presses Go on a recent-trip card
-- **THEN** that card becomes highlighted, shows "In progress", and its action becomes End
-
-#### Scenario: Tab height is preserved
-- **WHEN** the rider switches between Nearby, Recents, and Favorites
-- **THEN** the sheet keeps the same resting height
 
 ### Requirement: Stationary detail map backdrop
 The route-detail and planned/recent trip-detail screens SHALL match the home screen: the map SHALL stay stationary behind the page, and the detail content SHALL scroll continuously over it in one native vertical scroll, without draggable bounds, snap states, or a resize handle. Downward scrolling SHALL cover progressively more of the map without moving the map image. On trip-detail screens, the back, favorite, and current-location controls SHALL stay fixed and reachable at every scroll position, over a bar that fades in once the content reaches the top, and the GO or END action SHALL remain available at every scroll position. On the route-detail screen, the back control and the vertical column of current-location, favorite, and pin controls SHALL sit on the map and scroll away with it, with no bar behind them, so the scrolled page shows only route content. When the route-detail screen shows a real (live) route map, the uncovered map area SHALL respond directly to gestures. Dragging there SHALL pan the map, pinching (or the scroll wheel or trackpad on web) SHALL zoom it, and dragging the detail content SHALL still scroll the page. Illustrated maps and trip-detail maps SHALL remain non-interactive.
@@ -541,3 +551,19 @@ When the rider rotates or tilts the home map (for example with a two-finger twis
 #### Scenario: Rider reorients
 - **WHEN** the rider taps the compass button
 - **THEN** the map turns back to north-up and flat at the same place and zoom, and the button disappears
+
+### Requirement: Trip map shows the real path
+The planned trip-detail map SHALL be a real map showing the trip's actual path as the routing service returned it:
+- each transit leg as a line in its transit line's color;
+- walking as a dotted, neutral line;
+- a marker at the start, at each place the rider boards or gets off, and at the destination.
+
+The map SHALL open framed to the whole trip. Route Results SHALL show the same kind of map for its first itinerary behind the results list, framed to the origin and destination. Like other trip-detail maps, it SHALL stay non-interactive under the scrolling content.
+
+#### Scenario: Rider opens a planned trip
+- **WHEN** the rider opens an itinerary that walks to the LIRR, rides to Jamaica, and transfers to the E train
+- **THEN** the map shows a dotted walk to the station, the LIRR leg in the LIRR line's color, the E train leg in the E's color, and markers at the start, the boarding, transfer, and alighting points, and the destination, all in view
+
+#### Scenario: Results map follows the first itinerary
+- **WHEN** Route Results finishes loading
+- **THEN** the map behind the list shows the origin, the destination, and the first itinerary's path

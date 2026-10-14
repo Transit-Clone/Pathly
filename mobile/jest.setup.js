@@ -10,6 +10,8 @@ const { routeById: mockRouteById, routes: mockRoutes, stopsForDirection: mockSto
 // Firebase needs real project config (unavailable in Jest) and hits the network on init;
 // stub it so existing screens still render as if a user is already signed in.
 const mockUser = { uid: 'test-uid', email: 'rider@example.com', displayName: 'Pathly Rider' };
+// Tests sign in as the admin by changing this email (jest.setupAfterEnv.js resets it).
+globalThis.__mockAuthUser = mockUser;
 
 jest.mock('firebase/app', () => ({
   getApps: jest.fn(() => []),
@@ -185,6 +187,11 @@ jest.mock('firebase/functions', () => {
         ...(request.lat !== undefined ? { lat: request.lat, lon: request.lon } : {}),
       }).then(({ data }) => ({ ok: true, data }), () => ({ ok: false, code: 'internal' })))).then((results) => ({ data: { results } })));
     }
+    if (name === 'planTrip') {
+      // Two real itineraries (Stony Brook University to Penn Station), normalized from a recorded
+      // Routes API response: LIRR with a Hicksville change, and Suffolk bus 51 to the LIRR.
+      return jest.fn(() => Promise.resolve({ data: { itineraries: JSON.parse(JSON.stringify(require('./__tests__/fixtures/itineraries-sbu-penn.json'))) } }));
+    }
     if (name === 'getStopDepartures') {
       // A short full-day list: one live departure, then the timetable.
       return jest.fn(() => Promise.resolve({
@@ -194,6 +201,36 @@ jest.mock('firebase/functions', () => {
             { minutes: 34, live: false, peakOffpeak: null },
             { minutes: 95, live: false, peakOffpeak: null },
           ],
+        },
+      }));
+    }
+    if (name === 'searchTransitStops') {
+      // Pathly's own stops: Jamaica's LIRR station for "jamaica", nothing otherwise.
+      return jest.fn(({ query }) => Promise.resolve({
+        data: {
+          stops: String(query).toLowerCase().includes('jamaica')
+            ? [{
+              id: 'lirr:15',
+              name: 'Jamaica',
+              agencyLabel: 'LIRR',
+              mode: 'rail',
+              location: { lat: 40.6995, lng: -73.8087 },
+              routes: ['Babylon Branch', 'Far Rockaway Branch', 'Hempstead Branch', 'Long Beach Branch', 'Montauk Branch', 'Oyster Bay Branch', 'Port Jefferson Branch', 'Ronkonkoma Branch']
+                .map((shortName) => ({ shortName, color: '#00985F' })),
+            }]
+            : [],
+        },
+      }));
+    }
+    if (name === 'getBackendStatus') {
+      return jest.fn(() => Promise.resolve({
+        data: {
+          checkedAt: '2026-10-14T12:00:00.000Z',
+          agencies: [
+            { agencyId: 'lirr', displayName: 'LIRR', snapshot: { state: 'published', version: 'abcdef123456', publishedAt: '2026-10-14T06:00:00.000Z', serviceEndDate: '20261231' }, ageHours: 6, lastRefresh: { at: '2026-10-14T06:00:00.000Z', ok: true, result: 'unchanged' }, live: { configured: true, ok: true, ms: 120, status: 200 } },
+            { agencyId: 'nice', displayName: 'NICE Bus', snapshot: { state: 'missing' }, lastRefresh: null, live: { configured: false } },
+          ],
+          myRateLimits: { planTrip: { remaining: 19, perMinute: 20 } },
         },
       }));
     }

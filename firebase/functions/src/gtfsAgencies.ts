@@ -41,6 +41,8 @@ export type AgencyConfig = {
    * but only with departures after the last live one, so a tracked trip isn't listed twice.
    */
   realtimeTripIdsMatchStatic: boolean;
+  /** Secret (an env var at runtime) the live feed needs; a feed without one is public. */
+  liveFeedSecret?: 'SWIFTLY_API_KEY';
   /** Some agencies split their GTFS-RT feed by line group (subway) or by feed type (Swiftly-hosted agencies' trip-updates/vehicle-positions); most publish one combined feed for the whole system (LIRR). */
   feedRequestsForRoute(routeId: string): FeedRequest[];
 };
@@ -116,6 +118,7 @@ export const AGENCY_CONFIGS: Record<AgencyId, AgencyConfig> = {
     staticFeedUrl: 'https://www.nicebus.com/NICE/media/nicebus-gtfs/NICE_GTFS.zip',
     requiredStaticFallbacks: [{ routeId: 'n4', stopIds: ['2004', '4538'] }],
     realtimeTripIdsMatchStatic: false,
+    liveFeedSecret: 'SWIFTLY_API_KEY',
     feedRequestsForRoute: () => swiftlyFeedRequests('nice-bus'),
   },
   suffolk: {
@@ -130,6 +133,7 @@ export const AGENCY_CONFIGS: Record<AgencyId, AgencyConfig> = {
       { routeId: '6868', stopIds: ['11283786', '11283946'] },
     ],
     realtimeTripIdsMatchStatic: true,
+    liveFeedSecret: 'SWIFTLY_API_KEY',
     feedRequestsForRoute: () => swiftlyFeedRequests('suffolk-county'),
   },
 };

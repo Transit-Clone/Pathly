@@ -76,8 +76,16 @@ type GoogleMapViewProps = {
    */
   onOrientationChange?: (orientation: { heading: number; rotated: boolean }) => void;
   reorientRequest?: number;
+  /** A click on the map (admin: show its coordinates). */
+  onPress?: (point: Coordinates) => void;
+  /** A long press (or right-click) on the map (admin: choose a mock location). */
+  onLongPress?: (point: Coordinates) => void;
+  /** Accepted for parity with native: the web map always draws its own location dot. */
+  simulatedLocation?: boolean;
   testID?: string;
 };
+
+const LONG_PRESS_MS = 600;
 
 /**
  * react-native-maps has no web build; this renders the real Google Maps JS API instead.
@@ -86,7 +94,14 @@ type GoogleMapViewProps = {
  * like native; the bottom is sized to the sheet's top. To keep `center` centered in the
  * visible gap below the header, the map is panned up by half the top padding.
  */
-export function GoogleMapView({ initialCamera, location, onCameraChange, onUserMoveEnd, onUserPan, padding, recenterRequest = 0, testID = 'google-map-view' }: GoogleMapViewProps) {
+export function GoogleMapView({ initialCamera, location, onCameraChange, onLongPress, onPress, onUserMoveEnd, onUserPan, padding, recenterRequest = 0, testID = 'google-map-view' }: GoogleMapViewProps) {
+  // The JS API has no long-press event: a press held still for LONG_PRESS_MS counts as one.
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelLongPress = () => {
+    if (longPressTimer.current) clearTimeout(longPressTimer.current);
+    longPressTimer.current = null;
+  };
+  const pointOf = (event: google.maps.MapMouseEvent): Coordinates | null => (event.latLng ? { latitude: event.latLng.lat(), longitude: event.latLng.lng() } : null);
   // Set by a rider drag so programmatic moves (recentering on GPS) don't count as exploring.
   const userMoved = useRef(false);
   // No Map ID: Google ignores inline styles on cloud-styled maps. These hide its places and, in
@@ -136,7 +151,22 @@ export function GoogleMapView({ initialCamera, location, onCameraChange, onUserM
         <GoogleMap
           center={center}
           mapContainerStyle={containerStyle}
+          onMouseDown={onLongPress ? (event) => {
+            const point = pointOf(event);
+            cancelLongPress();
+            if (point) longPressTimer.current = setTimeout(() => onLongPress(point), LONG_PRESS_MS);
+          } : undefined}
+          onMouseUp={onLongPress ? cancelLongPress : undefined}
+          onClick={onPress ? (event) => {
+            const point = pointOf(event);
+            if (point) onPress(point);
+          } : undefined}
+          onRightClick={onLongPress ? (event) => {
+            const point = pointOf(event);
+            if (point) onLongPress(point);
+          } : undefined}
           onDragStart={() => {
+            cancelLongPress();
             userMoved.current = true;
             onUserPan?.();
           }}

@@ -63,9 +63,11 @@ export async function getRouteStatus(agencyId: AgencyId, routeId: string): Promi
 
   for (const entity of entities) {
     const tripUpdate = entity.tripUpdate;
-    if (tripUpdate && tripUpdate.trip.routeId === routeId) {
+    const updateTripMeta = tripUpdate ? tripsById.get(tripUpdate.trip.tripId ?? '') : undefined;
+    // NYC Ferry leaves route_id empty on trip updates; its trip_ids match trips.txt, which knows.
+    if (tripUpdate && (tripUpdate.trip.routeId || updateTripMeta?.routeId) === routeId) {
       const tripId = tripUpdate.trip.tripId ?? '';
-      const tripMeta = tripsById.get(tripId);
+      const tripMeta = updateTripMeta;
 
       const stops: GtfsStopStatus[] = (tripUpdate.stopTimeUpdate ?? []).map((update) => {
         const stopId = update.stopId ?? '';

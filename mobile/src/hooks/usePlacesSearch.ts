@@ -6,6 +6,7 @@ import {
   getPlacesApiKey,
   type SearchPlace,
 } from '../data/placesSearch';
+import { mergeSearchResults, searchTransitStops } from '../data/stopSearch';
 
 /** Wait for a pause in typing before asking Google; one constant to tune. */
 export const PLACES_DEBOUNCE_MS = 300;
@@ -21,16 +22,27 @@ type SettledResult = {
 
 const NO_SUGGESTIONS: readonly SearchPlace[] = [];
 
+type SettledStops = { query: string; stops: readonly SearchPlace[] };
+
 /**
- * Debounced Google place suggestions for `query`. Each new query (or retry) aborts the
- * previous request, and a response is only kept if it still matches the current query and
- * attempt, so late answers for older partial queries can never replace newer ones.
+ * Debounced suggestions for `query`: Pathly's own transit stops (with their lines) first, then
+ * Google's places. Both are asked at once. Each new query (or retry) aborts the previous Google
+ * request, and each answer is only kept if it still matches the current query (and attempt), so
+ * late answers for older partial queries can never replace newer ones. The status is Google's: a
+ * failed or slow stop search just leaves the stops out, and stops that arrive later are added
+ * above Google's rows without reordering them.
  */
-export function usePlacesSearch(query: string) {
+export function usePlacesSearch(query: string, near?: { latitude: number; longitude: number } | null) {
   const trimmedQuery = query.trim();
   const isConfigured = getPlacesApiKey().length > 0;
   const [attempt, setAttempt] = useState(0);
   const [settled, setSettled] = useState<SettledResult | null>(null);
+  const [settledStops, setSettledStops] = useState<SettledStops | null>(null);
+  // Read when a search starts, so routine GPS updates don't search again.
+  const nearRef = useRef(near);
+  useEffect(() => {
+    nearRef.current = near;
+  }, [near]);
   const sessionTokenRef = useRef<string | null>(null);
 
   /** The current billing session's token, started lazily on the first request. */
@@ -68,6 +80,23 @@ export function usePlacesSearch(query: string) {
     };
   }, [attempt, getSessionToken, isConfigured, trimmedQuery]);
 
+  useEffect(() => {
+    if (!trimmedQuery) return undefined;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      searchTransitStops(trimmedQuery, nearRef.current).then(
+        (stops) => {
+          if (!cancelled) setSettledStops({ query: trimmedQuery, stops });
+        },
+        () => undefined,
+      );
+    }, PLACES_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [trimmedQuery]);
+
   let status: PlacesSearchStatus = 'loading';
   if (!trimmedQuery) status = 'idle';
   else if (!isConfigured) status = 'unconfigured';
@@ -75,7 +104,9 @@ export function usePlacesSearch(query: string) {
 
   return {
     status,
-    suggestions: status === 'success' && settled ? settled.suggestions : NO_SUGGESTIONS,
+    suggestions: status === 'success' && settled
+      ? mergeSearchResults(settledStops?.query === trimmedQuery ? settledStops.stops : NO_SUGGESTIONS, settled.suggestions)
+      : NO_SUGGESTIONS,
     retry,
     getSessionToken,
     endSession,

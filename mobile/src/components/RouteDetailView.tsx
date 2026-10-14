@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type GestureResponderEvent, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useDebug } from '../debug/DebugContext';
 import { useTransitLive } from '../data/TransitLiveContext';
 import { fetchRouteGeometry, type RouteGeometry } from '../data/routeGeometry';
 import { STATION_TRANSFERS, type StationTransfer, type TransferMode } from '../data/stationTransfers';
@@ -225,6 +226,7 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
   const [transfersSheet, setTransfersSheet] = useState<{ stopName: string; transfers: readonly StationTransfer[] } | null>(null);
   const ease = useLayoutEase();
   const liveStatus = useTransitLive(route.id);
+  const debug = useDebug();
   const vehicles = liveStatus.status === 'loaded' ? liveStatus.data.vehicles : [];
   const [isLocationCentered, setIsLocationCentered] = useState(false);
   // Bumped on each location-button press; the live map re-centers on the rider whenever it changes.
@@ -548,6 +550,9 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
         </View>
       </View>
 
+      {debug.mockTime ? <Text style={styles.debugNote} testID="route-live-real-time">{"Live times are real-time; mock time doesn't apply to them."}</Text> : null}
+      {debug.overlays.ids ? <Text selectable={true} style={styles.debugNote} testID="route-debug-ids">{route.liveSource ? `${route.liveSource.agencyId}:${route.liveSource.routeId}` : `route ${route.id}`}</Text> : null}
+
       {/* The active direction's departures: their own horizontal scroll, separate from the direction swipe. */}
       {activePredictions.length === 0 && route.liveStatus === 'loading' ? (
         <PredictionTilesSkeleton accessibilityLabel={predictionsEmptyMessage(route) ?? 'Loading departures'} gap={TILE_GAP} tileWidth={tileWidth} />
@@ -667,7 +672,7 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
                   <View style={styles.timelineRail}>{!isFirst ? <View style={[styles.rail, styles.railTop, { backgroundColor: route.color }]} /> : null}<View style={[styles.stopDot, { borderColor: route.color }, isHighlighted && { backgroundColor: route.color }]} />{!isLast ? <View style={[styles.rail, styles.railBottom, { backgroundColor: route.color }]} /> : null}</View>
                   {/* One divider spans the name and the time, not just the name. */}
                   <View style={styles.stopBody} testID={`stop-row-body-${stop.name}`}>
-                    <View style={styles.stopCopy}><Text style={styles.stopName}>{stop.name}</Text>{transfers.length > 0 ? <TransferChips onShowAll={() => setTransfersSheet({ stopName: stop.name, transfers })} stopName={stop.name} transfers={transfers} /> : null}</View>
+                    <View style={styles.stopCopy}><Text style={styles.stopName}>{stop.name}</Text>{debug.overlays.ids && stop.stopId ? <Text selectable={true} style={styles.debugNote} testID={`stop-debug-id-${stop.stopId}`}>{`stop ${stop.stopId}`}</Text> : null}{transfers.length > 0 ? <TransferChips onShowAll={() => setTransfersSheet({ stopName: stop.name, transfers })} stopName={stop.name} transfers={transfers} /> : null}</View>
                     <Text style={styles.stopTime}>{stop.time}</Text>
                   </View>
                 </View>
@@ -682,6 +687,7 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
 }
 
 const createStyles = (colors: Palette) => StyleSheet.create({
+  debugNote: { marginTop: 2, color: colors.mutedInk, ...typography.metadata, fontSize: 11 },
   mapRouteBadge: {
     position: 'absolute',
     left: 14,

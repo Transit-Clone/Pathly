@@ -1,0 +1,988 @@
+[
+  {
+    "id": "9043fba08dfd",
+    "departureTime": "2026-10-14T12:52:56.000Z",
+    "arrivalTime": "2026-10-14T14:51:00.000Z",
+    "durationSeconds": 7084,
+    "transfers": 1,
+    "steps": [
+      {
+        "kind": "walk",
+        "durationSeconds": 1144,
+        "distanceMeters": 1420,
+        "toName": "Stony Brook",
+        "path": [
+          {
+            "lat": 40.91259,
+            "lng": -73.12347
+          },
+          {
+            "lat": 40.91278,
+            "lng": -73.1246
+          },
+          {
+            "lat": 40.91528,
+            "lng": -73.12477
+          },
+          {
+            "lat": 40.91595,
+            "lng": -73.12581
+          },
+          {
+            "lat": 40.91707,
+            "lng": -73.12669
+          },
+          {
+            "lat": 40.91867,
+            "lng": -73.12686
+          },
+          {
+            "lat": 40.92026,
+            "lng": -73.12829
+          },
+          {
+            "lat": 40.92035,
+            "lng": -73.12863
+          },
+          {
+            "lat": 40.92163,
+            "lng": -73.12803
+          }
+        ]
+      },
+      {
+        "kind": "transit",
+        "mode": "rail",
+        "agency": {
+          "name": "Long Island Rail Road",
+          "url": "http://www.mta.info/lirr"
+        },
+        "line": {
+          "name": "Port Jefferson Branch",
+          "shortName": "LIRR",
+          "color": "#006ec7",
+          "textColor": "#ffffff",
+          "vehicleName": "Train"
+        },
+        "headsign": "Hicksville",
+        "from": {
+          "name": "Stony Brook",
+          "location": {
+            "lat": 40.920322,
+            "lng": -73.12854800000001
+          },
+          "time": "2026-10-14T13:12:00Z"
+        },
+        "to": {
+          "name": "Hicksville",
+          "location": {
+            "lat": 40.767174,
+            "lng": -73.528534
+          },
+          "time": "2026-10-14T14:04:00Z"
+        },
+        "stopCount": 7,
+        "durationSeconds": 3120,
+        "path": [
+          {
+            "lat": 40.92032,
+            "lng": -73.12855
+          },
+          {
+            "lat": 40.9138,
+            "lng": -73.13607
+          },
+          {
+            "lat": 40.91146,
+            "lng": -73.13751
+          },
+          {
+            "lat": 40.90651,
+            "lng": -73.13681
+          },
+          {
+            "lat": 40.89393,
+            "lng": -73.14428
+          },
+          {
+            "lat": 40.85775,
+            "lng": -73.19364
+          },
+          {
+            "lat": 40.85523,
+            "lng": -73.20637
+          },
+          {
+            "lat": 40.85864,
+            "lng": -73.21389
+          },
+          {
+            "lat": 40.86026,
+            "lng": -73.21889
+          },
+          {
+            "lat": 40.86632,
+            "lng": -73.2274
+          },
+          {
+            "lat": 40.8719,
+            "lng": -73.23151
+          },
+          {
+            "lat": 40.88249,
+            "lng": -73.24876
+          },
+          {
+            "lat": 40.88368,
+            "lng": -73.25183
+          },
+          {
+            "lat": 40.88039,
+            "lng": -73.33339
+          },
+          {
+            "lat": 40.87413,
+            "lng": -73.34501
+          },
+          {
+            "lat": 40.87083,
+            "lng": -73.35649
+          },
+          {
+            "lat": 40.84916,
+            "lng": -73.4162
+          },
+          {
+            "lat": 40.8361,
+            "lng": -73.43531
+          },
+          {
+            "lat": 40.8381,
+            "lng": -73.44217
+          },
+          {
+            "lat": 40.83847,
+            "lng": -73.44773
+          },
+          {
+            "lat": 40.83219,
+            "lng": -73.45378
+          },
+          {
+            "lat": 40.82959,
+            "lng": -73.45843
+          },
+          {
+            "lat": 40.82894,
+            "lng": -73.46785
+          },
+          {
+            "lat": 40.82519,
+            "lng": -73.49936
+          },
+          {
+            "lat": 40.81294,
+            "lng": -73.51153
+          },
+          {
+            "lat": 40.77067,
+            "lng": -73.52078
+          },
+          {
+            "lat": 40.76818,
+            "lng": -73.52436
+          },
+          {
+            "lat": 40.76717,
+            "lng": -73.52853
+          }
+        ],
+        "stops": [
+          {
+            "name": "St. James",
+            "location": {
+              "lat": 40.88216931,
+              "lng": -73.15950725
+            },
+            "time": "2026-10-14T13:17:00.000Z"
+          },
+          {
+            "name": "Smithtown",
+            "location": {
+              "lat": 40.85654755,
+              "lng": -73.19803235
+            },
+            "time": "2026-10-14T13:22:00.000Z"
+          },
+          {
+            "name": "Kings Park",
+            "location": {
+              "lat": 40.88366659,
+              "lng": -73.25624757
+            },
+            "time": "2026-10-14T13:30:00.000Z"
+          },
+          {
+            "name": "Northport",
+            "location": {
+              "lat": 40.88064972,
+              "lng": -73.32848513
+            },
+            "time": "2026-10-14T13:38:00.000Z"
+          },
+          {
+            "name": "Greenlawn",
+            "location": {
+              "lat": 40.86866524,
+              "lng": -73.36284977
+            },
+            "time": "2026-10-14T13:43:00.000Z"
+          },
+          {
+            "name": "Huntington",
+            "location": {
+              "lat": 40.85300971,
+              "lng": -73.40952576
+            },
+            "time": "2026-10-14T13:49:00.000Z"
+          }
+        ],
+        "tripId": "GO202_26_625"
+      },
+      {
+        "kind": "transit",
+        "mode": "rail",
+        "agency": {
+          "name": "Long Island Rail Road",
+          "url": "http://www.mta.info/lirr"
+        },
+        "line": {
+          "name": "Ronkonkoma Branch",
+          "shortName": "LIRR",
+          "color": "#a626aa",
+          "textColor": "#ffffff",
+          "vehicleName": "Train"
+        },
+        "headsign": "Penn Station",
+        "from": {
+          "name": "Hicksville",
+          "location": {
+            "lat": 40.767174,
+            "lng": -73.528534
+          },
+          "time": "2026-10-14T14:08:00Z"
+        },
+        "to": {
+          "name": "Penn Station",
+          "location": {
+            "lat": 40.750586999999996,
+            "lng": -73.993584
+          },
+          "time": "2026-10-14T14:51:00Z"
+        },
+        "stopCount": 4,
+        "durationSeconds": 2580,
+        "path": [
+          {
+            "lat": 40.76717,
+            "lng": -73.52853
+          },
+          {
+            "lat": 40.70344,
+            "lng": -73.7947
+          },
+          {
+            "lat": 40.6985,
+            "lng": -73.81308
+          },
+          {
+            "lat": 40.69878,
+            "lng": -73.8176
+          },
+          {
+            "lat": 40.70054,
+            "lng": -73.82072
+          },
+          {
+            "lat": 40.71768,
+            "lng": -73.84051
+          },
+          {
+            "lat": 40.73739,
+            "lng": -73.89216
+          },
+          {
+            "lat": 40.73984,
+            "lng": -73.8964
+          },
+          {
+            "lat": 40.74956,
+            "lng": -73.9076
+          },
+          {
+            "lat": 40.75067,
+            "lng": -73.9107
+          },
+          {
+            "lat": 40.75073,
+            "lng": -73.91528
+          },
+          {
+            "lat": 40.74613,
+            "lng": -73.93835
+          },
+          {
+            "lat": 40.74114,
+            "lng": -73.9521
+          },
+          {
+            "lat": 40.74363,
+            "lng": -73.97512
+          },
+          {
+            "lat": 40.75059,
+            "lng": -73.99358
+          }
+        ],
+        "stops": [
+          {
+            "name": "Mineola",
+            "location": {
+              "lat": 40.74034743,
+              "lng": -73.64086293
+            },
+            "time": "2026-10-14T14:15:00.000Z"
+          },
+          {
+            "name": "Jamaica",
+            "location": {
+              "lat": 40.69960817,
+              "lng": -73.80852987
+            },
+            "time": "2026-10-14T14:31:00.000Z"
+          },
+          {
+            "name": "Woodside",
+            "location": {
+              "lat": 40.74585067,
+              "lng": -73.90297516
+            },
+            "time": "2026-10-14T14:41:00.000Z"
+          }
+        ],
+        "tripId": "GO202_26_1927"
+      }
+    ]
+  },
+  {
+    "id": "0a210e442c1f",
+    "departureTime": "2026-10-14T12:46:22.000Z",
+    "arrivalTime": "2026-10-14T15:22:00.000Z",
+    "durationSeconds": 9338,
+    "transfers": 1,
+    "steps": [
+      {
+        "kind": "walk",
+        "durationSeconds": 278,
+        "distanceMeters": 326,
+        "toName": "Circle Rd/Engineering Dr",
+        "path": [
+          {
+            "lat": 40.91259,
+            "lng": -73.12347
+          },
+          {
+            "lat": 40.91197,
+            "lng": -73.12467
+          },
+          {
+            "lat": 40.9111,
+            "lng": -73.12631
+          },
+          {
+            "lat": 40.91116,
+            "lng": -73.12644
+          }
+        ]
+      },
+      {
+        "kind": "transit",
+        "mode": "bus",
+        "agency": {
+          "name": "Suffolk County Transit",
+          "url": "https://sctbus.org/"
+        },
+        "line": {
+          "name": "51 - Patchogue RR to Port Jefferson Station",
+          "shortName": "51",
+          "color": "#c63f49",
+          "textColor": "#ffffff",
+          "vehicleName": "Bus"
+        },
+        "headsign": "Patchogue RR",
+        "from": {
+          "name": "Circle Rd/Engineering Dr",
+          "location": {
+            "lat": 40.911106,
+            "lng": -73.126486
+          },
+          "time": "2026-10-14T12:51:00Z"
+        },
+        "to": {
+          "name": "Ronkonkoma LIRR",
+          "location": {
+            "lat": 40.808082999999996,
+            "lng": -73.10713299999999
+          },
+          "time": "2026-10-14T13:34:00Z"
+        },
+        "stopCount": 31,
+        "durationSeconds": 2580,
+        "path": [
+          {
+            "lat": 40.91111,
+            "lng": -73.12649
+          },
+          {
+            "lat": 40.90983,
+            "lng": -73.12339
+          },
+          {
+            "lat": 40.90971,
+            "lng": -73.11983
+          },
+          {
+            "lat": 40.91196,
+            "lng": -73.11869
+          },
+          {
+            "lat": 40.91479,
+            "lng": -73.1181
+          },
+          {
+            "lat": 40.91313,
+            "lng": -73.11316
+          },
+          {
+            "lat": 40.90974,
+            "lng": -73.11279
+          },
+          {
+            "lat": 40.90487,
+            "lng": -73.11166
+          },
+          {
+            "lat": 40.90393,
+            "lng": -73.11656
+          },
+          {
+            "lat": 40.88722,
+            "lng": -73.10981
+          },
+          {
+            "lat": 40.88287,
+            "lng": -73.10719
+          },
+          {
+            "lat": 40.86682,
+            "lng": -73.13519
+          },
+          {
+            "lat": 40.86512,
+            "lng": -73.13202
+          },
+          {
+            "lat": 40.86617,
+            "lng": -73.13235
+          },
+          {
+            "lat": 40.8621,
+            "lng": -73.12937
+          },
+          {
+            "lat": 40.85867,
+            "lng": -73.1131
+          },
+          {
+            "lat": 40.85124,
+            "lng": -73.11475
+          },
+          {
+            "lat": 40.83855,
+            "lng": -73.11188
+          },
+          {
+            "lat": 40.81515,
+            "lng": -73.10802
+          },
+          {
+            "lat": 40.80806,
+            "lng": -73.10767
+          },
+          {
+            "lat": 40.80808,
+            "lng": -73.10713
+          }
+        ],
+        "stops": [
+          {
+            "name": "Circle Rd/Tabler Dr",
+            "location": {
+              "lat": 40.910422,
+              "lng": -73.124636
+            },
+            "time": "2026-10-14T12:51:00.000Z"
+          },
+          {
+            "name": "SUNY Stony Brook Life Sciences Complex",
+            "location": {
+              "lat": 40.911314,
+              "lng": -73.118821
+            },
+            "time": "2026-10-14T12:53:00.000Z"
+          },
+          {
+            "name": "Circle Rd/Shirley Kenny Dr",
+            "location": {
+              "lat": 40.913812,
+              "lng": -73.119002
+            },
+            "time": "2026-10-14T12:54:00.000Z"
+          },
+          {
+            "name": "Health Sciences Dr/Nicolls Rd",
+            "location": {
+              "lat": 40.913727,
+              "lng": -73.114795
+            },
+            "time": "2026-10-14T12:55:00.000Z"
+          },
+          {
+            "name": "SUNY Stony Brook University Hospital",
+            "location": {
+              "lat": 40.90853,
+              "lng": -73.112109
+            },
+            "time": "2026-10-14T12:57:00.000Z"
+          },
+          {
+            "name": "Health Sciences Dr/Edmund D Pellegrino Rd",
+            "location": {
+              "lat": 40.906424,
+              "lng": -73.110954
+            },
+            "time": "2026-10-14T12:58:00.000Z"
+          },
+          {
+            "name": "Nicolls Rd/Hastings Dr",
+            "location": {
+              "lat": 40.901333,
+              "lng": -73.115266
+            },
+            "time": "2026-10-14T13:01:00.000Z"
+          },
+          {
+            "name": "Nicolls Rd/Sycamore Dr",
+            "location": {
+              "lat": 40.890794,
+              "lng": -73.11149
+            },
+            "time": "2026-10-14T13:04:00.000Z"
+          },
+          {
+            "name": "NYS 347/Lakeside Ave",
+            "location": {
+              "lat": 40.878196,
+              "lng": -73.115298
+            },
+            "time": "2026-10-14T13:10:00.000Z"
+          },
+          {
+            "name": "NYS 347/Stony Brook Rd",
+            "location": {
+              "lat": 40.876292,
+              "lng": -73.118534
+            },
+            "time": "2026-10-14T13:11:00.000Z"
+          },
+          {
+            "name": "NYS 347/Hallock Rd",
+            "location": {
+              "lat": 40.872993,
+              "lng": -73.124523
+            },
+            "time": "2026-10-14T13:13:00.000Z"
+          },
+          {
+            "name": "NYS 347/New Moriches Rd",
+            "location": {
+              "lat": 40.870478,
+              "lng": -73.12917
+            },
+            "time": "2026-10-14T13:14:00.000Z"
+          },
+          {
+            "name": "Smith Haven Mall (51SB)",
+            "location": {
+              "lat": 40.864933,
+              "lng": -73.132715
+            },
+            "time": "2026-10-14T13:17:00.000Z"
+          },
+          {
+            "name": "Middle Country Rd/Moriches Rd",
+            "location": {
+              "lat": 40.861995,
+              "lng": -73.130438
+            },
+            "time": "2026-10-14T13:19:00.000Z"
+          },
+          {
+            "name": "Middle Country Rd/Parsnip Pond Rd",
+            "location": {
+              "lat": 40.861435,
+              "lng": -73.122105
+            },
+            "time": "2026-10-14T13:21:00.000Z"
+          },
+          {
+            "name": "Middle Country Rd/Hawkton Pl",
+            "location": {
+              "lat": 40.860304,
+              "lng": -73.115046
+            },
+            "time": "2026-10-14T13:22:00.000Z"
+          },
+          {
+            "name": "Hawkins Ave/Williams Blvd",
+            "location": {
+              "lat": 40.856831,
+              "lng": -73.114273
+            },
+            "time": "2026-10-14T13:23:00.000Z"
+          },
+          {
+            "name": "Hawkins Ave/Washburn Ave",
+            "location": {
+              "lat": 40.85286,
+              "lng": -73.115039
+            },
+            "time": "2026-10-14T13:24:00.000Z"
+          },
+          {
+            "name": "Hawkins Ave/Sycamore Ave",
+            "location": {
+              "lat": 40.849416,
+              "lng": -73.114528
+            },
+            "time": "2026-10-14T13:25:00.000Z"
+          },
+          {
+            "name": "Hawkins Ave/Win Pl",
+            "location": {
+              "lat": 40.844928,
+              "lng": -73.113773
+            },
+            "time": "2026-10-14T13:26:00.000Z"
+          },
+          {
+            "name": "Hawkins Rd/Dual Dr",
+            "location": {
+              "lat": 40.84054,
+              "lng": -73.112862
+            },
+            "time": "2026-10-14T13:27:00.000Z"
+          },
+          {
+            "name": "Hawkins Ave/Ethan Ln",
+            "location": {
+              "lat": 40.835109,
+              "lng": -73.109524
+            },
+            "time": "2026-10-14T13:28:00.000Z"
+          },
+          {
+            "name": "Hawkins Ave/School St",
+            "location": {
+              "lat": 40.831337,
+              "lng": -73.108584
+            },
+            "time": "2026-10-14T13:29:00.000Z"
+          },
+          {
+            "name": "Hawkins Ave/Portion Rd",
+            "location": {
+              "lat": 40.826215,
+              "lng": -73.107558
+            },
+            "time": "2026-10-14T13:30:00.000Z"
+          },
+          {
+            "name": "Hawkins Ave/Division Rd",
+            "location": {
+              "lat": 40.823874,
+              "lng": -73.107608
+            },
+            "time": "2026-10-14T13:30:00.000Z"
+          },
+          {
+            "name": "Hawkins Ave/Carlson Rd",
+            "location": {
+              "lat": 40.822055,
+              "lng": -73.107735
+            },
+            "time": "2026-10-14T13:31:00.000Z"
+          },
+          {
+            "name": "Hawkins Ave/Lakewood Rd",
+            "location": {
+              "lat": 40.820642,
+              "lng": -73.107784
+            },
+            "time": "2026-10-14T13:31:00.000Z"
+          },
+          {
+            "name": "Hawkins Ave/Church St",
+            "location": {
+              "lat": 40.816925,
+              "lng": -73.107971
+            },
+            "time": "2026-10-14T13:32:00.000Z"
+          },
+          {
+            "name": "Hawkins Ave/Thorne St",
+            "location": {
+              "lat": 40.814653,
+              "lng": -73.108184
+            },
+            "time": "2026-10-14T13:32:00.000Z"
+          },
+          {
+            "name": "Hawkins Ave/Union Ave (W)",
+            "location": {
+              "lat": 40.810816,
+              "lng": -73.108282
+            },
+            "time": "2026-10-14T13:33:00.000Z"
+          }
+        ],
+        "tripId": "272-1277"
+      },
+      {
+        "kind": "walk",
+        "durationSeconds": 102,
+        "distanceMeters": 101,
+        "toName": "Ronkonkoma",
+        "path": [
+          {
+            "lat": 40.80805,
+            "lng": -73.10713
+          },
+          {
+            "lat": 40.80809,
+            "lng": -73.10594
+          }
+        ]
+      },
+      {
+        "kind": "transit",
+        "mode": "rail",
+        "agency": {
+          "name": "Long Island Rail Road",
+          "url": "http://www.mta.info/lirr"
+        },
+        "line": {
+          "name": "Ronkonkoma Branch",
+          "shortName": "LIRR",
+          "color": "#a626aa",
+          "textColor": "#ffffff",
+          "vehicleName": "Train"
+        },
+        "headsign": "Penn Station",
+        "from": {
+          "name": "Ronkonkoma",
+          "location": {
+            "lat": 40.808085999999996,
+            "lng": -73.105942
+          },
+          "time": "2026-10-14T14:03:00Z"
+        },
+        "to": {
+          "name": "Penn Station",
+          "location": {
+            "lat": 40.750586999999996,
+            "lng": -73.993584
+          },
+          "time": "2026-10-14T15:22:00Z"
+        },
+        "stopCount": 10,
+        "durationSeconds": 4740,
+        "path": [
+          {
+            "lat": 40.80809,
+            "lng": -73.10594
+          },
+          {
+            "lat": 40.79123,
+            "lng": -73.19772
+          },
+          {
+            "lat": 40.73156,
+            "lng": -73.46292
+          },
+          {
+            "lat": 40.73254,
+            "lng": -73.46702
+          },
+          {
+            "lat": 40.76753,
+            "lng": -73.52091
+          },
+          {
+            "lat": 40.76819,
+            "lng": -73.52309
+          },
+          {
+            "lat": 40.73862,
+            "lng": -73.6481
+          },
+          {
+            "lat": 40.7017,
+            "lng": -73.80152
+          },
+          {
+            "lat": 40.6984,
+            "lng": -73.81609
+          },
+          {
+            "lat": 40.69955,
+            "lng": -73.81926
+          },
+          {
+            "lat": 40.71632,
+            "lng": -73.83843
+          },
+          {
+            "lat": 40.71908,
+            "lng": -73.84346
+          },
+          {
+            "lat": 40.73877,
+            "lng": -73.89488
+          },
+          {
+            "lat": 40.74853,
+            "lng": -73.90596
+          },
+          {
+            "lat": 40.75027,
+            "lng": -73.90918
+          },
+          {
+            "lat": 40.75087,
+            "lng": -73.9126
+          },
+          {
+            "lat": 40.74733,
+            "lng": -73.9337
+          },
+          {
+            "lat": 40.74167,
+            "lng": -73.94955
+          },
+          {
+            "lat": 40.74111,
+            "lng": -73.95442
+          },
+          {
+            "lat": 40.75059,
+            "lng": -73.99358
+          }
+        ],
+        "stops": [
+          {
+            "name": "Central Islip",
+            "location": {
+              "lat": 40.79185312,
+              "lng": -73.19486082
+            },
+            "time": "2026-10-14T14:11:00.000Z"
+          },
+          {
+            "name": "Brentwood",
+            "location": {
+              "lat": 40.78083474,
+              "lng": -73.24361074
+            },
+            "time": "2026-10-14T14:15:00.000Z"
+          },
+          {
+            "name": "Deer Park",
+            "location": {
+              "lat": 40.76948364,
+              "lng": -73.29356494
+            },
+            "time": "2026-10-14T14:20:00.000Z"
+          },
+          {
+            "name": "Wyandanch",
+            "location": {
+              "lat": 40.75480101,
+              "lng": -73.35806588
+            },
+            "time": "2026-10-14T14:25:00.000Z"
+          },
+          {
+            "name": "Farmingdale",
+            "location": {
+              "lat": 40.73591503,
+              "lng": -73.44123878
+            },
+            "time": "2026-10-14T14:30:00.000Z"
+          },
+          {
+            "name": "Bethpage",
+            "location": {
+              "lat": 40.74303924,
+              "lng": -73.48343821
+            },
+            "time": "2026-10-14T14:35:00.000Z"
+          },
+          {
+            "name": "Hicksville",
+            "location": {
+              "lat": 40.76717491,
+              "lng": -73.52853322
+            },
+            "time": "2026-10-14T14:40:00.000Z"
+          },
+          {
+            "name": "Mineola",
+            "location": {
+              "lat": 40.74034743,
+              "lng": -73.64086293
+            },
+            "time": "2026-10-14T14:47:00.000Z"
+          },
+          {
+            "name": "Hillside Facility",
+            "location": {
+              "lat": 40.70773582,
+              "lng": -73.77695851
+            },
+            "time": "2026-10-14T14:57:00.000Z"
+          },
+          {
+            "name": "Jamaica",
+            "location": {
+              "lat": 40.69960817,
+              "lng": -73.80852987
+            },
+            "time": "2026-10-14T15:03:00.000Z"
+          }
+        ],
+        "tripId": "GO202_26_1929"
+      }
+    ]
+  }
+]

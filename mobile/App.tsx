@@ -11,6 +11,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './src/auth/AuthContext';
 import { AuthScreen } from './src/components/AuthScreen';
 import { HomeScreen } from './src/components/HomeScreen';
+import { DebugProvider } from './src/debug/DebugContext';
 import { AppSettingsProvider } from './src/theme/AppSettings';
 import { colors } from './src/theme/colors';
 
@@ -57,7 +58,9 @@ export default function App() {
     <SafeAreaProvider>
       <AppSettingsProvider>
         <AuthProvider>
-          <AppContent />
+          <DebugProvider>
+            <AppContent />
+          </DebugProvider>
         </AuthProvider>
       </AppSettingsProvider>
     </SafeAreaProvider>

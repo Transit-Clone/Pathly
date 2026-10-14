@@ -1200,15 +1200,65 @@ export async function refreshGtfsSnapshot(agencyId: AgencyId): Promise<'publishe
   return 'published';
 }
 
+function lastRefreshObject(agencyId: AgencyId): string {
+  return `${SNAPSHOT_ROOT}/${agencyId}/last-refresh.json`;
+}
+
+/** The outcome of an agency's most recent scheduled refresh, for the admin status page. */
+export type GtfsRefreshOutcome = { at: string; ok: boolean; result?: 'published' | 'unchanged'; message?: string };
+
+/** Best effort: a status write must never fail the refresh it describes. */
+async function recordRefreshOutcome(agencyId: AgencyId, outcome: GtfsRefreshOutcome): Promise<void> {
+  try {
+    await bucket().file(lastRefreshObject(agencyId)).save(JSON.stringify(outcome), { contentType: 'application/json', resumable: false });
+  } catch (error) {
+    logger.warn('Could not record GTFS refresh outcome', { agencyId, reason: error instanceof Error ? error.message : String(error) });
+  }
+}
+
+export async function readLastRefreshOutcome(agencyId: AgencyId): Promise<GtfsRefreshOutcome | null> {
+  try {
+    const [data] = await bucket().file(lastRefreshObject(agencyId)).download();
+    const parsed = JSON.parse(data.toString('utf8')) as Partial<GtfsRefreshOutcome>;
+    if (typeof parsed.at !== 'string' || typeof parsed.ok !== 'boolean') return null;
+    return {
+      at: parsed.at,
+      ok: parsed.ok,
+      ...(parsed.result === 'published' || parsed.result === 'unchanged' ? { result: parsed.result } : {}),
+      ...(typeof parsed.message === 'string' ? { message: parsed.message.slice(0, 300) } : {}),
+    };
+  } catch (error) {
+    if (isNotFound(error)) return null;
+    throw error;
+  }
+}
+
+/** The published snapshot's identity and age, or why there is none (admin status page). */
+export type GtfsSnapshotSummary =
+  | { state: 'published'; version: string; publishedAt: string; serviceEndDate: string | null; hasDerived: boolean }
+  | { state: 'missing' }
+  | { state: 'invalid'; message: string };
+
+export async function readSnapshotSummary(agencyId: AgencyId): Promise<GtfsSnapshotSummary> {
+  const current = await readCurrentManifest(agencyId);
+  if (current.manifest) {
+    const { version, publishedAt, serviceEndDate, derived } = current.manifest;
+    return { state: 'published', version, publishedAt, serviceEndDate, hasDerived: Boolean(derived) };
+  }
+  return current.invalidMessage ? { state: 'invalid', message: current.invalidMessage } : { state: 'missing' };
+}
+
 export async function refreshAllGtfsSnapshots(): Promise<void> {
   const failures: { agencyId: AgencyId; message: string }[] = [];
   for (const agencyId of Object.keys(AGENCY_CONFIGS) as AgencyId[]) {
     try {
-      await refreshGtfsSnapshot(agencyId);
+      const result = await refreshGtfsSnapshot(agencyId);
+      await recordRefreshOutcome(agencyId, { at: new Date().toISOString(), ok: true, result });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       failures.push({ agencyId, message });
       logger.error('GTFS snapshot refresh failed', { agencyId, event: 'gtfs_refresh_failed', reason: message });
+      await recordRefreshOutcome(agencyId, { at: new Date().toISOString(), ok: false, message });
     }
   }
 

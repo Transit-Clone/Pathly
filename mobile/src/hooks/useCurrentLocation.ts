@@ -1,7 +1,8 @@
 import * as Location from 'expo-location';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { SERVICE_AREA_FALLBACK } from '../data/serviceArea';
+import { useDebug } from '../debug/DebugContext';
 
 export type Coordinates = { latitude: number; longitude: number };
 
@@ -16,6 +17,9 @@ async function fetchCurrentCoordinates(): Promise<Coordinates | null> {
   }
 }
 
+/** Re-centering on a mock location needs no fix. */
+const mockRefresh = () => Promise.resolve();
+
 const WATCH_OPTIONS = {
   accuracy: Location.Accuracy.Balanced,
   timeInterval: 10_000,
@@ -26,6 +30,9 @@ const WATCH_OPTIONS = {
  * - 'loading': permission hasn't resolved yet, or it's granted and the first fix hasn't landed.
  * - 'located': `location` is a real GPS fix.
  * - 'unavailable': permission denied, or the fix failed — `location` is the Stony Brook fallback.
+ *
+ * While an admin has a mock location set, it stands in for the GPS everywhere (`mocked: true`)
+ * and the GPS isn't used at all.
  */
 export type LocationStatus = 'loading' | 'located' | 'unavailable';
 
@@ -41,6 +48,14 @@ export type LocationStatus = 'loading' | 'located' | 'unavailable';
 export function useCurrentLocation() {
   const [location, setLocation] = useState<Coordinates>(SERVICE_AREA_FALLBACK);
   const [status, setStatus] = useState<LocationStatus>('loading');
+  const { mockLocation } = useDebug();
+  const mocked = mockLocation !== undefined;
+  const mockLatitude = mockLocation?.latitude;
+  const mockLongitude = mockLocation?.longitude;
+  const mockCoordinates = useMemo(
+    () => (mockLatitude !== undefined && mockLongitude !== undefined ? { latitude: mockLatitude, longitude: mockLongitude } : null),
+    [mockLatitude, mockLongitude],
+  );
 
   const refresh = useCallback(async () => {
     setStatus('loading');
@@ -54,6 +69,7 @@ export function useCurrentLocation() {
   }, []);
 
   useEffect(() => {
+    if (mocked) return undefined;
     let subscription: Location.LocationSubscription | null = null;
     let cancelled = false;
 
@@ -86,7 +102,8 @@ export function useCurrentLocation() {
       cancelled = true;
       subscription?.remove();
     };
-  }, []);
+  }, [mocked]);
 
-  return { location, status, refresh };
+  if (mockCoordinates) return { location: mockCoordinates, status: 'located' as LocationStatus, refresh: mockRefresh, mocked: true };
+  return { location, status, refresh, mocked: false };
 }

@@ -1,7 +1,6 @@
-import { httpsCallable } from 'firebase/functions';
 
 import type { Coordinates } from '../hooks/useCurrentLocation';
-import { functions } from '../lib/firebase';
+import { callable } from '../lib/firebase';
 import type { NearestRouteStop } from './nearestRouteStop';
 import type { LiveSource } from './transit';
 
@@ -59,10 +58,10 @@ type NearestStopResponse = {
   direction0: { stopId: string; name: string } | null;
 } | null;
 
-const getRouteLiveStatus = httpsCallable<
+const getRouteLiveStatus = callable<
   { agencyId: string; routeId: string; direction1StopId: string; direction0StopId: string; lat?: number; lon?: number },
   RouteLiveStatusResponse & { nearestStop?: NearestStopResponse }
->(functions, 'getRouteLiveStatus');
+>('getRouteLiveStatus');
 
 /**
  * Upcoming departures (both directions) and live vehicle positions for one route on any
@@ -93,10 +92,10 @@ function routeRequest(source: LiveSource): RouteRequest {
 /** The most routes the backend answers in one batch (getRoutesLiveStatus's MAX_BATCH_ROUTES). */
 export const MAX_BATCH_ROUTES = 12;
 
-const getRoutesLiveStatus = httpsCallable<
+const getRoutesLiveStatus = callable<
   { routes: RouteRequest[]; lat?: number; lon?: number },
   { results: ({ ok: true; data: RouteLiveStatusResponse & { nearestStop?: NearestStopResponse } } | { ok: false; code: string })[] }
->(functions, 'getRoutesLiveStatus');
+>('getRoutesLiveStatus');
 
 /** Thrown when the deployed backend predates batching, so callers can fall back to one request per route. */
 export class BatchUnavailableError extends Error {}
@@ -153,10 +152,10 @@ function toRouteLiveData(data: RouteLiveStatusResponse & { nearestStop?: Nearest
   };
 }
 
-const getStopDeparturesCallable = httpsCallable<
+const getStopDeparturesCallable = callable<
   { agencyId: string; routeId: string; direction1StopId: string; direction0StopId: string; directionId: 0 | 1 },
   { departures: DirectionPrediction[] }
->(functions, 'getStopDepartures');
+>('getStopDepartures');
 
 /**
  * Every remaining departure today (plus the next service day's first ones late at night) from

@@ -23,6 +23,8 @@ const glyphs = {
   fare: ['pricetag-outline', 'pricetag'],
   favorite: ['star-outline', 'star'],
   filter: ['funnel-outline', 'funnel'],
+  ferry: ['boat-outline', 'boat'],
+  fit: ['scan-outline', 'scan'],
   forward: ['chevron-forward', 'chevron-forward'],
   go: ['navigate-outline', 'navigate'],
   help: ['help-circle-outline', 'help-circle'],

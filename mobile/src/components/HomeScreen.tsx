@@ -8,6 +8,7 @@ import { NEARBY_CACHE_KEY, readCache, writeCache } from '../data/deviceCache';
 import { discoveredRouteToRouteDetail, fetchNearbyTransit, filterOutPinnedDuplicates, type DiscoveredRoute } from '../data/nearbyTransit';
 import type { SearchPlace } from '../data/placesSearch';
 import { TransitLiveProvider, useTransitLive } from '../data/TransitLiveContext';
+import { riderLocation, type Itinerary } from '../data/tripPlanning';
 import {
   findSavedLocation,
   locationToPlace,
@@ -18,31 +19,33 @@ import {
   type SavedLocation,
 } from '../data/userData';
 import {
-  recentTripById,
   routes,
-  type ItineraryId,
-  type RecentTripId,
   type RouteDetail,
   type TripTimeChoice,
 } from '../data/transit';
+import { AdminToolsView } from '../debug/AdminToolsView';
+import { DebugBanner } from '../debug/DebugBanner';
+import { useDebug } from '../debug/DebugContext';
+import { pinnedSpotLabel } from '../debug/presets';
 import { useCurrentLocation, type Coordinates } from '../hooks/useCurrentLocation';
 import { useNow } from '../hooks/useNow';
 import { ThemedStatusBar, useThemedStyles } from '../theme/AppSettings';
 import { ScreenTransition } from '../theme/motion';
 import type { Palette } from '../theme/colors';
+import { fontFamilies } from '../theme/typography';
+import { ConfirmDialog } from './ConfirmDialog';
 import { CurrentLocationButton } from './CurrentLocationButton';
 import { DeparturesView } from './DeparturesView';
 import { GoogleMapView, type HomeMapCamera } from './GoogleMapView';
 import { PressableScale } from './PressableScale';
 import { ProfileView } from './ProfileView';
-import { RecentTripDetailView } from './RecentTripDetailView';
 import { RouteDetailView } from './RouteDetailView';
 import { CURRENT_LOCATION_LABEL, initialResultsCriteria, RouteResultsView, type ResultsCriteria } from './RouteResultsView';
 import { SearchHeader } from './SearchHeader';
 import { SearchView } from './SearchView';
 import { TransitSheet, type TransitTabId } from './TransitSheet';
 
-const TRANSIT_TABS_HEIGHT = 44;
+const TRANSIT_TABS_HEIGHT = 30;
 const TRANSIT_CARD_HEIGHT = 104;
 const VISIBLE_TRANSIT_CARDS = 3;
 const VISIBLE_CARD_GUTTER = 24;
@@ -60,19 +63,15 @@ type ResultsViewState = { name: 'results'; criteria: ResultsCriteria; returnTo: 
 type ActiveView =
   | { name: 'home' }
   // `editing`: changing one endpoint of an open Route Results, which this search returns to.
-  | { name: 'search'; editing?: { field: 'origin' | 'destination'; results: ResultsViewState } }
+  | { name: 'search'; editing?: { field: 'origin' | 'destination'; results: ResultsViewState }; pickMockLocation?: boolean }
   // `route` is the snapshot opened, so the page never depends on the route still being nearby.
   | { name: 'route'; routeId: string; route: RouteDetail; directionIndex?: number }
   // "More departures" for one direction of an opened route; back returns to that route and direction.
   | { name: 'departures'; routeId: string; route: RouteDetail; directionIndex: number }
   | ResultsViewState
-  | { name: 'recentTrip'; tripId: RecentTripId; returnTab: TransitTabId }
-  | { name: 'profile' };
+  | { name: 'profile' }
+  | { name: 'admin' };
 
-type ActiveTrip =
-  | { kind: 'planned'; itineraryId: ItineraryId }
-  | { kind: 'recent'; tripId: RecentTripId }
-  | null;
 
 const MAX_SAVED_LOCATIONS = 50;
 
@@ -127,9 +126,10 @@ function DeparturesScreen({ directionIndex, onBack, route }: { directionIndex: n
 export function HomeScreen() {
   const styles = useThemedStyles(createStyles);
   const [activeView, setActiveView] = useState<ActiveView>({ name: 'home' });
-  const [activeTrip, setActiveTrip] = useState<ActiveTrip>(null);
+  // The itinerary itself, not an id: a started trip is a snapshot that later refreshes can't change.
+  const [activeTrip, setActiveTrip] = useState<Itinerary | null>(null);
   const [homeTab, setHomeTab] = useState<TransitTabId>('nearby');
-  const [selectedSearchTripId, setSelectedSearchTripId] = useState<ItineraryId | null>(null);
+  const [selectedTrip, setSelectedTrip] = useState<Itinerary | null>(null);
   const [tripTime, setTripTime] = useState<TripTimeChoice>({ mode: 'now' });
   // One "Save" star replaces pin + favorite: saved routes lead Nearby and fill Favorites -> Routes.
   // Nothing is saved by default.
@@ -139,7 +139,12 @@ export function HomeScreen() {
   const uid = user?.uid;
   const [savedLocations, setSavedLocations] = useState<readonly SavedLocation[]>([]);
   const { height } = useWindowDimensions();
-  const { location, refresh: refreshLocation, status: locationStatus } = useCurrentLocation();
+  const { location, mocked: locationMocked, refresh: refreshLocation, status: locationStatus } = useCurrentLocation();
+  const { isAdmin, overlays, setMockLocation } = useDebug();
+  // Admin overlay: the last tapped map point, until dismissed.
+  const [tappedPoint, setTappedPoint] = useState<Coordinates | null>(null);
+  // Admin: a long-pressed map point waiting for "Use as mock location".
+  const [pendingMockPoint, setPendingMockPoint] = useState<Coordinates | null>(null);
   const [isLocationCentered, setIsLocationCentered] = useState(false);
   // Home cards currently on screen; live data is fetched only for these (or the open route).
   const [visibleRouteIds, setVisibleRouteIds] = useState<readonly string[]>([]);
@@ -173,6 +178,16 @@ export function HomeScreen() {
   // Where the home map last came to rest. The map is rebuilt when the rider comes back from a
   // route, and reopens here — on the purple dot, if they had panned away — not on their GPS fix.
   const [homeCamera, setHomeCamera] = useState<HomeMapCamera | null>(null);
+  // Setting or clearing a mock location jumps the map (and Nearby) to it, like a new GPS fix.
+  const mockKey = locationMocked ? `${location.latitude},${location.longitude}` : '';
+  const [handledMockKey, setHandledMockKey] = useState(mockKey);
+  if (mockKey !== handledMockKey) {
+    setHandledMockKey(mockKey);
+    setSearchCenter(null);
+    // A map rebuilt later (returning from Admin tools) opens on the location, not its old camera.
+    setHomeCamera(null);
+    setRecenterRequest((count) => count + 1);
+  }
   const nearbyPoint = searchCenter ?? location;
   const exploring = searchCenter != null;
   // On launch, the last nearby list shows at once (marked as updating) while the fresh search,
@@ -257,11 +272,11 @@ export function HomeScreen() {
 
   const showHome = useCallback(() => setActiveView({ name: 'home' }), []);
   const showSearch = useCallback(() => {
-    setSelectedSearchTripId(null);
+    setSelectedTrip(null);
     setActiveView({ name: 'search' });
   }, []);
   const showRouteResults = useCallback((place: SearchPlace) => {
-    setSelectedSearchTripId(null);
+    setSelectedTrip(null);
     setActiveView({ name: 'results', criteria: initialResultsCriteria(place.title, place), returnTo: 'search' });
   }, []);
   const showFavorites = useCallback(() => {
@@ -284,43 +299,14 @@ export function HomeScreen() {
   // Until the route navigation page exists, a saved place opens Route Results for it.
   const openSavedLocation = useCallback((location: SavedLocation) => {
     const place = locationToPlace(location.address);
-    setSelectedSearchTripId(null);
+    setSelectedTrip(null);
     setActiveView({ name: 'results', criteria: initialResultsCriteria(place.title, place), returnTo: 'favorites' });
   }, []);
-  const showRecents = useCallback(() => {
-    setHomeTab('recents');
-    setActiveView({ name: 'home' });
-  }, []);
-  const showRecentTrip = useCallback((tripId: RecentTripId) => {
-    setHomeTab('recents');
-    setActiveView({ name: 'recentTrip', tripId, returnTab: 'recents' });
-  }, []);
-  const startRecentTrip = useCallback((tripId: RecentTripId) => {
-    setActiveTrip({ kind: 'recent', tripId });
-    setActiveView((current) => ({
-      name: 'recentTrip',
-      tripId,
-      returnTab: current.name === 'recentTrip' ? current.returnTab : 'recents',
-    }));
-  }, []);
-  const closeRecentTrip = useCallback(() => {
-    const returnTab = activeView.name === 'recentTrip' ? activeView.returnTab : 'recents';
-    setHomeTab(returnTab);
-    setActiveView({ name: 'home' });
-  }, [activeView]);
-  const endRecentTrip = useCallback(() => {
-    setActiveTrip(null);
-    if (activeView.name === 'recentTrip') {
-      closeRecentTrip();
-      return;
-    }
-    showRecents();
-  }, [activeView.name, closeRecentTrip, showRecents]);
-  const showPlannedTrip = useCallback((itineraryId: ItineraryId) => {
-    setSelectedSearchTripId(itineraryId);
+  const showPlannedTrip = useCallback((itinerary: Itinerary) => {
+    setSelectedTrip(itinerary);
   }, []);
   // Back to the results list, also when it was opened from a saved place (Favorites comes after it).
-  const closePlannedTrip = useCallback(() => setSelectedSearchTripId(null), []);
+  const closePlannedTrip = useCallback(() => setSelectedTrip(null), []);
   const closeResults = useCallback(() => {
     if (activeView.name === 'results' && activeView.returnTo === 'favorites') {
       showFavorites();
@@ -328,27 +314,31 @@ export function HomeScreen() {
     }
     showSearch();
   }, [activeView, showFavorites, showSearch]);
-  const startPlannedTrip = useCallback((itineraryId: ItineraryId) => {
-    setActiveTrip({ kind: 'planned', itineraryId });
-    setSelectedSearchTripId(itineraryId);
+  const startPlannedTrip = useCallback((itinerary: Itinerary) => {
+    setActiveTrip(itinerary);
+    setSelectedTrip(itinerary);
   }, []);
   const endPlannedTrip = useCallback(() => {
     setActiveTrip(null);
-    setSelectedSearchTripId(null);
+    setSelectedTrip(null);
   }, []);
 
   const closeCurrentView = useCallback(() => {
+    if (activeView.name === 'admin') {
+      setActiveView({ name: 'profile' });
+      return;
+    }
+    if (activeView.name === 'search' && activeView.pickMockLocation) {
+      setActiveView({ name: 'admin' });
+      return;
+    }
+
     if (activeView.name === 'results') {
-      if (selectedSearchTripId) {
+      if (selectedTrip) {
         closePlannedTrip();
         return;
       }
       closeResults();
-      return;
-    }
-
-    if (activeView.name === 'recentTrip') {
-      closeRecentTrip();
       return;
     }
 
@@ -364,7 +354,7 @@ export function HomeScreen() {
     }
 
     showHome();
-  }, [activeView, closePlannedTrip, closeRecentTrip, closeResults, selectedSearchTripId, showHome]);
+  }, [activeView, closePlannedTrip, closeResults, selectedTrip, showHome]);
 
   useEffect(() => {
     if (activeView.name === 'home' || Platform.OS === 'web') {
@@ -379,9 +369,7 @@ export function HomeScreen() {
 
   const transitionKey = activeView.name === 'route' || activeView.name === 'departures'
     ? `${activeView.name}-${activeView.routeId}`
-    : activeView.name === 'recentTrip'
-      ? `recent-${activeView.tripId}`
-      : activeView.name;
+    : activeView.name;
   // The open route keeps receiving live data even after it drops out of the nearby list.
   const openedRoute = activeView.name === 'route' || activeView.name === 'departures' ? activeView.route : null;
   const liveRoutes = openedRoute && !allDiscoveredRoutes.some((route) => route.id === openedRoute.id)
@@ -394,6 +382,20 @@ export function HomeScreen() {
     </TransitLiveProvider>
   );
 
+  if (activeView.name === 'search' && activeView.pickMockLocation) {
+    // Admin: any searchable place becomes the mock location.
+    return screen(
+      <SearchView
+        near={riderLocation(location, locationStatus)}
+        onCancel={() => setActiveView({ name: 'admin' })}
+        onSelect={(place) => {
+          if (place.location) setMockLocation({ label: place.title, latitude: place.location.latitude, longitude: place.location.longitude });
+          setActiveView({ name: 'admin' });
+        }}
+      />
+    );
+  }
+
   if (activeView.name === 'search') {
     const { editing } = activeView;
     if (editing) {
@@ -401,12 +403,14 @@ export function HomeScreen() {
       // criterion is kept, and cancel returns to it unchanged.
       const { field, results } = editing;
       const current = results.criteria[field];
+      // The place goes with its label: what the trip is planned to (or from), and what the star saves.
       const choose = (value: string, place?: SearchPlace) => setActiveView({
         ...results,
-        criteria: { ...results.criteria, [field]: value, ...(field === 'destination' ? { destinationPlace: place } : {}) },
+        criteria: { ...results.criteria, [field]: value, [field === 'origin' ? 'originPlace' : 'destinationPlace']: place },
       });
       return screen(
         <SearchView
+          near={riderLocation(location, locationStatus)}
           initialQuery={current === CURRENT_LOCATION_LABEL ? '' : current}
           onCancel={() => setActiveView(results)}
           onSelect={(place) => choose(place.title, place)}
@@ -416,6 +420,7 @@ export function HomeScreen() {
     }
     return screen(
       <SearchView
+        near={riderLocation(location, locationStatus)}
         onCancel={showHome}
         onSelect={showRouteResults}
       />
@@ -450,9 +455,10 @@ export function HomeScreen() {
   if (activeView.name === 'results') {
     return screen(
       <RouteResultsView
-        activeItineraryId={activeTrip?.kind === 'planned' ? activeTrip.itineraryId : null}
+        activeItinerary={activeTrip}
         criteria={activeView.criteria}
         isDestinationSaved={isPlaceSaved(destinationPlaceOf(activeView.criteria))}
+        locationPending={locationStatus === 'loading'}
         onBack={closeResults}
         onChangeCriteria={(criteria) => setActiveView((current) => (current.name === 'results' ? { ...current, criteria } : current))}
         onChangeTripTime={setTripTime}
@@ -462,28 +468,19 @@ export function HomeScreen() {
         onOpenTrip={showPlannedTrip}
         onStartTrip={startPlannedTrip}
         onToggleSaveDestination={() => toggleSavedPlace(destinationPlaceOf(activeView.criteria))}
-        selectedItineraryId={selectedSearchTripId}
+        riderLocation={riderLocation(location, locationStatus)}
+        selectedItinerary={selectedTrip}
         tripTime={tripTime}
       />
     );
   }
 
-  if (activeView.name === 'recentTrip') {
-    return screen(
-      <RecentTripDetailView
-        isActive={activeTrip?.kind === 'recent' && activeTrip.tripId === activeView.tripId}
-        isFavorite={isPlaceSaved(placeFromName(recentTripById[activeView.tripId].destination))}
-        onBack={closeRecentTrip}
-        onEnd={endRecentTrip}
-        onStart={() => startRecentTrip(activeView.tripId)}
-        onToggleFavorite={() => toggleSavedPlace(placeFromName(recentTripById[activeView.tripId].destination))}
-        trip={recentTripById[activeView.tripId]}
-      />
-    );
+  if (activeView.name === 'profile') {
+    return screen(<ProfileView onBack={showHome} onOpenAdminTools={isAdmin ? () => setActiveView({ name: 'admin' }) : undefined} />);
   }
 
-  if (activeView.name === 'profile') {
-    return screen(<ProfileView onBack={showHome} />);
+  if (activeView.name === 'admin') {
+    return screen(<AdminToolsView onBack={() => setActiveView({ name: 'profile' })} onPickMockLocation={() => setActiveView({ name: 'search', pickMockLocation: true })} />);
   }
 
   return screen(
@@ -494,12 +491,15 @@ export function HomeScreen() {
           initialCamera={homeCamera}
           location={location}
           onCameraChange={setHomeCamera}
+          onLongPress={isAdmin ? setPendingMockPoint : undefined}
+          onPress={overlays.tapCoords ? setTappedPoint : undefined}
           onUserMoveEnd={setSearchCenter}
           onUserPan={() => setIsLocationCentered(false)}
           onOrientationChange={setMapOrientation}
           padding={{ top: HEADER_INSET, bottom: height - mapHeight }}
           recenterRequest={recenterRequest}
           reorientRequest={reorientRequest}
+          simulatedLocation={locationMocked}
         />
         {searchCenter ? (
           // Fixed at the center of the visible map (below the header, above the resting sheet):
@@ -520,6 +520,26 @@ export function HomeScreen() {
               </Text>
             </View>
           </View>
+        ) : null}
+        <DebugBanner top={80} />
+        {overlays.tapCoords && tappedPoint ? (
+          <PressableScale accessibilityHint="Dismisses the coordinates" accessibilityRole="button" onPress={() => setTappedPoint(null)} style={[styles.tapCoords, { top: (HEADER_INSET + mapHeight) / 2 + 24 }]} testID="map-tap-coords">
+            <Text selectable={true} style={styles.tapCoordsText}>{`${tappedPoint.latitude.toFixed(5)}, ${tappedPoint.longitude.toFixed(5)}`}</Text>
+          </PressableScale>
+        ) : null}
+        {pendingMockPoint ? (
+          <ConfirmDialog
+            body={`${pendingMockPoint.latitude.toFixed(5)}, ${pendingMockPoint.longitude.toFixed(5)}`}
+            confirmLabel="Use it"
+            onCancel={() => setPendingMockPoint(null)}
+            onConfirm={() => {
+              setMockLocation({ label: pinnedSpotLabel(pendingMockPoint.latitude, pendingMockPoint.longitude), ...pendingMockPoint });
+              setPendingMockPoint(null);
+            }}
+            testID="mock-location-confirm"
+            title="Use as mock location?"
+            visible={true}
+          />
         ) : null}
         <Animated.View
           style={[
@@ -569,7 +589,6 @@ export function HomeScreen() {
         </SafeAreaView>
 
         <TransitSheet
-          activeTripId={activeTrip?.kind === 'recent' ? activeTrip.tripId : null}
           activeTab={homeTab}
           findRoute={findRoute}
           mapHeight={mapHeight}
@@ -578,9 +597,6 @@ export function HomeScreen() {
           nearbyStatus={nearbyStatus.status}
           onOpenSavedLocation={openSavedLocation}
           onOpenRoute={openRoute}
-          onOpenTrip={showRecentTrip}
-          onEndTrip={endRecentTrip}
-          onStartTrip={startRecentTrip}
           onTabChange={setHomeTab}
           onVisibleRouteIdsChange={setVisibleRouteIds}
           savedLocations={savedLocations}
@@ -648,6 +664,8 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     borderTopColor: colors.mutedInk,
   },
   // Solid purple with a white ring, matching the GPS dot's look so it reads as a map point.
+  tapCoords: { position: 'absolute', alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 16, backgroundColor: colors.ink, zIndex: 4 },
+  tapCoordsText: { color: colors.surface, fontFamily: fontFamilies.bold, fontSize: 13 },
   searchCenter: {
     position: 'absolute',
     alignSelf: 'center',

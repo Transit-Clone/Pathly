@@ -234,5 +234,8 @@ describe('badgeLabel', () => {
     expect(badgeLabel({ agency: 'LIRR', shortName: 'Port Jefferson Branch' })).toBe('PJ');
     expect(badgeLabel({ agency: 'LIRR', shortName: 'Ronkonkoma Branch' })).toBe('RK');
     expect(badgeLabel({ agency: 'NICE Bus', shortName: 'Roosevelt Field Shuttle Line' })).toBe('RFS');
+    // A single route code is shown whole: "S" would read as the S shuttle, not the SIM3C.
+    expect(badgeLabel({ agency: 'MTA Bus Company', shortName: 'SIM3C' })).toBe('SIM3C');
+    expect(badgeLabel({ agency: 'MTA New York City Transit', shortName: 'Q44-SBS' })).toBe('Q44-SBS');
   });
 });

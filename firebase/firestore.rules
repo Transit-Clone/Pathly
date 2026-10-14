@@ -10,13 +10,23 @@ service cloud.firestore {
     function isValidLocation(location) {
       return location is map
         && location.keys().hasAll(['streetAddress', 'name', 'coordinates', 'type', 'placeId'])
-        && location.keys().hasOnly(['streetAddress', 'name', 'coordinates', 'type', 'placeId'])
+        && location.keys().hasOnly(['streetAddress', 'name', 'coordinates', 'type', 'placeId', 'transit'])
         && location.streetAddress is string && location.streetAddress.size() <= 500
         && location.name is string && location.name.size() <= 200
         && location.placeId is string && location.placeId.size() <= 300
         && location.coordinates is list && location.coordinates.size() == 2
         && location.coordinates[0] is number && location.coordinates[1] is number
-        && location.type in ['Destination', 'Start', 'Stop', 'Other'];
+        && location.type in ['Destination', 'Start', 'Stop', 'Other']
+        && (!('transit' in location) || isValidTransit(location.transit));
+    }
+
+    // A saved transit stop's mode, agency, and lines (Location.transit).
+    function isValidTransit(transit) {
+      return transit is map
+        && transit.keys().hasOnly(['kind', 'agency', 'routes'])
+        && transit.kind in ['subway', 'rail', 'bus', 'ferry']
+        && transit.agency is string && transit.agency.size() <= 100
+        && transit.routes is list && transit.routes.size() <= 30;
     }
 
     // An { address, <dateField> } history entry whose date is the server's write time.

@@ -1,6 +1,5 @@
-import { httpsCallable } from 'firebase/functions';
 
-import { functions } from '../lib/firebase';
+import { callable } from '../lib/firebase';
 import { whenWarm } from './backendWarmup';
 import type { LiveSource } from './transit';
 
@@ -11,9 +10,7 @@ export type RouteGeometry = { headsign: string; stops: readonly GeometryStop[]; 
 
 type RouteGeometryResponse = { headsign: string; stops: GeometryStop[]; path?: { lat: number; lon: number }[] };
 
-const getRouteGeometryCallable = httpsCallable<{ agencyId: string; routeId: string; directionId: 0 | 1 }, RouteGeometryResponse>(
-  functions,
-  'getRouteGeometry',
+const getRouteGeometryCallable = callable<{ agencyId: string; routeId: string; directionId: 0 | 1 }, RouteGeometryResponse>('getRouteGeometry',
 );
 
 const cache = new Map<string, Promise<RouteGeometry | null>>();

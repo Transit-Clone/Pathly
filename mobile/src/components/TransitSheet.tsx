@@ -3,13 +3,8 @@ import { ActivityIndicator, Animated, Platform, StyleSheet, Text, View, type Lay
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { applyRouteLive } from '../data/applyRouteLive';
-import { realFareForRecentTrip } from '../data/lirrFares';
 import { useTransitLiveMap } from '../data/TransitLiveContext';
-import {
-  recentTrips,
-  type RecentTripId,
-  type RouteDetail,
-} from '../data/transit';
+import type { RouteDetail } from '../data/transit';
 import type { SavedLocation } from '../data/userData';
 import { useNow } from '../hooks/useNow';
 import { useAppSettings, useTheme, useThemedStyles } from '../theme/AppSettings';
@@ -20,13 +15,11 @@ import { Icon } from './Icon';
 import { SavedLocationCard } from './SavedLocationCard';
 import { NearbySkeleton } from './Skeleton';
 import { TransitCard } from './TransitCard';
-import { TripCard } from './TripCard';
 import { PressableScale } from './PressableScale';
 
 export type TransitTabId = 'nearby' | 'recents' | 'favorites';
 
 type TransitSheetProps = {
-  activeTripId: RecentTripId | null;
   activeTab: TransitTabId;
   /** Resolves a route id — the demo catalog's own or a dynamically-discovered one — to its full data, for pinned/favorited routes which can be either kind. */
   findRoute: (routeId: string) => RouteDetail | undefined;
@@ -38,9 +31,6 @@ type TransitSheetProps = {
   nearbyRefreshing?: boolean;
   onOpenSavedLocation: (location: SavedLocation) => void;
   onOpenRoute: (routeId: string) => void;
-  onOpenTrip: (tripId: RecentTripId) => void;
-  onEndTrip: () => void;
-  onStartTrip: (tripId: RecentTripId) => void;
   onTabChange: (tab: TransitTabId) => void;
   /** Destinations saved with a trip's star (Firestore savedLocations), under Favorites -> Places. */
   savedLocations: readonly SavedLocation[];
@@ -57,7 +47,7 @@ const TAB_GAP = 4;
 const TRANSIT_CARD_HEIGHT = 104;
 // Expanded = sheet scrolled up to just below the fixed search header (HomeScreen's 80pt top inset).
 const EXPANDED_TOP = 80;
-const DRAG_HANDLE_HEIGHT = 28;
+const DRAG_HANDLE_HEIGHT = 24;
 // Any scroll beyond this counts as "moved off rest", so a handle tap collapses instead of expanding.
 const AT_REST_TOLERANCE = 8;
 
@@ -70,7 +60,6 @@ const tabs: { id: TransitTabId; label: string }[] = [
 ];
 
 export function TransitSheet({
-  activeTripId,
   activeTab,
   findRoute,
   mapHeight,
@@ -79,9 +68,6 @@ export function TransitSheet({
   nearbyStatus,
   onOpenSavedLocation,
   onOpenRoute,
-  onOpenTrip,
-  onEndTrip,
-  onStartTrip,
   onTabChange,
   onVisibleRouteIdsChange,
   savedLocations,
@@ -319,21 +305,10 @@ export function TransitSheet({
               </View>
             </View>
           ) : activeTab === 'recents' ? (
-            <View style={[styles.tabContent, styles.recentList, { minHeight: tabContentMinHeight }]} testID="recents-route-content">
-              {recentTrips.map((trip) => {
-                const isActive = trip.id === activeTripId;
-                return (
-                  <TripCard
-                    key={trip.id}
-                    actionTestID={isActive ? `recent-trip-end-${trip.id}` : `recent-trip-go-${trip.id}`}
-                    isActive={isActive}
-                    onAction={isActive ? onEndTrip : () => onStartTrip(trip.id)}
-                    onOpen={() => onOpenTrip(trip.id)}
-                    testID={`recent-trip-${trip.id}`}
-                    trip={{ ...trip, fare: realFareForRecentTrip(trip) }}
-                  />
-                );
-              })}
+            <View style={[styles.tabContent, styles.emptyState, { minHeight: tabContentMinHeight }]} testID="recents-route-content">
+              <View style={styles.emptyIcon}><Icon name="recent" size={30} /></View>
+              <Text style={styles.emptyTitle}>No recent trips yet</Text>
+              <Text style={styles.emptyBody}>Trips you take will show up here.</Text>
             </View>
           ) : (
             hasFavorites ? (
@@ -404,7 +379,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     pointerEvents: 'box-none',
   },
   tabs: {
-    paddingTop: 12,
+    paddingTop: 2,
     flexDirection: 'row',
     gap: TAB_GAP,
     paddingHorizontal: TAB_ROW_PADDING,
@@ -444,7 +419,6 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   sectionLabel: { color: colors.mutedInk, ...typography.label },
   favoriteTrips: { gap: 10, paddingHorizontal: 12, paddingBottom: 12 },
   flushHeading: { paddingHorizontal: 4 },
-  recentList: { paddingHorizontal: 12, paddingVertical: 12, gap: 10 },
   emptyState: {
     alignItems: 'center',
     paddingVertical: 20,

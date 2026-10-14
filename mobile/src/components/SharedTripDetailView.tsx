@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Linking, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import { routes } from '../data/transit';
 
@@ -7,17 +7,40 @@ import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings
 import { useLayoutEase } from '../theme/motion';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
+import { ConfirmDialog } from './ConfirmDialog';
 import { DetailMapPage } from './DetailMapPage';
 import { Icon } from './Icon';
 import { MapBackdrop } from './MapBackdrop';
-import { RouteBadge } from './RouteBadge';
+import { RouteBadge, type TransitMode } from './RouteBadge';
 import { DestinationPin, orientLegs, routeFocus, RouteLines, type MapLeg } from './RouteMapOverlay';
 import { PressableScale } from './PressableScale';
 
 const MAP_HEIGHT = 360;
 
+/** Walking before a leg (or, on the model, after the last one). */
+export type TripDetailWalk = { minutes: number; distance: string; toName: string };
+
+/** A stop the leg passes without the rider getting off. */
+export type TripDetailStop = { name: string; time: string; point: { lat: number; lng: number } };
+
 export type TripDetailLeg = {
   agency: string;
+  /** The agency's website (planned trips; Google asks transit results to credit agencies). */
+  agencyUrl?: string;
+  /** The line's sign, e.g. "Penn Station" (planned trips). */
+  headsign?: string;
+  /** Badge shape when the agency name alone can't tell (planned trips). */
+  mode?: TransitMode;
+  /** Stops ridden (planned trips). */
+  stopCount?: number;
+  /** The stops in between, when known: listed under the stop count, which then expands. */
+  stops?: readonly TripDetailStop[];
+  /** Badge label color (planned trips). */
+  textColor?: string;
+  /** The walk to this leg's boarding stop. */
+  walkBefore?: TripDetailWalk;
+  /** Between the previous leg and this one: minutes waiting for this departure. */
+  waitBeforeMinutes?: number;
   routeId: string;
   color: string;
   direction: string;
@@ -45,6 +68,8 @@ export type TripDetailModel = {
   origin: string;
   statusLabel: string;
   transferCount: number;
+  /** The walk from the last stop to the destination (planned trips). */
+  walkAfter?: TripDetailWalk;
 };
 
 type SharedTripDetailViewProps = {
@@ -56,6 +81,14 @@ type SharedTripDetailViewProps = {
   onBack: () => void;
   onToggleFavorite: () => void;
   rootTestID: string;
+  /** A real map for the trip; recent trips keep the illustrated one. */
+  map?: ReactNode;
+  /** Recent trips keep the service-alert row; planned trips have no real alert data for it. */
+  showServiceAlerts?: boolean;
+  /** The map takes gestures where the content doesn't cover it (planned trips' real map). */
+  interactiveMap?: boolean;
+  /** A stop row in an expanded list was pressed: the map shows that stop. */
+  onFocusStop?: (stop: TripDetailStop) => void;
   testPrefix: 'search-trip' | 'recent-trip';
   tone?: 'planned' | 'recent';
 };
@@ -69,11 +102,34 @@ function MapControl({ children, label, onPress, selected, testID }: { children: 
   );
 }
 
-export function SharedTripDetailView({ actionLabel, backLabel, isFavorite, model, onAction, onBack, onToggleFavorite, rootTestID, testPrefix, tone = 'planned' }: SharedTripDetailViewProps) {
+function WalkRow({ testID, walk }: { testID: string; walk: TripDetailWalk }) {
+  const styles = useThemedStyles(createStyles);
+  const { colors } = useTheme();
+  return (
+    <View accessibilityLabel={`Walk ${walk.minutes} minutes, ${walk.distance}, to ${walk.toName}`} accessible={true} style={styles.walkRow} testID={testID}>
+      <Icon color={colors.mutedInk} name="travel" size={18} />
+      <Text style={styles.walkText}><Text style={styles.walkStrong}>{`Walk ${walk.minutes} min`}</Text>{` · ${walk.distance} to ${walk.toName}`}</Text>
+    </View>
+  );
+}
+
+export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = false, isFavorite, map: tripMap, model, onAction, onBack, onFocusStop, onToggleFavorite, rootTestID, showServiceAlerts = true, testPrefix, tone = 'planned' }: SharedTripDetailViewProps) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
   const [isLocationCentered, setIsLocationCentered] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
+  const [confirmingEnd, setConfirmingEnd] = useState(false);
+  // Legs whose stops in between are shown, by index.
+  const [expandedLegs, setExpandedLegs] = useState<ReadonlySet<number>>(new Set());
+  const toggleLeg = (index: number) => {
+    ease();
+    setExpandedLegs((current) => {
+      const next = new Set(current);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
   const ease = useLayoutEase();
   const { width } = useWindowDimensions();
   const routeColor = model.legs[0]?.color ?? colors.primary;
@@ -96,7 +152,7 @@ export function SharedTripDetailView({ actionLabel, backLabel, isFavorite, model
   });
   const destination = legPaths.at(-1)?.at(-1);
 
-  const map = (
+  const map = tripMap ?? (
     <MapBackdrop
       focus={routeFocus(legPaths)}
       initialSize={{ width: Math.min(width, 540), height: MAP_HEIGHT }}
@@ -118,7 +174,7 @@ export function SharedTripDetailView({ actionLabel, backLabel, isFavorite, model
   );
 
   const action = (
-    <PressableScale accessibilityLabel={actionLabel} accessibilityRole="button" onPress={onAction} style={[styles.goButton, isEndAction && styles.endTripAction]} testID={isEndAction ? `${testPrefix}-end` : `${testPrefix}-go`}>
+    <PressableScale accessibilityLabel={actionLabel} accessibilityRole="button" onPress={isEndAction ? () => setConfirmingEnd(true) : onAction} style={[styles.goButton, isEndAction && styles.endTripAction]} testID={isEndAction ? `${testPrefix}-end` : `${testPrefix}-go`}>
       <Icon color={colors.onPrimary} filled={true} name={isEndAction ? 'stop' : 'go'} size={20} />
       <Text style={styles.goButtonText}>{isEndAction ? 'END' : 'GO'}</Text>
     </PressableScale>
@@ -127,6 +183,7 @@ export function SharedTripDetailView({ actionLabel, backLabel, isFavorite, model
   return (
     <DetailMapPage
       action={action}
+      interactiveMap={interactiveMap}
       contentStyle={styles.content}
       contentTestID={`${testPrefix}-content`}
       controls={controls}
@@ -137,6 +194,19 @@ export function SharedTripDetailView({ actionLabel, backLabel, isFavorite, model
       testID={rootTestID}
     >
       <ThemedStatusBar />
+      <ConfirmDialog
+        body="You'll stop following this trip. You can start it again from its trip details."
+        confirmLabel="End trip"
+        destructive={true}
+        onCancel={() => setConfirmingEnd(false)}
+        onConfirm={() => {
+          setConfirmingEnd(false);
+          onAction();
+        }}
+        testID={`${testPrefix}-end-confirm`}
+        title="End this trip?"
+        visible={confirmingEnd}
+      />
       <View style={styles.summaryHeader}>
         <View style={styles.modeStrip}>
           {model.legs.map((leg, index) => (
@@ -157,33 +227,90 @@ export function SharedTripDetailView({ actionLabel, backLabel, isFavorite, model
         <Icon color={colors.border} name="forward" size={22} />
         <View style={styles.arriveTime}><Text style={styles.timeLabel}>Arrive</Text><Text style={styles.timeValue} testID={`${testPrefix}-arrive-time`}>{model.arriveTime}</Text></View>
       </View>
+      {model.fare !== 'Fare N/A' ? <Text style={styles.fareNote} testID={`${testPrefix}-fare-note`}>{`${model.fare} is the full adult one-way fare.`}</Text> : null}
 
-      <PressableScale accessibilityLabel="Service alerts" accessibilityRole="button" accessibilityState={{ expanded: alertsOpen }} onPress={() => {
-        ease();
-        setAlertsOpen((value) => !value);
-      }} style={styles.alertButton} testID={`${testPrefix}-service-alerts`}>
-        <Icon color={colors.success} filled={true} name="ok" size={18} style={styles.alertIcon} /><Text style={styles.alertText}>Service alerts</Text><Text style={styles.alertStatus}>No delays</Text><Icon color={colors.mutedInk} name={alertsOpen ? 'collapse' : 'expand'} size={18} style={styles.chevron} />
-      </PressableScale>
-      {alertsOpen ? <Text style={styles.alertBody}>No active service advisories affect this trip.</Text> : null}
+      {showServiceAlerts ? (
+        <PressableScale accessibilityLabel="Service alerts" accessibilityRole="button" accessibilityState={{ expanded: alertsOpen }} onPress={() => {
+          ease();
+          setAlertsOpen((value) => !value);
+        }} style={styles.alertButton} testID={`${testPrefix}-service-alerts`}>
+          <Icon color={colors.success} filled={true} name="ok" size={18} style={styles.alertIcon} /><Text style={styles.alertText}>Service alerts</Text><Text style={styles.alertStatus}>No delays</Text><Icon color={colors.mutedInk} name={alertsOpen ? 'collapse' : 'expand'} size={18} style={styles.chevron} />
+        </PressableScale>
+      ) : null}
+      {showServiceAlerts && alertsOpen ? <Text style={styles.alertBody}>No active service advisories affect this trip.</Text> : null}
 
       <View style={styles.steps}>
         {model.legs.map((leg, index) => (
-          <View key={`${leg.shortName}-${index}`} accessibilityLabel={`${leg.agency} ${leg.routeName}, ${leg.direction}, ${leg.startTime} to ${leg.endTime}`} accessible={true} style={styles.stepCard} testID={`${testPrefix}-${tone === 'recent' ? 'leg' : 'step'}-${index}`}>
-            <View style={styles.stepHeader}>
-              <RouteBadge agency={leg.agency} color={leg.color} shortName={leg.shortName} size="large" withModeIcon={true} />
-              <View style={styles.routeCopy}><Text style={styles.stepVerb}>{index === 0 ? 'BOARD' : 'TRANSFER TO'}</Text><Text style={styles.stepAction}>{leg.routeName}</Text><Text style={styles.agency}>{leg.agency}</Text></View>
-              <Text style={styles.segmentDuration}>{leg.durationMinutes} min</Text>
-            </View>
-            <View style={styles.segmentTimeline}>
-              <View style={styles.segmentRail}><View style={[styles.segmentDot, { borderColor: leg.color }]} /><View style={[styles.segmentLine, { backgroundColor: leg.color }]} /><View style={[styles.segmentDot, { borderColor: leg.color }]} /></View>
-              <View style={styles.stopDetails}>
-                <View style={styles.stopRow}><View style={styles.stopCopy}><Text style={styles.stopLabel}>{leg.startLabel}</Text><Text style={styles.stopName}>{leg.startName}</Text></View><Text style={styles.stopTime}>{leg.startTime}</Text></View>
-                <Text style={styles.direction}>{leg.direction}</Text>
-                <View style={styles.stopRow}><View style={styles.stopCopy}><Text style={styles.stopLabel}>{leg.endLabel}</Text><Text style={styles.stopName}>{leg.endName}</Text></View><Text style={styles.stopTime}>{leg.endTime}</Text></View>
+          <View key={`${leg.shortName}-${index}`} style={styles.stepGroup}>
+            {index > 0 && leg.waitBeforeMinutes !== undefined ? (
+              <View accessibilityLabel={`Transfer${leg.walkBefore ? `, walk ${leg.walkBefore.minutes} minutes` : ''}, wait ${leg.waitBeforeMinutes} minutes`} accessible={true} style={styles.transferRow} testID={`${testPrefix}-transfer-${index}`}>
+                <Icon color={colors.primary} name="swap" size={16} />
+                <Text style={styles.walkText}><Text style={styles.walkStrong}>Transfer</Text>{`${leg.walkBefore ? ` · walk ${leg.walkBefore.minutes} min` : ''} · wait ${leg.waitBeforeMinutes} min`}</Text>
+              </View>
+            ) : leg.walkBefore ? <WalkRow testID={`${testPrefix}-walk-${index}`} walk={leg.walkBefore} /> : null}
+            <View style={styles.stepCard} testID={`${testPrefix}-${tone === 'recent' ? 'leg' : 'step'}-${index}`}>
+              {/* Grouped for screen readers; the stop list below stays separately operable. */}
+              <View accessibilityLabel={`${leg.agency} ${leg.routeName}, ${leg.direction}, ${leg.startTime} to ${leg.endTime}`} accessible={true} style={styles.stepHeader}>
+                <RouteBadge agency={leg.agency} color={leg.color} mode={leg.mode} shortName={leg.shortName} size="large" textColor={leg.textColor} withModeIcon={true} />
+                <View style={styles.routeCopy}>
+                  <Text style={styles.stepVerb}>{index === 0 ? 'BOARD' : 'TRANSFER TO'}</Text>
+                  <Text style={styles.stepAction}>{leg.routeName}</Text>
+                  {leg.agencyUrl ? (
+                    <Text accessibilityRole="link" onPress={() => void Linking.openURL(leg.agencyUrl!)} style={[styles.agency, styles.agencyLink]} testID={`${testPrefix}-agency-${index}`}>{leg.agency}</Text>
+                  ) : <Text style={styles.agency}>{leg.agency}</Text>}
+                </View>
+                <Text style={styles.segmentDuration}>{leg.durationMinutes} min</Text>
+              </View>
+              <View style={styles.segmentTimeline}>
+                <View style={styles.segmentRail}><View style={[styles.segmentDot, { borderColor: leg.color }]} /><View style={[styles.segmentLine, { backgroundColor: leg.color }]} /><View style={[styles.segmentDot, { borderColor: leg.color }]} /></View>
+                <View style={styles.stopDetails}>
+                  <View style={styles.stopRow}><View style={styles.stopCopy}><Text style={styles.stopLabel}>{leg.startLabel}</Text><Text style={styles.stopName}>{leg.startName}</Text></View><Text style={styles.stopTime}>{leg.startTime}</Text></View>
+                  {leg.stops && leg.stops.length > 0 && leg.stopCount ? (
+                    <>
+                      <Text style={styles.direction}>{leg.headsign ? `Toward ${leg.headsign}` : leg.direction}</Text>
+                      <PressableScale
+                        accessibilityHint={expandedLegs.has(index) ? 'Hides the stops in between' : 'Lists every stop in between with its time'}
+                        accessibilityLabel={`${leg.stopCount} stops`}
+                        accessibilityRole="button"
+                        accessibilityState={{ expanded: expandedLegs.has(index) }}
+                        onPress={() => toggleLeg(index)}
+                        style={styles.stopsToggle}
+                        testID={`${testPrefix}-stops-toggle-${index}`}
+                      >
+                        <Text style={[styles.stopsToggleText, { color: leg.color }]}>{`${leg.stopCount} ${leg.stopCount === 1 ? 'stop' : 'stops'}`}</Text>
+                        <Icon color={colors.mutedInk} name={expandedLegs.has(index) ? 'collapse' : 'expand'} size={16} />
+                      </PressableScale>
+                      {expandedLegs.has(index) ? (
+                        <View style={styles.viaList} testID={`${testPrefix}-stops-${index}`}>
+                          {leg.stops.map((stop, stopIndex) => (
+                            <PressableScale
+                              key={`${stop.name}-${stopIndex}`}
+                              accessibilityHint="Shows this stop on the map"
+                              accessibilityLabel={`${stop.name}, ${stop.time}`}
+                              accessibilityRole="button"
+                              disabled={!onFocusStop}
+                              onPress={() => onFocusStop?.(stop)}
+                              style={styles.viaRow}
+                              testID={`${testPrefix}-stop-${index}-${stopIndex}`}
+                            >
+                              <View style={[styles.viaDot, { borderColor: leg.color }]} />
+                              <Text numberOfLines={1} style={styles.viaName}>{stop.name}</Text>
+                              <Text style={styles.viaTime}>{stop.time}</Text>
+                            </PressableScale>
+                          ))}
+                        </View>
+                      ) : null}
+                    </>
+                  ) : (
+                    <Text style={styles.direction}>{leg.headsign ? `Toward ${leg.headsign}` : leg.direction}{leg.stopCount ? ` · ${leg.stopCount} ${leg.stopCount === 1 ? 'stop' : 'stops'}` : ''}</Text>
+                  )}
+                  <View style={styles.stopRow}><View style={styles.stopCopy}><Text style={styles.stopLabel}>{leg.endLabel}</Text><Text style={styles.stopName}>{leg.endName}</Text></View><Text style={styles.stopTime}>{leg.endTime}</Text></View>
+                </View>
               </View>
             </View>
           </View>
         ))}
+        {model.walkAfter ? <WalkRow testID={`${testPrefix}-walk-end`} walk={model.walkAfter} /> : null}
       </View>
     </DetailMapPage>
   );
@@ -192,11 +319,18 @@ export function SharedTripDetailView({ actionLabel, backLabel, isFavorite, model
 const createStyles = (colors: Palette) => StyleSheet.create({
  
  
+  stopsToggle: { alignSelf: 'flex-start', minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  stopsToggleText: { fontFamily: fontFamilies.extraBold, fontSize: 13 },
+  viaList: { marginBottom: 6 },
+  viaRow: { minHeight: 34, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  viaDot: { width: 9, height: 9, borderWidth: 2, borderRadius: 5, backgroundColor: colors.surface },
+  viaName: { flex: 1, color: colors.ink, ...typography.body, fontSize: 14 },
+  viaTime: { color: colors.mutedInk, ...typography.metadata, fontVariant: ['tabular-nums'] },
   topBar: { flexDirection: 'row', justifyContent: 'space-between', paddingTop: 8, paddingHorizontal: 14 }, mapActions: { flexDirection: 'row', gap: 10 }, roundButton: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 24, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.18, shadowRadius: 10, elevation: 5 }, selectedControl: { backgroundColor: colors.blueSoft },
   goButton: { minWidth: 104, height: 60, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 18, borderWidth: 3, borderColor: colors.blueSoft, borderRadius: 30, backgroundColor: colors.primary, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.28, shadowRadius: 10, elevation: 9 }, endTripAction: { borderColor: '#992D38', backgroundColor: colors.red }, goButtonPressed: { opacity: 0.88, transform: [{ scale: 0.97 }] }, goButtonText: { color: colors.onPrimary, fontFamily: fontFamilies.extraBold, fontSize: 18 },
   content: { padding: 16, paddingTop: 20, paddingBottom: 28, backgroundColor: colors.surfaceMuted }, summaryHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }, modeStrip: { flexDirection: 'row', alignItems: 'center' }, modeItem: { flexDirection: 'row', alignItems: 'center' }, modeArrow: { marginHorizontal: 3 }, primaryMetrics: { flex: 1, flexDirection: 'row', alignItems: 'baseline', justifyContent: 'flex-end', gap: 14 }, fare: { color: colors.primary, fontFamily: fontFamilies.extraBold, fontSize: 13 }, metricValue: { color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 10 }, minutes: { fontSize: 25, lineHeight: 27 },
-  timeCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18, padding: 16, borderWidth: 1, borderColor: colors.border, borderRadius: 18, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.08, shadowRadius: 9, elevation: 2 }, timeLabel: { color: colors.primary, ...typography.label, fontSize: 12 }, timeValue: { marginTop: 2, color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 20, lineHeight: 25 }, arriveTime: { alignItems: 'flex-end' },
+  timeCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18, padding: 16, borderWidth: 1, borderColor: colors.border, borderRadius: 18, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.08, shadowRadius: 9, elevation: 2 }, timeLabel: { color: colors.primary, ...typography.label, fontSize: 12 }, timeValue: { marginTop: 2, color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 20, lineHeight: 25 }, arriveTime: { alignItems: 'flex-end' }, fareNote: { marginTop: 8, paddingHorizontal: 4, color: colors.mutedInk, ...typography.metadata },
   tripContext: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginTop: 16 }, tripContextCopy: { minWidth: 0, flex: 1 }, contextLabel: { color: colors.primary, ...typography.label, fontSize: 9 }, destination: { marginTop: 2, color: colors.ink, ...typography.sectionHeading, fontSize: 19 }, origin: { marginTop: 2, color: colors.mutedInk, ...typography.metadata }, detailNote: { marginTop: 2, color: colors.primary, ...typography.metadata }, status: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 12, backgroundColor: colors.greenSoft }, statusDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.success }, statusText: { color: colors.success, fontFamily: fontFamilies.extraBold, fontSize: 10 }, recentStatus: { backgroundColor: colors.blueSoft }, recentStatusDot: { backgroundColor: colors.primary }, recentStatusText: { color: colors.primary }, transferLine: { flexDirection: 'row', alignItems: 'baseline', marginTop: 10 }, transferCount: { color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 16 }, transferText: { marginLeft: 4, color: colors.mutedInk, ...typography.metadata },
   alertButton: { minHeight: 48, flexDirection: 'row', alignItems: 'center', marginTop: 12, paddingHorizontal: 14, borderWidth: 1, borderColor: colors.border, borderRadius: 15, backgroundColor: colors.background }, alertIcon: { marginRight: 8 }, alertText: { flex: 1, color: colors.ink, ...typography.bodyStrong }, alertStatus: { color: colors.success, ...typography.metadata }, chevron: { marginLeft: 8, color: colors.mutedInk, fontFamily: fontFamilies.extraBold }, alertBody: { paddingHorizontal: 14, paddingTop: 8, color: colors.mutedInk, ...typography.metadata },
-  steps: { gap: 14, marginTop: 14 }, stepCard: { overflow: 'hidden', borderWidth: 1, borderColor: colors.border, borderRadius: 20, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.08, shadowRadius: 10, elevation: 2 }, stepHeader: { flexDirection: 'row', alignItems: 'center', gap: 11, padding: 14, borderBottomWidth: 1, borderBottomColor: colors.border }, routeCopy: { minWidth: 0, flex: 1 }, stepVerb: { color: colors.primary, ...typography.label, fontSize: 8 }, stepAction: { color: colors.ink, ...typography.routeName, fontSize: 16, lineHeight: 20 }, agency: { marginTop: 1, color: colors.mutedInk, ...typography.metadata, fontSize: 10 }, segmentDuration: { color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 16 }, segmentTimeline: { flexDirection: 'row', padding: 15 }, segmentRail: { width: 22, alignItems: 'center' }, segmentDot: { zIndex: 1, width: 17, height: 17, borderWidth: 5, borderRadius: 9, backgroundColor: colors.white }, segmentLine: { width: 4, flex: 1, minHeight: 67 }, stopDetails: { minWidth: 0, flex: 1, gap: 10, marginLeft: 10 }, stopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }, stopCopy: { minWidth: 0, flex: 1 }, stopLabel: { color: colors.primary, ...typography.label, fontSize: 8 }, stopName: { marginTop: 1, color: colors.ink, ...typography.bodyStrong, fontSize: 13 }, stopTime: { color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 14 }, direction: { paddingVertical: 7, color: colors.mutedInk, ...typography.metadata, fontSize: 11 },
+  steps: { gap: 14, marginTop: 14 }, stepGroup: { gap: 10 }, walkRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 4 }, transferRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.border, borderRadius: 14 }, walkText: { flex: 1, color: colors.mutedInk, ...typography.metadata }, walkStrong: { color: colors.ink, fontFamily: fontFamilies.extraBold }, agencyLink: { color: colors.primary, textDecorationLine: 'underline' }, stepCard: { overflow: 'hidden', borderWidth: 1, borderColor: colors.border, borderRadius: 20, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.08, shadowRadius: 10, elevation: 2 }, stepHeader: { flexDirection: 'row', alignItems: 'center', gap: 11, padding: 14, borderBottomWidth: 1, borderBottomColor: colors.border }, routeCopy: { minWidth: 0, flex: 1 }, stepVerb: { color: colors.primary, ...typography.label, fontSize: 8 }, stepAction: { color: colors.ink, ...typography.routeName, fontSize: 16, lineHeight: 20 }, agency: { marginTop: 1, color: colors.mutedInk, ...typography.metadata, fontSize: 10 }, segmentDuration: { color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 16 }, segmentTimeline: { flexDirection: 'row', padding: 15 }, segmentRail: { width: 22, alignItems: 'center' }, segmentDot: { zIndex: 1, width: 17, height: 17, borderWidth: 5, borderRadius: 9, backgroundColor: colors.white }, segmentLine: { width: 4, flex: 1, minHeight: 67 }, stopDetails: { minWidth: 0, flex: 1, gap: 10, marginLeft: 10 }, stopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }, stopCopy: { minWidth: 0, flex: 1 }, stopLabel: { color: colors.primary, ...typography.label, fontSize: 8 }, stopName: { marginTop: 1, color: colors.ink, ...typography.bodyStrong, fontSize: 13 }, stopTime: { color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 14 }, direction: { paddingVertical: 7, color: colors.mutedInk, ...typography.metadata, fontSize: 11 },
 });

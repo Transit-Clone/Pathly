@@ -128,3 +128,55 @@ const createTileStyles = (colors: Palette) => StyleSheet.create({
   number: { width: '50%', height: 34, borderRadius: 8 },
   unit: { width: '45%', height: 10 },
 });
+
+/** About as many itinerary cards as fit above the results sheet's fold. */
+const ITINERARY_PLACEHOLDER_COUNT = 3;
+
+/**
+ * Gray stand-ins for Route Results' itinerary cards while trips are planned: line badges and a
+ * timing line on the left, fare and minutes on the right. Announced once as a group.
+ */
+export function ItinerarySkeleton() {
+  const styles = useThemedStyles(createItineraryStyles);
+  const opacity = useSkeletonPulse();
+
+  return (
+    <View accessibilityLabel="Finding trips" accessibilityRole="progressbar" accessible={true} style={styles.list} testID="results-loading">
+      {Array.from({ length: ITINERARY_PLACEHOLDER_COUNT }, (_, index) => (
+        <Animated.View key={index} style={[styles.card, { opacity }]} testID="itinerary-placeholder">
+          <View style={styles.left}>
+            <View style={styles.badges}>
+              <View style={[styles.bar, styles.badge]} />
+              <View style={[styles.bar, styles.badge]} />
+            </View>
+            <View style={[styles.bar, styles.timing]} />
+          </View>
+          <View style={[styles.bar, styles.fare]} />
+          <View style={[styles.bar, styles.minutes]} />
+        </Animated.View>
+      ))}
+    </View>
+  );
+}
+
+// Matches RouteResultsView's itinerary cards.
+const createItineraryStyles = (colors: Palette) => StyleSheet.create({
+  list: { gap: 8 },
+  card: {
+    minHeight: 74,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: colors.skeleton,
+  },
+  left: { flex: 1, gap: 9 },
+  badges: { flexDirection: 'row', gap: 6 },
+  bar: { borderRadius: 6, backgroundColor: colors.skeletonBar },
+  badge: { width: 34, height: 26 },
+  timing: { width: '70%', height: 10 },
+  fare: { width: 36, height: 12 },
+  minutes: { width: 34, height: 30, borderRadius: 8 },
+});

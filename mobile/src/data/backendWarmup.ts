@@ -1,6 +1,5 @@
-import { httpsCallable } from 'firebase/functions';
 
-import { functions } from '../lib/firebase';
+import { callable } from '../lib/firebase';
 
 /** The Cloud Functions whose cold start the rider would otherwise wait on first. */
 type WarmedFunction = 'findNearbyTransit' | 'getRouteGeometry';
@@ -23,7 +22,7 @@ export function warmBackend(uid: string): void {
   if (warmedUid === uid) return;
   warmedUid = uid;
   for (const name of WARMED_FUNCTIONS) {
-    const warmup: Promise<void> = httpsCallable(functions, name)({ warmup: true }).then(
+    const warmup: Promise<void> = callable(name)({ warmup: true }).then(
       () => undefined,
       () => undefined,
     );

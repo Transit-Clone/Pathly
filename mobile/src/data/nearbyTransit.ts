@@ -1,7 +1,6 @@
-import { httpsCallable } from 'firebase/functions';
 
 import type { Coordinates } from '../hooks/useCurrentLocation';
-import { functions } from '../lib/firebase';
+import { callable } from '../lib/firebase';
 import { whenWarm } from './backendWarmup';
 import type { LiveSource, RouteDetail, TransitDirection } from './transit';
 
@@ -22,9 +21,7 @@ export type DiscoveredRoute = {
 
 type FindNearbyTransitResponse = { routes: DiscoveredRoute[] };
 
-const findNearbyTransitCallable = httpsCallable<{ lat: number; lon: number }, FindNearbyTransitResponse>(
-  functions,
-  'findNearbyTransit',
+const findNearbyTransitCallable = callable<{ lat: number; lon: number }, FindNearbyTransitResponse>('findNearbyTransit',
 );
 
 /**

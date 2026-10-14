@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet } from 'react-native';
-import MapView, { PROVIDER_GOOGLE, Polygon, type Camera, type Region } from 'react-native-maps';
+import MapView, { Marker, PROVIDER_GOOGLE, Polygon, type Camera, type LongPressEvent, type MapPressEvent, type Region } from 'react-native-maps';
 
 import { googleMapStyle } from '../data/mapStyle';
 import { SERVICE_AREA_BOUNDS } from '../data/serviceArea';
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { useTheme } from '../theme/AppSettings';
+import { CurrentLocationMarker } from './CurrentLocationMarker';
 
 const INITIAL_DELTA = { latitudeDelta: 0.05, longitudeDelta: 0.05 };
 const SNAP_BACK_DURATION_MS = 250;
@@ -49,6 +50,12 @@ type GoogleMapViewProps = {
   onOrientationChange?: (orientation: MapOrientation) => void;
   /** Incremented to turn the map back to north-up and flat, keeping its center and zoom. */
   reorientRequest?: number;
+  /** A tap on the map (admin: show its coordinates). */
+  onPress?: (point: Coordinates) => void;
+  /** A long press on the map (admin: choose a mock location). */
+  onLongPress?: (point: Coordinates) => void;
+  /** `location` is an admin's mock location, so the system GPS dot is replaced with a drawn one there. */
+  simulatedLocation?: boolean;
   testID?: string;
 };
 
@@ -62,7 +69,7 @@ function clampToServiceArea(region: Region): Region {
 }
 
 /** Real Google Maps view, defaulting to the user's location and panning only within NYC/Nassau/Suffolk. */
-export function GoogleMapView({ initialCamera, location, onCameraChange, onOrientationChange, onUserMoveEnd, onUserPan, padding, recenterRequest = 0, reorientRequest = 0, testID = 'google-map-view' }: GoogleMapViewProps) {
+export function GoogleMapView({ initialCamera, location, onCameraChange, onLongPress, onPress, onOrientationChange, onUserMoveEnd, onUserPan, padding, recenterRequest = 0, reorientRequest = 0, simulatedLocation = false, testID = 'google-map-view' }: GoogleMapViewProps) {
   const mapRef = useRef<MapView>(null);
   // Places hidden, and recolored in the dark theme (see mapStyle.ts).
   const { isDark } = useTheme();
@@ -131,6 +138,8 @@ export function GoogleMapView({ initialCamera, location, onCameraChange, onOrien
         onUserPan?.();
         if (Date.now() - lastOrientationRead.current >= ORIENTATION_READ_INTERVAL_MS) readOrientation();
       }}
+      onLongPress={onLongPress ? (event: LongPressEvent) => onLongPress(event.nativeEvent.coordinate) : undefined}
+      onPress={onPress ? (event: MapPressEvent) => onPress(event.nativeEvent.coordinate) : undefined}
       onRegionChangeComplete={onRegionChangeComplete}
       customMapStyle={mapStyle}
       provider={PROVIDER_GOOGLE}
@@ -138,12 +147,17 @@ export function GoogleMapView({ initialCamera, location, onCameraChange, onOrien
       region={region}
       showsCompass={false}
       showsMyLocationButton={false}
-      showsUserLocation={true}
+      showsUserLocation={!simulatedLocation}
       style={StyleSheet.absoluteFill}
       testID={testID}
       toolbarEnabled={false}
     >
       <Polygon coordinates={SERVICE_AREA_OUTLINE} fillColor="transparent" strokeColor="#0B4F9C" strokeWidth={2} />
+      {simulatedLocation ? (
+        <Marker anchor={{ x: 0.5, y: 0.5 }} coordinate={location} testID="mock-location-marker" tracksViewChanges={false}>
+          <CurrentLocationMarker />
+        </Marker>
+      ) : null}
     </MapView>
   );
 }

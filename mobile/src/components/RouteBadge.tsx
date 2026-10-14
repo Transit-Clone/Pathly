@@ -34,12 +34,18 @@ const LIRR_BRANCH_CODES: Record<string, string> = {
   'West Hempstead': 'WH',
 };
 
+// Single-word route codes up to this long are shown whole (`SIM3C`, `BxM10`, `Q44-SBS`): cutting
+// one down to initials would name a different route.
+const MAX_ROUTE_CODE = 7;
+
 /**
- * A badge-sized label for a route: its short name when that is already short (`51`, `E`, `PJ`),
- * otherwise a code — LIRR's branch codes, or the initials of the name without "Branch"/"Line".
+ * A badge-sized label for a route: its short name when that is already short (`51`, `E`, `PJ`) or
+ * a single route code (`SIM3C`), otherwise a code — LIRR's branch codes, or the initials of the
+ * name without "Branch"/"Line".
  */
 export function badgeLabel(route: { agency: string; shortName: string }): string {
   if (route.shortName.length <= MAX_BADGE_LABEL) return route.shortName;
+  if (!/\s/.test(route.shortName) && route.shortName.length <= MAX_ROUTE_CODE) return route.shortName;
   const name = route.shortName.replace(/\s+(Branch|Line|Service)$/i, '').trim();
   if (route.agency === 'LIRR' && LIRR_BRANCH_CODES[name]) return LIRR_BRANCH_CODES[name];
   return name.split(/\s+/).map((word) => word[0]?.toUpperCase() ?? '').join('').slice(0, MAX_BADGE_LABEL);
@@ -54,8 +60,12 @@ const sizes = {
 type RouteBadgeProps = {
   agency: string;
   color: string;
+  /** The vehicle mode, when the agency name alone can't tell (e.g. a planned trip's Google agency). */
+  mode?: TransitMode;
   shortName: string;
   size?: keyof typeof sizes;
+  /** Label color on the badge; white by default. */
+  textColor?: string;
   style?: StyleProp<ViewStyle>;
   testID?: string;
   withModeIcon?: boolean;
@@ -64,15 +74,17 @@ type RouteBadgeProps = {
 export function RouteBadge({
   agency,
   color,
+  mode: modeOverride,
   shortName,
   size = 'medium',
   style,
   testID,
+  textColor,
   withModeIcon = false,
 }: RouteBadgeProps) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
-  const mode = transitModeForAgency(agency);
+  const mode = modeOverride ?? transitModeForAgency(agency);
   const metrics = sizes[size];
   const showIcon = mode === 'rail' || (mode === 'bus' && withModeIcon);
 
@@ -90,8 +102,8 @@ export function RouteBadge({
       ]}
       testID={testID}
     >
-      {showIcon ? <Icon color={colors.white} filled={true} name={mode === 'rail' ? 'rail' : 'bus'} size={metrics.icon} /> : null}
-      <Text style={[styles.text, { fontSize: metrics.fontSize }]}>{shortName}</Text>
+      {showIcon ? <Icon color={textColor ?? colors.white} filled={true} name={mode === 'rail' ? 'rail' : 'bus'} size={metrics.icon} /> : null}
+      <Text style={[styles.text, { fontSize: metrics.fontSize }, textColor ? { color: textColor } : null]}>{shortName}</Text>
     </View>
   );
 }

@@ -3,13 +3,32 @@ import { defineSecret } from 'firebase-functions/params';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 
-import { enforceCallableSecurity, type CallableRateLimit } from './callableSecurity';
+import { requireAdmin } from './admin';
+import { collectBackendStatus } from './backendStatus';
+import { enforceCallableSecurity, peekRateLimits, type CallableRateLimit } from './callableSecurity';
 import { findNearbyTransit as findNearbyTransitDiscovery, getNearestStopForRoute, getRouteGeometry as getRouteGeometryDiscovery } from './gtfsDiscovery';
 import { AGENCY_CONFIGS, type AgencyId } from './gtfsAgencies';
 import { getStopPredictions } from './gtfsSchedule';
 import { refreshAllGtfsSnapshots } from './gtfsSnapshots';
 import { loadAgencyStaticData, loadGlobalStopRouteIndex, prepareAgencyStaticData } from './gtfsStaticData';
 import { getRouteStatus } from './gtfsStatus';
+import { isInServiceArea } from './serviceArea';
+import { searchStops } from './stopSearch';
+import { agencyIdForStep } from './tripAgencies';
+import { createFareEstimator } from './tripFares';
+import {
+  buildRoutesRequest,
+  normalizeRoutesResponse,
+  ROUTES_API_URL,
+  ROUTES_FIELD_MASK,
+  type Itinerary,
+  type PlanTripRequest,
+  type RoutesResponse,
+  type TripEndpoint,
+  type TravelModeOption,
+  type TripPreference,
+} from './tripPlanning';
+import { addTripStops, matchTripStops } from './tripStops';
 
 const CALLABLE_RUNTIME_SERVICE_ACCOUNT = 'pathly-callable-runtime@pathly-b7f0f.iam.gserviceaccount.com';
 const GTFS_WRITER_SERVICE_ACCOUNT = 'pathly-gtfs-writer@pathly-b7f0f.iam.gserviceaccount.com';
@@ -46,8 +65,21 @@ const RATE_LIMITS = {
   findNearbyTransit: { userPerMinute: 30 },
   getNearestRouteStop: { userPerMinute: 600 },
   getRouteGeometry: { userPerMinute: 120 },
+  // Each plan is one billed Routes API request (Compute Routes Essentials).
+  planTrip: { userPerMinute: 20 },
   geocodeAddress: { userPerMinute: 10 },
+  // About one call per pause in typing, alongside Google's suggestions.
+  searchTransitStops: { userPerMinute: 60 },
+  // Admin-only; each call checks every live feed.
+  getBackendStatus: { userPerMinute: 6 },
 } satisfies Record<string, CallableRateLimit>;
+
+const TRIP_STOPS_BUDGET_MS = 1_500;
+let tripStopMatcher = matchTripStops;
+/** Unit-test dependency injection only. */
+export function setTripStopMatcherForTests(matcher: typeof matchTripStops | undefined): void {
+  tripStopMatcher = matcher ?? matchTripStops;
+}
 
 /** Refresh official static feeds daily; each agency publishes atomically and retries safely. */
 export const refreshGtfsStaticData = onSchedule(
@@ -305,6 +337,112 @@ export const getRouteGeometry = onCall<RouteGeometryRequest>(protectedCallableOp
   return geometry;
 });
 
+const TRIP_MODES: readonly TravelModeOption[] = ['subway', 'bus', 'rail'];
+const TRIP_PREFERENCES: readonly TripPreference[] = ['fastest', 'transfers', 'cheapest'];
+// The Routes API plans transit from 7 days ago to 100 days ahead.
+const TRIP_TIME_PAST_MS = 7 * 24 * 60 * 60 * 1000;
+const TRIP_TIME_FUTURE_MS = 100 * 24 * 60 * 60 * 1000;
+const ROUTES_TIMEOUT_MS = 15_000;
+
+function outOfArea(): HttpsError {
+  return new HttpsError('invalid-argument', 'This trip is outside the area Pathly covers.', { reason: 'out-of-area' });
+}
+
+function badTripRequest(message: string): HttpsError {
+  return new HttpsError('invalid-argument', message, { reason: 'bad-request' });
+}
+
+function requiredEndpoint(value: unknown, name: string): TripEndpoint {
+  if (!value || typeof value !== 'object') throw badTripRequest(`${name} is required`);
+  const { placeId, lat, lng, label } = value as Record<string, unknown>;
+  if (typeof label !== 'string' || label.length === 0 || label.length > 200) throw badTripRequest(`${name}.label is invalid`);
+  const hasPlace = placeId !== undefined;
+  if (hasPlace && (typeof placeId !== 'string' || !/^[A-Za-z0-9_-]{1,300}$/.test(placeId))) throw badTripRequest(`${name}.placeId is invalid`);
+  const hasCoordinates = lat !== undefined || lng !== undefined;
+  if (hasCoordinates) {
+    if (typeof lat !== 'number' || typeof lng !== 'number' || !Number.isFinite(lat) || !Number.isFinite(lng)) throw badTripRequest(`${name} coordinates are invalid`);
+    if (!isInServiceArea(lat, lng)) throw outOfArea();
+  }
+  if (!hasPlace && !hasCoordinates) throw badTripRequest(`${name} needs a placeId or coordinates`);
+  return { label, ...(hasPlace ? { placeId: placeId as string } : {}), ...(hasCoordinates ? { lat: lat as number, lng: lng as number } : {}) };
+}
+
+/** Validates a planTrip request; endpoints given as coordinates must be in the service area. */
+export function requiredPlanTripRequest(data: unknown, nowMs = Date.now()): PlanTripRequest {
+  const request = (data ?? {}) as Record<string, unknown>;
+  const origin = requiredEndpoint(request.origin, 'origin');
+  const destination = requiredEndpoint(request.destination, 'destination');
+
+  const time = request.time as Record<string, unknown> | undefined;
+  let tripTime: PlanTripRequest['time'];
+  if (time?.mode === 'now') {
+    tripTime = { mode: 'now' };
+  } else if ((time?.mode === 'depart' || time?.mode === 'arrive') && typeof time.at === 'string') {
+    const at = Date.parse(time.at);
+    if (!Number.isFinite(at) || at < nowMs - TRIP_TIME_PAST_MS || at > nowMs + TRIP_TIME_FUTURE_MS) throw badTripRequest('time.at is outside the plannable window');
+    tripTime = { mode: time.mode, at: new Date(at).toISOString() };
+  } else {
+    throw badTripRequest('time is invalid');
+  }
+
+  const { preference, modes } = request;
+  if (typeof preference !== 'string' || !TRIP_PREFERENCES.includes(preference as TripPreference)) throw badTripRequest('preference is invalid');
+  if (!Array.isArray(modes) || modes.length === 0 || modes.some((mode) => !TRIP_MODES.includes(mode as TravelModeOption))) throw badTripRequest('modes are invalid');
+  return { origin, destination, time: tripTime, preference: preference as TripPreference, modes: [...new Set(modes as TravelModeOption[])] };
+}
+
+/**
+ * Real transit itineraries between two places, from the Google Routes API (computeRoutes,
+ * TRANSIT, with alternatives), reshaped into the app's itinerary format (tripPlanning.ts).
+ * The Maps key stays server-side. An empty list means Google found no transit trip.
+ * Client call: httpsCallable(functions, 'planTrip')({ origin, destination, time, preference, modes }).
+ */
+export const planTrip = onCall<PlanTripRequest, Promise<{ itineraries: Itinerary[] }>>(
+  { ...protectedCallableOptions, secrets: [googleMapsApiKey], timeoutSeconds: 30 },
+  async (request) => {
+    await enforceCallableSecurity(request, 'planTrip', RATE_LIMITS.planTrip);
+    const nowMs = Date.now();
+    const trip = requiredPlanTripRequest(request.data, nowMs);
+
+    let body: RoutesResponse & { error?: { status?: string; message?: string } };
+    let status: number;
+    try {
+      const response = await fetch(ROUTES_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': googleMapsApiKey.value(), 'X-Goog-FieldMask': ROUTES_FIELD_MASK },
+        body: JSON.stringify(buildRoutesRequest(trip)),
+        signal: AbortSignal.timeout(ROUTES_TIMEOUT_MS),
+      });
+      status = response.status;
+      body = (await response.json()) as typeof body;
+    } catch (error) {
+      logger.warn('Trip planning request failed', { event: 'trip_planning_unavailable', reason: error instanceof Error ? error.message : String(error) });
+      throw new HttpsError('unavailable', 'Trips could not be loaded right now.');
+    }
+    if (status < 200 || status >= 300 || body.error) {
+      logger.warn('Trip planning request was rejected', { event: 'trip_planning_unavailable', httpStatus: status, googleStatus: body.error?.status, reason: body.error?.message });
+      throw new HttpsError('unavailable', 'Trips could not be loaded right now.');
+    }
+
+    // Endpoints given only as a place are checked against the service area here, where the
+    // route says where they are.
+    const legs = body.routes?.[0]?.legs ?? [];
+    const ends = [legs[0]?.startLocation, legs.at(-1)?.endLocation].map((location) => location?.latLng);
+    if (ends.some((point) => point?.latitude !== undefined && point.longitude !== undefined && !isInServiceArea(point.latitude, point.longitude))) throw outOfArea();
+
+    const requestTime = trip.time.mode === 'now' ? new Date(nowMs).toISOString() : trip.time.at;
+    // Google has no fares for the LIRR, NICE, or Suffolk; estimate those from published fares.
+    await prepareAgencyStaticData('lirr');
+    const estimateFare = createFareEstimator(loadAgencyStaticData('lirr').stopsById.values());
+    const itineraries = normalizeRoutesResponse(body, requestTime, trip.destination.label, estimateFare);
+    // Stops in between come from Pathly's own timetables (Google gives only a count); any leg not
+    // matched within the budget simply goes without.
+    const agencies = new Set(itineraries.flatMap((itinerary) => itinerary.steps.flatMap((step) => (step.kind === 'transit' ? [agencyIdForStep(step)] : []))));
+    for (const agencyId of agencies) if (agencyId) await prepareAgencyStaticData(agencyId);
+    return { itineraries: await addTripStops(itineraries, TRIP_STOPS_BUDGET_MS, tripStopMatcher) };
+  },
+);
+
 type GeocodeRequest = { address: string };
 type GeocodeResult = { lat: number; lng: number; formattedAddress: string };
 type GeocodingApiResponse = {
@@ -347,3 +485,37 @@ export const geocodeAddress = onCall<GeocodeRequest, Promise<GeocodeResult>>(
     };
   },
 );
+
+/**
+ * Admin-only health of the backend: each agency's published timetable snapshot and its age, the
+ * last scheduled refresh, whether its live feed answers, and the caller's own rate-limit allowance.
+ * Client call: httpsCallable(functions, 'getBackendStatus')().
+ */
+export const getBackendStatus = onCall({ ...protectedCallableOptions, secrets: [swiftlyApiKey] }, async (request) => {
+  const uid = await enforceCallableSecurity(request, 'getBackendStatus', RATE_LIMITS.getBackendStatus);
+  requireAdmin(request);
+  const [agencies, myRateLimits] = await Promise.all([collectBackendStatus(), peekRateLimits(uid, RATE_LIMITS)]);
+  return { checkedAt: new Date().toISOString(), agencies, myRateLimits };
+});
+
+type SearchTransitStopsRequest = { query: string; near?: { lat: number; lng: number } };
+
+/**
+ * Pathly's own stops whose names match a search query, each with the lines serving it, for the
+ * destination search screen (Google's suggestions don't say which lines stop at a station).
+ * Client call: httpsCallable(functions, 'searchTransitStops')({ query, near? }).
+ */
+export const searchTransitStops = onCall<SearchTransitStopsRequest>(protectedCallableOptions, async (request) => {
+  await enforceCallableSecurity(request, 'searchTransitStops', RATE_LIMITS.searchTransitStops);
+  const query = requiredString(request.data?.query, 'query', 80);
+  const near = request.data?.near;
+  const point = near === undefined ? undefined : (() => {
+    const { lat, lon } = requiredCoordinates(near?.lat, near?.lng);
+    return { lat, lng: lon };
+  })();
+  // Hydrate sequentially so a cold instance never buffers every agency's ZIP at once.
+  for (const agencyId of Object.keys(AGENCY_CONFIGS) as AgencyId[]) {
+    await prepareAgencyStaticData(agencyId);
+  }
+  return { stops: await searchStops(query, point) };
+});

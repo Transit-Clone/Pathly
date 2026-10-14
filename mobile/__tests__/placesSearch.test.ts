@@ -1,5 +1,6 @@
 import {
   autocompletePlaces,
+  placeKindForTypes,
   createSessionToken,
   fetchPlaceDetails,
   getPlacesApiKey,
@@ -12,7 +13,8 @@ const jsonResponse = (body: unknown, status = 200) =>
 
 describe('placesSearch', () => {
   const originalFetch = globalThis.fetch;
-  const { EXPO_PUBLIC_GOOGLE_PLACES_API_KEY, EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY } = process.env;
+  const EXPO_PUBLIC_GOOGLE_PLACES_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
+  const EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY;
   let fetchMock: jest.Mock;
 
   beforeEach(() => {
@@ -76,7 +78,7 @@ describe('placesSearch', () => {
         },
       },
     });
-    expect(places).toEqual([{ id: 'abc', title: '100 Nicolls Rd', subtitle: 'Stony Brook, NY, USA' }]);
+    expect(places).toEqual([{ id: 'abc', title: '100 Nicolls Rd', subtitle: 'Stony Brook, NY, USA', kind: 'place', source: 'google' }]);
   });
 
   it('returns an empty list when Google has no suggestions', async () => {
@@ -114,5 +116,17 @@ describe('placesSearch', () => {
   it('throws on non-2xx details responses', async () => {
     fetchMock.mockReturnValue(jsonResponse({}, 500));
     await expect(fetchPlaceDetails({ placeId: 'abc', sessionToken: 't' })).rejects.toBeInstanceOf(PlacesRequestError);
+  });
+
+  it('maps Google place types to the kind a row shows', () => {
+    expect(placeKindForTypes(['subway_station', 'transit_station'])).toBe('subway');
+    expect(placeKindForTypes(['train_station', 'transit_station'])).toBe('rail');
+    expect(placeKindForTypes(['light_rail_station'])).toBe('rail');
+    expect(placeKindForTypes(['bus_station', 'transit_station'])).toBe('bus');
+    expect(placeKindForTypes(['ferry_terminal'])).toBe('ferry');
+    // A plain transit station is most often a rail station.
+    expect(placeKindForTypes(['transit_station', 'point_of_interest'])).toBe('rail');
+    expect(placeKindForTypes(['restaurant'])).toBe('place');
+    expect(placeKindForTypes(undefined)).toBe('place');
   });
 });

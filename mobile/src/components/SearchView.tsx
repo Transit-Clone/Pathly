@@ -12,16 +12,32 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '../auth/AuthContext';
-import { fetchPlaceDetails, type SearchPlace } from '../data/placesSearch';
+import { fetchPlaceDetails, type PlaceKind, type SearchPlace } from '../data/placesSearch';
 import { locationToPlace, recordSearch, removeSearch, subscribeToSearches } from '../data/userData';
 import { usePlacesSearch } from '../hooks/usePlacesSearch';
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { typography } from '../theme/typography';
-import { Icon } from './Icon';
+import { Icon, type IconName } from './Icon';
 import { PressableScale } from './PressableScale';
+import { badgeLabel, RouteBadge, type TransitMode } from './RouteBadge';
 
 const MAX_RECENT_SEARCHES = 8;
+/** Badges on a stop row before the rest are summarized as "+N". */
+const MAX_ROW_BADGES = 6;
+
+const KIND_ICONS: Record<Exclude<PlaceKind, 'place'>, IconName> = { subway: 'subway', rail: 'rail', bus: 'bus', ferry: 'ferry' };
+// Ferries have no badge shape of their own yet; their routes draw like bus routes.
+const KIND_BADGE_MODES: Record<Exclude<PlaceKind, 'place'>, TransitMode> = { subway: 'subway', rail: 'rail', bus: 'bus', ferry: 'bus' };
+
+/** "Jamaica, LIRR station, lines PJ, RK, and 8 more" for a stop; "name, address" for a place. */
+function rowLabel(place: SearchPlace): string {
+  if (!place.routes?.length || !place.kind || place.kind === 'place') return `${place.title}, ${place.subtitle}`;
+  const names = place.routes.slice(0, 3).map((route) => badgeLabel({ agency: place.agency ?? '', shortName: route.shortName }));
+  const more = place.routes.length - names.length;
+  const lines = more > 0 ? `${names.join(', ')}, and ${more} more` : names.join(', ');
+  return `${place.title}, ${place.agency ?? place.subtitle} ${place.kind === 'bus' ? 'stop' : 'station'}, ${place.routes.length === 1 ? 'line' : 'lines'} ${lines}`;
+}
 
 export type SearchViewProps = {
   initialQuery?: string;
@@ -29,6 +45,8 @@ export type SearchViewProps = {
   onSelect: (place: SearchPlace) => void;
   /** When set (editing a trip's start), a "Current location" choice is offered first. */
   onSelectCurrentLocation?: () => void;
+  /** The rider's location, to rank equally good transit stops nearest first. */
+  near?: { latitude: number; longitude: number } | null;
 };
 
 type SearchResultRowProps = {
@@ -48,9 +66,10 @@ function SearchIcon() {
 function SearchResultRow({ onPress, onRemove, place, recent = false, resolving = false }: SearchResultRowProps) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
+  const transitKind = place.kind && place.kind !== 'place' ? place.kind : undefined;
   const row = (
     <PressableScale
-      accessibilityLabel={`${place.title}, ${place.subtitle}`}
+      accessibilityLabel={rowLabel(place)}
       accessibilityRole="button"
       accessibilityState={{ busy: resolving }}
       onPress={onPress}
@@ -61,7 +80,7 @@ function SearchResultRow({ onPress, onRemove, place, recent = false, resolving =
         {resolving ? (
           <ActivityIndicator color={colors.primary} size="small" testID={`search-result-resolving-${place.id}`} />
         ) : (
-          <Icon color={colors.mutedInk} name={recent ? 'recent' : 'place'} size={20} />
+          <Icon color={transitKind ? colors.primary : colors.mutedInk} name={transitKind ? KIND_ICONS[transitKind] : recent ? 'recent' : 'place'} size={20} testID={`search-kind-icon-${transitKind ?? (recent ? 'recent' : 'place')}`} />
         )}
       </View>
 
@@ -69,6 +88,21 @@ function SearchResultRow({ onPress, onRemove, place, recent = false, resolving =
         <Text numberOfLines={1} style={styles.resultTitle}>
           {place.title}
         </Text>
+        {transitKind && place.routes?.length ? (
+          <View style={styles.badgeRow} testID={`search-routes-${place.id}`}>
+            {place.routes.slice(0, MAX_ROW_BADGES).map((route) => (
+              <RouteBadge
+                key={route.shortName}
+                agency={place.agency ?? ''}
+                color={route.color}
+                mode={KIND_BADGE_MODES[transitKind]}
+                shortName={badgeLabel({ agency: place.agency ?? '', shortName: route.shortName })}
+                size="small"
+              />
+            ))}
+            {place.routes.length > MAX_ROW_BADGES ? <Text style={styles.moreRoutes}>{`+${place.routes.length - MAX_ROW_BADGES}`}</Text> : null}
+          </View>
+        ) : null}
         <Text numberOfLines={1} style={styles.resultSubtitle}>
           {place.subtitle}
         </Text>
@@ -113,7 +147,7 @@ function Message({ body, children, title }: MessageProps) {
 }
 
 /** Full-screen destination search: search field pinned on top, a flat result list below. */
-export function SearchView({ initialQuery = '', onCancel, onSelect, onSelectCurrentLocation }: SearchViewProps) {
+export function SearchView({ initialQuery = '', near, onCancel, onSelect, onSelectCurrentLocation }: SearchViewProps) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
   const [query, setQuery] = useState(initialQuery);
@@ -136,7 +170,7 @@ export function SearchView({ initialQuery = '', onCancel, onSelect, onSelectCurr
   const forgetPlace = (place: SearchPlace) => {
     if (uid) removeSearch(uid, place.id).catch(() => undefined);
   };
-  const { endSession, getSessionToken, retry, status, suggestions } = usePlacesSearch(query);
+  const { endSession, getSessionToken, retry, status, suggestions } = usePlacesSearch(query, near);
   const isSearching = status !== 'idle';
 
   // Not an effect dependency, so a parent re-render (new onSelect identity) can't restart the request.
@@ -176,6 +210,13 @@ export function SearchView({ initialQuery = '', onCancel, onSelect, onSelectCurr
 
   const selectSuggestion = (suggestion: SearchPlace) => {
     if (resolvingId) return;
+    // Pathly's own stops already know where they are: no details request.
+    if (suggestion.source === 'pathly' && suggestion.location) {
+      endSession();
+      rememberPlace(suggestion);
+      onSelect(suggestion);
+      return;
+    }
     setResolvingId(suggestion.id);
     setSelectionFailed(false);
   };
@@ -441,6 +482,8 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     ...typography.bodyStrong,
     fontSize: 15,
   },
+  badgeRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 4, marginTop: 4, marginBottom: 2 },
+  moreRoutes: { color: colors.mutedInk, ...typography.metadata, fontSize: 12 },
   resultSubtitle: {
     marginTop: 2,
     color: colors.mutedInk,

@@ -37,7 +37,7 @@ function nearestPointIndex(points: readonly ShapePoint[], target: { lat: number;
 }
 
 /** Iterative Douglas-Peucker (no recursion depth limits on long shapes). */
-function simplifyPath(points: readonly ShapePoint[], toleranceMeters: number): ShapePoint[] {
+export function simplifyPath(points: readonly ShapePoint[], toleranceMeters: number): ShapePoint[] {
   if (points.length < 3) return [...points];
   const xy = points.map(metresXY);
   const keep = new Uint8Array(points.length);

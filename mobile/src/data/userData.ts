@@ -13,7 +13,7 @@ import {
 } from 'firebase/firestore';
 
 import { db } from '../lib/firebase';
-import type { SearchPlace } from './placesSearch';
+import type { PlaceKind, SearchPlace, StopRoute } from './placesSearch';
 
 /**
  * Per-user Firestore data (see docs/Database Class Diagram.png):
@@ -37,7 +37,12 @@ export type Location = {
   type: LocationType;
   /** Google Places id (or demo id) the location came from, to map it back to a SearchPlace. */
   placeId: string;
+  /** A transit stop's mode, agency, and lines, so its recent row keeps its icon and badges. */
+  transit?: { kind: PlaceKind; agency: string; routes: StopRoute[] };
 };
+
+/** The most lines kept on a saved stop (firestore.rules allows this many). */
+const MAX_SAVED_ROUTES = 30;
 
 export type Search = { id: string; address: Location; dateSearched: Date | null };
 export type PrevDest = { id: string; address: Location; dateNavigated: Date | null };
@@ -60,6 +65,9 @@ export function placeToLocation(place: SearchPlace, type: LocationType): Locatio
     coordinates: place.location ? [place.location.latitude, place.location.longitude] : [0, 0],
     type,
     placeId: place.id,
+    ...(place.kind && place.kind !== 'place' && place.routes?.length
+      ? { transit: { kind: place.kind, agency: place.agency ?? place.subtitle, routes: place.routes.slice(0, MAX_SAVED_ROUTES).map(({ shortName, color }) => ({ shortName, color })) } }
+      : {}),
   };
 }
 
@@ -70,6 +78,7 @@ export function locationToPlace(location: Location): SearchPlace {
     title: location.name,
     subtitle: location.streetAddress,
     ...(latitude || longitude ? { location: { latitude, longitude } } : {}),
+    ...(location.transit ? { kind: location.transit.kind, agency: location.transit.agency, routes: location.transit.routes, source: 'pathly' as const } : {}),
   };
 }
 

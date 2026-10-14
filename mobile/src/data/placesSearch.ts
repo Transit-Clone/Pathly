@@ -1,12 +1,37 @@
 import { SERVICE_AREA_BOUNDS } from './serviceArea';
 
-/** A destination the rider can pick: a Google place suggestion, a resolved place, or a sample recent. */
+/** What kind of place a suggestion is, for its icon: a transit stop's mode, or any other place. */
+export type PlaceKind = 'place' | 'subway' | 'rail' | 'bus' | 'ferry';
+
+/** A line serving a transit stop, as its route badge shows it. */
+export type StopRoute = { shortName: string; color: string };
+
+/** A destination the rider can pick: a Google place suggestion, a resolved place, a transit stop, or a recent. */
 export type SearchPlace = {
   id: string;
   title: string;
   subtitle: string;
   location?: { latitude: number; longitude: number };
+  /** Absent on older recents, which read as plain places. */
+  kind?: PlaceKind;
+  /** The lines serving a transit stop from Pathly's own data. */
+  routes?: readonly StopRoute[];
+  /** The agency whose stop this is (its badges' agency), for Pathly stops. */
+  agency?: string;
+  source?: 'google' | 'pathly';
 };
+
+/** A Google suggestion's kind from its place types: the first transit type it has, else a plain place. */
+export function placeKindForTypes(types: readonly string[] | undefined): PlaceKind {
+  for (const type of types ?? []) {
+    if (type === 'subway_station') return 'subway';
+    if (type === 'train_station' || type === 'light_rail_station') return 'rail';
+    if (type === 'bus_station') return 'bus';
+    if (type === 'ferry_terminal') return 'ferry';
+  }
+  // A transit station of no more specific type is most often a rail station.
+  return types?.includes('transit_station') ? 'rail' : 'place';
+}
 
 const PLACES_BASE_URL = 'https://places.googleapis.com/v1';
 const DETAILS_FIELD_MASK = 'id,displayName,formattedAddress,location';
@@ -47,6 +72,7 @@ type AutocompleteResponse = {
     placePrediction?: {
       placeId: string;
       text?: { text: string };
+      types?: string[];
       structuredFormat?: { mainText?: { text: string }; secondaryText?: { text: string } };
     };
   }[];
@@ -85,11 +111,13 @@ export async function autocompletePlaces({ input, sessionToken, signal }: Autoco
   const data = (await response.json()) as AutocompleteResponse;
   return (data.suggestions ?? []).flatMap(({ placePrediction }) => {
     if (!placePrediction) return [];
-    const { placeId, structuredFormat, text } = placePrediction;
+    const { placeId, structuredFormat, text, types } = placePrediction;
     return [{
       id: placeId,
       title: structuredFormat?.mainText?.text ?? text?.text ?? '',
       subtitle: structuredFormat?.secondaryText?.text ?? '',
+      kind: placeKindForTypes(types),
+      source: 'google' as const,
     }];
   });
 }

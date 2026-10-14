@@ -5,9 +5,10 @@ import { type FirebaseOptions, getApps, initializeApp } from 'firebase/app';
 import { getReactNativePersistence, initializeAuth } from '@firebase/auth';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
-import { getFunctions } from 'firebase/functions';
+import { getFunctions, httpsCallable, type HttpsCallableResult } from 'firebase/functions';
 import { Platform } from 'react-native';
 
+import { isRequestLogEnabled, recordRequest } from '../debug/requestLog';
 import { initializePlatformAppCheck } from './firebaseAppCheck';
 
 /** Populated from mobile/.env; these are safe to ship in the app bundle. */
@@ -29,5 +30,26 @@ export const auth = Platform.OS === 'web' ? getAuth(app) : initializeAuth(app, {
 
 export const db = getFirestore(app);
 
-/** Cloud Functions client; call e.g. httpsCallable(functions, 'geocode') from a feature module. */
+/** Cloud Functions client; feature modules call functions through `callable` below. */
 export const functions = getFunctions(app);
+
+/**
+ * A Cloud Functions callable, recorded in the admin's Recent requests list when an admin is
+ * signed in. `summarize` keeps that list small (and keeps provider content out of it).
+ */
+export function callable<Request, Response>(name: string, summarize?: (response: Response) => unknown) {
+  const call = httpsCallable<Request, Response>(functions, name);
+  return async (data?: Request): Promise<HttpsCallableResult<Response>> => {
+    if (!isRequestLogEnabled()) return call(data);
+    const startedAt = Date.now();
+    try {
+      const result = await call(data);
+      recordRequest({ name, startedAt, ms: Date.now() - startedAt, ok: true, request: data ?? null, ...(summarize ? { responseSummary: summarize(result.data) } : {}) });
+      return result;
+    } catch (error) {
+      const code = (error as { code?: unknown } | null)?.code;
+      recordRequest({ name, startedAt, ms: Date.now() - startedAt, ok: false, ...(typeof code === 'string' ? { code } : {}), request: data ?? null });
+      throw error;
+    }
+  };
+}
