@@ -81,6 +81,43 @@ it('fails corrupt, unsupported, and wrong-account documents safely', async () =>
   expect(await readNavigationDocument('alice', NOW)).toEqual(document('alice'));
 });
 
+it('accepts optional trip-id evidence only when every entry is a string or null', async () => {
+  const withTripIds = active('alice', {
+    selection: { ...active('alice').selection, tripIds: ['gtfs-1', null] },
+  });
+  await AsyncStorage.setItem(navigationStorageKey('alice'), JSON.stringify(document('alice', { active: withTripIds })));
+  expect((await readNavigationDocument('alice', NOW)).active?.selection.tripIds).toEqual(['gtfs-1', null]);
+
+  const invalid = JSON.parse(JSON.stringify(withTripIds)) as Record<string, unknown>;
+  (invalid.selection as Record<string, unknown>).tripIds = ['gtfs-1', 42];
+  await AsyncStorage.setItem(navigationStorageKey('alice'), JSON.stringify(document('alice', { active: invalid as unknown as ActiveTripResumeV1 })));
+  expect((await readNavigationDocument('alice', NOW)).active).toBeNull();
+});
+
+it('accepts version-2 bounded walk evidence and rejects malformed evidence', async () => {
+  const previous = active('alice').selection;
+  const modern = active('alice', {
+    selection: {
+      ...previous,
+      version: 2,
+      fingerprint: 'v2-current-fingerprint',
+      walks: [{ stepIndex: 0, durationSeconds: 90, distanceMeters: 120 }],
+      legacy: {
+        departureTime: previous.departureTime,
+        arrivalTime: previous.arrivalTime,
+        fingerprint: previous.fingerprint,
+      },
+    },
+  });
+  await AsyncStorage.setItem(navigationStorageKey('alice'), JSON.stringify(document('alice', { active: modern })));
+  expect((await readNavigationDocument('alice', NOW)).active?.selection.version).toBe(2);
+
+  const malformed = structuredClone(modern) as unknown as Record<string, unknown>;
+  (malformed.selection as Record<string, unknown>).walks = [{ stepIndex: 0, durationSeconds: -1, distanceMeters: 120 }];
+  await AsyncStorage.setItem(navigationStorageKey('alice'), JSON.stringify(document('alice', { active: malformed as unknown as ActiveTripResumeV1 })));
+  expect((await readNavigationDocument('alice', NOW)).active).toBeNull();
+});
+
 it('isolates accounts even when their writes overlap', async () => {
   await Promise.all([
     updateNavigationDocument('alice', (current) => ({ ...current, active: active('alice') }), NOW),

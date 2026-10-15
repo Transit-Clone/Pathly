@@ -154,6 +154,12 @@ function placeLocation(place: SearchPlace | undefined): LatLng | undefined {
   return location && (location.latitude !== 0 || location.longitude !== 0) ? { lat: location.latitude, lng: location.longitude } : undefined;
 }
 
+/** Whether a selected/saved place can route without waiting for the device's current position. */
+export function hasRoutableTripPlace(label: string, place: SearchPlace | undefined): boolean {
+  const usablePlace = place?.title === label ? place : undefined;
+  return Boolean(googlePlaceId(usablePlace) || placeLocation(usablePlace));
+}
+
 type EndpointResult = { endpoint: TripEndpoint } | { problem: 'no-origin' | 'needs-place' };
 
 function endpointFor(label: string, place: SearchPlace | undefined, location: Coordinates | null): EndpointResult {

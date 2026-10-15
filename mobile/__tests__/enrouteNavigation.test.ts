@@ -150,10 +150,88 @@ describe('enroute itinerary normalization', () => {
     const laterIdentity = createTripSelectionIdentity(later);
     expect(firstIdentity.itineraryId).toBe(laterIdentity.itineraryId);
     expect(firstIdentity.fingerprint).not.toBe(laterIdentity.fingerprint);
-    expect(firstIdentity.fingerprint).toMatch(/^v1-[0-9a-f]{32}$/);
+    expect(firstIdentity.fingerprint).toMatch(/^v2-[0-9a-f]{32}$/);
+    expect(firstIdentity.legacy?.fingerprint).toMatch(/^v1-[0-9a-f]{32}$/);
     expect(firstIdentity.fingerprint).not.toContain('Demo Transit');
     expect(sameTripSelection(firstIdentity, laterIdentity)).toBe(false);
     expect(sameTripSelection(firstIdentity, createTripSelectionIdentity(fullTrip))).toBe(true);
+  });
+
+  it('uses stable provider schedule fields while treating timetable enrichment as optional evidence', () => {
+    const enriched = structuredClone(fullTrip);
+    const stripped = structuredClone(fullTrip);
+    for (const step of stripped.steps) {
+      if (step.kind === 'walk') {
+        step.durationSeconds += 1;
+        step.distanceMeters += 1;
+      } else {
+        delete step.tripId;
+        delete step.stops;
+        delete step.departures;
+      }
+    }
+    expect(sameTripSelection(createTripSelectionIdentity(enriched), createTripSelectionIdentity(stripped))).toBe(true);
+
+    const conflictingTrip = structuredClone(enriched);
+    const conflictingLeg = conflictingTrip.steps.find((step) => step.kind === 'transit');
+    if (!conflictingLeg || conflictingLeg.kind !== 'transit') throw new Error('Expected transit fixture');
+    conflictingLeg.tripId = `${conflictingLeg.tripId}-different`;
+    expect(sameTripSelection(createTripSelectionIdentity(enriched), createTripSelectionIdentity(conflictingTrip))).toBe(false);
+
+    const shiftedSchedule = structuredClone(stripped);
+    const shiftedLeg = shiftedSchedule.steps.find((step) => step.kind === 'transit');
+    if (!shiftedLeg || shiftedLeg.kind !== 'transit') throw new Error('Expected transit fixture');
+    shiftedLeg.from.time = new Date(Date.parse(shiftedLeg.from.time) + 60_000).toISOString();
+    expect(sameTripSelection(createTripSelectionIdentity(stripped), createTripSelectionIdentity(shiftedSchedule))).toBe(false);
+  });
+
+  it('bounds walking drift and remains compatible with an exact version-1 active trip', () => {
+    const current = createTripSelectionIdentity(fullTrip);
+    expect(current.version).toBe(2);
+    expect(current.legacy).toBeDefined();
+
+    const legacy = {
+      version: 1 as const,
+      itineraryId: current.itineraryId,
+      departureTime: current.legacy!.departureTime,
+      arrivalTime: current.legacy!.arrivalTime,
+      fingerprint: current.legacy!.fingerprint,
+      tripIds: current.tripIds,
+    };
+    expect(sameTripSelection(legacy, current)).toBe(true);
+    expect(sameTripSelection({ ...legacy, fingerprint: 'different-v1-fingerprint' }, current)).toBe(false);
+
+    const differentAccess = structuredClone(fullTrip);
+    const accessWalk = differentAccess.steps.find((step) => step.kind === 'walk');
+    if (!accessWalk || accessWalk.kind !== 'walk') throw new Error('Expected walking fixture');
+    accessWalk.durationSeconds += 60 * 60;
+    accessWalk.distanceMeters += 5_000;
+    expect(sameTripSelection(current, createTripSelectionIdentity(differentAccess))).toBe(false);
+  });
+
+  it('keeps a walking-only arrival bound while tolerating only small estimate drift', () => {
+    const walking: Itinerary = {
+      id: 'walk-only',
+      departureTime: at(0),
+      arrivalTime: at(10),
+      durationSeconds: 600,
+      transfers: 0,
+      steps: [walk('Destination', [p(0), p(0.001)], 10)],
+    };
+    const identity = createTripSelectionIdentity(walking);
+    expect(identity.arrivalTime).toBe(walking.arrivalTime);
+
+    const nearby = structuredClone(walking);
+    nearby.steps[0]!.durationSeconds += 60;
+    if (nearby.steps[0]!.kind === 'walk') nearby.steps[0]!.distanceMeters += 50;
+    nearby.arrivalTime = new Date(Date.parse(nearby.arrivalTime) + 60_000).toISOString();
+    expect(sameTripSelection(identity, createTripSelectionIdentity(nearby))).toBe(true);
+
+    const far = structuredClone(walking);
+    far.steps[0]!.durationSeconds += 600;
+    if (far.steps[0]!.kind === 'walk') far.steps[0]!.distanceMeters += 1_000;
+    far.arrivalTime = new Date(Date.parse(far.arrivalTime) + 600_000).toISOString();
+    expect(sameTripSelection(identity, createTripSelectionIdentity(far))).toBe(false);
   });
 });
 

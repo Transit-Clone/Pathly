@@ -211,8 +211,9 @@ describe('Home active-trip MVP integration', () => {
 
     const startedDocument = await currentDocument();
     expect(startedDocument.active?.selection).toEqual(exactSelection);
-    expect(startedDocument.active?.selection.departureTime).toBe(exactRetimed.departureTime);
-    expect(startedDocument.active?.selection.departureTime).not.toBe(plannedRailTrip.departureTime);
+    expect(startedDocument.active?.selection.departureTime).toBe(exactSelection.departureTime);
+    expect(startedDocument.active?.selection.departureTime)
+      .not.toBe(createTripSelectionIdentity(plannedRailTrip).departureTime);
     expect(startedDocument.active?.selection.fingerprint).toBe(exactSelection.fingerprint);
 
     expect(screen.getByTestId('enroute-guidance')).toBeTruthy();

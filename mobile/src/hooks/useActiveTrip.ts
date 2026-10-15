@@ -3,9 +3,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   advanceNavigation,
   createTripSelectionIdentity,
+  distanceMeters,
   initialNavigationCursor,
   normalizeItinerary,
   resetNavigation,
+  sameTripSelection,
   type ActiveTripRuntime,
   type NavigationAdvanceResult,
   type NavigationCursor,
@@ -22,6 +24,7 @@ import {
   updateNavigationDocument,
   type ActiveTripResumeV1,
   type NavigationDocumentV1,
+  type NavigationProgressAnchorV1,
   type PersistedLineSummaryV1,
   type RecentTripV1,
 } from '../data/navigationStorage';
@@ -59,13 +62,7 @@ export type ActiveTripCoordinator = ActiveTripState & {
   resetForAdmin: () => Promise<boolean>;
 };
 
-const phaseRank = new Map([
-  ['walking', 0],
-  ['waiting-to-board', 1],
-  ['riding', 2],
-  ['transferring', 3],
-  ['arrived', 4],
-]);
+const RESUME_ANCHOR_MATCH_METERS = 20;
 
 function initialState(uid: string | null): ActiveTripState {
   return {
@@ -120,6 +117,20 @@ function sessionId(): string {
   return randomUUID ? randomUUID.call(globalThis.crypto) : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
+function progressAnchor(
+  plan: ReturnType<typeof normalizeItinerary>,
+  cursor: NavigationCursor,
+): NavigationProgressAnchorV1 | undefined {
+  const checkpoint = plan.checkpoints[cursor.checkpointOrdinal];
+  if (!checkpoint || checkpoint.stepIndex !== cursor.stepIndex) return undefined;
+  return {
+    kind: checkpoint.kind,
+    stepIndex: checkpoint.stepIndex,
+    phase: cursor.phase,
+    point: { ...checkpoint.point },
+  };
+}
+
 export function createActiveTripRuntime(
   input: StartTripInput,
   uid: string,
@@ -155,22 +166,16 @@ function resumeRecord(runtime: ActiveTripRuntime, request: ResumePlanRequest): A
     request: { ...request, origin: runtime.origin, destination: runtime.destination },
     selection: runtime.selection,
     cursor: runtime.cursor,
+    progressAnchor: progressAnchor(runtime.plan, runtime.cursor),
     lines: lineSummaries(runtime.itinerary),
   };
-}
-
-function cursorAtLeast(left: NavigationCursor, right: NavigationCursor): NavigationCursor {
-  if (left.checkpointOrdinal !== right.checkpointOrdinal) return left.checkpointOrdinal > right.checkpointOrdinal ? left : right;
-  const leftRank = phaseRank.get(left.phase) ?? 0;
-  const rightRank = phaseRank.get(right.phase) ?? 0;
-  if (leftRank !== rightRank) return leftRank > rightRank ? left : right;
-  return left.lastAdvancedAt >= right.lastAdvancedAt ? left : right;
 }
 
 function resumeCheckpoint(
   plan: ReturnType<typeof normalizeItinerary>,
   cursor: NavigationCursor,
   itinerary: Itinerary,
+  anchor: NavigationProgressAnchorV1 | undefined,
 ) {
   const step = itinerary.steps[cursor.stepIndex];
   if (!step) return null;
@@ -181,6 +186,21 @@ function resumeCheckpoint(
     return plan.checkpoints.find((checkpoint) => checkpoint.kind === 'board' && checkpoint.stepIndex === cursor.stepIndex) ?? null;
   }
   if (cursor.phase === 'riding') {
+    if (anchor) {
+      if (anchor.stepIndex !== cursor.stepIndex
+        || anchor.phase !== cursor.phase
+        || (anchor.kind !== 'board' && anchor.kind !== 'transit-stop')) return null;
+      // Stop lists are optional provider enrichment, so their indexes may shift between calls.
+      // Re-identify the confirmed physical stop and reject ambiguous nearby matches. A riding
+      // board checkpoint itself has phase `waiting-to-board`, while its saved cursor phase is
+      // `riding`, so kind/step/point are the stable evidence here.
+      const matches = plan.checkpoints.filter((checkpoint) => checkpoint.kind === anchor.kind
+        && checkpoint.stepIndex === anchor.stepIndex
+        && distanceMeters(checkpoint.point, anchor.point) <= RESUME_ANCHOR_MATCH_METERS);
+      return matches.length === 1 ? matches[0]! : null;
+    }
+    // Records written before progress anchors used the provider stop index. Keep that fallback
+    // only for those legacy records; applying it to a newly enriched stop list can move the rider.
     const nextStopIndex = cursor.nextStopIndex;
     if (nextStopIndex === undefined) {
       return plan.checkpoints.find((checkpoint) => checkpoint.kind === 'board' && checkpoint.stepIndex === cursor.stepIndex) ?? null;
@@ -190,28 +210,60 @@ function resumeCheckpoint(
       && checkpoint.transitStopIndex === nextStopIndex - 1) ?? null;
   }
   // Transit boundaries are structural and can be rebased even if earlier walking geometry added
-  // checkpoints. Mid-walk points have no persisted spatial anchor, so guessing would risk moving
-  // progress to a different point on the same step; keep those sessions in recovery instead.
+  // checkpoints.
   if (step.kind === 'transit') {
     return plan.checkpoints.find((checkpoint) => checkpoint.kind === 'alight'
       && checkpoint.stepIndex === cursor.stepIndex
       && checkpoint.phase === cursor.phase) ?? null;
   }
-  if (cursor.phase === 'walking' && cursor.checkpointOrdinal === 0) {
-    return plan.checkpoints.find((checkpoint) => checkpoint.kind === 'start' && checkpoint.stepIndex === cursor.stepIndex) ?? null;
+  // The first shipped record format had no anchor. Its untouched start cursor is still safe:
+  // unlike a mid-walk ordinal, "start of the first walking step" has one structural meaning.
+  if (!anchor && cursor.phase === 'walking' && cursor.checkpointOrdinal === 0) {
+    return plan.checkpoints.find((checkpoint) => checkpoint.kind === 'start'
+      && checkpoint.stepIndex === cursor.stepIndex) ?? null;
   }
-  return null;
+  // Walking geometry is provider-owned and may gain or lose generated checkpoints between calls.
+  // Match the one small persisted anchor, never the old ordinal, and require a unique nearby point.
+  if (!anchor
+    || anchor.stepIndex !== cursor.stepIndex
+    || anchor.phase !== cursor.phase
+    || (cursor.phase !== 'walking' && cursor.phase !== 'transferring')) return null;
+  const matches = plan.checkpoints.filter((checkpoint) => checkpoint.kind === anchor.kind
+    && checkpoint.stepIndex === anchor.stepIndex
+    && checkpoint.phase === anchor.phase
+    && distanceMeters(checkpoint.point, anchor.point) <= RESUME_ANCHOR_MATCH_METERS);
+  return matches.length === 1 ? matches[0]! : null;
 }
 
 function runtimeFromResume(resume: ActiveTripResumeV1, itinerary: Itinerary): ActiveTripRuntime | null {
   const selected = freezeSelectedItinerary(itinerary);
+  const selection = createTripSelectionIdentity(selected);
   const plan = normalizeItinerary(selected, { origin: endpointPoint(resume.origin), destination: endpointPoint(resume.destination) });
-  const checkpoint = resumeCheckpoint(plan, resume.cursor, selected);
+  const checkpoint = resumeCheckpoint(plan, resume.cursor, selected, resume.progressAnchor);
   // The exact schedule identity intentionally excludes provider geometry. A fresh response can
   // therefore add/remove generated walk checkpoints. Never apply a raw ordinal to a different
   // semantic step; recovery is safer than silently moving the rider forward or backward.
   if (!checkpoint) return null;
-  const cursor = { ...resume.cursor, checkpointOrdinal: checkpoint.ordinal, stepIndex: checkpoint.stepIndex };
+  const segment = plan.segments.find((candidate) => candidate.stepIndex === checkpoint.stepIndex
+    && checkpoint.ordinal >= candidate.startCheckpointOrdinal
+    && checkpoint.ordinal <= candidate.endCheckpointOrdinal);
+  const nextStopIndex = resume.cursor.phase === 'riding'
+    && checkpoint.kind === 'transit-stop'
+    && checkpoint.transitStopIndex !== undefined
+    ? checkpoint.transitStopIndex + 1
+    : resume.cursor.phase === 'waiting-to-board'
+      && segment?.kind === 'transit'
+      && segment.knownStopCount !== undefined
+      && segment.knownStopCount > 0
+      ? 0
+      : undefined;
+  const { nextStopIndex: _staleNextStopIndex, ...savedCursor } = resume.cursor;
+  const cursor = {
+    ...savedCursor,
+    checkpointOrdinal: checkpoint.ordinal,
+    stepIndex: checkpoint.stepIndex,
+    ...(nextStopIndex === undefined ? {} : { nextStopIndex }),
+  };
   return {
     itinerary: selected,
     origin: resume.origin,
@@ -223,7 +275,7 @@ function runtimeFromResume(resume: ActiveTripResumeV1, itinerary: Itinerary): Ac
     updatedAt: resume.updatedAt,
     cursor,
     evidence: null,
-    selection: resume.selection,
+    selection,
   };
 }
 
@@ -242,11 +294,7 @@ function sameEndpoint(left: TripEndpointReference, right: TripEndpointReference)
 
 function isSameActiveTrip(active: ActiveTripRuntime, input: StartActiveTripInput): boolean {
   const selection = createTripSelectionIdentity(input.itinerary);
-  return active.selection.version === selection.version
-    && active.selection.itineraryId === selection.itineraryId
-    && active.selection.departureTime === selection.departureTime
-    && active.selection.arrivalTime === selection.arrivalTime
-    && active.selection.fingerprint === selection.fingerprint
+  return sameTripSelection(active.selection, selection)
     && sameEndpoint(active.origin, input.origin)
     && sameEndpoint(active.destination, input.destination);
 }
@@ -306,6 +354,41 @@ export function useActiveTrip(uid: string | undefined): ActiveTripCoordinator {
       });
       return false;
     }
+    let recoveredRecents = recents;
+    if (resume.selection.version === 1) {
+      try {
+        let migrated = false;
+        const document = await updateNavigationDocument(resume.uid, (stored) => {
+          if (stored.active?.sessionId !== resume.sessionId) return stored;
+          migrated = true;
+          return {
+            ...stored,
+            // Migration refreshes selection/progress evidence, not the user-visible route
+            // summary. Fresh responses may omit optional timetable enrichment used to build it.
+            active: { ...resumeRecord(active, resume.request), lines: stored.active.lines },
+          };
+        });
+        if (stateRef.current.uid !== resume.uid) return false;
+        if (!migrated) {
+          commit({ ...initialState(resume.uid), status: 'idle', recents: document.recents });
+          return false;
+        }
+        recoveredRecents = document.recents;
+      } catch {
+        commit({
+          uid: resume.uid,
+          status: 'recovery',
+          active: null,
+          recovery: resume,
+          recoveryError: 'unavailable',
+          retrying: false,
+          recents,
+          pendingReplacement: null,
+          locationState: null,
+        });
+        return false;
+      }
+    }
     commit({
       uid: resume.uid,
       status: 'active',
@@ -313,7 +396,7 @@ export function useActiveTrip(uid: string | undefined): ActiveTripCoordinator {
       recovery: null,
       recoveryError: null,
       retrying: false,
-      recents,
+      recents: recoveredRecents,
       pendingReplacement: null,
       locationState: null,
     });
@@ -477,9 +560,19 @@ export function useActiveTrip(uid: string | undefined): ActiveTripCoordinator {
         let persisted = false;
         await updateNavigationDocument(current.uid, (stored) => {
           if (stored.active?.sessionId !== active.sessionId) return stored;
+          // This hook serializes actions, and the runtime cursor is already monotonic. A fresh
+          // itinerary can have different ordinals, so never compare its ordinal to a stored one.
+          if (stored.active.updatedAt > active.updatedAt) return stored;
           persisted = true;
-          const cursor = cursorAtLeast(stored.active.cursor, result.cursor);
-          return { ...stored, active: { ...stored.active, cursor, updatedAt: Math.max(stored.active.updatedAt, now) } };
+          return {
+            ...stored,
+            active: {
+              ...stored.active,
+              cursor: result.cursor,
+              progressAnchor: progressAnchor(active.plan, result.cursor),
+              updatedAt: now,
+            },
+          };
         }, now);
         if (!persisted || stateRef.current.uid !== current.uid) return null;
       } catch {
@@ -499,7 +592,15 @@ export function useActiveTrip(uid: string | undefined): ActiveTripCoordinator {
     try {
       const document = await updateNavigationDocument(current.uid, (stored): NavigationDocumentV1 => (
         stored.active?.sessionId === active.sessionId
-          ? { ...stored, active: { ...stored.active, cursor: result.cursor, updatedAt: at } }
+          ? {
+            ...stored,
+            active: {
+              ...stored.active,
+              cursor: result.cursor,
+              progressAnchor: progressAnchor(active.plan, result.cursor),
+              updatedAt: at,
+            },
+          }
           : stored
       ), at);
       if (document.active?.sessionId !== active.sessionId || stateRef.current.uid !== current.uid) return false;

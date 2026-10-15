@@ -3,13 +3,32 @@ import type { Itinerary, LatLng, TransitStep, TripStep } from './tripPlanning';
 export type NavigationPhase = 'walking' | 'waiting-to-board' | 'riding' | 'transferring' | 'arrived';
 export type NavigationCheckpointKind = 'start' | 'walk' | 'board' | 'transit-stop' | 'alight' | 'destination';
 
+export type TripWalkEvidence = {
+  stepIndex: number;
+  durationSeconds: number;
+  distanceMeters: number;
+};
+
+export type LegacyTripSelectionEvidence = {
+  departureTime: string;
+  arrivalTime: string;
+  fingerprint: string;
+};
+
 export type TripSelectionIdentity = {
-  version: 1;
+  /** Version 1 records were written by the first enroute build; new records use version 2. */
+  version: 1 | 2;
   itineraryId: string;
   departureTime: string;
   arrivalTime: string;
   /** Canonical schedule/endpoint data. This intentionally excludes route geometry and instructions. */
   fingerprint: string;
+  /** Optional Pathly timetable evidence. Missing enrichment never makes the same provider trip different. */
+  tripIds?: (string | null)[];
+  /** Provider walking estimates, compared with a bounded tolerance and never route geometry. */
+  walks?: TripWalkEvidence[];
+  /** Exact v1 evidence lets an in-progress trip survive an app update when the provider reply is unchanged. */
+  legacy?: LegacyTripSelectionEvidence;
 };
 
 export type TripEndpointReference =
@@ -243,7 +262,7 @@ function canonicalStop(stop: TransitStep['from']) {
 }
 
 /** Stable non-reversible 128-bit token; raw provider fields never leave this function. */
-function digestSelection(value: string): string {
+function digestSelection(value: string, version: 1 | 2): string {
   const word = (seed: number) => {
     let hash = (1779033703 ^ value.length ^ seed) >>> 0;
     for (let index = 0; index < value.length; index += 1) {
@@ -254,11 +273,13 @@ function digestSelection(value: string): string {
     hash = Math.imul(hash ^ (hash >>> 13), 3266489909);
     return ((hash ^ (hash >>> 16)) >>> 0).toString(16).padStart(8, '0');
   };
-  return `v1-${[0, 1, 2, 3].map(word).join('')}`;
+  return `v${version}-${[0, 1, 2, 3].map(word).join('')}`;
 }
 
-/** Exact schedule identity for the selected departure, excluding provider route geometry. */
-export function createTripSelectionIdentity(itinerary: Itinerary): TripSelectionIdentity {
+const WALK_DURATION_TOLERANCE_SECONDS = 120;
+const WALK_DISTANCE_TOLERANCE_METERS = 150;
+
+function legacySelectionEvidence(itinerary: Itinerary): LegacyTripSelectionEvidence {
   const canonical = {
     itineraryId: itinerary.id,
     departureTime: itinerary.departureTime,
@@ -277,20 +298,93 @@ export function createTripSelectionIdentity(itinerary: Itinerary): TripSelection
       }),
   };
   return {
-    version: 1,
-    itineraryId: itinerary.id,
     departureTime: itinerary.departureTime,
     arrivalTime: itinerary.arrivalTime,
-    fingerprint: digestSelection(JSON.stringify(canonical)),
+    fingerprint: digestSelection(JSON.stringify(canonical), 1),
+  };
+}
+
+function compatibleTripIds(a: TripSelectionIdentity, b: TripSelectionIdentity): boolean {
+  return !a.tripIds || !b.tripIds
+    || (a.tripIds.length === b.tripIds.length && a.tripIds.every((tripId, index) => {
+      const other = b.tripIds?.[index];
+      return !tripId || !other || tripId === other;
+    }));
+}
+
+function compatibleWalks(a: TripSelectionIdentity, b: TripSelectionIdentity): boolean {
+  if (!a.walks || !b.walks || a.walks.length !== b.walks.length) return false;
+  return a.walks.every((walk, index) => {
+    const other = b.walks?.[index];
+    if (!other) return false;
+    return walk.stepIndex === other.stepIndex
+      && Math.abs(walk.durationSeconds - other.durationSeconds) <= WALK_DURATION_TOLERANCE_SECONDS
+      && Math.abs(walk.distanceMeters - other.distanceMeters) <= WALK_DISTANCE_TOLERANCE_METERS;
+  });
+}
+
+/** Exact schedule identity for the selected departure, excluding provider route geometry. */
+export function createTripSelectionIdentity(itinerary: Itinerary): TripSelectionIdentity {
+  const transits = itinerary.steps.filter((step): step is TransitStep => step.kind === 'transit');
+  const walks = itinerary.steps.flatMap((step, stepIndex) => step.kind === 'walk'
+    ? [{ stepIndex, durationSeconds: step.durationSeconds, distanceMeters: step.distanceMeters }]
+    : []);
+  // First/last walking estimates and Pathly timetable enrichment can vary across otherwise
+  // identical fresh provider calls. Transit stop times are the stable selected-departure core;
+  // walking-only trips use their request time plus the bounded evidence above.
+  const departureTime = transits[0]?.from.time ?? itinerary.departureTime;
+  const arrivalTime = transits.at(-1)?.to.time ?? itinerary.arrivalTime;
+  const canonical = transits.length > 0
+    ? {
+      itineraryId: itinerary.id,
+      transits: transits.map((step) => ({
+        mode: step.mode,
+        agency: step.agency.name,
+        line: step.line.shortName ?? step.line.name,
+        headsign: step.headsign ?? null,
+        from: canonicalStop(step.from),
+        to: canonicalStop(step.to),
+        stopCount: step.stopCount,
+      })),
+    }
+    : {
+      itineraryId: itinerary.id,
+      departureTime,
+      kind: 'walking-only',
+    };
+  return {
+    version: 2,
+    itineraryId: itinerary.id,
+    departureTime,
+    arrivalTime,
+    fingerprint: digestSelection(JSON.stringify(canonical), 2),
+    ...(transits.length > 0 ? { tripIds: transits.map((step) => step.tripId ?? null) } : {}),
+    walks,
+    legacy: legacySelectionEvidence(itinerary),
   };
 }
 
 export function sameTripSelection(a: TripSelectionIdentity, b: TripSelectionIdentity): boolean {
-  return a.version === b.version
-    && a.itineraryId === b.itineraryId
-    && a.departureTime === b.departureTime
-    && a.arrivalTime === b.arrivalTime
-    && a.fingerprint === b.fingerprint;
+  if (!compatibleTripIds(a, b) || a.itineraryId !== b.itineraryId) return false;
+  if (a.version === 1 && b.version === 1) {
+    return a.departureTime === b.departureTime
+      && a.arrivalTime === b.arrivalTime
+      && a.fingerprint === b.fingerprint;
+  }
+  if (a.version !== b.version) {
+    const older = a.version === 1 ? a : b;
+    const current = a.version === 2 ? a : b;
+    return current.legacy?.departureTime === older.departureTime
+      && current.legacy.arrivalTime === older.arrivalTime
+      && current.legacy.fingerprint === older.fingerprint;
+  }
+  const arrivalMatches = a.tripIds === undefined && b.tripIds === undefined
+    ? Math.abs(Date.parse(a.arrivalTime) - Date.parse(b.arrivalTime)) <= WALK_DURATION_TOLERANCE_SECONDS * 1000
+    : a.arrivalTime === b.arrivalTime;
+  return a.departureTime === b.departureTime
+    && arrivalMatches
+    && a.fingerprint === b.fingerprint
+    && compatibleWalks(a, b);
 }
 
 function samePoint(a: LatLng, b: LatLng, toleranceMeters = 1): boolean {

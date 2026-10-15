@@ -82,7 +82,176 @@ it('gates initial hydration, then restores only the same account at the exact cu
   other.unmount();
 });
 
-it('enters recovery instead of applying a saved ordinal to shifted fresh geometry', async () => {
+it('restores a version-1 trip at its unambiguous initial walking cursor without an anchor', async () => {
+  const first = await idleHook();
+  await act(async () => {
+    expect(await first.result.current.start(input())).toBe('started');
+  });
+  const stored = (await readNavigationDocument('alice')).active!;
+  expect(stored.cursor.checkpointOrdinal).toBe(0);
+  expect(stored.selection.version).toBe(2);
+  await updateNavigationDocument('alice', (document) => ({
+    ...document,
+    active: document.active ? {
+      ...document.active,
+      progressAnchor: undefined,
+      selection: {
+        version: 1,
+        itineraryId: stored.selection.itineraryId,
+        departureTime: stored.selection.legacy!.departureTime,
+        arrivalTime: stored.selection.legacy!.arrivalTime,
+        fingerprint: stored.selection.legacy!.fingerprint,
+      },
+    } : null,
+  }));
+  first.unmount();
+
+  planTripMock().mockResolvedValueOnce({ data: { itineraries: [structuredClone(fixtures[0]!)] } });
+  const restored = renderHook(() => useActiveTrip('alice'));
+  await waitFor(() => expect(restored.result.current.status).toBe('active'));
+  expect(restored.result.current.active?.cursor.checkpointOrdinal).toBe(0);
+  expect(restored.result.current.active?.plan.checkpoints[0]?.kind).toBe('start');
+  const migrated = (await readNavigationDocument('alice')).active!;
+  expect(migrated.selection.version).toBe(2);
+  expect(migrated.progressAnchor?.kind).toBe('start');
+  restored.unmount();
+
+  const providerDrift = structuredClone(fixtures[0]!);
+  for (const step of providerDrift.steps) {
+    if (step.kind === 'walk') {
+      step.durationSeconds += 1;
+      step.distanceMeters += 1;
+    } else {
+      delete step.tripId;
+      delete step.stops;
+      delete step.departures;
+    }
+  }
+  planTripMock().mockResolvedValueOnce({ data: { itineraries: [providerDrift] } });
+  const secondReload = renderHook(() => useActiveTrip('alice'));
+  await waitFor(() => expect(secondReload.result.current.status).toBe('active'));
+  expect(secondReload.result.current.active?.cursor.checkpointOrdinal).toBe(0);
+  secondReload.unmount();
+});
+
+it('preserves stored line summaries while migrating a version-1 trip', async () => {
+  const providerLight = structuredClone(fixtures[0]!);
+  for (const step of providerLight.steps) {
+    if (step.kind === 'transit') {
+      delete step.tripId;
+      delete step.stops;
+      delete step.departures;
+    }
+  }
+  const first = await idleHook();
+  await act(async () => {
+    expect(await first.result.current.start(input(providerLight))).toBe('started');
+  });
+  const stored = (await readNavigationDocument('alice')).active!;
+  const preservedLines = [{ mode: 'rail' as const, name: 'Stored LIRR', shortName: 'LIRR' }];
+  await updateNavigationDocument('alice', (document) => ({
+    ...document,
+    active: document.active ? {
+      ...document.active,
+      lines: preservedLines,
+      progressAnchor: undefined,
+      selection: {
+        version: 1,
+        itineraryId: stored.selection.itineraryId,
+        departureTime: stored.selection.legacy!.departureTime,
+        arrivalTime: stored.selection.legacy!.arrivalTime,
+        fingerprint: stored.selection.legacy!.fingerprint,
+      },
+    } : null,
+  }));
+  first.unmount();
+
+  planTripMock().mockResolvedValueOnce({ data: { itineraries: [structuredClone(providerLight)] } });
+  const restored = renderHook(() => useActiveTrip('alice'));
+  await waitFor(() => expect(restored.result.current.status).toBe('active'));
+  expect((await readNavigationDocument('alice')).active).toEqual(expect.objectContaining({
+    selection: expect.objectContaining({ version: 2 }),
+    lines: preservedLines,
+  }));
+  await act(async () => {
+    expect(await restored.result.current.end()).toBe(true);
+  });
+  expect(restored.result.current.recents[0]?.lines).toEqual(preservedLines);
+  restored.unmount();
+});
+
+it('restores byte-identical mid-walk progress from one provider-light anchor', async () => {
+  const first = await idleHook();
+  await act(async () => {
+    expect(await first.result.current.start(input())).toBe('started');
+  });
+  const midWalk = first.result.current.active!.plan.checkpoints.find((checkpoint) => checkpoint.kind === 'walk')!;
+  await act(async () => {
+    await first.result.current.advance({ point: midWalk.point, accuracyMeters: 0, capturedAt: Date.now(), source: 'mock' });
+  });
+  const savedCursor = first.result.current.active!.cursor;
+  const stored = (await readNavigationDocument('alice')).active!;
+  expect(stored.progressAnchor).toEqual({
+    kind: midWalk.kind,
+    stepIndex: midWalk.stepIndex,
+    phase: savedCursor.phase,
+    point: midWalk.point,
+  });
+  const serialized = (await AsyncStorage.getItem(navigationStorageKey('alice')))!;
+  expect(serialized.match(/"progressAnchor"/g)).toHaveLength(1);
+  expect(serialized).not.toMatch(/"path"|"steps"|"geometry"/);
+  first.unmount();
+
+  planTripMock().mockResolvedValueOnce({ data: { itineraries: [structuredClone(fixtures[0]!)] } });
+  const restored = renderHook(() => useActiveTrip('alice'));
+  await waitFor(() => expect(restored.result.current.status).toBe('active'));
+  expect(restored.result.current.active?.cursor).toEqual(savedCursor);
+  restored.unmount();
+});
+
+it('safely rebases a uniquely shifted mid-walk anchor without reusing its ordinal', async () => {
+  const original = structuredClone(fixtures[0]!);
+  const fresh = structuredClone(original);
+  const originalWalk = original.steps[0];
+  const freshWalk = fresh.steps[0];
+  if (originalWalk?.kind !== 'walk' || freshWalk?.kind !== 'walk') throw new Error('Expected initial walk fixture');
+
+  const first = await idleHook();
+  await act(async () => {
+    expect(await first.result.current.start(input(original))).toBe('started');
+  });
+  const midWalk = first.result.current.active!.plan.checkpoints.find((checkpoint) => checkpoint.kind === 'walk')!;
+  await act(async () => {
+    await first.result.current.advance({ point: midWalk.point, accuracyMeters: 0, capturedAt: Date.now(), source: 'mock' });
+  });
+  const savedOrdinal = first.result.current.active!.cursor.checkpointOrdinal;
+  const pathIndex = originalWalk.path.findIndex((point) => point.lat === midWalk.point.lat && point.lng === midWalk.point.lng);
+  if (pathIndex < 1) throw new Error('Expected a mid-walk path point');
+  const before = freshWalk.path[pathIndex - 1]!;
+  const shifted = { lat: midWalk.point.lat + 0.00004, lng: midWalk.point.lng };
+  freshWalk.path.splice(pathIndex, 1,
+    { lat: (before.lat + midWalk.point.lat) / 2, lng: (before.lng + midWalk.point.lng) / 2 },
+    shifted);
+  first.unmount();
+
+  planTripMock().mockResolvedValueOnce({ data: { itineraries: [fresh] } });
+  const restored = renderHook(() => useActiveTrip('alice'));
+  await waitFor(() => expect(restored.result.current.status).toBe('active'));
+  expect(restored.result.current.active?.cursor.checkpointOrdinal).not.toBe(savedOrdinal);
+  expect(restored.result.current.active?.plan.checkpoints[restored.result.current.active.cursor.checkpointOrdinal]?.point).toEqual(shifted);
+  const next = restored.result.current.active!.plan.checkpoints[restored.result.current.active!.cursor.checkpointOrdinal + 1]!;
+  await act(async () => {
+    await restored.result.current.advance({ point: next.point, accuracyMeters: 0, capturedAt: Date.now(), source: 'mock' });
+  });
+  expect(restored.result.current.active?.cursor.checkpointOrdinal).toBe(next.ordinal);
+  expect((await readNavigationDocument('alice')).active).toEqual(expect.objectContaining({
+    cursor: expect.objectContaining({ checkpointOrdinal: next.ordinal }),
+    progressAnchor: expect.objectContaining({ kind: next.kind, point: next.point }),
+  }));
+  restored.unmount();
+});
+
+it('enters recovery instead of applying a saved ordinal when a shifted walk has no anchor', async () => {
   const original = structuredClone(fixtures[0]!);
   const fresh = structuredClone(original);
   const originalWalk = original.steps[0];
@@ -99,6 +268,41 @@ it('enters recovery instead of applying a saved ordinal to shifted fresh geometr
     await first.result.current.advance({ point: board.point, accuracyMeters: 0, capturedAt: Date.now(), source: 'mock' });
   });
   expect(first.result.current.active!.cursor.checkpointOrdinal).toBeGreaterThan(0);
+  await updateNavigationDocument('alice', (document) => ({
+    ...document,
+    active: document.active ? { ...document.active, progressAnchor: undefined } : null,
+  }));
+  expect((await readNavigationDocument('alice')).active?.progressAnchor).toBeUndefined();
+  first.unmount();
+
+  planTripMock().mockResolvedValueOnce({ data: { itineraries: [fresh] } });
+  const restored = renderHook(() => useActiveTrip('alice'));
+  await waitFor(() => expect(restored.result.current.status).toBe('recovery'));
+  expect(restored.result.current.active).toBeNull();
+  expect(restored.result.current.recoveryError).toBe('no-exact-match');
+  restored.unmount();
+});
+
+it('enters recovery when a mid-walk anchor matches multiple fresh checkpoints', async () => {
+  const original = structuredClone(fixtures[0]!);
+  const fresh = structuredClone(original);
+  const originalWalk = original.steps[0];
+  const freshWalk = fresh.steps[0];
+  if (originalWalk?.kind !== 'walk' || freshWalk?.kind !== 'walk') throw new Error('Expected initial walk fixture');
+
+  const first = await idleHook();
+  await act(async () => {
+    expect(await first.result.current.start(input(original))).toBe('started');
+  });
+  const midWalk = first.result.current.active!.plan.checkpoints.find((checkpoint) => checkpoint.kind === 'walk')!;
+  await act(async () => {
+    await first.result.current.advance({ point: midWalk.point, accuracyMeters: 0, capturedAt: Date.now(), source: 'mock' });
+  });
+  const pathIndex = originalWalk.path.findIndex((point) => point.lat === midWalk.point.lat && point.lng === midWalk.point.lng);
+  if (pathIndex < 1) throw new Error('Expected a mid-walk path point');
+  freshWalk.path.splice(pathIndex, 1,
+    { lat: midWalk.point.lat + 0.00016, lng: midWalk.point.lng },
+    { lat: midWalk.point.lat - 0.00016, lng: midWalk.point.lng });
   first.unmount();
 
   planTripMock().mockResolvedValueOnce({ data: { itineraries: [fresh] } });
@@ -140,6 +344,59 @@ it('rebases a named transit checkpoint when earlier walking geometry shifts', as
   expect(restored.result.current.active?.plan.checkpoints[restored.result.current.active.cursor.checkpointOrdinal]).toEqual(
     expect.objectContaining({ kind: 'transit-stop', transitStopIndex: (savedNextStop ?? 1) - 1 }),
   );
+  restored.unmount();
+});
+
+it('restores a riding checkpoint by its anchor when fresh stop enrichment is reindexed', async () => {
+  const original = structuredClone(fixtures[0]!);
+  const fresh = structuredClone(original);
+  const transitStepIndex = original.steps.findIndex((step) => step.kind === 'transit' && (step.stops?.length ?? 0) >= 2);
+  const freshTransit = fresh.steps[transitStepIndex];
+  if (transitStepIndex < 0 || freshTransit?.kind !== 'transit' || !freshTransit.stops?.[0]) {
+    throw new Error('Expected enriched transit fixture');
+  }
+  const firstKnownStop = freshTransit.stops[0];
+  freshTransit.stops.unshift({
+    ...firstKnownStop,
+    name: 'New provider enrichment stop',
+    location: {
+      lat: (freshTransit.from.location.lat + firstKnownStop.location.lat) / 2,
+      lng: (freshTransit.from.location.lng + firstKnownStop.location.lng) / 2,
+    },
+    time: new Date((Date.parse(freshTransit.from.time) + Date.parse(firstKnownStop.time)) / 2).toISOString(),
+  });
+
+  const first = await idleHook();
+  await act(async () => {
+    expect(await first.result.current.start(input(original))).toBe('started');
+  });
+  const anchoredStop = first.result.current.active!.plan.checkpoints.filter((checkpoint) => checkpoint.kind === 'transit-stop'
+    && checkpoint.stepIndex === transitStepIndex)[1]!;
+  for (const checkpoint of first.result.current.active!.plan.checkpoints.slice(1, anchoredStop.ordinal + 1)) {
+    await act(async () => {
+      await first.result.current.advance({ point: checkpoint.point, accuracyMeters: 0, capturedAt: Date.now() + checkpoint.ordinal, source: 'mock' });
+    });
+  }
+  expect(first.result.current.active?.cursor).toEqual(expect.objectContaining({
+    phase: 'riding',
+    nextStopIndex: anchoredStop.transitStopIndex! + 1,
+  }));
+  expect((await readNavigationDocument('alice')).active?.progressAnchor).toEqual(expect.objectContaining({
+    kind: 'transit-stop',
+    point: anchoredStop.point,
+  }));
+  first.unmount();
+
+  planTripMock().mockResolvedValueOnce({ data: { itineraries: [fresh] } });
+  const restored = renderHook(() => useActiveTrip('alice'));
+  await waitFor(() => expect(restored.result.current.status).toBe('active'));
+  const restoredCheckpoint = restored.result.current.active!.plan.checkpoints[restored.result.current.active!.cursor.checkpointOrdinal]!;
+  expect(restoredCheckpoint).toEqual(expect.objectContaining({
+    kind: 'transit-stop',
+    point: anchoredStop.point,
+    transitStopIndex: anchoredStop.transitStopIndex! + 1,
+  }));
+  expect(restored.result.current.active?.cursor.nextStopIndex).toBe(restoredCheckpoint.transitStopIndex! + 1);
   restored.unmount();
 });
 
@@ -274,6 +531,10 @@ it('persists monotonic progress, supports admin reset, and completes arrival ide
     await hook.result.current.start(input());
   });
   const active = hook.result.current.active!;
+  expect((await readNavigationDocument('alice')).active?.progressAnchor).toEqual(expect.objectContaining({
+    kind: active.plan.checkpoints[0]!.kind,
+    point: active.plan.checkpoints[0]!.point,
+  }));
   const later = active.plan.checkpoints[Math.min(2, active.plan.checkpoints.length - 2)]!;
   await act(async () => {
     await hook.result.current.advance({ point: later.point, accuracyMeters: 0, capturedAt: Date.now(), source: 'mock' });
@@ -286,12 +547,20 @@ it('persists monotonic progress, supports admin reset, and completes arrival ide
   });
   expect(hook.result.current.active?.cursor.checkpointOrdinal).toBe(advancedOrdinal);
   expect((await readNavigationDocument('alice')).active?.cursor.checkpointOrdinal).toBe(advancedOrdinal);
+  expect((await readNavigationDocument('alice')).active?.progressAnchor).toEqual(expect.objectContaining({
+    kind: hook.result.current.active!.plan.checkpoints[advancedOrdinal]!.kind,
+    point: hook.result.current.active!.plan.checkpoints[advancedOrdinal]!.point,
+  }));
 
   await act(async () => {
     expect(await hook.result.current.resetForAdmin()).toBe(true);
   });
   expect(hook.result.current.active?.cursor.checkpointOrdinal).toBe(0);
   expect((await readNavigationDocument('alice')).active?.cursor.checkpointOrdinal).toBe(0);
+  expect((await readNavigationDocument('alice')).active?.progressAnchor).toEqual(expect.objectContaining({
+    kind: active.plan.checkpoints[0]!.kind,
+    point: active.plan.checkpoints[0]!.point,
+  }));
 
   const sessionId = hook.result.current.active!.sessionId;
   const destination = hook.result.current.active!.plan.checkpoints.at(-1)!;
@@ -338,5 +607,6 @@ it('ends early once, clears active state in the same stored document, and strips
   const serialized = await AsyncStorage.getItem(navigationStorageKey('alice'));
   expect(serialized).not.toContain('departures');
   expect(serialized).not.toContain('\\"steps\\"');
+  expect(serialized).not.toContain('progressAnchor');
   hook.unmount();
 });

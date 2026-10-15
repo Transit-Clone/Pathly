@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { planTrip, type Itinerary, type ResumePlanRequest, type TripEndpoints, type TripMode, type TripPlanProblem } from '../data/tripPlanning';
+import {
+  CURRENT_LOCATION_LABEL,
+  hasRoutableTripPlace,
+  planTrip,
+  type Itinerary,
+  type ResumePlanRequest,
+  type TripEndpoints,
+  type TripMode,
+  type TripPlanProblem,
+} from '../data/tripPlanning';
 import type { RoutePreference, TripTimeChoice } from '../data/transit';
 import type { Coordinates } from './useCurrentLocation';
 
@@ -37,14 +46,18 @@ export function useTripPlan({ endpoints, time, preference, modes, location, loca
     locationRef.current = location;
   }, [location]);
 
-  const waitsForLocation = endpoints.origin === 'Current location' && locationPending;
+  // A Recent deliberately carries the coordinate that was called "Current location" when the
+  // trip ran. That saved endpoint is routable on its own and must not wait forever for a new fix.
+  const needsLiveOrigin = endpoints.origin === CURRENT_LOCATION_LABEL
+    && !hasRoutableTripPlace(endpoints.origin, endpoints.originPlace);
+  const waitsForLocation = needsLiveOrigin && locationPending;
   const key = JSON.stringify({
     origin: [endpoints.origin, endpoints.originPlace?.id],
     destination: [endpoints.destination, endpoints.destinationPlace?.id],
     time,
     transfers: preference === 'transfers',
     modes: [...modes].sort(),
-    hasLocation: location !== null,
+    hasLocation: needsLiveOrigin && location !== null,
   });
   // The refresh count the current criteria were first planned at: later counts are refreshes.
   const plannedAt = useRef<{ key: string; refresh: number } | null>(null);

@@ -1,7 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import type {
+  NavigationCheckpointKind,
   NavigationCursor,
+  NavigationPhase,
   TripEndpointReference,
   TripSelectionIdentity,
 } from './enrouteNavigation';
@@ -23,6 +25,13 @@ export type PersistedLineSummaryV1 = {
   tripId?: string;
 };
 
+export type NavigationProgressAnchorV1 = {
+  kind: NavigationCheckpointKind;
+  stepIndex: number;
+  phase: NavigationPhase;
+  point: { lat: number; lng: number };
+};
+
 export type ActiveTripResumeV1 = {
   version: 1;
   sessionId: string;
@@ -34,6 +43,8 @@ export type ActiveTripResumeV1 = {
   request: ResumePlanRequest;
   selection: TripSelectionIdentity;
   cursor: NavigationCursor;
+  /** Optional so active records written before anchors were introduced still validate safely. */
+  progressAnchor?: NavigationProgressAnchorV1;
   lines: PersistedLineSummaryV1[];
 };
 
@@ -57,6 +68,7 @@ export type NavigationDocumentV1 = {
 };
 
 const phases = new Set(['walking', 'waiting-to-board', 'riding', 'transferring', 'arrived']);
+const checkpointKinds = new Set(['start', 'walk', 'board', 'transit-stop', 'alight', 'destination']);
 const tripModes = new Set(['subway', 'bus', 'rail']);
 const lineModes = new Set(['subway', 'bus', 'rail', 'ferry', 'other']);
 const writeQueues = new Map<string, Promise<unknown>>();
@@ -89,12 +101,23 @@ function sameEndpoint(left: TripEndpointReference, right: TripEndpointReference)
 }
 
 function isSelection(value: unknown): value is TripSelectionIdentity {
-  return isRecord(value)
-    && value.version === 1
-    && isString(value.itineraryId)
+  if (!isRecord(value) || (value.version !== 1 && value.version !== 2)) return false;
+  const common = isString(value.itineraryId)
     && isIsoTime(value.departureTime)
     && isIsoTime(value.arrivalTime)
-    && isString(value.fingerprint);
+    && isString(value.fingerprint)
+    && (value.tripIds === undefined
+      || (Array.isArray(value.tripIds) && value.tripIds.every((tripId) => tripId === null || isString(tripId))));
+  if (!common || value.version === 1) return common;
+  return Array.isArray(value.walks)
+    && value.walks.every((walk) => isRecord(walk)
+      && isInteger(walk.stepIndex)
+      && isNumber(walk.durationSeconds) && walk.durationSeconds >= 0
+      && isNumber(walk.distanceMeters) && walk.distanceMeters >= 0)
+    && isRecord(value.legacy)
+    && isIsoTime(value.legacy.departureTime)
+    && isIsoTime(value.legacy.arrivalTime)
+    && isString(value.legacy.fingerprint);
 }
 
 function isCursor(value: unknown): value is NavigationCursor {
@@ -104,6 +127,14 @@ function isCursor(value: unknown): value is NavigationCursor {
     && isString(value.phase) && phases.has(value.phase)
     && (value.nextStopIndex === undefined || isInteger(value.nextStopIndex))
     && isNumber(value.lastAdvancedAt);
+}
+
+function isProgressAnchor(value: unknown): value is NavigationProgressAnchorV1 {
+  return isRecord(value)
+    && isString(value.kind) && checkpointKinds.has(value.kind)
+    && isInteger(value.stepIndex)
+    && isString(value.phase) && phases.has(value.phase)
+    && isPoint(value.point);
 }
 
 function isResumeRequest(value: unknown): value is ResumePlanRequest {
@@ -140,6 +171,7 @@ function parseActive(value: unknown, uid: string): ActiveTripResumeV1 | null {
     || !isResumeRequest(value.request)
     || !isSelection(value.selection)
     || !isCursor(value.cursor)
+    || (value.progressAnchor !== undefined && !isProgressAnchor(value.progressAnchor))
     || !Array.isArray(value.lines)
     || !value.lines.every(isLine)) return null;
   if (!sameEndpoint(value.origin, value.request.origin) || !sameEndpoint(value.destination, value.request.destination)) return null;

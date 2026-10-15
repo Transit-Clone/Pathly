@@ -150,6 +150,44 @@ describe('resume planning', () => {
     if (result.ok) expect(sameTripSelection(createTripSelectionIdentity(result.itinerary), createTripSelectionIdentity(chosen))).toBe(true);
   });
 
+  it('restores the same departure when optional timetable enrichment changes', async () => {
+    const enriched = structuredClone(fixture[0]!);
+    const stripped = structuredClone(enriched);
+    for (const step of stripped.steps) {
+      if (step.kind !== 'transit') continue;
+      delete step.tripId;
+      delete step.stops;
+      delete step.departures;
+    }
+    const firstWalk = stripped.steps.find((step) => step.kind === 'walk');
+    if (firstWalk?.kind === 'walk') {
+      firstWalk.durationSeconds += 1;
+      firstWalk.distanceMeters += 1;
+    }
+    const request = createResumePlanRequest(options())!;
+
+    planTripMock().mockResolvedValueOnce({ data: { itineraries: [stripped] } });
+    const withoutFreshEnrichment = await planTripForResume(request, createTripSelectionIdentity(enriched));
+    expect(withoutFreshEnrichment.ok).toBe(true);
+
+    planTripMock().mockResolvedValueOnce({ data: { itineraries: [enriched] } });
+    const withFreshEnrichment = await planTripForResume(request, createTripSelectionIdentity(stripped));
+    expect(withFreshEnrichment.ok).toBe(true);
+  });
+
+  it('restores an exact active trip written with the version-1 selection format', async () => {
+    const current = createTripSelectionIdentity(fixture[0]!);
+    const legacySelection = {
+      version: 1 as const,
+      itineraryId: current.itineraryId,
+      departureTime: current.legacy!.departureTime,
+      arrivalTime: current.legacy!.arrivalTime,
+      fingerprint: current.legacy!.fingerprint,
+    };
+    planTripMock().mockResolvedValueOnce({ data: { itineraries: fixture } });
+    expect((await planTripForResume(createResumePlanRequest(options())!, legacySelection)).ok).toBe(true);
+  });
+
   it('returns recovery for a failed request, missing candidate, or merely similar itinerary', async () => {
     const request = createResumePlanRequest(options())!;
     planTripMock().mockRejectedValueOnce(new Error('offline'));
@@ -158,7 +196,11 @@ describe('resume planning', () => {
     planTripMock().mockResolvedValueOnce({ data: { itineraries: fixture } });
     expect(await planTripForResume(request, { ...createTripSelectionIdentity(fixture[0]!), itineraryId: 'missing-id' })).toEqual({ ok: false, problem: 'no-exact-match' });
 
-    const similar = { ...fixture[0]!, arrivalTime: new Date(Date.parse(fixture[0]!.arrivalTime) + 60_000).toISOString() };
+    const similar = structuredClone(fixture[0]!);
+    const finalTransit = [...similar.steps].reverse().find((step) => step.kind === 'transit');
+    if (!finalTransit || finalTransit.kind !== 'transit') throw new Error('Expected transit fixture');
+    finalTransit.to.time = new Date(Date.parse(finalTransit.to.time) + 60_000).toISOString();
+    similar.arrivalTime = new Date(Date.parse(similar.arrivalTime) + 60_000).toISOString();
     planTripMock().mockResolvedValueOnce({ data: { itineraries: fixture } });
     expect(await planTripForResume(request, createTripSelectionIdentity(similar))).toEqual({ ok: false, problem: 'no-exact-match' });
   });
