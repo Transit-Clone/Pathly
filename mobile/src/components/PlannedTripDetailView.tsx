@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+
+import { legDepartureOptions, quickDepartureOptions, retimeItinerary, type DepartureChoices, type LegDepartureOption } from '../data/tripDepartures';
 
 import {
   badgeMode,
@@ -11,8 +13,10 @@ import {
   type TransitStep,
   type WalkStep,
 } from '../data/tripPlanning';
+import type { Coordinates } from '../hooks/useCurrentLocation';
+import { useClock } from '../hooks/useClock';
 import { useTheme } from '../theme/AppSettings';
-import { SharedTripDetailView, type TripDetailLeg, type TripDetailModel, type TripDetailWalk } from './SharedTripDetailView';
+import { SharedTripDetailView, type TripDetailDeparture, type TripDetailLeg, type TripDetailModel, type TripDetailWalk } from './SharedTripDetailView';
 import { TripMap } from './TripMap';
 
 type PlannedTripDetailViewProps = {
@@ -22,9 +26,12 @@ type PlannedTripDetailViewProps = {
   itinerary: Itinerary;
   onBack: () => void;
   onEnd: () => void;
-  onStart: () => void;
+  /** Starts the trip as shown, with any departures the rider picked. */
+  onStart: (itinerary: Itinerary) => void;
   onToggleFavorite: () => void;
   origin: string;
+  /** The rider's real position, for the map's location button; null when unknown. */
+  riderLocation?: Coordinates | null;
 };
 
 const METERS_PER_MILE = 1609.344;
@@ -41,13 +48,19 @@ function walkRow(step: WalkStep): TripDetailWalk {
   return { minutes: tripMinutes(step.durationSeconds), distance: formatWalkDistance(step.distanceMeters), toName: step.toName };
 }
 
-/** A real itinerary in the shared trip-detail shape: walks, legs, and the waits between them. */
-export function toTripDetailModel(itinerary: Itinerary, origin: string, destination: string, isActive: boolean, primary: string): TripDetailModel {
+function departureRow(option: LegDepartureOption): TripDetailDeparture {
+  return { key: option.departs, time: formatTripClock(option.departs), arriveTime: formatTripClock(option.arrives), selected: option.selected, reachable: option.reachable };
+}
+
+/**
+ * A real itinerary in the shared trip-detail shape: walks, legs, and the waits between them.
+ * `departures` are each transit leg's departure choices (legDepartureOptions), by leg.
+ */
+export function toTripDetailModel(itinerary: Itinerary, origin: string, destination: string, isActive: boolean, primary: string, departures: readonly LegDepartureOption[][] = []): TripDetailModel {
   const legs: TripDetailLeg[] = [];
   let pendingWalk: WalkStep | null = null;
   let previous: TransitStep | null = null;
   let walkAfter: TripDetailWalk | undefined;
-  const transitCount = itinerary.steps.filter((step) => step.kind === 'transit').length;
 
   for (const step of itinerary.steps) {
     if (step.kind === 'walk') {
@@ -58,10 +71,10 @@ export function toTripDetailModel(itinerary: Itinerary, origin: string, destinat
     const waitSeconds = previous
       ? (Date.parse(step.from.time) - Date.parse(previous.to.time)) / 1000 - (pendingWalk?.durationSeconds ?? 0)
       : undefined;
-    const index = legs.length;
+    const options = departures[legs.length] ?? [];
     legs.push({
       agency: step.agency.name,
-      ...(step.agency.url ? { agencyUrl: step.agency.url } : {}),
+      ...(options.length > 1 ? { departures: options.map(departureRow), quickDepartures: quickDepartureOptions(options).map(departureRow) } : {}),
       routeId: step.line.name,
       color: step.line.color ?? primary,
       ...(step.line.textColor ? { textColor: step.line.textColor } : {}),
@@ -73,10 +86,8 @@ export function toTripDetailModel(itinerary: Itinerary, origin: string, destinat
       durationMinutes: tripMinutes(step.durationSeconds),
       routeName: step.line.name,
       shortName: lineBadge(step),
-      startLabel: 'BOARD AT',
       startName: step.from.name,
       startTime: formatTripClock(step.from.time),
-      endLabel: index === transitCount - 1 ? 'GET OFF' : 'TRANSFER AT',
       endName: step.to.name,
       endTime: formatTripClock(step.to.time),
       ...(walkBefore ? { walkBefore } : {}),
@@ -103,20 +114,47 @@ export function toTripDetailModel(itinerary: Itinerary, origin: string, destinat
   };
 }
 
-export function PlannedTripDetailView({ destination, isActive, isFavorite, itinerary, onBack, onEnd, onStart, onToggleFavorite, origin }: PlannedTripDetailViewProps) {
+export function PlannedTripDetailView({ destination, isActive, isFavorite, itinerary: planned, onBack, onEnd, onStart, onToggleFavorite, origin, riderLocation }: PlannedTripDetailViewProps) {
   const { colors } = useTheme();
   // A stop pressed in a leg's stop list; the counter repeats a focus on the same stop.
   const [focusStop, setFocusStop] = useState<{ point: LatLng; key: number } | null>(null);
+  // The location button: each press centers the map on the rider, until they drag it.
+  const [centerRequest, setCenterRequest] = useState(0);
+  const [centered, setCentered] = useState(false);
+  const userLocation = riderLocation ? { lat: riderLocation.latitude, lng: riderLocation.longitude } : null;
+  // Departures the rider picked from the legs' boxes; the trip's times follow them.
+  const [choices, setChoices] = useState<DepartureChoices>(new Map());
+  // Which departures can still be made moves with the (admin-mockable) clock.
+  const now = useClock(30_000);
+  const itinerary = useMemo(() => retimeItinerary(planned, choices, now), [choices, now, planned]);
+  const departures = useMemo(() => legDepartureOptions(planned, choices, now), [choices, now, planned]);
   return (
     <SharedTripDetailView
       interactiveMap={true}
       actionLabel={isActive ? 'End current trip' : `Start trip to ${destination}`}
       backLabel="Back to route results"
       isFavorite={isFavorite}
-      map={<TripMap focusStop={focusStop} interactive={true} itinerary={itinerary} padding={{ top: 76, right: 24, bottom: 36, left: 24 }} testID="search-trip-route-map" />}
-      model={toTripDetailModel(itinerary, origin, destination, isActive, colors.primary)}
-      onAction={isActive ? onEnd : onStart}
+      locationSelected={centered}
+      map={(
+        <TripMap
+          centerOnUserRequest={centerRequest}
+          focusStop={focusStop}
+          interactive={true}
+          itinerary={itinerary}
+          onUserPan={() => setCentered(false)}
+          padding={{ top: 76, right: 24, bottom: 36, left: 24 }}
+          testID="search-trip-route-map"
+          userLocation={userLocation}
+        />
+      )}
+      model={toTripDetailModel(itinerary, origin, destination, isActive, colors.primary, departures)}
+      onAction={isActive ? onEnd : () => onStart(itinerary)}
       onBack={onBack}
+      onCenterOnLocation={() => {
+        setCenterRequest((count) => count + 1);
+        setCentered(true);
+      }}
+      onSelectDeparture={(legIndex, departs) => setChoices((current) => new Map(current).set(legIndex, departs))}
       onFocusStop={(stop) => setFocusStop((current) => ({ point: stop.point, key: (current?.key ?? 0) + 1 }))}
       onToggleFavorite={onToggleFavorite}
       rootTestID={`search-trip-detail-${itinerary.id}`}

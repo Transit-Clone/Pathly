@@ -13,7 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '../auth/AuthContext';
 import { fetchPlaceDetails, type PlaceKind, type SearchPlace } from '../data/placesSearch';
-import { locationToPlace, recordSearch, removeSearch, subscribeToSearches } from '../data/userData';
+import { locationToPlace, recordSearch, removeSearch, subscribeToSearches, type SavedLocation } from '../data/userData';
 import { normalizeStopName } from '../data/stopSearch';
 import { usePlacesSearch } from '../hooks/usePlacesSearch';
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
@@ -22,6 +22,7 @@ import { typography } from '../theme/typography';
 import { Icon, type IconName } from './Icon';
 import { PressableScale } from './PressableScale';
 import { badgeLabel, RouteBadge, type TransitMode } from './RouteBadge';
+import { SavedPlacesStrip } from './SavedPlacesStrip';
 
 const MAX_RECENT_SEARCHES = 8;
 /** Recent searches shown above the results while typing. */
@@ -57,6 +58,8 @@ export type SearchViewProps = {
   onSelectCurrentLocation?: () => void;
   /** The rider's location, to rank equally good transit stops nearest first. */
   near?: { latitude: number; longitude: number } | null;
+  /** The rider's saved places, offered in a swipeable row above Recent. */
+  savedPlaces?: readonly SavedLocation[];
 };
 
 type SearchResultRowProps = {
@@ -158,7 +161,7 @@ function Message({ body, children, title }: MessageProps) {
 }
 
 /** Full-screen destination search: search field pinned on top, a flat result list below. */
-export function SearchView({ initialQuery = '', near, onCancel, onSelect, onSelectCurrentLocation }: SearchViewProps) {
+export function SearchView({ initialQuery = '', near, onCancel, onSelect, onSelectCurrentLocation, savedPlaces = [] }: SearchViewProps) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
   const [query, setQuery] = useState(initialQuery);
@@ -324,6 +327,8 @@ export function SearchView({ initialQuery = '', near, onCancel, onSelect, onSele
               <Text style={styles.cancelText}>Cancel</Text>
             </PressableScale>
           </View>
+          {/* Saved places lead the page, under the search field, until the rider starts typing. */}
+          {!isSearching ? <SavedPlacesStrip onSelect={(saved) => selectRecent(locationToPlace(saved.address))} places={savedPlaces} /> : null}
         </SafeAreaView>
 
         <ScrollView

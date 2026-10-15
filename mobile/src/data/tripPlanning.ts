@@ -27,7 +27,11 @@ export type TransitStep = {
   stops?: TripStop[];
   /** That scheduled trip's GTFS trip_id (admin ID overlay). */
   tripId?: string;
+  /** The same line's scheduled departures between the same two stops, this one included (tripDepartures.ts). */
+  departures?: TripDeparture[];
 };
+/** `stopTimes` follow the leg's `stops` when that trip calls at the same stops in between. */
+export type TripDeparture = { departs: string; arrives: string; stopTimes?: string[] };
 export type TripStep = WalkStep | TransitStep;
 export type TripFare = { text: string; cents: number; currency: string; estimated: boolean };
 export type Itinerary = {

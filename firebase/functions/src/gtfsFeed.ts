@@ -2,6 +2,8 @@ import { parse as parseSync } from 'csv-parse/sync';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 
+import { displayTransitName } from './transitNames';
+
 /**
  * Pure readers for one agency's GTFS files in a given directory, shared by the request-time
  * loaders (gtfsStaticData.ts, which add per-instance caching and pick the active directory) and
@@ -68,7 +70,8 @@ export function readAgencyStaticData(dataDir: string): AgencyStaticData {
   for (const row of readCsv<StopRow>(dataDir, 'stops.txt')) {
     stopsById.set(row.stop_id, {
       stopId: row.stop_id,
-      name: row.stop_name,
+      // MTA's city buses publish names in all caps; riders see them recased.
+      name: displayTransitName(row.stop_name),
       lat: Number(row.stop_lat),
       lon: Number(row.stop_lon),
       parentStation: row.parent_station || null,
@@ -80,7 +83,7 @@ export function readAgencyStaticData(dataDir: string): AgencyStaticData {
     tripsById.set(row.trip_id, {
       tripId: row.trip_id,
       routeId: row.route_id,
-      headsign: row.trip_headsign,
+      headsign: displayTransitName(row.trip_headsign),
       directionId: Number(row.direction_id),
       serviceId: row.service_id,
       peakOffpeak: row.peak_offpeak === undefined ? null : row.peak_offpeak === '1',

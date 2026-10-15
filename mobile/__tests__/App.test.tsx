@@ -476,7 +476,7 @@ describe('Pathly prototype navigation', () => {
       modes: ['subway', 'bus', 'rail'],
     }));
     expect(textOf(screen.getByTestId('leave-time-label'))).toBe('Leave now');
-    expect(textOf(screen.getByTestId(`schedule-${LIRR_TRIP.id}`))).toMatch(/8:52 AM → 10:51 AM$/);
+    expect(textOf(screen.getByTestId(`schedule-${LIRR_TRIP.id}`))).toMatch(/8:52 AM - 10:51 AM$/);
 
     fireEvent.press(screen.getByTestId('leave-time-control'));
     fireEvent.press(screen.getByTestId('leave-mode-depart'));
@@ -490,7 +490,7 @@ describe('Pathly prototype navigation', () => {
     expect(textOf(screen.getByTestId('leave-time-label'))).toMatch(/^Depart 2:15 PM( tomorrow)?$/);
     await waitFor(() => expect(planTripMock()).toHaveBeenLastCalledWith(expect.objectContaining({ time: { mode: 'depart', at: expect.stringMatching(/T(18|19):15:00\.000Z$/) } })));
     // With a chosen time, the card shows departure and arrival only.
-    expect(textOf(await screen.findByTestId(`schedule-${LIRR_TRIP.id}`))).toBe('8:52 AM → 10:51 AM');
+    expect(textOf(await screen.findByTestId(`schedule-${LIRR_TRIP.id}`))).toBe('8:52 AM - 10:51 AM');
 
     fireEvent.press(screen.getByTestId(`search-result-view-${LIRR_TRIP.id}`));
     expect(screen.getByTestId('search-trip-leave-time').props.children).toBe('8:52 AM');
@@ -688,10 +688,15 @@ describe('Pathly prototype navigation', () => {
     const waitMinutes = Math.round((Date.parse(second.from.time) - Date.parse(first.to.time)) / 60_000);
     expect(screen.getByLabelText(`Transfer, wait ${waitMinutes} minutes`)).toBeTruthy();
     expect(within(screen.getByTestId('search-trip-step-1')).getByText('Penn Station')).toBeTruthy();
-    // No invented alert status, and the agency is credited with a link.
+    // No invented alert status, and no agency name: the badge and line already say which it is.
     expect(screen.queryByTestId('search-trip-service-alerts')).toBeNull();
-    fireEvent.press(screen.getByTestId('search-trip-agency-0'));
-    expect(openURL).toHaveBeenCalledWith('http://www.mta.info/lirr');
+    expect(within(screen.getByTestId('search-trip-step-0')).queryByText(first.agency.name)).toBeNull();
+    expect(openURL).not.toHaveBeenCalled();
+    // No "BOARD AT" / "TRANSFER AT" / "GET OFF" labels, and no fare footnote.
+    expect(screen.queryByText(/BOARD AT|TRANSFER AT|GET OFF/)).toBeNull();
+    expect(screen.queryByText(/full adult one-way fare/)).toBeNull();
+    // The header strip shows the walk with its minutes before the rides.
+    expect(screen.getByLabelText(`Walk ${Math.round(walk.durationSeconds / 60)} minutes`)).toBeTruthy();
   });
 
   it('draws the trip on a real map: line colors for rides, dots for walking', async () => {
@@ -964,6 +969,12 @@ describe('Pathly prototype navigation', () => {
     const screen = await openResults();
     fireEvent.press(screen.getByTestId(`search-result-view-${LIRR_TRIP.id}`));
     const legs = LIRR_TRIP.steps.filter((step): step is TransitStep => step.kind === 'transit');
+    // From far away the stops in between would pile up, so they wait until the map is zoomed in.
+    const tripMap = screen.getByTestId('search-trip-route-map', hidden);
+    fireEvent(tripMap, 'regionChangeComplete', { latitude: 40.8, longitude: -73.4, latitudeDelta: 8, longitudeDelta: 8 });
+    expect(screen.queryAllByTestId(/^trip-map-via-/, hidden)).toHaveLength(0);
+    expect(screen.getAllByTestId(/^trip-map-stop-/, hidden).length).toBeGreaterThan(0);
+    fireEvent(tripMap, 'regionChangeComplete', { latitude: 40.8, longitude: -73.4, latitudeDelta: 0.002, longitudeDelta: 0.002 });
     const vias = screen.getAllByTestId(/^trip-map-via-/, hidden);
     expect(vias).toHaveLength(legs.reduce((total, leg) => total + (leg.stops?.length ?? 0), 0));
     expect(StyleSheet.flatten(within(vias[0]!).UNSAFE_getByType(View).props.style).borderColor).toBe(legs[0]!.line.color);
@@ -1015,7 +1026,7 @@ describe('Pathly prototype navigation', () => {
     const screen = await openResults();
     fireEvent.press(screen.getByTestId(`search-result-view-${LIRR_TRIP.id}`));
     expect(screen.queryByTestId('search-trip-stops-toggle-0')).toBeNull();
-    expect(within(screen.getByTestId('search-trip-step-0')).getByText(/· 7 stops$/)).toBeTruthy();
+    expect(within(screen.getByTestId('search-trip-step-0')).getByText('7 stops')).toBeTruthy();
   });
 
   type TestElement = ReturnType<ReturnType<typeof render>['getByTestId']>;
@@ -1105,6 +1116,11 @@ describe('Pathly prototype navigation', () => {
     // illustrated overlay immediately.
     fireEvent.press(await screen.findByTestId(`route-card-${PJ_CARD}-primary`));
     expect(await screen.findByTestId('route-map', hidden)).toBeTruthy();
+    // Stop dots show once they're zoomed apart.
+    const zoomIn = () => fireEvent(screen.getByTestId('route-map', hidden), 'regionChangeComplete', { latitude: 40.8, longitude: -73.4, latitudeDelta: 0.001, longitudeDelta: 0.001 });
+    fireEvent(screen.getByTestId('route-map', hidden), 'regionChangeComplete', { latitude: 40.8, longitude: -73.4, latitudeDelta: 2, longitudeDelta: 2 });
+    expect(screen.queryAllByTestId(/^route-stop-/, hidden).length).toBeLessThanOrEqual(1);
+    zoomIn();
     await waitFor(() => expect(screen.getAllByTestId(/^route-stop-/, hidden)).toHaveLength(22));
     fireEvent.press(screen.getByTestId('route-back'));
 
@@ -1112,7 +1128,10 @@ describe('Pathly prototype navigation', () => {
     // findNearbyTransit mock), under its synthesized id.
     fireEvent.press(await screen.findByTestId(`route-card-${cardIdFor(routeById.e)}-primary`));
     expect(await screen.findByTestId('route-map', hidden)).toBeTruthy();
-    await waitFor(() => expect(screen.getAllByTestId(/^route-stop-/, hidden)).toHaveLength(32));
+    await waitFor(() => {
+      zoomIn();
+      expect(screen.getAllByTestId(/^route-stop-/, hidden)).toHaveLength(32);
+    });
   });
 
   it('opens every profile category and keeps settings interactions local', () => {
@@ -1389,10 +1408,11 @@ describe('Pathly prototype navigation', () => {
     await waitFor(() => expect(callableNamed('getRouteLiveStatus')).toHaveBeenCalledWith(expect.objectContaining({ lat: SERVICE_AREA_FALLBACK.latitude, lon: SERVICE_AREA_FALLBACK.longitude })));
   });
 
-  it("hides Google's points of interest on the home and route maps", async () => {
-    const hidesPlaces = (map: { props: { customMapStyle?: unknown } }) => expect(map.props.customMapStyle).toEqual([
+  it("hides Google's points of interest and grays highways on the home and route maps", async () => {
+    const hidesPlaces = (map: { props: { customMapStyle?: unknown } }) => expect(map.props.customMapStyle).toEqual(expect.arrayContaining([
       { featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] },
-    ]);
+      { featureType: 'road.highway', elementType: 'geometry.fill', stylers: [{ color: '#DADCE0' }] },
+    ]));
     const screen = render(<App />);
     fireEvent.press(await screen.findByTestId(`route-card-${PJ_CARD}-primary`));
     hidesPlaces(await screen.findByTestId('route-map', { includeHiddenElements: true }));

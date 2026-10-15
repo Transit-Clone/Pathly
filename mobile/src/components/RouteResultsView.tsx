@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, PanResponder, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { SearchPlace } from '../data/placesSearch';
 import { formatTripTimeChoice, type RoutePreference, type TripTimeChoice } from '../data/transit';
@@ -22,7 +22,7 @@ import {
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { useClock } from '../hooks/useClock';
 import { useTripPlan } from '../hooks/useTripPlan';
-import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
+import { ThemedStatusBar, useAppSettings, useTheme, useThemedStyles } from '../theme/AppSettings';
 import { ScreenTransition, useLayoutEase } from '../theme/motion';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
@@ -94,6 +94,15 @@ const transitModes: { id: TransitMode; label: string; icon: IconName }[] = [
 
 const ALL_MODES: readonly TransitMode[] = ['subway', 'bus', 'rail', 'ferry'];
 
+/** The results sheet's top at rest, as a share of the screen; expanded, it stops below the trip card. */
+const SHEET_REST_SHARE = 0.44;
+/** Space kept between the trip card and an expanded sheet. */
+const SHEET_EXPANDED_GAP = 10;
+/** A drag shorter than this (points) is a tap on the handle. */
+const HANDLE_TAP_SLOP = 6;
+/** Walks at least this long show in a result's steps; shorter ones are just getting between platforms. */
+const SHOWN_WALK_SECONDS = 3 * 60;
+
 type OptionsPanel = 'modes' | 'filter' | null;
 
 /** A searched place's coordinates (saved places without any are stored as [0, 0]). */
@@ -138,6 +147,58 @@ export function RouteResultsView({
   );
   const [openPanel, setOpenPanel] = useState<OptionsPanel>(null);
   const [timeSheetOpen, setTimeSheetOpen] = useState(false);
+  // The map's location button: each press centers the map on the rider, until they drag it.
+  const [centerRequest, setCenterRequest] = useState(0);
+  const [centered, setCentered] = useState(false);
+  const userLocation = riderLocation ? { lat: riderLocation.latitude, lng: riderLocation.longitude } : null;
+
+  // The results sheet's handle, as on Home: tap to expand or collapse, or drag it between the two.
+  const insets = useSafeAreaInsets();
+  const { reducedMotionActive } = useAppSettings();
+  const [tripCardBottom, setTripCardBottom] = useState(insets.top + 120);
+  const restTop = height * SHEET_REST_SHARE;
+  const expandedTop = Math.min(restTop, tripCardBottom + SHEET_EXPANDED_GAP);
+  const [sheetTop] = useState(() => new Animated.Value(restTop));
+  const sheetExpanded = useRef(false);
+  const dragStart = useRef(restTop);
+  const sheetBounds = useRef({ restTop, expandedTop });
+  const settleSheet = (expanded: boolean) => {
+    sheetExpanded.current = expanded;
+    const toValue = expanded ? sheetBounds.current.expandedTop : sheetBounds.current.restTop;
+    if (reducedMotionActive) sheetTop.setValue(toValue);
+    else Animated.spring(sheetTop, { toValue, speed: 18, bounciness: 2, useNativeDriver: false }).start();
+  };
+  const settleRef = useRef(settleSheet);
+  useEffect(() => {
+    sheetBounds.current = { restTop, expandedTop };
+    settleRef.current = settleSheet;
+  });
+  // The refs are only read inside gesture callbacks, never while rendering.
+  // eslint-disable-next-line react-hooks/refs
+  const [handleResponder] = useState(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: () => true,
+    onPanResponderGrant: () => {
+      sheetTop.stopAnimation((value) => {
+        dragStart.current = value;
+      });
+    },
+    onPanResponderMove: (_event, gesture) => {
+      const { expandedTop: top, restTop: rest } = sheetBounds.current;
+      sheetTop.setValue(Math.min(rest, Math.max(top, dragStart.current + gesture.dy)));
+    },
+    onPanResponderRelease: (_event, gesture) => {
+      const { expandedTop: top, restTop: rest } = sheetBounds.current;
+      if (Math.abs(gesture.dy) < HANDLE_TAP_SLOP) {
+        settleRef.current(!sheetExpanded.current);
+        return;
+      }
+      // A flick decides by its direction; a slow drag by which position is nearer.
+      const position = dragStart.current + gesture.dy;
+      settleRef.current(Math.abs(gesture.vy) > 0.5 ? gesture.vy < 0 : position < (top + rest) / 2);
+    },
+    onPanResponderTerminate: () => settleRef.current(sheetExpanded.current),
+  }));
   // Trip times follow an admin's mock clock, like the plans themselves.
   const now = useClock(30_000);
 
@@ -196,9 +257,10 @@ export function RouteResultsView({
         itinerary={selectedItinerary}
         onBack={onCloseTrip}
         onEnd={onEndTrip}
-        onStart={() => onStartTrip(selectedItinerary)}
+        onStart={onStartTrip}
         onToggleFavorite={onToggleSaveDestination}
         origin={origin}
+        riderLocation={riderLocation}
       />
       </ScreenTransition>
     );
@@ -212,16 +274,19 @@ export function RouteResultsView({
       <View style={styles.screen} testID="route-results-view">
         <ThemedStatusBar />
         <TripMap
+          centerOnUserRequest={centerRequest}
           destination={placePoint(criteria.destinationPlace)}
           // Pannable and zoomable above the results sheet, which covers the rest.
           interactive={true}
           itinerary={visibleItineraries[0] ?? null}
+          onUserPan={() => setCentered(false)}
           origin={originPoint}
           padding={{ top: 140, right: 40, bottom: height * 0.58, left: 40 }}
           testID="results-map"
+          userLocation={userLocation}
         />
 
-        <SafeAreaView edges={['top']} style={styles.topOverlay}>
+        <SafeAreaView edges={['top']} onLayout={(event) => setTripCardBottom(event.nativeEvent.layout.y + event.nativeEvent.layout.height)} style={styles.topOverlay}>
           <View style={styles.tripRow}>
             <PressableScale
               accessibilityLabel="Back to destination search"
@@ -277,9 +342,31 @@ export function RouteResultsView({
           </View>
         </SafeAreaView>
 
-        <View style={styles.mapLocation}><CurrentLocationButton testID="results-location" /></View>
+        <View style={styles.mapLocation}>
+          <CurrentLocationButton
+            onPress={() => {
+              setCenterRequest((count) => count + 1);
+              setCentered(true);
+            }}
+            selected={centered}
+            testID="results-location"
+          />
+        </View>
 
-        <SafeAreaView edges={['bottom']} style={styles.resultsSheet}>
+        <Animated.View style={[styles.resultsSheet, { top: sheetTop }]} testID="results-sheet">
+        <SafeAreaView edges={['bottom']} style={styles.resultsSheetInner}>
+          <View
+            accessibilityHint="Expands or collapses the route list."
+            accessibilityLabel="Route list handle"
+            accessibilityRole="button"
+            accessible={true}
+            onAccessibilityTap={() => settleSheet(!sheetExpanded.current)}
+            style={styles.dragHandle}
+            testID="results-sheet-handle"
+            {...handleResponder.panHandlers}
+          >
+            <View style={styles.dragHandleGrip} />
+          </View>
           <View style={styles.controls}>
             <PressableScale
               accessibilityLabel="Choose transit modes"
@@ -319,7 +406,7 @@ export function RouteResultsView({
               style={[styles.leaveControl, tripTime.mode !== 'now' && styles.activePill]}
               testID="leave-time-control"
             >
-              <Icon color={tripTime.mode === 'now' ? colors.ink : colors.primary} name="time" size={16} />
+              <Icon color={tripTime.mode === 'now' ? colors.ink : colors.primary} name="time" size={15} />
               <Text numberOfLines={1} style={[styles.leaveTime, tripTime.mode !== 'now' && styles.activePillText]} testID="leave-time-label">
                 {formatTripTimeChoice(tripTime)}{tomorrow ? ' tomorrow' : ''}
               </Text>
@@ -416,10 +503,12 @@ export function RouteResultsView({
             ) : null}
             {visibleItineraries.map((itinerary) => {
               const legs = transitSteps(itinerary);
+              // The ride badges in order, with a walk icon wherever there's real walking to do.
+              const parts = itinerary.steps.filter((step) => step.kind === 'transit' || step.durationSeconds >= SHOWN_WALK_SECONDS);
               const minutes = tripMinutes(itinerary.durationSeconds);
               const fare = fareLabel(itinerary.fare);
               const leavesIn = Math.round((Date.parse(itinerary.departureTime) - now) / 60_000);
-              const span = `${formatTripClock(itinerary.departureTime)} → ${formatTripClock(itinerary.arrivalTime)}`;
+              const span = `${formatTripClock(itinerary.departureTime)} - ${formatTripClock(itinerary.arrivalTime)}`;
               const timing = tripTime.mode === 'now' ? `${leavesIn > 0 ? `Leaves in ${leavesIn} min` : 'Leave now'} · ${span}` : span;
               return (
                 <View key={itinerary.id} style={styles.itinerary} testID={`itinerary-${itinerary.id}`}>
@@ -434,18 +523,22 @@ export function RouteResultsView({
                     <View style={styles.itineraryTop}>
                       <View style={styles.segmentColumn}>
                         <View style={styles.segmentRow}>
-                          {legs.length === 0 ? <Icon color={colors.mutedInk} name="travel" size={18} /> : null}
-                          {legs.map((leg, legIndex) => (
-                            <View key={`${leg.line.name}-${legIndex}`} style={styles.segmentGroup}>
-                              <RouteBadge
-                                agency={leg.agency.name}
-                                color={leg.line.color ?? colors.primary}
-                                mode={badgeMode(leg)}
-                                shortName={lineBadge(leg)}
-                                size="small"
-                                textColor={leg.line.textColor}
-                              />
-                              {legIndex < legs.length - 1 ? <Icon color={colors.mutedInk} name="forward" size={14} /> : null}
+                          {legs.length === 0 && parts.length === 0 ? <Icon color={colors.mutedInk} filled={true} name="travel" size={18} /> : null}
+                          {parts.map((step, partIndex) => (
+                            <View key={`${step.kind}-${partIndex}`} style={styles.segmentGroup}>
+                              {step.kind === 'walk' ? (
+                                <Icon color={colors.mutedInk} filled={true} name="travel" size={18} testID={`itinerary-walk-${itinerary.id}-${partIndex}`} />
+                              ) : (
+                                <RouteBadge
+                                  agency={step.agency.name}
+                                  color={step.line.color ?? colors.primary}
+                                  mode={badgeMode(step)}
+                                  shortName={lineBadge(step)}
+                                  size="small"
+                                  textColor={step.line.textColor}
+                                />
+                              )}
+                              {partIndex < parts.length - 1 ? <Icon color={colors.mutedInk} name="forward" size={14} /> : null}
                             </View>
                           ))}
                         </View>
@@ -465,6 +558,7 @@ export function RouteResultsView({
             })}
           </ScrollView>
         </SafeAreaView>
+        </Animated.View>
 
         {timeSheetOpen ? (
           <LeaveTimeSheet
@@ -501,12 +595,16 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   endpointInput: { minWidth: 0, flex: 1, paddingVertical: 7, color: colors.ink, ...typography.bodyStrong, fontSize: 14 },
   swapButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19, backgroundColor: colors.blueSoft },
   mapLocation: { position: 'absolute', top: '35%', right: 16, zIndex: 2 },
-  resultsSheet: { position: 'absolute', top: '44%', right: 0, bottom: 0, left: 0, overflow: 'hidden', borderTopLeftRadius: 26, borderTopRightRadius: 26, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: -5 }, shadowOpacity: 0.12, shadowRadius: 16, elevation: 12 },
-  controls: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 20, paddingHorizontal: 14 },
-  toolbarPill: { height: 36, minWidth: 100, flex: 1, flexDirection: 'row', gap: 5, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 18, backgroundColor: colors.surface },
+  resultsSheetInner: { flex: 1 },
+  dragHandle: { height: 24, alignItems: 'center', justifyContent: 'center' },
+  dragHandleGrip: { width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border },
+  resultsSheet: { position: 'absolute', right: 0, bottom: 0, left: 0, overflow: 'hidden', borderTopLeftRadius: 26, borderTopRightRadius: 26, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: -5 }, shadowOpacity: 0.12, shadowRadius: 16, elevation: 12 },
+  controls: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 2, paddingHorizontal: 14 },
+  // Modes, Filter, and the leave time share the row equally; a long leave time is cut short.
+  toolbarPill: { height: 36, minWidth: 0, flex: 1, flexDirection: 'row', gap: 5, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 18, backgroundColor: colors.surface },
   toolbarPillText: { color: colors.ink, fontFamily: fontFamilies.bold, fontSize: 10 },
-  leaveControl: { color: colors.ink, minWidth: 100, height: 36, flex: 1.45, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 8, borderRadius: 18, borderColor: colors.border, borderWidth: 1, backgroundColor: colors.surface },
-  leaveTime: { color: colors.ink, ...typography.bodyStrong, fontSize: 10 },
+  leaveControl: { minWidth: 0, height: 36, flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 8, borderRadius: 18, borderColor: colors.border, borderWidth: 1, backgroundColor: colors.surface },
+  leaveTime: { flexShrink: 1, color: colors.ink, ...typography.bodyStrong, fontSize: 10 },
   refreshButton: { width: 40, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 },
   preferences: { flexDirection: 'row', gap: 7, paddingTop: 9, paddingHorizontal: 14 },
   preference: { minHeight: 36, flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5, borderWidth: 1, borderColor: colors.border, borderRadius: 18, backgroundColor: colors.surface },

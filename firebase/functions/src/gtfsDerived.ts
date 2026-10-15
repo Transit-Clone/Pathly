@@ -14,7 +14,12 @@ export const STOP_INDEXES_FILE = 'stop-indexes.json';
 export const STOP_TIMES_DIR = 'stop_times';
 export const GEOMETRY_DIR = 'geometry';
 export const MANIFEST_FILE = 'manifest.json';
-/** Bumped whenever the file format changes, so older output is treated as stale. */
+/**
+ * Bumped whenever the file format changes, so older output is treated as stale. A bump makes every
+ * instance ignore the published prepared files (raw GTFS instead: far slower, and the city bus
+ * feeds outgrow the callables' memory) until the refresh job rebuilds them, so content-only fixes
+ * are applied when the files are read instead (e.g. transitNames.ts in loadPreparedRouteGeometry).
+ */
 export const DERIVED_VERSION = 3;
 
 /**

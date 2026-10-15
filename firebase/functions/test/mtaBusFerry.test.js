@@ -94,3 +94,21 @@ test('a ferry trip update without a route_id still counts for its route, with no
   assert.equal(status.trips[0].tripId, '762');
   assert.deepEqual(status.vehicles, []);
 });
+
+test('all-caps bus stop names and headsigns are recased for riders', () => {
+  const { displayTransitName } = require('../lib/transitNames');
+  assert.equal(displayTransitName('1 AV/E 23 ST'), '1 Av/E 23 St');
+  assert.equal(displayTransitName('HARLEM 126 ST'), 'Harlem 126 St');
+  assert.equal(displayTransitName('SBS SOUTH FERRY via 2 AV'), 'SBS SOUTH FERRY via 2 AV');
+  assert.equal(displayTransitName('COLLEGE OF STATEN ISLAND'), 'College of Staten Island');
+  assert.equal(displayTransitName('W 23RD ST/MCDONALD AV'), 'W 23rd St/McDonald Av');
+  assert.equal(displayTransitName("JFK AIRPORT O'BRIEN PL"), "JFK Airport O'Brien Pl");
+  assert.equal(displayTransitName('Penn Station'), 'Penn Station');
+});
+
+test('bus stop names reach riders recased', async () => {
+  const routes = await findNearbyTransit(FIRST_AVE_23.lat, FIRST_AVE_23.lng);
+  const m15 = routes.find((route) => route.agencyId === 'mn' && route.shortName === 'M15');
+  assert.ok(JSON.stringify(m15).includes('1 Av/E 23 St') || JSON.stringify(m15).includes('Harlem 126 St'), JSON.stringify(m15));
+  assert.equal(/HARLEM|1 AV\//.test(JSON.stringify(m15)), false);
+});

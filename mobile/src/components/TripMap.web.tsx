@@ -1,10 +1,10 @@
 import { FLOAT_PANE, GoogleMap, Marker, OverlayViewF, Polyline, useJsApiLoader } from '@react-google-maps/api';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_SCRIPT_ID } from '../data/googleMapsLoaderConfig';
 import { googleMapStyle } from '../data/mapStyle';
-import { stopIndexAt, tripMapPoints, type TripMapProps } from '../data/tripMap';
+import { stopIndexAt, tripMapPoints, viaRevealZooms, type TripMapProps, type TripMapStop } from '../data/tripMap';
 import { useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies } from '../theme/typography';
@@ -26,7 +26,7 @@ const labelOffset = (width: number, height: number) => ({ x: -width / 2, y: -hei
  * A planned trip on a real map: each leg in its line's color, walking dotted, a marker at every
  * stop. Interactive maps pan and zoom, label a clicked stop, and offer to re-frame the whole trip.
  */
-export function TripMap({ destination, focusStop, interactive = false, itinerary, origin, padding = FIT_PADDING, testID = 'trip-map' }: TripMapProps) {
+export function TripMap({ centerOnUserRequest = 0, destination, focusStop, interactive = false, itinerary, onUserPan, origin, padding = FIT_PADDING, testID = 'trip-map', userLocation }: TripMapProps) {
   const { isLoaded } = useJsApiLoader({
     id: GOOGLE_MAPS_SCRIPT_ID,
     googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY ?? '',
@@ -43,6 +43,12 @@ export function TripMap({ destination, focusStop, interactive = false, itinerary
   const { legs, stops, bounds } = useMemo(() => tripMapPoints(itinerary, origin, destination), [destination, itinerary, origin]);
   const [selected, setSelected] = useState<number | null>(null);
   const [moved, setMoved] = useState(false);
+  // Stops passed in between are drawn only once they're zoomed apart (stopDeclutter.ts).
+  const [zoom, setZoom] = useState(0);
+  // The loaded map, readable from its first zoom change (before `map` state has updated).
+  const zoomSource = useRef<google.maps.Map | null>(null);
+  const revealZooms = useMemo(() => viaRevealZooms(stops), [stops]);
+  const viaShown = (stop: TripMapStop) => zoom >= (revealZooms.get(stop.leg ?? -1) ?? 0);
 
   const frame = useCallback(() => {
     if (!map || bounds.length === 0) return;
@@ -54,7 +60,11 @@ export function TripMap({ destination, focusStop, interactive = false, itinerary
 
   // Frames the whole trip (or both endpoints while it loads) whenever it changes.
   useEffect(frame, [frame]);
-  const onLoad = useCallback((loaded: google.maps.Map) => setMap(loaded), []);
+  const onLoad = useCallback((loaded: google.maps.Map) => {
+    setMap(loaded);
+    zoomSource.current = loaded;
+    setZoom(loaded.getZoom() ?? 0);
+  }, []);
 
   // A stop picked from the trip's stop list: centered and labeled.
   const [handledFocusKey, setHandledFocusKey] = useState(focusStop?.key);
@@ -69,6 +79,19 @@ export function TripMap({ destination, focusStop, interactive = false, itinerary
     map.setZoom(FOCUS_ZOOM);
   }, [map, focusStop]);
 
+  // The location button: centered on the rider, with the re-frame button offered to come back.
+  const [handledCenterRequest, setHandledCenterRequest] = useState(centerOnUserRequest);
+  if (centerOnUserRequest !== handledCenterRequest) {
+    setHandledCenterRequest(centerOnUserRequest);
+    if (userLocation) setMoved(true);
+  }
+  useEffect(() => {
+    if (!map || centerOnUserRequest === 0 || !userLocation) return;
+    map.panTo(userLocation);
+    if ((map.getZoom() ?? 0) < FOCUS_ZOOM) map.setZoom(FOCUS_ZOOM);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the request; the location is read at request time
+  }, [map, centerOnUserRequest]);
+
   if (!isLoaded) return <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.mapLand }]} testID={testID} />;
 
   const selectedStop = selected !== null ? stops[selected] : undefined;
@@ -80,8 +103,12 @@ export function TripMap({ destination, focusStop, interactive = false, itinerary
         center={FALLBACK_CENTER}
         mapContainerStyle={containerStyle}
         onClick={interactive ? () => setSelected(null) : undefined}
-        onDragStart={interactive ? () => setMoved(true) : undefined}
+        onDragStart={interactive ? () => {
+          setMoved(true);
+          onUserPan?.();
+        } : undefined}
         onLoad={onLoad}
+        onZoomChanged={() => setZoom(zoomSource.current?.getZoom() ?? 0)}
         options={mapOptions}
         zoom={11}
       >
@@ -94,7 +121,7 @@ export function TripMap({ destination, focusStop, interactive = false, itinerary
             path={leg.path}
           />
         ))}
-        {stops.map((stop, index) => (
+        {stops.map((stop, index) => (stop.kind === 'via' && !viaShown(stop) && index !== selected ? null : (
           <Marker
             key={`stop-${index}`}
             clickable={interactive}
@@ -111,7 +138,17 @@ export function TripMap({ destination, focusStop, interactive = false, itinerary
             title={stop.label}
             zIndex={stop.kind === 'via' ? 2 : 3}
           />
-        ))}
+        )))}
+        {userLocation ? (
+          // Same blue "you are here" dot as the route map.
+          <Marker
+            clickable={false}
+            icon={{ path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: '#4285F4', fillOpacity: 1, strokeColor: '#FFFFFF', strokeWeight: 2 }}
+            position={userLocation}
+            title="Your location"
+            zIndex={4}
+          />
+        ) : null}
         {selectedStop?.label ? (
           <OverlayViewF getPixelPositionOffset={labelOffset} mapPaneName={FLOAT_PANE} position={selectedStop.point}>
             <View style={styles.label} testID="trip-map-stop-label"><Text numberOfLines={1} style={styles.labelText}>{selectedStop.label}</Text></View>

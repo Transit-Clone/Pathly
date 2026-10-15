@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type GestureResponderEvent, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type GestureResponderEvent, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useDebug } from '../debug/DebugContext';
@@ -21,7 +21,7 @@ import { RouteMap } from './RouteMap';
 import { pointAlong, routeFocus, RouteLines, VehicleMarker, type MapLeg } from './RouteMapOverlay';
 import { badgeLabel, RouteBadge, transitModeForAgency } from './RouteBadge';
 import { PressableScale } from './PressableScale';
-import { PredictionTilesSkeleton } from './Skeleton';
+import { MapSkeleton, PredictionTilesSkeleton, StopListSkeleton } from './Skeleton';
 
 type RouteDetailViewProps = {
   /** Direction to open on (by `directions` index), e.g. when returning from the departures page. */
@@ -462,16 +462,11 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
         {mapBadge}
       </View>
     </>
+  ) : geometryStatus.status === 'loading' ? (
+    <MapSkeleton />
   ) : (
     <View style={styles.mapFallback} testID="route-map-fallback">
-      {geometryStatus.status === 'loading' ? (
-        <>
-          <ActivityIndicator color={route.color} />
-          <Text style={styles.mapFallbackText}>{`Loading the map for ${route.routeName}…`}</Text>
-        </>
-      ) : (
-        <Text style={styles.mapFallbackText}>Map unavailable</Text>
-      )}
+      <Text style={styles.mapFallbackText}>Map unavailable</Text>
     </View>
   );
 
@@ -644,10 +639,11 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
 
       <View style={styles.timelineHeading}><Text style={styles.timelineTitle}>Route stops</Text><View style={styles.onTimeChip}><View style={styles.onTimeDot} /><Text style={styles.onTimeText}>On time</Text></View></View>
       <View accessibilityLabel="Stops for the next departure">
-        {liveStopsResult.status !== 'ready' ? (
+        {liveStopsResult.status === 'loading' ? (
+          <StopListSkeleton color={route.color} />
+        ) : liveStopsResult.status !== 'ready' ? (
           <View accessible={true} style={styles.predictionsEmpty} testID="route-stops-empty">
-            {liveStopsResult.status === 'loading' ? <ActivityIndicator color={route.color} style={styles.predictionsEmptySpinner} /> : null}
-            <Text style={styles.predictionsEmptyText}>{liveStopsResult.status === 'loading' ? `Loading stops for ${route.routeName}…` : 'Stop times unavailable right now.'}</Text>
+            <Text style={styles.predictionsEmptyText}>Stop times unavailable right now.</Text>
           </View>
         ) : (
           (() => {
@@ -783,9 +779,6 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     borderWidth: 2,
     borderColor: colors.border,
     borderRadius: 20,
-  },
-  predictionsEmptySpinner: {
-    marginRight: 2,
   },
   predictionsEmptyText: {
     flexShrink: 1,

@@ -76,7 +76,8 @@ const RATE_LIMITS = {
   getBackendStatus: { userPerMinute: 6 },
 } satisfies Record<string, CallableRateLimit>;
 
-const TRIP_STOPS_BUDGET_MS = 1_500;
+// City bus timetables load from Cloud Storage on first use, which the budget leaves room for.
+const TRIP_STOPS_BUDGET_MS = 3_000;
 let tripStopMatcher = matchTripStops;
 /** Unit-test dependency injection only. */
 export function setTripStopMatcherForTests(matcher: typeof matchTripStops | undefined): void {

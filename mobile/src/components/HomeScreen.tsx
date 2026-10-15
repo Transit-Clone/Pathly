@@ -415,6 +415,7 @@ export function HomeScreen() {
           onCancel={() => setActiveView(results)}
           onSelect={(place) => choose(place.title, place)}
           onSelectCurrentLocation={field === 'origin' ? () => choose(CURRENT_LOCATION_LABEL) : undefined}
+          savedPlaces={savedLocations}
         />
       );
     }
@@ -423,6 +424,7 @@ export function HomeScreen() {
         near={riderLocation(location, locationStatus)}
         onCancel={showHome}
         onSelect={showRouteResults}
+        savedPlaces={savedLocations}
       />
     );
   }

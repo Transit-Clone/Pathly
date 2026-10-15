@@ -11,7 +11,7 @@ import {
   type GtfsStopTime,
 } from './gtfsStaticData';
 import { agencyIdsForStep } from './tripAgencies';
-import type { TransitStep, TripStop } from './tripPlanning';
+import type { TransitStep, TripDeparture, TripStop } from './tripPlanning';
 
 /**
  * Fills in a transit leg's stops in between, which Google's Routes API doesn't give (only a
@@ -26,6 +26,16 @@ const DEPARTURE_WINDOW_SECONDS = 120;
 /** A runner-up this much closer in time than the best makes the match ambiguous. */
 const CLEAR_WINNER_SECONDS = 60;
 const DAY_SECONDS = 24 * 60 * 60;
+/** Other departures offered for a matched leg: from a little before it to a few hours after. */
+const OPTIONS_BEFORE_SECONDS = 20 * 60;
+const OPTIONS_AFTER_SECONDS = 3 * 60 * 60;
+const MAX_OPTIONS = 12;
+/**
+ * Google times city buses with live Bus Time data, so a late or early bus can be well off its
+ * scheduled minute. A bus leg with no exact match takes its stops from the nearest scheduled trip
+ * within this window instead (the route's stop pattern), timed between Google's own times.
+ */
+const BUS_PATTERN_WINDOW_SECONDS = 20 * 60;
 const TIME_ZONE = 'America/New_York';
 
 const nyParts = new Intl.DateTimeFormat('en-US', {
@@ -112,7 +122,21 @@ function candidateStops(agencyId: AgencyId, lat: number, lng: number): Set<strin
 }
 
 /** `score`: seconds off Google's departure, with a sliver of boarding-stop distance to break ties. */
-export type Candidate = { agencyId: AgencyId; tripId: string; between: GtfsStopTime[]; offsetSeconds: number; score: number; startMs: number };
+export type Candidate = {
+  agencyId: AgencyId;
+  tripId: string;
+  between: GtfsStopTime[];
+  offsetSeconds: number;
+  score: number;
+  startMs: number;
+  /** Where the match boarded and got off (set by matchInAgency; optional for pickTrip's tests). */
+  routeId?: string;
+  /** Scheduled seconds (since the service day's start) at the boarding and alighting stops. */
+  boardSeconds?: number;
+  alightSeconds?: number;
+  boardStopId?: string;
+  alightStopId?: string;
+};
 
 function bySequence(a: GtfsStopTime, b: GtfsStopTime) {
   return a.stopSequence - b.stopSequence;
@@ -138,18 +162,31 @@ export function pickTrip(candidates: readonly Candidate[], stopCount: number): C
 }
 
 /**
- * The step's stops in between and its trip ID, or undefined when no single trip clearly fits. A
- * city bus is looked for in each borough feed in turn; the first clear match wins.
+ * A bus leg with no exact match: the scheduled trip nearest Google's departure, within
+ * BUS_PATTERN_WINDOW_SECONDS, whose stop count agrees with Google's. Its stops are the route's
+ * stops between the two; their times are spread between Google's departure and arrival.
  */
-export async function matchTripStops(step: TransitStep): Promise<{ stops: TripStop[]; tripId: string } | undefined> {
-  for (const agencyId of agencyIdsForStep(step).filter(isAgencyAvailable)) {
-    const match = await matchInAgency(agencyId, step);
-    if (match) return match;
-  }
-  return undefined;
+export function pickBusPattern(candidates: readonly Candidate[], stopCount: number): Candidate | undefined {
+  return [...candidates]
+    .filter((candidate) => candidate.offsetSeconds <= BUS_PATTERN_WINDOW_SECONDS)
+    .filter((candidate) => stopCount <= 0 || Math.abs(candidate.between.length - (stopCount - 1)) <= 1)
+    .sort((a, b) => a.score - b.score)[0];
 }
 
-async function matchInAgency(agencyId: AgencyId, step: TransitStep): Promise<{ stops: TripStop[]; tripId: string } | undefined> {
+/**
+ * The step's stops in between and its trip ID (when one scheduled trip clearly fits), or
+ * undefined when none fits. A city bus is looked for in every borough feed at once; the first
+ * feed (in order) with a match wins.
+ */
+type TripMatch = { stops: TripStop[]; tripId?: string; departures?: TripDeparture[] };
+
+export async function matchTripStops(step: TransitStep): Promise<TripMatch | undefined> {
+  const agencies = agencyIdsForStep(step).filter(isAgencyAvailable);
+  const matches = await Promise.all(agencies.map((agencyId) => matchInAgency(agencyId, step).catch(() => undefined)));
+  return matches.find((match) => match !== undefined);
+}
+
+async function matchInAgency(agencyId: AgencyId, step: TransitStep): Promise<TripMatch | undefined> {
   const departureMs = Date.parse(step.from.time);
   if (Number.isNaN(departureMs)) return undefined;
 
@@ -180,7 +217,7 @@ async function matchInAgency(agencyId: AgencyId, step: TransitStep): Promise<{ s
         const departs = gtfsTimeToSeconds(boardTime.departureTime);
         for (const day of days) {
           const offsetSeconds = Math.abs(departs - day.seconds);
-          if (offsetSeconds > DEPARTURE_WINDOW_SECONDS) continue;
+          if (offsetSeconds > (step.mode === 'bus' ? BUS_PATTERN_WINDOW_SECONDS : DEPARTURE_WINDOW_SECONDS)) continue;
           if (!isServiceRunningOn(agencyId, trip.serviceId, day.dateKey, day.dayOfWeek)) continue;
           const sequence = [...(byTrip.get(boardTime.tripId) ?? [])].sort(bySequence);
           const alight = sequence
@@ -189,27 +226,85 @@ async function matchInAgency(agencyId: AgencyId, step: TransitStep): Promise<{ s
           if (!alight) continue;
           const between = sequence.filter((time) => time.stopSequence > boardTime.stopSequence && time.stopSequence < alight.stopSequence);
           const score = offsetSeconds + metersFrom(boardTime.stopId, step.from.location) / 1000;
-          candidates.push({ agencyId, tripId: boardTime.tripId, between, offsetSeconds, score, startMs: day.startMs });
+          candidates.push({
+            agencyId,
+            tripId: boardTime.tripId,
+            between,
+            offsetSeconds,
+            score,
+            startMs: day.startMs,
+            routeId,
+            boardStopId: boardTime.stopId,
+            alightStopId: alight.stopId,
+            boardSeconds: departs,
+            alightSeconds: gtfsTimeToSeconds(alight.arrivalTime || alight.departureTime),
+          });
         }
       }
     }
   }
 
-  const best = pickTrip(candidates, step.stopCount);
+  const exact = pickTrip(candidates.filter((candidate) => candidate.offsetSeconds <= DEPARTURE_WINDOW_SECONDS), step.stopCount);
+  const best = exact ?? (step.mode === 'bus' ? pickBusPattern(candidates, step.stopCount) : undefined);
   if (!best) return undefined;
 
+  // An exact trip keeps its scheduled times; a bus pattern's are spread between Google's times.
+  const arrivalMs = Date.parse(step.to.time);
+  const scheduledSpan = (best.alightSeconds ?? 0) - (best.boardSeconds ?? 0);
+  const stopTime = (time: GtfsStopTime) => {
+    const seconds = gtfsTimeToSeconds(time.departureTime || time.arrivalTime);
+    if (exact || Number.isNaN(arrivalMs) || scheduledSpan <= 0) return new Date(best.startMs + seconds * 1000).toISOString();
+    const share = (seconds - (best.boardSeconds ?? 0)) / scheduledSpan;
+    return new Date(departureMs + share * (arrivalMs - departureMs)).toISOString();
+  };
   const stops: TripStop[] = [];
   for (const time of best.between) {
     const stop = stopsById.get(time.stopId);
     if (!stop) return undefined;
     const parent = stop.parentStation ? stopsById.get(stop.parentStation) : undefined;
-    stops.push({
-      name: (parent ?? stop).name,
-      location: { lat: stop.lat, lng: stop.lon },
-      time: new Date(best.startMs + gtfsTimeToSeconds(time.departureTime || time.arrivalTime) * 1000).toISOString(),
-    });
+    stops.push({ name: (parent ?? stop).name, location: { lat: stop.lat, lng: stop.lon }, time: stopTime(time) });
   }
-  return { stops, tripId: best.tripId };
+  const departures = await departureOptions(agencyId, best, departureMs);
+  return { stops, ...(exact ? { tripId: exact.tripId } : {}), ...(departures.length > 1 ? { departures } : {}) };
+}
+
+/**
+ * The same line's scheduled departures from the matched boarding stop to the matched alighting
+ * stop, in the same direction, from a little before the matched one to a few hours after it.
+ */
+async function departureOptions(agencyId: AgencyId, best: Candidate, departureMs: number): Promise<TripDeparture[]> {
+  const { routeId, boardStopId, alightStopId } = best;
+  if (!routeId || !boardStopId || !alightStopId) return [];
+  const { tripsById } = loadAgencyStaticData(agencyId);
+  const direction = tripsById.get(best.tripId)?.directionId;
+  const { byStop, byTrip } = await loadRouteStopTimes(agencyId, routeId);
+  const betweenStops = best.between.map((time) => time.stopId).join(',');
+  const options = new Map<string, TripDeparture & { ms: number }>();
+  for (const boardTime of byStop.get(boardStopId) ?? []) {
+    const trip = tripsById.get(boardTime.tripId);
+    if (!trip || trip.directionId !== direction) continue;
+    const sequence = [...(byTrip.get(boardTime.tripId) ?? [])].sort(bySequence);
+    const alight = sequence.find((time) => time.stopSequence > boardTime.stopSequence && time.stopId === alightStopId);
+    if (!alight) continue;
+    for (const day of serviceDaysFor(departureMs)) {
+      const ms = day.startMs + gtfsTimeToSeconds(boardTime.departureTime || boardTime.arrivalTime) * 1000;
+      if (ms < departureMs - OPTIONS_BEFORE_SECONDS * 1000 || ms > departureMs + OPTIONS_AFTER_SECONDS * 1000) continue;
+      if (!isServiceRunningOn(agencyId, trip.serviceId, day.dateKey, day.dayOfWeek)) continue;
+      const at = (time: GtfsStopTime) => new Date(day.startMs + gtfsTimeToSeconds(time.departureTime || time.arrivalTime) * 1000).toISOString();
+      const between = sequence.filter((time) => time.stopSequence > boardTime.stopSequence && time.stopSequence < alight.stopSequence);
+      options.set(`${boardTime.tripId}@${day.startMs}`, {
+        ms,
+        departs: new Date(ms).toISOString(),
+        arrives: new Date(day.startMs + gtfsTimeToSeconds(alight.arrivalTime || alight.departureTime) * 1000).toISOString(),
+        ...(between.map((time) => time.stopId).join(',') === betweenStops ? { stopTimes: between.map(at) } : {}),
+      });
+    }
+  }
+  const sorted = [...options.values()].sort((a, b) => a.ms - b.ms);
+  // Centered on the matched departure: a couple before it, the rest after.
+  const matched = sorted.findIndex((option) => Math.abs(option.ms - departureMs) <= DEPARTURE_WINDOW_SECONDS * 1000);
+  const start = Math.max(0, Math.min(matched < 0 ? 0 : matched - 2, sorted.length - MAX_OPTIONS));
+  return sorted.slice(start, start + MAX_OPTIONS).map(({ ms: _ms, ...option }) => option);
 }
 
 /** Adds stops in between to every transit step that matches, giving up on any not done within `budgetMs`. */
@@ -223,7 +318,8 @@ export async function addTripStops<T extends { steps: { kind: string }[] }>(itin
     const result = await Promise.race([match(step).catch(() => undefined), deadline]);
     if (result && result !== 'timeout') {
       step.stops = result.stops;
-      step.tripId = result.tripId;
+      if (result.tripId) step.tripId = result.tripId;
+      if (result.departures) step.departures = result.departures;
     }
   }));
   if (timer) clearTimeout(timer);

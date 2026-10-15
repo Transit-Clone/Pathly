@@ -24,6 +24,8 @@ import {
 } from './gtfsDerived';
 import { readAgencyStaticData, readShapes, type AgencyStaticData, type GtfsStopTime, type ShapePoint, type StopTimeRow } from './gtfsFeed';
 import { downloadRouteFile, hydrateCurrentGtfsSnapshot, ROUTE_FILES_INDEX, type RouteFileIndex } from './gtfsSnapshots';
+import type { RouteGeometry } from './gtfsGeometry';
+import { displayTransitName } from './transitNames';
 
 export { gtfsTimeToSeconds } from './gtfsFeed';
 export type { GtfsCalendar, GtfsRoute, GtfsStop, GtfsStopTime, GtfsTrip, ShapePoint } from './gtfsFeed';
@@ -399,13 +401,23 @@ const routeGeometryCache = new Map<string, Promise<DerivedRouteGeometry | null>>
  * (no stop times). Undefined when this agency has no usable prepared files, so the caller
  * computes geometry from the timetable instead.
  */
+function displayDirection(geometry: RouteGeometry | null): RouteGeometry | null {
+  if (!geometry) return null;
+  return { ...geometry, headsign: displayTransitName(geometry.headsign), stops: geometry.stops.map((stop) => ({ ...stop, name: displayTransitName(stop.name) })) };
+}
+
+function displayGeometry(geometry: DerivedRouteGeometry): DerivedRouteGeometry {
+  return { 0: displayDirection(geometry[0]), 1: displayDirection(geometry[1]) };
+}
+
 export function loadPreparedRouteGeometry(agencyId: AgencyId, routeId: string): Promise<DerivedRouteGeometry | null> | undefined {
   if (!useDerived(agencyId)) return undefined;
   const cacheKey = `${agencyId}:${routeId}`;
   const onDemand = isOnDemand(agencyId);
   const cached = onDemand ? onDemandGeometry.get(cacheKey) : routeGeometryCache.get(cacheKey);
   if (cached) return cached;
-  const promise = readPreparedRouteFile(agencyId, GEOMETRY_DIR, routeId).then((text) => (text ? JSON.parse(text) as DerivedRouteGeometry : null));
+  // Files built before names were recased still carry all-caps bus names; they're recased here.
+  const promise = readPreparedRouteFile(agencyId, GEOMETRY_DIR, routeId).then((text) => (text ? displayGeometry(JSON.parse(text) as DerivedRouteGeometry) : null));
   if (onDemand) onDemandGeometry.set(cacheKey, promise);
   else routeGeometryCache.set(cacheKey, promise);
   return promise;

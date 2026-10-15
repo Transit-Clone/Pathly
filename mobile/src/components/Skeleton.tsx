@@ -180,3 +180,91 @@ const createItineraryStyles = (colors: Palette) => StyleSheet.create({
   fare: { width: 36, height: 12 },
   minutes: { width: 34, height: 30, borderRadius: 8 },
 });
+
+/**
+ * A route map that's still loading: the map's own land color, pulsing, with no text or spinner,
+ * so the page doesn't flash a message that the map replaces a moment later.
+ */
+export function MapSkeleton() {
+  const styles = useThemedStyles(createMapStyles);
+  const opacity = useSkeletonPulse();
+  return (
+    <View accessibilityLabel="Loading map" accessibilityRole="progressbar" accessible={true} style={styles.frame} testID="route-map-loading">
+      <Animated.View style={[styles.land, { opacity }]} />
+    </View>
+  );
+}
+
+const createMapStyles = (colors: Palette) => StyleSheet.create({
+  frame: { flex: 1, backgroundColor: colors.skeleton },
+  land: { flex: 1, backgroundColor: colors.mapLand },
+});
+
+/** About as many stop rows as fit below the departure tiles. */
+const STOP_PLACEHOLDER_COUNT = 6;
+
+/**
+ * Gray stand-ins for route detail's stop list while it loads: a faint line in the route's color
+ * through a ring per stop, a name bar, and a time bar, shaped like the real rows.
+ */
+export function StopListSkeleton({ color }: { color: string }) {
+  const styles = useThemedStyles(createStopStyles);
+  const opacity = useSkeletonPulse();
+  return (
+    <Animated.View accessibilityLabel="Loading stops" accessibilityRole="progressbar" accessible={true} style={{ opacity }} testID="route-stops-loading">
+      {Array.from({ length: STOP_PLACEHOLDER_COUNT }, (_, index) => (
+        <View key={index} style={styles.row}>
+          <View style={styles.rail}>
+            {index > 0 ? <View style={[styles.line, styles.top, { backgroundColor: color }]} /> : null}
+            <View style={[styles.dot, { borderColor: color }]} />
+            {index < STOP_PLACEHOLDER_COUNT - 1 ? <View style={[styles.line, styles.bottom, { backgroundColor: color }]} /> : null}
+          </View>
+          <View style={styles.body}>
+            <View style={[styles.bar, { width: `${45 + ((index * 17) % 30)}%` }]} />
+            <View style={[styles.bar, styles.time]} />
+          </View>
+        </View>
+      ))}
+    </Animated.View>
+  );
+}
+
+// Matches RouteDetailView's stop rows.
+const createStopStyles = (colors: Palette) => StyleSheet.create({
+  row: { minHeight: 74, flexDirection: 'row', alignItems: 'center' },
+  rail: { width: 30, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center', marginRight: 5 },
+  line: { position: 'absolute', width: 4, height: '50%', opacity: 0.3 },
+  top: { top: 0 },
+  bottom: { bottom: 0 },
+  dot: { width: 16, height: 16, borderWidth: 4, borderRadius: 8, backgroundColor: colors.surface, opacity: 0.5 },
+  body: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16 },
+  bar: { height: 14, borderRadius: 6, backgroundColor: colors.skeletonBar },
+  time: { width: 52, height: 14 },
+});
+
+/** About as many departures as fit on screen. */
+const DEPARTURE_PLACEHOLDER_COUNT = 7;
+
+/** Gray stand-ins for the departures list while it loads: a time bar and a wait bar per row. */
+export function DepartureListSkeleton() {
+  const styles = useThemedStyles(createDepartureStyles);
+  const opacity = useSkeletonPulse();
+  return (
+    <Animated.View accessibilityLabel="Loading departures" accessibilityRole="progressbar" accessible={true} style={[styles.list, { opacity }]} testID="departures-loading">
+      {Array.from({ length: DEPARTURE_PLACEHOLDER_COUNT }, (_, index) => (
+        <View key={index} style={styles.row}>
+          <View style={[styles.bar, styles.time]} />
+          <View style={[styles.bar, styles.wait]} />
+        </View>
+      ))}
+    </Animated.View>
+  );
+}
+
+const createDepartureStyles = (colors: Palette) => StyleSheet.create({
+  list: { paddingHorizontal: 16, paddingTop: 8 },
+  row: { minHeight: 60, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  bar: { borderRadius: 6, backgroundColor: colors.skeletonBar },
+  time: { width: 84, height: 18 },
+  wait: { width: 56, height: 14 },
+});

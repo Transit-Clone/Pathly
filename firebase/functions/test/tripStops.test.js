@@ -35,6 +35,20 @@ test('names the Port Jefferson Branch stops between Stony Brook and Hicksville',
   assert.ok(result.tripId);
 });
 
+test('a matched leg offers other departures between the same stops, its own included', async () => {
+  const step = lirrSteps.find((candidate) => candidate.from.name === 'Stony Brook' && candidate.to.name === 'Hicksville');
+  const result = await matchTripStops(step);
+  assert.ok(result.departures && result.departures.length > 1, 'has other departures');
+  const departs = result.departures.map((option) => Date.parse(option.departs));
+  assert.deepEqual(departs, [...departs].sort((a, b) => a - b));
+  const own = result.departures.find((option) => Math.abs(Date.parse(option.departs) - Date.parse(step.from.time)) <= 120_000);
+  assert.ok(own, 'includes the planned departure');
+  for (const option of result.departures) {
+    assert.ok(Date.parse(option.arrives) > Date.parse(option.departs));
+    if (option.stopTimes) assert.equal(option.stopTimes.length, result.stops.length);
+  }
+});
+
 test('a bus leg starts after its boarding stop, even when a neighbor shares the minute', async () => {
   const bus = transitSteps(fixture('routes-sbu-mall.json')).find((step) => step.line.shortName === '51');
   const result = await matchTripStops(bus);
@@ -87,4 +101,18 @@ test('adds stops within the budget and gives up on slow matches', async () => {
 
   const matched = await addTripStops(fixture('routes-sbu-penn.json'), 5_000);
   assert.ok(transitSteps(matched).some((step) => step.stops && step.stops.length > 0));
+});
+
+test('a bus running off schedule (Google times buses live) still gets its stops, timed between its own times', async () => {
+  const bus = transitSteps(fixture('routes-sbu-mall.json')).find((step) => step.line.shortName === '51');
+  const late = { ...shifted(bus, 8), to: { ...bus.to, time: new Date(Date.parse(bus.to.time) + 8 * 60_000).toISOString() } };
+  const result = await matchTripStops(late);
+  assert.ok(result, 'matched by the route pattern');
+  assert.equal(result.stops.length, bus.stopCount - 1);
+  assert.equal(result.tripId, undefined);
+  let previous = Date.parse(late.from.time);
+  for (const stop of result.stops) {
+    assert.ok(Date.parse(stop.time) >= previous && Date.parse(stop.time) <= Date.parse(late.to.time));
+    previous = Date.parse(stop.time);
+  }
 });

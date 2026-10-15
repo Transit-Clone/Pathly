@@ -6,6 +6,7 @@ import { GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_SCRIPT_ID } from '../data/googleMaps
 import { formatAge, visibleTrains } from '../data/liveTrains';
 import { googleMapStyle } from '../data/mapStyle';
 import { bearingToNextStop, splitIndexAtStop } from '../data/routeDirection';
+import { stopRevealZoom } from '../data/stopDeclutter';
 import type { RouteLiveVehicle } from '../data/transitLive';
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { useNow } from '../hooks/useNow';
@@ -105,6 +106,11 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
   const mapOptions = useMemo(() => ({ ...baseMapOptions, styles: googleMapStyle(isDark) }), [isDark]);
   const [selectedStop, setSelectedStop] = useState<GeometryStop | null>(null);
   const [map, setMap] = useState<google.maps.Map | null>(null);
+  // Stop dots are drawn only once they're zoomed apart (stopDeclutter.ts); the rider's stop always is.
+  const [zoom, setZoom] = useState(0);
+  // The loaded map, readable from its first zoom change (before `map` state has updated).
+  const zoomSource = useRef<google.maps.Map | null>(null);
+  const revealZoom = useMemo(() => stopRevealZoom(stops.map((stop) => ({ lat: stop.lat, lng: stop.lon }))), [stops]);
   const riderMovedMap = useRef(false);
   // True from a location-button press until the rider drags (or asks for the whole route): keeps
   // following fresh GPS fixes.
@@ -129,6 +135,7 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
   // Opens on the rider's nearest stop when known, otherwise fits every stop with some breathing room.
   const onLoad = useCallback((loadedMap: google.maps.Map) => {
     setMap(loadedMap);
+    zoomSource.current = loadedMap;
     if (focusStop) {
       loadedMap.setCenter({ lat: focusStop.lat, lng: focusStop.lon });
       loadedMap.setZoom(FOCUS_ZOOM);
@@ -185,6 +192,7 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
             onUserPan?.();
           }}
           onLoad={onLoad}
+          onZoomChanged={() => setZoom(zoomSource.current?.getZoom() ?? 0)}
           onUnmount={() => setMap(null)}
           options={mapOptions}
           zoom={9}
@@ -211,6 +219,7 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
           ) : null}
           {stops.map((stop, stopIndex) => {
             const focused = stop === focusStop;
+            if (!focused && zoom < revealZoom && stop !== selectedStop) return null;
             // Stops behind the rider's stop in this direction fade with the line behind it.
             const passed = line.focusIndex >= 0 && stopIndex < line.focusIndex;
             return (

@@ -28,6 +28,7 @@ const glyphs = {
   forward: ['chevron-forward', 'chevron-forward'],
   go: ['navigate-outline', 'navigate'],
   help: ['help-circle-outline', 'help-circle'],
+  home: ['home-outline', 'home'],
   locate: ['navigate-outline', 'navigate'],
   modes: ['layers-outline', 'layers'],
   ok: ['checkmark-circle-outline', 'checkmark-circle'],
@@ -35,6 +36,7 @@ const glyphs = {
   place: ['location-outline', 'location'],
   privacy: ['shield-checkmark-outline', 'shield-checkmark'],
   rail: ['train-outline', 'train'],
+  school: ['school-outline', 'school'],
   recent: ['time-outline', 'time'],
   refresh: ['refresh', 'refresh'],
   search: ['search', 'search'],
@@ -43,6 +45,7 @@ const glyphs = {
   swap: ['swap-vertical', 'swap-vertical'],
   time: ['time-outline', 'time'],
   travel: ['walk-outline', 'walk'],
+  work: ['briefcase-outline', 'briefcase'],
 } as const satisfies Record<string, readonly [IoniconName, IoniconName]>;
 
 /** Glyphs Ionicons lacks, drawn from Material Community Icons (a true thumbtack for pinning). */

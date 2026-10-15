@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, useWindowDimensions, View, type LayoutChangeEvent } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE, type Region } from 'react-native-maps';
 
 import { formatAge, visibleTrains } from '../data/liveTrains';
 import { googleMapStyle } from '../data/mapStyle';
 import { bearingToNextStop, splitIndexAtStop, withAlpha } from '../data/routeDirection';
+import { stopRevealZoom, zoomForRegion } from '../data/stopDeclutter';
 import type { RouteLiveVehicle } from '../data/transitLive';
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { useNow } from '../hooks/useNow';
@@ -95,6 +96,24 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
   // Custom-view stop markers must render at least once with tracking on (Android otherwise can
   // draw them blank), then stop tracking so static dots aren't re-rasterized every frame.
   const [tracksStopViews, setTracksStopViews] = useState(true);
+  // Stop dots are drawn only once they're zoomed apart (stopDeclutter.ts); the rider's stop always is.
+  const [mapWidth, setMapWidth] = useState(0);
+  // Before the map's own layout arrives, the window's width stands in.
+  const { width: windowWidth } = useWindowDimensions();
+  const [zoom, setZoom] = useState(() => zoomForRegion(initialRegion.longitudeDelta, windowWidth));
+  const revealZoom = useMemo(() => stopRevealZoom(stops.map((stop) => ({ lat: stop.lat, lng: stop.lon }))), [stops]);
+  const dotsShown = zoom >= revealZoom;
+  // Dots shown again are new markers: they render once with tracking on, like on first load.
+  const [trackedDotsShown, setTrackedDotsShown] = useState(dotsShown);
+  if (dotsShown !== trackedDotsShown) {
+    setTrackedDotsShown(dotsShown);
+    if (dotsShown) setTracksStopViews(true);
+  }
+  useEffect(() => {
+    if (!tracksStopViews || !dotsShown) return undefined;
+    const timer = setTimeout(() => setTracksStopViews(false), 500);
+    return () => clearTimeout(timer);
+  }, [dotsShown, tracksStopViews]);
   const now = useNow(1000);
   const shownVehicles = visibleTrains(vehicles, directionId, now);
   // Split at the rider's stop: faint behind it, full strength ahead, with an arrow toward the next stop.
@@ -141,12 +160,14 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
   return (
     <MapView
       initialRegion={initialRegion}
+      onLayout={(event: LayoutChangeEvent) => setMapWidth(event.nativeEvent.layout.width)}
       onMapReady={() => setTracksStopViews(false)}
       onPanDrag={() => {
         riderMovedMap.current = true;
         followRider.current = false;
         onUserPan?.();
       }}
+      onRegionChangeComplete={(region: Region) => setZoom(zoomForRegion(region.longitudeDelta, mapWidth || windowWidth))}
       customMapStyle={mapStyle}
       provider={PROVIDER_GOOGLE}
       ref={mapRef}
@@ -182,6 +203,7 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
       ) : null}
       {stops.map((stop, stopIndex) => {
         const focused = stop === focusStop;
+        if (!focused && !dotsShown) return null;
         // Stops behind the rider's stop in this direction fade with the line behind it.
         const passed = focusStop != null && stopIndex < stops.indexOf(focusStop);
         return (

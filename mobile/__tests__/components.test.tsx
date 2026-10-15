@@ -14,6 +14,7 @@ import { ScreenTransition } from '../src/theme/motion';
 import { darkColors, lightColors } from '../src/theme/colors';
 import { badgeLabel, RouteBadge, transitModeForAgency } from '../src/components/RouteBadge';
 import { RouteMap } from '../src/components/RouteMap';
+import { SavedPlacesStrip } from '../src/components/SavedPlacesStrip';
 
 jest.mock('react-native-safe-area-context', () => mockSafeAreaContext);
 
@@ -247,5 +248,24 @@ describe('badgeLabel', () => {
     // A single route code is shown whole: "S" would read as the S shuttle, not the SIM3C.
     expect(badgeLabel({ agency: 'MTA Bus Company', shortName: 'SIM3C' })).toBe('SIM3C');
     expect(badgeLabel({ agency: 'MTA New York City Transit', shortName: 'Q44-SBS' })).toBe('Q44-SBS');
+  });
+});
+
+describe('SavedPlacesStrip', () => {
+  const place = (id: string, name: string) => ({ id, dateSaved: null, address: { name, streetAddress: `${id} Main St`, coordinates: [40.7, -73.9] as [number, number], type: 'Destination' as const, placeId: id } });
+
+  it('lists saved places by name then address in a sideways row, and opens the tapped one', () => {
+    const onSelect = jest.fn();
+    const places = [place('a', 'Home'), place('b', 'Work'), place('c', 'Gym')];
+    const screen = render(<AppSettingsProvider><SavedPlacesStrip onSelect={onSelect} places={places} /></AppSettingsProvider>);
+    expect(screen.getByTestId('search-saved-places').props.horizontal).toBe(true);
+    expect(screen.getByLabelText('Home, a Main St')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('search-saved-place-b'));
+    expect(onSelect).toHaveBeenCalledWith(places[1]);
+  });
+
+  it('shows nothing without saved places', () => {
+    const screen = render(<AppSettingsProvider><SavedPlacesStrip onSelect={jest.fn()} places={[]} /></AppSettingsProvider>);
+    expect(screen.queryByTestId('search-saved-places')).toBeNull();
   });
 });
