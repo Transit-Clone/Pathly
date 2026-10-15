@@ -5,6 +5,7 @@ import { StyleSheet, View } from 'react-native';
 import { GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_SCRIPT_ID } from '../data/googleMapsLoaderConfig';
 import { googleMapStyle } from '../data/mapStyle';
 import { SERVICE_AREA_BOUNDS } from '../data/serviceArea';
+import { locationPoint, type SavedLocation } from '../data/userData';
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { useTheme } from '../theme/AppSettings';
 
@@ -80,6 +81,9 @@ type GoogleMapViewProps = {
   onPress?: (point: Coordinates) => void;
   /** A long press (or right-click) on the map (admin: choose a mock location). */
   onLongPress?: (point: Coordinates) => void;
+  /** Saved destinations with valid coordinates, drawn as tappable pins. */
+  savedLocations?: readonly SavedLocation[];
+  onSavedLocationPress?: (location: SavedLocation) => void;
   /** Accepted for parity with native: the web map always draws its own location dot. */
   simulatedLocation?: boolean;
   testID?: string;
@@ -94,7 +98,7 @@ const LONG_PRESS_MS = 600;
  * like native; the bottom is sized to the sheet's top. To keep `center` centered in the
  * visible gap below the header, the map is panned up by half the top padding.
  */
-export function GoogleMapView({ initialCamera, location, onCameraChange, onLongPress, onPress, onUserMoveEnd, onUserPan, padding, recenterRequest = 0, testID = 'google-map-view' }: GoogleMapViewProps) {
+export function GoogleMapView({ initialCamera, location, onCameraChange, onLongPress, onPress, onSavedLocationPress, onUserMoveEnd, onUserPan, padding, recenterRequest = 0, savedLocations = [], testID = 'google-map-view' }: GoogleMapViewProps) {
   // The JS API has no long-press event: a press held still for LONG_PRESS_MS counts as one.
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelLongPress = () => {
@@ -185,6 +189,25 @@ export function GoogleMapView({ initialCamera, location, onCameraChange, onLongP
           zoom={initialZoom}
         >
           <Rectangle bounds={SERVICE_AREA_BOUNDS} options={serviceAreaOutlineOptions} />
+          {savedLocations.map((saved) => {
+            const point = locationPoint(saved.address);
+            if (!point) return null;
+            const markerLabel = saved.address.streetAddress
+              ? `Plan a trip to ${saved.address.name}, ${saved.address.streetAddress}`
+              : `Plan a trip to ${saved.address.name}`;
+            return (
+              <Marker
+                clickable={onSavedLocationPress != null}
+                key={saved.id}
+                label={{ color: '#FFFFFF', fontSize: '13px', fontWeight: '700', text: '★' }}
+                onClick={() => onSavedLocationPress?.(saved)}
+                options={{ optimized: false }}
+                position={{ lat: point.latitude, lng: point.longitude }}
+                title={markerLabel}
+                zIndex={2}
+              />
+            );
+          })}
           {/* The rider's blue "you are here" dot, following every GPS update. */}
           <Marker
             clickable={false}

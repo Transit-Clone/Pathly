@@ -15,7 +15,7 @@ import { STATION_TRANSFERS } from '../src/data/stationTransfers';
 import { TransitLiveProvider } from '../src/data/TransitLiveContext';
 import { routeById, routes } from '../src/data/transit';
 import { formatTripClock, type Itinerary, type TransitStep, type WalkStep } from '../src/data/tripPlanning';
-import { recordSearch } from '../src/data/userData';
+import { placeFromName, recordSearch, saveLocation } from '../src/data/userData';
 import { darkColors, lightColors } from '../src/theme/colors';
 import realItineraryFixture from './fixtures/itineraries-sbu-penn.json';
 
@@ -756,6 +756,33 @@ describe('Pathly prototype navigation', () => {
     fireEvent.press(screen.getByTestId('tab-nearby'));
     expect(screen.queryByTestId('saved-routes')).toBeNull();
     expect(within(screen.getByTestId('nearby-routes')).getByTestId(`route-card-${route51CardId}`)).toBeTruthy();
+  });
+
+  it('plans a fresh trip from a saved-place map pin and returns to Home', async () => {
+    grantLocation();
+    await saveLocation('test-uid', {
+      id: 'work-place',
+      title: 'Work',
+      subtitle: '123 Main St',
+      location: { latitude: 40.75, longitude: -73.99 },
+    }, 'Destination');
+    // Name-only saved places remain useful in Favorites, but [0, 0] must never become a map pin.
+    await saveLocation('test-uid', placeFromName('Future'), 'Destination');
+    const screen = await renderHome();
+
+    const marker = await screen.findByTestId('saved-place-marker-work-place', { includeHiddenElements: true });
+    expect(marker.props.coordinate).toEqual({ latitude: 40.75, longitude: -73.99 });
+    expect(screen.queryByTestId('saved-place-marker-name%3AFuture', { includeHiddenElements: true })).toBeNull();
+    const calls = planTripMock().mock.calls.length;
+    fireEvent.press(marker);
+
+    expect(await screen.findByTestId('route-results-view')).toBeTruthy();
+    await waitFor(() => expect(planTripMock().mock.calls.length).toBe(calls + 1));
+    expect(planTripMock()).toHaveBeenLastCalledWith(expect.objectContaining({
+      destination: { label: 'Work', lat: 40.75, lng: -73.99 },
+    }));
+    fireEvent.press(screen.getByTestId('results-back'));
+    expect(screen.getByTestId('search-trigger')).toBeTruthy();
   });
 
   it('saves favorite routes, and trip destinations as saved places, to the Favorites tab', async () => {

@@ -4,6 +4,7 @@ import MapView, { Marker, PROVIDER_GOOGLE, Polygon, type Camera, type LongPressE
 
 import { googleMapStyle } from '../data/mapStyle';
 import { SERVICE_AREA_BOUNDS } from '../data/serviceArea';
+import { locationPoint, type SavedLocation } from '../data/userData';
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { useTheme } from '../theme/AppSettings';
 import { CurrentLocationMarker } from './CurrentLocationMarker';
@@ -54,6 +55,9 @@ type GoogleMapViewProps = {
   onPress?: (point: Coordinates) => void;
   /** A long press on the map (admin: choose a mock location). */
   onLongPress?: (point: Coordinates) => void;
+  /** Saved destinations with valid coordinates, drawn as tappable pins. */
+  savedLocations?: readonly SavedLocation[];
+  onSavedLocationPress?: (location: SavedLocation) => void;
   /** `location` is an admin's mock location, so the system GPS dot is replaced with a drawn one there. */
   simulatedLocation?: boolean;
   testID?: string;
@@ -69,10 +73,10 @@ function clampToServiceArea(region: Region): Region {
 }
 
 /** Real Google Maps view, defaulting to the user's location and panning only within NYC/Nassau/Suffolk. */
-export function GoogleMapView({ initialCamera, location, onCameraChange, onLongPress, onPress, onOrientationChange, onUserMoveEnd, onUserPan, padding, recenterRequest = 0, reorientRequest = 0, simulatedLocation = false, testID = 'google-map-view' }: GoogleMapViewProps) {
+export function GoogleMapView({ initialCamera, location, onCameraChange, onLongPress, onPress, onOrientationChange, onSavedLocationPress, onUserMoveEnd, onUserPan, padding, recenterRequest = 0, reorientRequest = 0, savedLocations = [], simulatedLocation = false, testID = 'google-map-view' }: GoogleMapViewProps) {
   const mapRef = useRef<MapView>(null);
   // Places hidden, and recolored in the dark theme (see mapStyle.ts).
-  const { isDark } = useTheme();
+  const { colors, isDark } = useTheme();
   const mapStyle = useMemo(() => googleMapStyle(isDark), [isDark]);
   // Set by a rider drag so programmatic moves (recentering on GPS) don't count as exploring.
   const userMoved = useRef(false);
@@ -153,6 +157,28 @@ export function GoogleMapView({ initialCamera, location, onCameraChange, onLongP
       toolbarEnabled={false}
     >
       <Polygon coordinates={SERVICE_AREA_OUTLINE} fillColor="transparent" strokeColor="#0B4F9C" strokeWidth={2} />
+      {savedLocations.map((saved) => {
+        const point = locationPoint(saved.address);
+        if (!point) return null;
+        const markerLabel = saved.address.streetAddress
+          ? `Plan a trip to ${saved.address.name}, ${saved.address.streetAddress}`
+          : `Plan a trip to ${saved.address.name}`;
+        return (
+          <Marker
+            accessibilityHint="Opens fresh trip options for this saved place"
+            accessibilityLabel={markerLabel}
+            accessibilityRole="button"
+            coordinate={point}
+            description={saved.address.streetAddress || undefined}
+            key={saved.id}
+            onPress={() => onSavedLocationPress?.(saved)}
+            pinColor={colors.primary}
+            testID={`saved-place-marker-${saved.id}`}
+            title={saved.address.name}
+            zIndex={2}
+          />
+        );
+      })}
       {simulatedLocation ? (
         <Marker anchor={{ x: 0.5, y: 0.5 }} coordinate={location} testID="mock-location-marker" tracksViewChanges={false}>
           <CurrentLocationMarker />

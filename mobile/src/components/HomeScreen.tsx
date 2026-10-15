@@ -63,7 +63,7 @@ const NEARBY_SEARCH_DEBOUNCE_MS = 600;
 // A cached nearby list older than a day is more misleading than helpful.
 const NEARBY_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
-type ResultsViewState = { name: 'results'; criteria: ResultsCriteria; returnTo: 'search' | 'favorites' };
+type ResultsViewState = { name: 'results'; criteria: ResultsCriteria; returnTo: 'search' | 'favorites' | 'home' };
 
 type ActiveView =
   | { name: 'home' }
@@ -353,11 +353,15 @@ export function HomeScreen() {
     const write = saved ? removeSavedLocation(uid, saved.address.placeId) : saveLocation(uid, place, 'Destination');
     write.catch(() => undefined);
   }, [savedLocations, uid]);
-  // Until the route navigation page exists, a saved place opens Route Results for it.
   const openSavedLocation = useCallback((location: SavedLocation) => {
     const place = locationToPlace(location.address);
     setSelectedTrip(null);
     setActiveView({ name: 'results', criteria: initialResultsCriteria(place.title, place), returnTo: 'favorites' });
+  }, []);
+  const openSavedLocationFromMap = useCallback((location: SavedLocation) => {
+    const place = locationToPlace(location.address);
+    setSelectedTrip(null);
+    setActiveView({ name: 'results', criteria: initialResultsCriteria(place.title, place), returnTo: 'home' });
   }, []);
   const showPlannedTrip = useCallback((itinerary: Itinerary, resumeRequest: ResumePlanRequest) => {
     setSelectedTrip({ itinerary, resumeRequest });
@@ -369,8 +373,12 @@ export function HomeScreen() {
       showFavorites();
       return;
     }
+    if (activeView.name === 'results' && activeView.returnTo === 'home') {
+      showHome();
+      return;
+    }
     showSearch();
-  }, [activeView, showFavorites, showSearch]);
+  }, [activeView, showFavorites, showHome, showSearch]);
   const startPlannedTrip = useCallback(async (itinerary: Itinerary) => {
     if (activeView.name !== 'results' || !selectedTrip) {
       setTripStartFailed(true);
@@ -684,9 +692,11 @@ export function HomeScreen() {
           onUserMoveEnd={setSearchCenter}
           onUserPan={() => setIsLocationCentered(false)}
           onOrientationChange={setMapOrientation}
+          onSavedLocationPress={openSavedLocationFromMap}
           padding={{ top: homeHeaderInset, bottom: height - mapHeight }}
           recenterRequest={recenterRequest}
           reorientRequest={reorientRequest}
+          savedLocations={savedLocations}
           simulatedLocation={locationMocked}
         />
         {searchCenter ? (

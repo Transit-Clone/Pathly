@@ -2,6 +2,7 @@ import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 
 import {
   findSavedLocation,
+  locationPoint,
   locationToPlace,
   placeFromName,
   placeToLocation,
@@ -29,6 +30,18 @@ describe('userData', () => {
     const { location, ...withoutLocation } = place;
     expect(location).toBeDefined();
     expect(locationToPlace(placeToLocation(withoutLocation, 'Destination'))).toEqual(withoutLocation);
+  });
+
+  it('accepts only finite, valid, non-sentinel coordinates', () => {
+    const address = placeToLocation(place, 'Destination');
+    expect(locationPoint(address)).toEqual(place.location);
+    expect(locationPoint({ ...address, coordinates: [0, 0] })).toBeNull();
+    expect(locationPoint({ ...address, coordinates: [Number.NaN, -73.12] })).toBeNull();
+    expect(locationPoint({ ...address, coordinates: [40.91, Number.POSITIVE_INFINITY] })).toBeNull();
+    expect(locationPoint({ ...address, coordinates: [91, -73.12] })).toBeNull();
+    expect(locationPoint({ ...address, coordinates: [40.91, -181] })).toBeNull();
+    expect(locationPoint({ ...address, coordinates: [40.91] as never })).toBeNull();
+    expect(locationPoint({ ...address, coordinates: '40.91,-73.12' as never })).toBeNull();
   });
 
   it('keys search entries by an encoded place id so repeats overwrite', async () => {
@@ -61,11 +74,26 @@ describe('userData', () => {
     expect(saved.map((entry) => entry.address.name)).toEqual(['Times Square']);
   });
 
-  it('finds a saved location by Places id, or by name when only the name matches', () => {
+  it('finds a saved location by Places id, or by name when one side is name-only', () => {
     const saved: SavedLocation[] = [{ id: 'a', address: placeToLocation(placeFromName('Times Square'), 'Destination'), dateSaved: null }];
     expect(findSavedLocation(saved, placeFromName('Times Square'))).toBe(saved[0]);
     expect(findSavedLocation(saved, { id: 'places/ts', title: 'Times Square', subtitle: 'Manhattan' })).toBe(saved[0]);
     expect(findSavedLocation(saved, place)).toBeUndefined();
+  });
+
+  it('does not merge distinct provider places that happen to share a name', () => {
+    const first = { id: 'places/cafe-1', title: 'Starbucks', subtitle: 'First Ave' };
+    const saved: SavedLocation[] = [{ id: 'a', address: placeToLocation(first, 'Destination'), dateSaved: null }];
+    expect(findSavedLocation(saved, { id: 'places/cafe-2', title: 'Starbucks', subtitle: 'Second Ave' })).toBeUndefined();
+    expect(findSavedLocation(saved, placeFromName('Starbucks'))).toBe(saved[0]);
+  });
+
+  it('does not guess when a name-only place matches multiple provider places', () => {
+    const saved: SavedLocation[] = [
+      { id: 'a', address: placeToLocation({ id: 'places/cafe-1', title: 'Starbucks', subtitle: 'First Ave' }, 'Destination'), dateSaved: null },
+      { id: 'b', address: placeToLocation({ id: 'places/cafe-2', title: 'Starbucks', subtitle: 'Second Ave' }, 'Destination'), dateSaved: null },
+    ];
+    expect(findSavedLocation(saved, placeFromName('Starbucks'))).toBeUndefined();
   });
 
   it('removes a search from the history', async () => {

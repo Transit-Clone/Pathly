@@ -71,13 +71,25 @@ export function placeToLocation(place: SearchPlace, type: LocationType): Locatio
   };
 }
 
+/** A persisted point safe to put on a map; [0, 0] is the sentinel for a name-only place. */
+export function locationPoint(location: Location): NonNullable<SearchPlace['location']> | null {
+  const coordinates: unknown = location.coordinates;
+  if (!Array.isArray(coordinates) || coordinates.length !== 2) return null;
+  const [latitude, longitude] = coordinates;
+  if (typeof latitude !== 'number' || typeof longitude !== 'number') return null;
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
+  if (latitude === 0 && longitude === 0) return null;
+  return { latitude, longitude };
+}
+
 export function locationToPlace(location: Location): SearchPlace {
-  const [latitude, longitude] = location.coordinates;
+  const point = locationPoint(location);
   return {
     id: location.placeId,
     title: location.name,
     subtitle: location.streetAddress,
-    ...(latitude || longitude ? { location: { latitude, longitude } } : {}),
+    ...(point ? { location: point } : {}),
     ...(location.transit ? { kind: location.transit.kind, agency: location.transit.agency, routes: location.transit.routes, source: 'pathly' as const } : {}),
   };
 }
@@ -89,7 +101,13 @@ export function placeFromName(name: string): SearchPlace {
 
 /** The saved entry for a place: same Places id, or same name when one side only has a name. */
 export function findSavedLocation(saved: readonly SavedLocation[], place: SearchPlace): SavedLocation | undefined {
-  return saved.find((entry) => entry.address.placeId === place.id) ?? saved.find((entry) => entry.address.name === place.title);
+  const exact = saved.find((entry) => entry.address.placeId === place.id);
+  if (exact) return exact;
+  const nameMatches = saved.filter((entry) => (
+    entry.address.name === place.title
+    && (entry.address.placeId.startsWith('name:') || place.id.startsWith('name:'))
+  ));
+  return nameMatches.length === 1 ? nameMatches[0] : undefined;
 }
 
 function writeEntry(uid: string, collectionName: string, dateField: string, place: SearchPlace, type: LocationType) {
