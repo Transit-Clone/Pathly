@@ -18,6 +18,7 @@ import {
   tripMinutes,
   type Itinerary,
   type LatLng,
+  type ResumePlanRequest,
 } from '../data/tripPlanning';
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { useClock } from '../hooks/useClock';
@@ -54,8 +55,6 @@ export function initialResultsCriteria(destination: string, destinationPlace?: S
 }
 
 type RouteResultsViewProps = {
-  /** The trip in progress, if it was started from Route Results. */
-  activeItinerary: Itinerary | null;
   criteria: ResultsCriteria;
   /** Whether the trip's destination is in the rider's saved locations (the trip page's star). */
   isDestinationSaved: boolean;
@@ -67,8 +66,7 @@ type RouteResultsViewProps = {
   onCloseTrip: () => void;
   /** Opens the destination search page to change one endpoint. */
   onEditEndpoint: (field: 'origin' | 'destination') => void;
-  onEndTrip: () => void;
-  onOpenTrip: (itinerary: Itinerary) => void;
+  onOpenTrip: (itinerary: Itinerary, resumeRequest: ResumePlanRequest) => void;
   onStartTrip: (itinerary: Itinerary) => void;
   onToggleSaveDestination: () => void;
   /** The rider's real position for a "Current location" origin; null when unknown. */
@@ -120,7 +118,6 @@ const PROBLEM_COPY = {
 } as const;
 
 export function RouteResultsView({
-  activeItinerary,
   criteria,
   isDestinationSaved,
   locationPending,
@@ -129,7 +126,6 @@ export function RouteResultsView({
   onChangeTripTime,
   onCloseTrip,
   onEditEndpoint,
-  onEndTrip,
   onOpenTrip,
   onStartTrip,
   onToggleSaveDestination,
@@ -219,6 +215,7 @@ export function RouteResultsView({
     locationPending,
   });
   const planned = useMemo(() => (plan.status === 'loaded' ? plan.itineraries : []), [plan]);
+  const resumeRequest = plan.status === 'loaded' ? plan.resumeRequest : null;
   const visibleItineraries = useMemo(
     () => orderItineraries(filterItinerariesByMode(planned, enabledModes), preference),
     [enabledModes, planned, preference],
@@ -230,9 +227,10 @@ export function RouteResultsView({
     : plan.refreshing
       ? 'Updating…'
       : now - plan.fetchedAt < 60_000 ? 'Updated just now' : `Updated ${Math.round((now - plan.fetchedAt) / 60_000)} min ago`;
-  const originPoint = origin === CURRENT_LOCATION_LABEL
+  const storedOriginPoint = placePoint(criteria.originPlace);
+  const originPoint = storedOriginPoint ?? (origin === CURRENT_LOCATION_LABEL
     ? (riderLocation ? { lat: riderLocation.latitude, lng: riderLocation.longitude } : null)
-    : placePoint(criteria.originPlace);
+    : null);
 
   const ease = useLayoutEase();
   const togglePanel = (panel: Exclude<OptionsPanel, null>) => {
@@ -252,11 +250,11 @@ export function RouteResultsView({
       <ScreenTransition key="trip">
       <PlannedTripDetailView
         destination={destination}
-        isActive={activeItinerary?.id === selectedItinerary.id}
+        isActive={false}
         isFavorite={isDestinationSaved}
         itinerary={selectedItinerary}
         onBack={onCloseTrip}
-        onEnd={onEndTrip}
+        onEnd={() => undefined}
         onStart={onStartTrip}
         onToggleFavorite={onToggleSaveDestination}
         origin={origin}
@@ -516,7 +514,9 @@ export function RouteResultsView({
                     accessibilityHint="Opens the complete trip plan"
                     accessibilityLabel={`View trip details to ${destination}, ${minutes} minutes, ${fare}, ${timing}`}
                     accessibilityRole="button"
-                    onPress={() => onOpenTrip(itinerary)}
+                    onPress={() => {
+                      if (resumeRequest) onOpenTrip(itinerary, resumeRequest);
+                    }}
                     style={styles.itineraryPressable}
                     testID={`search-result-view-${itinerary.id}`}
                   >

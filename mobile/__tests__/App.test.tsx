@@ -73,6 +73,13 @@ async function pickPlace(screen: RenderResult, query: string, placeId: string) {
   await screen.findByTestId('route-results-view');
 }
 
+/** Renders the signed-in home screen after persisted-trip hydration has settled. */
+async function renderHome(): Promise<RenderResult> {
+  const screen = render(<App />);
+  await screen.findByTestId('search-trigger');
+  return screen;
+}
+
 describe('Pathly prototype navigation', () => {
   const originalFetch = globalThis.fetch;
 
@@ -106,7 +113,7 @@ describe('Pathly prototype navigation', () => {
   it('renders every selectable route without contacting a backend', async () => {
     const fetchMock = jest.fn();
     globalThis.fetch = fetchMock as unknown as typeof fetch;
-    const screen = render(<App />);
+    const screen = await renderHome();
 
     expect(screen.getByText('Where to?')).toBeTruthy();
     expect(screen.queryByText('Nearby transit')).toBeNull();
@@ -121,7 +128,7 @@ describe('Pathly prototype navigation', () => {
   });
 
   it('keeps nearby cards at a fixed height without filler space', async () => {
-    const screen = render(<App />);
+    const screen = await renderHome();
 
     const listContentStyle = StyleSheet.flatten(screen.getByTestId('nearby-route-list').props.contentContainerStyle) ?? {};
     expect(listContentStyle.minHeight).toBeUndefined();
@@ -135,7 +142,7 @@ describe('Pathly prototype navigation', () => {
   });
 
   it('shows the two-arc live signal only on live predictions', async () => {
-    const screen = render(<App />);
+    const screen = await renderHome();
 
     // Live routes start in a loading state (no signal yet); wait for the mocked predictions
     // to resolve before counting signals. findAllByTestId resolves as soon as it finds any
@@ -150,7 +157,7 @@ describe('Pathly prototype navigation', () => {
   it.each(routes.map((route) => [cardIdFor(route), route.routeName, route.shortName] as const))(
     'opens shared details for %s and returns home',
     async (cardId, routeName, shortName) => {
-      const screen = render(<App />);
+      const screen = await renderHome();
       await screen.findByTestId(`route-card-${cardId}-primary`);
       fireEvent.press(screen.getByTestId(`route-card-${cardId}-primary`));
 
@@ -165,9 +172,9 @@ describe('Pathly prototype navigation', () => {
     },
   );
 
-  it('expands the transit menu on the first handle tap and resets it on the second', () => {
+  it('expands the transit menu on the first handle tap and resets it on the second', async () => {
     const scrollTo = jest.spyOn(ScrollView.prototype, 'scrollTo');
-    const screen = render(<App />);
+    const screen = await renderHome();
     const list = screen.getByTestId('nearby-route-list');
 
     fireEvent.press(screen.getByTestId('transit-sheet-handle'));
@@ -181,7 +188,7 @@ describe('Pathly prototype navigation', () => {
   });
 
   it('keeps the transit list scrolling natural, with a drag handle and a route visible at rest', async () => {
-    const screen = render(<App />);
+    const screen = await renderHome();
     const sheetScroll = screen.getByTestId('nearby-route-list');
 
     expect(screen.getByTestId('transit-sheet-handle')).toBeTruthy();
@@ -205,8 +212,8 @@ describe('Pathly prototype navigation', () => {
     expect(await screen.findByTestId(`route-card-${cardIdFor(routeById['7'])}`)).toBeTruthy();
   });
 
-  it('keeps the transit sheet height stable while switching tabs', () => {
-    const screen = render(<App />);
+  it('keeps the transit sheet height stable while switching tabs', async () => {
+    const screen = await renderHome();
     const nearbyHeight = StyleSheet.flatten(
       screen.getByTestId('nearby-route-content').props.style,
     ).minHeight;
@@ -228,8 +235,8 @@ describe('Pathly prototype navigation', () => {
     ).toBe(nearbyHeight);
   });
 
-  it('shows search as a full-screen list with no map, pins, or match count', () => {
-    const screen = render(<App />);
+  it('shows search as a full-screen list with no map, pins, or match count', async () => {
+    const screen = await renderHome();
     fireEvent.press(screen.getByTestId('search-trigger'));
     // No sample history: a new account's Recent section stays hidden until it searches.
     expect(screen.queryByText('Recent')).toBeNull();
@@ -244,7 +251,7 @@ describe('Pathly prototype navigation', () => {
   });
 
   it('shows Google place suggestions with a pin icon, bold name, and address', async () => {
-    const screen = render(<App />);
+    const screen = await renderHome();
     fireEvent.press(screen.getByTestId('search-trigger'));
     fireEvent.changeText(screen.getByTestId('search-input'), 'Stony Brook');
     expect(screen.getByTestId('search-loading')).toBeTruthy();
@@ -257,7 +264,7 @@ describe('Pathly prototype navigation', () => {
   });
 
   it('shows the empty state when Google finds no places', async () => {
-    const screen = render(<App />);
+    const screen = await renderHome();
     fireEvent.press(screen.getByTestId('search-trigger'));
     fireEvent.changeText(screen.getByTestId('search-input'), 'zzzz');
     expect(await screen.findByText('No places found')).toBeTruthy();
@@ -265,7 +272,7 @@ describe('Pathly prototype navigation', () => {
 
   it('shows a retryable error when place search fails', async () => {
     mockAutocompletePlaces.mockRejectedValueOnce(new Error('offline'));
-    const screen = render(<App />);
+    const screen = await renderHome();
     fireEvent.press(screen.getByTestId('search-trigger'));
     fireEvent.changeText(screen.getByTestId('search-input'), 'Stony Brook');
 
@@ -279,7 +286,7 @@ describe('Pathly prototype navigation', () => {
     // jest.setup.js signs in as test-uid; give that account one past search.
     await recordSearch('test-uid', { id: 'penn-station', title: 'Penn Station', subtitle: 'New York, NY' });
     mockGetPlacesApiKey.mockReturnValue('');
-    const screen = render(<App />);
+    const screen = await renderHome();
     fireEvent.press(screen.getByTestId('search-trigger'));
     fireEvent.changeText(screen.getByTestId('search-input'), 'Stony Brook');
 
@@ -291,7 +298,7 @@ describe('Pathly prototype navigation', () => {
   });
 
   it('opens route results with the resolved place name', async () => {
-    const screen = render(<App />);
+    const screen = await renderHome();
     fireEvent.press(screen.getByTestId('search-trigger'));
     fireEvent.changeText(screen.getByTestId('search-input'), 'Stony Brook');
     fireEvent.press(await screen.findByTestId('search-result-stony-brook-university'));
@@ -303,7 +310,7 @@ describe('Pathly prototype navigation', () => {
 
   it('stays on search with an error when place details fail', async () => {
     mockFetchPlaceDetails.mockRejectedValueOnce(new Error('500'));
-    const screen = render(<App />);
+    const screen = await renderHome();
     fireEvent.press(screen.getByTestId('search-trigger'));
     fireEvent.changeText(screen.getByTestId('search-input'), 'Stony Brook');
     fireEvent.press(await screen.findByTestId('search-result-stony-brook-university'));
@@ -325,7 +332,7 @@ describe('Pathly prototype navigation', () => {
       ]
       : []));
     try {
-      const screen = render(<App />);
+      const screen = await renderHome();
       fireEvent.press(screen.getByTestId('search-trigger'));
       fireEvent.changeText(screen.getByTestId('search-input'), 'jamaica');
       await waitFor(() => expect(screen.getAllByTestId(/^search-result-[^r]/).map((row) => row.props.testID)).toEqual([
@@ -374,7 +381,7 @@ describe('Pathly prototype navigation', () => {
   });
 
   it('lists picked places first under Recent and reopens them without a Places request', async () => {
-    const screen = render(<App />);
+    const screen = await renderHome();
     fireEvent.press(screen.getByTestId('search-trigger'));
     await pickPlace(screen, '123 Terry Rd', 'terry-road-smithtown');
     fireEvent.press(screen.getByTestId('results-back'));
@@ -395,7 +402,7 @@ describe('Pathly prototype navigation', () => {
   it('removes a recent search from the account history', async () => {
     await recordSearch('test-uid', { id: 'penn-station', title: 'Penn Station', subtitle: 'New York, NY' });
     await recordSearch('test-uid', { id: 'times-square', title: 'Times Square', subtitle: 'Manhattan, NY' });
-    const screen = render(<App />);
+    const screen = await renderHome();
     fireEvent.press(screen.getByTestId('search-trigger'));
     expect(screen.getAllByTestId(/^search-result-/).map((row) => row.props.testID)).toEqual(['search-result-times-square', 'search-result-penn-station']);
 
@@ -424,7 +431,7 @@ describe('Pathly prototype navigation', () => {
   /** Opens Route Results to 123 Terry Rd from the rider's location and waits for the trips. */
   const openResults = async () => {
     grantLocation();
-    const screen = render(<App />);
+    const screen = await renderHome();
     fireEvent.press(screen.getByTestId('search-trigger'));
     await pickPlace(screen, '123 Terry Rd', 'terry-road-smithtown');
     await screen.findByTestId(`itinerary-${LIRR_TRIP.id}`);
@@ -608,7 +615,7 @@ describe('Pathly prototype navigation', () => {
       finish = resolve;
     }));
     grantLocation();
-    const screen = render(<App />);
+    const screen = await renderHome();
     fireEvent.press(screen.getByTestId('search-trigger'));
     await pickPlace(screen, '123 Terry Rd', 'terry-road-smithtown');
     expect(await screen.findByLabelText('Finding trips')).toBeTruthy();
@@ -636,7 +643,7 @@ describe('Pathly prototype navigation', () => {
 
   it('asks for a starting point when the rider\'s location is unknown', async () => {
     (Location.requestForegroundPermissionsAsync as jest.Mock).mockResolvedValue({ status: 'denied' });
-    const screen = render(<App />);
+    const screen = await renderHome();
     fireEvent.press(screen.getByTestId('search-trigger'));
     await pickPlace(screen, '123 Terry Rd', 'terry-road-smithtown');
     expect(await screen.findByTestId('results-no-origin')).toBeTruthy();
@@ -655,22 +662,28 @@ describe('Pathly prototype navigation', () => {
     const screen = await openResults();
     fireEvent.press(screen.getByTestId(`search-result-view-${LIRR_TRIP.id}`));
     fireEvent.press(screen.getByTestId('search-trip-go'));
-    expect(screen.getByTestId('search-trip-end')).toBeTruthy();
-    fireEvent.press(screen.getByTestId('search-trip-back'));
+    await screen.findByTestId('enroute-navigation-view');
+    fireEvent.press(screen.getByTestId('enroute-back'));
+    expect(await screen.findByTestId('resume-active-trip')).toBeTruthy();
 
     // A refresh that no longer lists the started trip doesn't end or replace it.
     planTripMock().mockResolvedValue({ data: { itineraries: [BUS_TRIP] } });
+    fireEvent.press(screen.getByTestId('search-trigger'));
+    await pickPlace(screen, '123 Terry Rd', 'terry-road-smithtown');
     fireEvent.press(screen.getByTestId('refresh-results'));
     await waitFor(() => expect(screen.getAllByTestId(/^itinerary-/).map((card) => card.props.testID)).toEqual([`itinerary-${BUS_TRIP.id}`]), { timeout: 3000 });
     fireEvent.press(screen.getByTestId(`search-result-view-${BUS_TRIP.id}`));
     expect(screen.getByTestId('search-trip-go')).toBeTruthy();
     fireEvent.press(screen.getByTestId('search-trip-back'));
 
-    // Once listed again, it opens as the trip in progress.
+    // Once listed again, the original trip remains globally resumable.
     planTripMock().mockResolvedValue({ data: { itineraries: [LIRR_TRIP, BUS_TRIP] } });
     fireEvent.press(screen.getByTestId('refresh-results'));
-    fireEvent.press(await screen.findByTestId(`search-result-view-${LIRR_TRIP.id}`));
-    expect(screen.getByTestId('search-trip-end')).toBeTruthy();
+    await screen.findByTestId(`search-result-view-${LIRR_TRIP.id}`);
+    fireEvent.press(screen.getByTestId('results-back'));
+    fireEvent.press(screen.getByLabelText('Cancel destination search'));
+    fireEvent.press(await screen.findByTestId('resume-active-trip'));
+    expect(await screen.findByTestId('enroute-navigation-view')).toBeTruthy();
   });
 
   it('lists a planned trip step by step: walk, ride, transfer with the wait, ride', async () => {
@@ -713,7 +726,7 @@ describe('Pathly prototype navigation', () => {
 
   it('saves routes with one star: saved routes lead Nearby and appear in Favorites', async () => {
     const hidden = { includeHiddenElements: true };
-    const screen = render(<App />);
+    const screen = await renderHome();
     // Nothing is saved by default.
     await screen.findByTestId(`route-card-${PJ_CARD}`);
     expect(screen.queryByTestId('saved-routes')).toBeNull();
@@ -747,7 +760,7 @@ describe('Pathly prototype navigation', () => {
 
   it('saves favorite routes, and trip destinations as saved places, to the Favorites tab', async () => {
     grantLocation();
-    const screen = render(<App />);
+    const screen = await renderHome();
     fireEvent.press(screen.getByTestId('tab-favorites'));
     expect(screen.getByText('No favorites yet')).toBeTruthy();
 
@@ -797,7 +810,7 @@ describe('Pathly prototype navigation', () => {
   });
 
   it('shows a selected state on home and results location buttons', async () => {
-    const screen = render(<App />);
+    const screen = await renderHome();
     // The home locate button starts in a "finding your location" loading state (denied
     // permission in this test environment resolves it almost immediately).
     const homeLocation = await screen.findByLabelText('Center on current location');
@@ -815,7 +828,7 @@ describe('Pathly prototype navigation', () => {
   });
 
   it('edits a Route Results endpoint through the search page and keeps the other criteria', async () => {
-    const screen = render(<App />);
+    const screen = await renderHome();
     fireEvent.press(screen.getByTestId('search-trigger'));
     await pickPlace(screen, '123 Terry Rd', 'terry-road-smithtown');
     fireEvent.press(screen.getByTestId('filter-control'));
@@ -884,33 +897,34 @@ describe('Pathly prototype navigation', () => {
 
     fireEvent.press(screen.getByTestId(`search-result-view-${LIRR_TRIP.id}`));
     fireEvent.press(screen.getByTestId('search-trip-go'));
-    expect(screen.getByTestId('search-trip-end')).toBeTruthy();
+    expect(await screen.findByTestId('enroute-end')).toBeTruthy();
     expect(screen.getByText('END')).toBeTruthy();
 
-    fireEvent.press(screen.getByTestId('search-trip-back'));
-    fireEvent.press(screen.getByTestId(`search-result-view-${LIRR_TRIP.id}`));
-    expect(screen.getByTestId('search-trip-end')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('enroute-back'));
+    fireEvent.press(await screen.findByTestId('resume-active-trip'));
+    expect(await screen.findByTestId('enroute-end')).toBeTruthy();
     // Ending asks first; cancelling keeps the trip going.
-    fireEvent.press(screen.getByTestId('search-trip-end'));
+    fireEvent.press(screen.getByTestId('enroute-end'));
     expect(screen.getByText('End this trip?')).toBeTruthy();
-    fireEvent.press(screen.getByTestId('search-trip-end-confirm-cancel'));
-    expect(screen.getByTestId('search-trip-end')).toBeTruthy();
-    fireEvent.press(screen.getByTestId('search-trip-end'));
-    fireEvent.press(screen.getByTestId('search-trip-end-confirm-confirm'));
-    expect(screen.getByTestId('route-results-view')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('enroute-end-confirm-cancel'));
+    expect(screen.getByTestId('enroute-end')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('enroute-end'));
+    fireEvent.press(screen.getByTestId('enroute-end-confirm-confirm'));
+    fireEvent.press(await screen.findByTestId(/^recent-trip-/));
+    expect(await screen.findByTestId('route-results-view')).toBeTruthy();
     fireEvent.press(screen.getByTestId(`search-result-view-${LIRR_TRIP.id}`));
     expect(screen.getByTestId('search-trip-go')).toBeTruthy();
   });
 
-  it('shows an empty Recents tab instead of sample trips', () => {
-    const screen = render(<App />);
+  it('shows an empty Recents tab instead of sample trips', async () => {
+    const screen = await renderHome();
     fireEvent.press(screen.getByTestId('tab-recents'));
     expect(screen.getByText('No recent trips yet')).toBeTruthy();
     expect(screen.queryByTestId(/^recent-trip-/)).toBeNull();
   });
 
-  it('opens profile settings and can trigger sign out', () => {
-    const screen = render(<App />);
+  it('opens profile settings and can trigger sign out', async () => {
+    const screen = await renderHome();
     fireEvent.press(screen.getByTestId('profile-trigger'));
 
     expect(screen.getByTestId('profile-view')).toBeTruthy();
@@ -1032,8 +1046,8 @@ describe('Pathly prototype navigation', () => {
   type TestElement = ReturnType<ReturnType<typeof render>['getByTestId']>;
   const backgroundOf = (element: TestElement) => StyleSheet.flatten(element.props.style)?.backgroundColor;
 
-  const renderDark = () => {
-    const screen = render(<App />);
+  const renderDark = async () => {
+    const screen = await renderHome();
     fireEvent.press(screen.getByTestId('profile-trigger'));
     fireEvent.press(screen.getByTestId('settings-row-appearance'));
     fireEvent.press(screen.getByTestId('appearance-dark'));
@@ -1042,8 +1056,8 @@ describe('Pathly prototype navigation', () => {
     return screen;
   };
 
-  it('switches appearance from Settings and remembers the choice for the session', () => {
-    const screen = render(<App />);
+  it('switches appearance from Settings and remembers the choice for the session', async () => {
+    const screen = await renderHome();
     expect(backgroundOf(screen.getByTestId('transit-sheet'))).toBe(lightColors.surface);
 
     fireEvent.press(screen.getByTestId('profile-trigger'));
@@ -1061,7 +1075,7 @@ describe('Pathly prototype navigation', () => {
   });
 
   it('renders home surfaces dark while route cards keep their colors', async () => {
-    const screen = renderDark();
+    const screen = await renderDark();
     expect(backgroundOf(screen.getByTestId('transit-sheet'))).toBe(darkColors.surface);
     // Only reachable once the mocked dynamic discovery resolves (jest.setup.js's
     // findNearbyTransit mock), under its synthesized id.
@@ -1071,7 +1085,7 @@ describe('Pathly prototype navigation', () => {
   });
 
   it('renders results and the time picker dark', async () => {
-    const screen = renderDark();
+    const screen = await renderDark();
     fireEvent.press(screen.getByTestId('search-trigger'));
     await pickPlace(screen, '123 Terry Rd', 'terry-road-smithtown');
     expect(backgroundOf(screen.getByTestId('route-results-view'))).toBe(darkColors.canvas);
@@ -1081,7 +1095,7 @@ describe('Pathly prototype navigation', () => {
 
   it('renders route detail, trip detail, and settings dark', async () => {
     grantLocation();
-    const screen = renderDark();
+    const screen = await renderDark();
     // Both Google maps are recolored dark (and still hide places), not left bright.
     const isDarkMap = (map: { props: { customMapStyle?: { featureType?: string; elementType?: string; stylers: { color?: string }[] }[] } }) => {
       const style = map.props.customMapStyle ?? [];
@@ -1110,7 +1124,7 @@ describe('Pathly prototype navigation', () => {
 
   it('draws route and trip overlays on the illustrated map', async () => {
     const hidden = { includeHiddenElements: true };
-    const screen = render(<App />);
+    const screen = await renderHome();
     // Routes with real, complete station geometry (Port Jefferson Branch, E, 7) render the
     // real map once it's fetched from the (mocked) backend; every other route still uses the
     // illustrated overlay immediately.
@@ -1134,10 +1148,10 @@ describe('Pathly prototype navigation', () => {
     });
   });
 
-  it('opens every profile category and keeps settings interactions local', () => {
+  it('opens every profile category and keeps settings interactions local', async () => {
     const fetchMock = jest.fn();
     globalThis.fetch = fetchMock as unknown as typeof fetch;
-    const screen = render(<App />);
+    const screen = await renderHome();
     fireEvent.press(screen.getByTestId('profile-trigger'));
 
     for (const id of ['appearance', 'account', 'notifications', 'accessibility', 'privacy', 'travel', 'places', 'help']) {
@@ -1211,7 +1225,7 @@ describe('Pathly prototype navigation', () => {
         })
     ));
     try {
-      const screen = render(<App />);
+      const screen = await renderHome();
       const pj = await screen.findByTestId(`route-card-${PJ_CARD}-primary`);
       await waitFor(() => expect(within(pj).getAllByText('minutes').length).toBeGreaterThan(0));
       expect(live).toHaveBeenCalledWith(expect.objectContaining({ routeId: '10', lat: expect.any(Number), lon: expect.any(Number) }));
@@ -1237,7 +1251,7 @@ describe('Pathly prototype navigation', () => {
     const batchDefault = batch.getMockImplementation();
     batch.mockImplementation(() => Promise.reject(Object.assign(new Error('not found'), { code: 'functions/not-found' })));
     try {
-      const screen = render(<App />);
+      const screen = await renderHome();
       const pj = await screen.findByTestId(`route-card-${PJ_CARD}-primary`);
       await waitFor(() => expect(within(pj).getAllByText('minutes').length).toBeGreaterThan(0));
     } finally {
@@ -1269,7 +1283,7 @@ describe('Pathly prototype navigation', () => {
       });
     });
     try {
-      const screen = render(<App />);
+      const screen = await renderHome();
       expect(await screen.findByLabelText('Loading nearby transit')).toBeTruthy();
       expect(screen.getAllByTestId('nearby-placeholder-card', { includeHiddenElements: true })).toHaveLength(3);
       expect(screen.queryByTestId('nearby-routes-empty')).toBeNull();
@@ -1294,7 +1308,7 @@ describe('Pathly prototype navigation', () => {
     const singleDefault = single.getMockImplementation()!;
     single.mockImplementation(() => new Promise(() => undefined));
     try {
-      const screen = render(<App />);
+      const screen = await renderHome();
       fireEvent.press(await screen.findByTestId(`route-card-${PJ_CARD}-primary`));
       const tiles = await screen.findByTestId('route-predictions-loading');
       expect(tiles.props.accessibilityLabel).toMatch(/^Loading the next arrival for /);
@@ -1337,7 +1351,7 @@ describe('Pathly prototype navigation', () => {
     nearby.mockImplementation(() => new Promise(() => undefined));
     batch.mockImplementation(() => new Promise(() => undefined));
     try {
-      const screen = render(<App />);
+      const screen = await renderHome();
       // The saved card shows at once, marked as updating, with its saved time aged by a minute.
       const card = await screen.findByTestId(`route-card-${PJ_CARD}-primary`);
       expect(screen.getByTestId('nearby-refreshing')).toBeTruthy();
@@ -1350,7 +1364,7 @@ describe('Pathly prototype navigation', () => {
 
   it('labels directions by destination only and titles cards with the route short name', async () => {
     const hidden = { includeHiddenElements: true };
-    const screen = render(<App />);
+    const screen = await renderHome();
     const cardId = cardIdFor(routeById['51']);
     await screen.findByTestId(`route-card-${cardId}-primary`);
     await waitFor(() => expect(screen.getAllByText('minutes', hidden).length).toBeGreaterThan(0));
@@ -1377,7 +1391,7 @@ describe('Pathly prototype navigation', () => {
       return (httpsCallable as jest.Mock).mock.results[index]!.value as jest.Mock;
     };
     const nearby = callableNamed('findNearbyTransit');
-    const screen = render(<App />);
+    const screen = await renderHome();
     await screen.findByTestId(`route-card-${PJ_CARD}`);
     expect(screen.queryByTestId('search-center')).toBeNull();
 
@@ -1413,7 +1427,7 @@ describe('Pathly prototype navigation', () => {
       { featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] },
       { featureType: 'road.highway', elementType: 'geometry.fill', stylers: [{ color: '#DADCE0' }] },
     ]));
-    const screen = render(<App />);
+    const screen = await renderHome();
     fireEvent.press(await screen.findByTestId(`route-card-${PJ_CARD}-primary`));
     hidesPlaces(await screen.findByTestId('route-map', { includeHiddenElements: true }));
     fireEvent.press(screen.getByTestId('route-back'));
@@ -1422,7 +1436,7 @@ describe('Pathly prototype navigation', () => {
 
   it('shows a compass after the rider rotates the home map, and reorients to north', async () => {
     const maps = jest.requireMock('react-native-maps') as { mockAnimateCamera: jest.Mock; mockCamera: { heading: number; pitch: number } };
-    const screen = render(<App />);
+    const screen = await renderHome();
     await screen.findByTestId(`route-card-${PJ_CARD}`);
     const map = screen.getByTestId('google-map-view', { includeHiddenElements: true });
     const settle = async () => {
@@ -1459,7 +1473,7 @@ describe('Pathly prototype navigation', () => {
 
   it('reopens the home map on the purple dot after visiting a route', async () => {
     const { mockAnimateToRegion } = jest.requireMock('react-native-maps') as { mockAnimateToRegion: jest.Mock };
-    const screen = render(<App />);
+    const screen = await renderHome();
     await screen.findByTestId(`route-card-${PJ_CARD}`);
     const hicksville = { latitude: 40.7685, longitude: -73.5251, latitudeDelta: 0.08, longitudeDelta: 0.08 };
     const map = screen.getByTestId('google-map-view', { includeHiddenElements: true });
@@ -1491,12 +1505,11 @@ describe('Pathly prototype navigation', () => {
     });
     mockAnimateToRegion.mockClear();
 
-    const screen = render(<App />);
+    const screen = await renderHome();
     await screen.findByTestId(`route-card-${PJ_CARD}`);
-    // The first fix centers the map once.
-    await waitFor(() => expect(mockAnimateToRegion).toHaveBeenCalledWith(expect.objectContaining({ latitude: 40.92, longitude: -73.13 }), expect.any(Number)));
-
+    // Hydration can settle after the first fix, so the map may mount already centered on it.
     const map = screen.getByTestId('google-map-view', { includeHiddenElements: true });
+    expect(map.props.region).toEqual(expect.objectContaining({ latitude: 40.92, longitude: -73.13 }));
     fireEvent(map, 'panDrag');
     fireEvent(map, 'regionChangeComplete', { latitude: 40.7685, longitude: -73.5251, latitudeDelta: 0.05, longitudeDelta: 0.05 });
     mockAnimateToRegion.mockClear();
@@ -1563,7 +1576,7 @@ describe('Pathly prototype navigation', () => {
         data: { routeId: request.routeId, routeName: 'Mock Route', vehicles: [], nearestStop: null, stopPredictions: { towardDirection1: [{ minutes: 4, live: true, peakOffpeak: null }], towardDirection0: [] } },
       }));
       try {
-        const screen = render(<App />);
+        const screen = await renderHome();
         await screen.findByTestId(`route-card-${PJ_CARD}`);
         const slots = screen.getAllByTestId(/^card-slot-/).map((slot) => slot.props.testID.replace('card-slot-', '') as string);
         expect(slots.length).toBeGreaterThanOrEqual(6);
@@ -1623,7 +1636,7 @@ describe('Pathly prototype navigation', () => {
       return Promise.resolve({ remove: jest.fn() });
     });
 
-    const screen = render(<App />);
+    const screen = await renderHome();
     const cardId = cardIdFor(routeById['51']);
     fireEvent.press(await screen.findByTestId(`route-card-${cardId}-primary`));
     expect(screen.getByTestId(`route-detail-${cardId}`)).toBeTruthy();
@@ -1682,7 +1695,7 @@ describe('Pathly prototype navigation', () => {
 
     /** Opens the Port Jefferson Branch and waits for live data, nearest stop, and geometry. */
     const openPortJefferson = async () => {
-      const screen = render(<App />);
+      const screen = await renderHome();
       fireEvent.press(await screen.findByTestId(`route-card-${PJ_CARD}-primary`));
       await screen.findByLabelText('4 minutes, live GPS prediction');
       await screen.findByTestId('route-map', hidden);
@@ -1929,7 +1942,7 @@ describe('Pathly prototype navigation', () => {
             },
           },
         }));
-        const screen = render(<App />);
+        const screen = await renderHome();
         fireEvent.press(await screen.findByTestId(`route-card-${PJ_CARD}-primary`));
         await screen.findByLabelText('0 minutes, live GPS prediction');
         expect(screen.queryByText('Due')).toBeNull();
@@ -1956,7 +1969,7 @@ describe('Pathly prototype navigation', () => {
       callable('getRouteLiveStatus').mockImplementation((request: { routeId: string }) => Promise.resolve({
         data: { routeId: request.routeId, routeName: 'Mock Route', vehicles: [], stopPredictions: { towardDirection1: departures(7), towardDirection0: departures(2) } },
       }));
-      const screen = render(<App />);
+      const screen = await renderHome();
       fireEvent.press(await screen.findByTestId(`route-card-${PJ_CARD}-primary`));
       await screen.findByLabelText('3 minutes, live GPS prediction');
 
@@ -2105,7 +2118,7 @@ describe('Pathly prototype navigation', () => {
     });
   });
   it('keeps the route map fixed while the page and its map controls scroll', async () => {
-    const screen = render(<App />);
+    const screen = await renderHome();
     fireEvent.press(await screen.findByTestId(`route-card-${PJ_CARD}-primary`));
 
     const routeScroll = screen.getByTestId('route-detail-scroll');
@@ -2128,7 +2141,9 @@ describe('Pathly prototype navigation', () => {
     fireEvent.scroll(routeScroll, { nativeEvent: { contentOffset: { y: 280 } } });
     fireEvent.scroll(routeScroll, { nativeEvent: { contentOffset: { y: 0 } } });
 
-    fireEvent.press(screen.getByTestId('route-location'));
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('route-location'));
+    });
     expect(screen.getByTestId('route-location').props.accessibilityState).toEqual({ selected: true });
 
     fireEvent(screen.getByTestId('route-direction-pager'), 'momentumScrollEnd', {

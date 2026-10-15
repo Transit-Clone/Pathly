@@ -1,8 +1,11 @@
 import { httpsCallable } from 'firebase/functions';
 
 import type { SearchPlace } from '../src/data/placesSearch';
+import { createTripSelectionIdentity, sameTripSelection } from '../src/data/enrouteNavigation';
+import { retimeItinerary } from '../src/data/tripDepartures';
 import {
   CURRENT_LOCATION_LABEL,
+  createResumePlanRequest,
   fareLabel,
   lineBadge,
   transitSteps,
@@ -11,6 +14,7 @@ import {
   nextOccurrence,
   orderItineraries,
   planTrip,
+  planTripForResume,
   type Itinerary,
   type PlanTripOptions,
 } from '../src/data/tripPlanning';
@@ -56,6 +60,7 @@ describe('planTrip', () => {
   it('plans from the rider and routes to the Google place', async () => {
     const result = await planTrip(options());
     expect(result).toEqual(expect.objectContaining({ ok: true, itineraries: fixture }));
+    if (result.ok) expect(result.resumeRequest.time).toEqual({ mode: 'depart', at: '2026-10-14T12:30:00.000Z' });
     expect(planTripMock()).toHaveBeenCalledWith({
       origin: { label: CURRENT_LOCATION_LABEL, lat: HERE.latitude, lng: HERE.longitude },
       destination: { label: 'Penn Station', placeId: PENN.id, lat: 40.7506, lng: -73.9935 },
@@ -70,6 +75,19 @@ describe('planTrip', () => {
     expect(planTripMock()).toHaveBeenLastCalledWith(expect.objectContaining({ time: { mode: 'depart', at: '2026-10-15T11:00:00.000Z' }, preference: 'fastest' }));
     await planTrip(options({ preference: 'transfers' }));
     expect(planTripMock()).toHaveBeenLastCalledWith(expect.objectContaining({ preference: 'transfers' }));
+  });
+
+  it('uses real save time for coordinate retention even when the planning clock is mocked', async () => {
+    const realSaveTime = Date.parse('2026-10-15T12:00:00.000Z');
+    const dateNow = jest.spyOn(Date, 'now').mockReturnValue(realSaveTime);
+    const result = await planTrip(options({ now: new Date('2025-01-01T12:00:00.000Z') }));
+    dateNow.mockRestore();
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.resumeRequest.origin).toEqual(expect.objectContaining({ kind: 'coordinate', savedAt: realSaveTime }));
+      expect(result.resumeRequest.time).toEqual({ mode: 'depart', at: '2025-01-01T12:00:00.000Z' });
+    }
   });
 
   it('needs a real origin and a routable destination before asking', async () => {
@@ -94,6 +112,55 @@ describe('planTrip', () => {
     expect(planTripMock()).toHaveBeenCalledTimes(1);
     await planTrip(options({ refresh: true }));
     expect(planTripMock()).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('resume planning', () => {
+  it('captures now as an absolute departure and sends that same instant after relaunch', async () => {
+    const request = createResumePlanRequest(options(), Date.parse('2026-10-14T12:30:00Z'));
+    expect(request).toEqual({
+      origin: { kind: 'coordinate', label: CURRENT_LOCATION_LABEL, point: { lat: HERE.latitude, lng: HERE.longitude }, savedAt: Date.parse('2026-10-14T12:30:00Z') },
+      destination: { kind: 'place', label: 'Penn Station', placeId: PENN.id },
+      time: { mode: 'depart', at: '2026-10-14T12:30:00.000Z' },
+      preference: 'fastest',
+      modes: ['subway', 'bus', 'rail'],
+    });
+    const selection = createTripSelectionIdentity(fixture[0]!);
+    expect(await planTripForResume(request!, selection)).toEqual(expect.objectContaining({ ok: true, itinerary: fixture[0] }));
+    expect(planTripMock()).toHaveBeenLastCalledWith(expect.objectContaining({ time: { mode: 'depart', at: '2026-10-14T12:30:00.000Z' } }));
+  });
+
+  it('restores the exact client-retimed departure even though its itinerary id is unchanged', async () => {
+    const base = structuredClone(fixture[0]!);
+    const firstTransit = base.steps.find((step) => step.kind === 'transit')!;
+    const laterDeparts = new Date(Date.parse(firstTransit.from.time) + 15 * 60_000).toISOString();
+    const laterArrives = new Date(Date.parse(firstTransit.to.time) + 15 * 60_000).toISOString();
+    firstTransit.departures = [
+      { departs: firstTransit.from.time, arrives: firstTransit.to.time },
+      { departs: laterDeparts, arrives: laterArrives },
+    ];
+    const chosen = retimeItinerary(base, new Map([[0, laterDeparts]]), Date.parse(base.departureTime) - 60_000);
+    expect(chosen.id).toBe(base.id);
+    expect(chosen.departureTime).not.toBe(base.departureTime);
+    planTripMock().mockResolvedValueOnce({ data: { itineraries: [base] } });
+    const request = createResumePlanRequest(options())!;
+
+    const result = await planTripForResume(request, createTripSelectionIdentity(chosen));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(sameTripSelection(createTripSelectionIdentity(result.itinerary), createTripSelectionIdentity(chosen))).toBe(true);
+  });
+
+  it('returns recovery for a failed request, missing candidate, or merely similar itinerary', async () => {
+    const request = createResumePlanRequest(options())!;
+    planTripMock().mockRejectedValueOnce(new Error('offline'));
+    expect(await planTripForResume(request, createTripSelectionIdentity(fixture[0]!))).toEqual({ ok: false, problem: 'unavailable' });
+
+    planTripMock().mockResolvedValueOnce({ data: { itineraries: fixture } });
+    expect(await planTripForResume(request, { ...createTripSelectionIdentity(fixture[0]!), itineraryId: 'missing-id' })).toEqual({ ok: false, problem: 'no-exact-match' });
+
+    const similar = { ...fixture[0]!, arrivalTime: new Date(Date.parse(fixture[0]!.arrivalTime) + 60_000).toISOString() };
+    planTripMock().mockResolvedValueOnce({ data: { itineraries: fixture } });
+    expect(await planTripForResume(request, createTripSelectionIdentity(similar))).toEqual({ ok: false, problem: 'no-exact-match' });
   });
 });
 

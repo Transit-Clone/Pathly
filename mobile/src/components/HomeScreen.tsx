@@ -1,14 +1,16 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Animated, BackHandler, Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '../auth/AuthContext';
 import { applyRouteLive } from '../data/applyRouteLive';
 import { NEARBY_CACHE_KEY, readCache, writeCache } from '../data/deviceCache';
+import { guidanceForNavigation, type TripEndpointReference } from '../data/enrouteNavigation';
+import type { RecentTripV1 } from '../data/navigationStorage';
 import { discoveredRouteToRouteDetail, fetchNearbyTransit, filterOutPinnedDuplicates, type DiscoveredRoute } from '../data/nearbyTransit';
 import type { SearchPlace } from '../data/placesSearch';
 import { TransitLiveProvider, useTransitLive } from '../data/TransitLiveContext';
-import { riderLocation, type Itinerary } from '../data/tripPlanning';
+import { riderLocation, type Itinerary, type ResumePlanRequest } from '../data/tripPlanning';
 import {
   findSavedLocation,
   locationToPlace,
@@ -28,18 +30,21 @@ import { DebugBanner } from '../debug/DebugBanner';
 import { useDebug } from '../debug/DebugContext';
 import { pinnedSpotLabel } from '../debug/presets';
 import { useCurrentLocation, type Coordinates } from '../hooks/useCurrentLocation';
+import { useActiveTrip } from '../hooks/useActiveTrip';
 import { useNow } from '../hooks/useNow';
-import { ThemedStatusBar, useThemedStyles } from '../theme/AppSettings';
+import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
 import { ScreenTransition } from '../theme/motion';
 import type { Palette } from '../theme/colors';
 import { fontFamilies } from '../theme/typography';
 import { ConfirmDialog } from './ConfirmDialog';
 import { CurrentLocationButton } from './CurrentLocationButton';
 import { DeparturesView } from './DeparturesView';
+import { EnrouteNavigationView, EnrouteRecoveryView, type EnrouteLocationState } from './EnrouteNavigationView';
 import { GoogleMapView, type HomeMapCamera } from './GoogleMapView';
 import { PressableScale } from './PressableScale';
 import { ProfileView } from './ProfileView';
 import { RouteDetailView } from './RouteDetailView';
+import { ResumeTripCard } from './ResumeTripCard';
 import { CURRENT_LOCATION_LABEL, initialResultsCriteria, RouteResultsView, type ResultsCriteria } from './RouteResultsView';
 import { SearchHeader } from './SearchHeader';
 import { SearchView } from './SearchView';
@@ -69,6 +74,7 @@ type ActiveView =
   // "More departures" for one direction of an opened route; back returns to that route and direction.
   | { name: 'departures'; routeId: string; route: RouteDetail; directionIndex: number }
   | ResultsViewState
+  | { name: 'enroute' }
   | { name: 'profile' }
   | { name: 'admin' };
 
@@ -78,6 +84,18 @@ const MAX_SAVED_LOCATIONS = 50;
 /** The place a Route Results destination stands for; a swapped-in or demo one is known only by name. */
 function destinationPlaceOf(criteria: ResultsCriteria): SearchPlace {
   return criteria.destinationPlace?.title === criteria.destination ? criteria.destinationPlace : placeFromName(criteria.destination);
+}
+
+/** Reconstructs a provider-light endpoint for a fresh search; no stored route content is replayed. */
+function placeForTripEndpoint(endpoint: TripEndpointReference): SearchPlace {
+  return endpoint.kind === 'place'
+    ? { id: endpoint.placeId, title: endpoint.label, subtitle: 'Recent trip', source: 'google' }
+    : {
+      id: `recent:${endpoint.point.lat},${endpoint.point.lng}`,
+      title: endpoint.label,
+      subtitle: 'Recent trip',
+      location: { latitude: endpoint.point.lat, longitude: endpoint.point.lng },
+    };
 }
 
 function toggleItem<T>(items: readonly T[], item: T): T[] {
@@ -125,22 +143,46 @@ function DeparturesScreen({ directionIndex, onBack, route }: { directionIndex: n
 
 export function HomeScreen() {
   const styles = useThemedStyles(createStyles);
-  const [activeView, setActiveView] = useState<ActiveView>({ name: 'home' });
-  // The itinerary itself, not an id: a started trip is a snapshot that later refreshes can't change.
-  const [activeTrip, setActiveTrip] = useState<Itinerary | null>(null);
+  const { colors } = useTheme();
+  // `null` means startup has not chosen a screen yet. Once UID-scoped hydration resolves, a
+  // restored trip opens directly; every user navigation then records an explicit view choice.
+  const [requestedView, setActiveView] = useState<ActiveView | null>(null);
   const [homeTab, setHomeTab] = useState<TransitTabId>('nearby');
-  const [selectedTrip, setSelectedTrip] = useState<Itinerary | null>(null);
+  const [selectedTrip, setSelectedTrip] = useState<{ itinerary: Itinerary; resumeRequest: ResumePlanRequest } | null>(null);
   const [tripTime, setTripTime] = useState<TripTimeChoice>({ mode: 'now' });
+  const [arrivedDestination, setArrivedDestination] = useState<string | null>(null);
+  const [tripStartFailed, setTripStartFailed] = useState(false);
   // One "Save" star replaces pin + favorite: saved routes lead Nearby and fill Favorites -> Routes.
   // Nothing is saved by default.
   const [savedRouteIds, setSavedRouteIds] = useState<readonly string[]>([]);
   // A trip's star saves its destination to the account (Firestore), listed under Favorites -> Places.
   const { user } = useAuth();
   const uid = user?.uid;
+  const trip = useActiveTrip(uid);
+  const {
+    advance: advanceTrip,
+    cancelReplacement,
+    confirmReplacement,
+    end: endTrip,
+    resetForAdmin: resetTripForAdmin,
+    retry: retryTrip,
+    start: startActiveTrip,
+  } = trip;
+  const activeView = useMemo<ActiveView>(() => requestedView ?? (
+    trip.status === 'active' || trip.status === 'recovery' ? { name: 'enroute' } : { name: 'home' }
+  ), [requestedView, trip.status]);
   const [savedLocations, setSavedLocations] = useState<readonly SavedLocation[]>([]);
   const { height } = useWindowDimensions();
-  const { location, mocked: locationMocked, refresh: refreshLocation, status: locationStatus } = useCurrentLocation();
-  const { isAdmin, overlays, setMockLocation } = useDebug();
+  const { location, mocked: locationMocked, navigationFix, navigationStale, refresh: refreshLocation, status: locationStatus } = useCurrentLocation();
+  const { isAdmin, mockLocation, overlays, setMockLocation } = useDebug();
+  const resumeGuidance = useMemo(
+    () => (trip.active ? guidanceForNavigation(trip.active.plan, trip.active.cursor) : null),
+    [trip.active],
+  );
+  const hasResumableTrip = trip.status === 'active' || trip.status === 'recovery';
+  const homeHeaderInset = hasResumableTrip ? 158 : HEADER_INSET;
+  const processedFixRef = useRef<string | null>(null);
+  const [followEvidence, setFollowEvidence] = useState<{ sessionId: string; fix: NonNullable<typeof navigationFix> } | null>(null);
   // Admin overlay: the last tapped map point, until dismissed.
   const [tappedPoint, setTappedPoint] = useState<Coordinates | null>(null);
   // Admin: a long-pressed map point waiting for "Use as mock location".
@@ -283,6 +325,21 @@ export function HomeScreen() {
     setHomeTab('favorites');
     setActiveView({ name: 'home' });
   }, []);
+  const openRecentTrip = useCallback((recent: RecentTripV1) => {
+    const originPlace = placeForTripEndpoint(recent.origin);
+    const destinationPlace = placeForTripEndpoint(recent.destination);
+    setSelectedTrip(null);
+    setTripTime({ mode: 'now' });
+    setActiveView({
+      name: 'results',
+      criteria: {
+        ...initialResultsCriteria(destinationPlace.title, destinationPlace),
+        origin: originPlace.title,
+        originPlace,
+      },
+      returnTo: 'search',
+    });
+  }, []);
   useEffect(() => {
     if (!uid) return undefined;
     return subscribeToSavedLocations(uid, MAX_SAVED_LOCATIONS, setSavedLocations);
@@ -302,8 +359,8 @@ export function HomeScreen() {
     setSelectedTrip(null);
     setActiveView({ name: 'results', criteria: initialResultsCriteria(place.title, place), returnTo: 'favorites' });
   }, []);
-  const showPlannedTrip = useCallback((itinerary: Itinerary) => {
-    setSelectedTrip(itinerary);
+  const showPlannedTrip = useCallback((itinerary: Itinerary, resumeRequest: ResumePlanRequest) => {
+    setSelectedTrip({ itinerary, resumeRequest });
   }, []);
   // Back to the results list, also when it was opened from a saved place (Favorites comes after it).
   const closePlannedTrip = useCallback(() => setSelectedTrip(null), []);
@@ -314,14 +371,46 @@ export function HomeScreen() {
     }
     showSearch();
   }, [activeView, showFavorites, showSearch]);
-  const startPlannedTrip = useCallback((itinerary: Itinerary) => {
-    setActiveTrip(itinerary);
-    setSelectedTrip(itinerary);
-  }, []);
-  const endPlannedTrip = useCallback(() => {
-    setActiveTrip(null);
-    setSelectedTrip(null);
-  }, []);
+  const startPlannedTrip = useCallback(async (itinerary: Itinerary) => {
+    if (activeView.name !== 'results' || !selectedTrip) {
+      setTripStartFailed(true);
+      return;
+    }
+    const { resumeRequest } = selectedTrip;
+    const result = await startActiveTrip({ itinerary, origin: resumeRequest.origin, destination: resumeRequest.destination, resumeRequest });
+    if (result === 'started') {
+      setSelectedTrip(null);
+      setActiveView({ name: 'enroute' });
+    } else if (result !== 'replacement-required') {
+      setTripStartFailed(true);
+    }
+  }, [activeView, selectedTrip, startActiveTrip]);
+
+  // Real GPS and admin checkpoints share this one evidence path. The engine itself rejects stale,
+  // inaccurate, ambiguous, and backward movement and completes the session idempotently.
+  const activeSessionId = trip.active?.sessionId;
+  const activeDestinationLabel = trip.active?.destination.label;
+  const fixLatitude = navigationFix?.point.lat;
+  const fixLongitude = navigationFix?.point.lng;
+  const fixCapturedAt = navigationFix?.capturedAt;
+  const fixAccuracy = navigationFix?.accuracyMeters;
+  const fixSource = navigationFix?.source;
+  const mockFixKey = fixSource === 'mock' && mockLocation
+    ? `${mockLocation.label}:${mockLocation.latitude}:${mockLocation.longitude}:${mockLocation.capturedAt ?? ''}`
+    : '';
+  useEffect(() => {
+    if (!navigationFix || !activeSessionId) return;
+    const key = `${activeSessionId}:${fixSource}:${fixCapturedAt}:${fixLatitude}:${fixLongitude}:${fixAccuracy ?? ''}:${mockFixKey}`;
+    if (processedFixRef.current === key) return;
+    processedFixRef.current = key;
+    const destination = activeDestinationLabel ?? 'your destination';
+    void advanceTrip(navigationFix).then((result) => {
+      if (result?.locationState === 'current') setFollowEvidence({ sessionId: activeSessionId, fix: navigationFix });
+      if (!result?.arrived) return;
+      setArrivedDestination(destination);
+      setActiveView({ name: 'home' });
+    });
+  }, [activeDestinationLabel, activeSessionId, advanceTrip, fixAccuracy, fixCapturedAt, fixLatitude, fixLongitude, fixSource, mockFixKey, navigationFix]);
 
   const closeCurrentView = useCallback(() => {
     if (activeView.name === 'admin') {
@@ -381,6 +470,74 @@ export function HomeScreen() {
       <ScreenTransition key={transitionKey}>{node}</ScreenTransition>
     </TransitLiveProvider>
   );
+
+  const enrouteLocationState: EnrouteLocationState = locationStatus === 'loading'
+    ? 'loading'
+    : locationStatus === 'unavailable'
+      ? 'unavailable'
+      : navigationStale
+        ? 'stale'
+      : trip.locationState && trip.locationState !== 'current'
+        ? trip.locationState
+        : 'located';
+
+  if (trip.status === 'hydrating') {
+    return screen(
+      <View accessibilityLabel="Restoring your trips" style={styles.hydration} testID="active-trip-hydration">
+        <ActivityIndicator color={colors.primary} size="large" />
+        <Text style={styles.hydrationText}>Restoring your trips…</Text>
+      </View>,
+    );
+  }
+
+  if (activeView.name === 'enroute') {
+    if (trip.status === 'active' && trip.active) {
+      const session = trip.active;
+      const firstCheckpoint = session.plan.checkpoints[0];
+      return screen(
+        <EnrouteNavigationView
+          cursor={session.cursor}
+          fix={navigationFix}
+          followFix={followEvidence?.sessionId === session.sessionId ? followEvidence.fix : null}
+          isAdmin={isAdmin}
+          locationState={enrouteLocationState}
+          onBack={showHome}
+          onDemoCheckpoint={isAdmin ? (checkpoint) => setMockLocation({ label: checkpoint.label, latitude: checkpoint.point.lat, longitude: checkpoint.point.lng }) : undefined}
+          onEnd={() => {
+            void endTrip().then((ended) => {
+              if (!ended) return;
+              setHomeTab('recents');
+              showHome();
+            });
+          }}
+          onResetDemo={isAdmin ? () => {
+            void resetTripForAdmin().then((reset) => {
+              if (reset && firstCheckpoint) setMockLocation({ label: firstCheckpoint.label, latitude: firstCheckpoint.point.lat, longitude: firstCheckpoint.point.lng });
+            });
+          } : undefined}
+          plan={session.plan}
+          session={session}
+        />,
+      );
+    }
+    if (trip.status === 'recovery' && trip.recovery) {
+      return screen(
+        <EnrouteRecoveryView
+          destination={trip.recovery.destination.label}
+          loading={trip.retrying}
+          onBack={showHome}
+          onEnd={() => {
+            void endTrip().then((ended) => {
+              if (!ended) return;
+              setHomeTab('recents');
+              showHome();
+            });
+          }}
+          onRetry={() => void retryTrip()}
+        />,
+      );
+    }
+  }
 
   if (activeView.name === 'search' && activeView.pickMockLocation) {
     // Admin: any searchable place becomes the mock location.
@@ -456,24 +613,53 @@ export function HomeScreen() {
 
   if (activeView.name === 'results') {
     return screen(
-      <RouteResultsView
-        activeItinerary={activeTrip}
-        criteria={activeView.criteria}
-        isDestinationSaved={isPlaceSaved(destinationPlaceOf(activeView.criteria))}
-        locationPending={locationStatus === 'loading'}
-        onBack={closeResults}
-        onChangeCriteria={(criteria) => setActiveView((current) => (current.name === 'results' ? { ...current, criteria } : current))}
-        onChangeTripTime={setTripTime}
-        onCloseTrip={closePlannedTrip}
-        onEditEndpoint={(field) => setActiveView({ name: 'search', editing: { field, results: activeView } })}
-        onEndTrip={endPlannedTrip}
-        onOpenTrip={showPlannedTrip}
-        onStartTrip={startPlannedTrip}
-        onToggleSaveDestination={() => toggleSavedPlace(destinationPlaceOf(activeView.criteria))}
-        riderLocation={riderLocation(location, locationStatus)}
-        selectedItinerary={selectedTrip}
-        tripTime={tripTime}
-      />
+      <>
+        <RouteResultsView
+          criteria={activeView.criteria}
+          isDestinationSaved={isPlaceSaved(destinationPlaceOf(activeView.criteria))}
+          locationPending={locationStatus === 'loading'}
+          onBack={closeResults}
+          onChangeCriteria={(criteria) => setActiveView({ ...activeView, criteria })}
+          onChangeTripTime={setTripTime}
+          onCloseTrip={closePlannedTrip}
+          onEditEndpoint={(field) => setActiveView({ name: 'search', editing: { field, results: activeView } })}
+          onOpenTrip={showPlannedTrip}
+          onStartTrip={startPlannedTrip}
+          onToggleSaveDestination={() => toggleSavedPlace(destinationPlaceOf(activeView.criteria))}
+          riderLocation={riderLocation(location, locationStatus)}
+          selectedItinerary={selectedTrip?.itinerary ?? null}
+          tripTime={tripTime}
+        />
+        <ConfirmDialog
+          body="Your current trip will be saved in Recents as ended early, then this exact departure will start."
+          confirmLabel="Replace trip"
+          destructive={true}
+          onCancel={cancelReplacement}
+          onConfirm={() => {
+            void confirmReplacement().then((replaced) => {
+              if (!replaced) {
+                setTripStartFailed(true);
+                return;
+              }
+              setSelectedTrip(null);
+              setActiveView({ name: 'enroute' });
+            });
+          }}
+          testID="replace-active-trip-confirm"
+          title="Replace your active trip?"
+          visible={trip.pendingReplacement !== null}
+        />
+        <ConfirmDialog
+          body="Your active trip could not be saved on this device. Nothing was replaced. Please try again."
+          cancelLabel="Close"
+          confirmLabel="OK"
+          onCancel={() => setTripStartFailed(false)}
+          onConfirm={() => setTripStartFailed(false)}
+          testID="start-trip-error"
+          title="Couldn’t start this trip"
+          visible={tripStartFailed}
+        />
+      </>
     );
   }
 
@@ -498,7 +684,7 @@ export function HomeScreen() {
           onUserMoveEnd={setSearchCenter}
           onUserPan={() => setIsLocationCentered(false)}
           onOrientationChange={setMapOrientation}
-          padding={{ top: HEADER_INSET, bottom: height - mapHeight }}
+          padding={{ top: homeHeaderInset, bottom: height - mapHeight }}
           recenterRequest={recenterRequest}
           reorientRequest={reorientRequest}
           simulatedLocation={locationMocked}
@@ -509,12 +695,12 @@ export function HomeScreen() {
           <View
             accessibilityLabel="Searching nearby transit around the map center"
             pointerEvents="none"
-            style={[styles.searchCenter, { top: (HEADER_INSET + mapHeight) / 2 - SEARCH_CENTER_SIZE / 2 }]}
+            style={[styles.searchCenter, { top: (homeHeaderInset + mapHeight) / 2 - SEARCH_CENTER_SIZE / 2 }]}
             testID="search-center"
           />
         ) : null}
         {locationStatus !== 'located' ? (
-          <View pointerEvents="none" style={[styles.locationStatusPill, { top: 80 }]}>
+          <View pointerEvents="none" style={[styles.locationStatusPill, { top: homeHeaderInset }]}>
             <View style={styles.locationStatusBadge}>
               {locationStatus === 'loading' ? <ActivityIndicator color="#FFFFFF" size="small" /> : null}
               <Text style={styles.locationStatusText}>
@@ -523,9 +709,9 @@ export function HomeScreen() {
             </View>
           </View>
         ) : null}
-        <DebugBanner top={80} />
+        <DebugBanner top={homeHeaderInset} />
         {overlays.tapCoords && tappedPoint ? (
-          <PressableScale accessibilityHint="Dismisses the coordinates" accessibilityRole="button" onPress={() => setTappedPoint(null)} style={[styles.tapCoords, { top: (HEADER_INSET + mapHeight) / 2 + 24 }]} testID="map-tap-coords">
+          <PressableScale accessibilityHint="Dismisses the coordinates" accessibilityRole="button" onPress={() => setTappedPoint(null)} style={[styles.tapCoords, { top: (homeHeaderInset + mapHeight) / 2 + 24 }]} testID="map-tap-coords">
             <Text selectable={true} style={styles.tapCoordsText}>{`${tappedPoint.latitude.toFixed(5)}, ${tappedPoint.longitude.toFixed(5)}`}</Text>
           </PressableScale>
         ) : null}
@@ -587,6 +773,15 @@ export function HomeScreen() {
               onProfilePress={() => setActiveView({ name: 'profile' })}
               onSearchPress={showSearch}
             />
+            {hasResumableTrip ? (
+              <View style={styles.resumeCardWrap}>
+                <ResumeTripCard
+                  destination={trip.active?.destination.label ?? trip.recovery?.destination.label ?? 'destination'}
+                  instruction={resumeGuidance?.currentAction ?? (trip.status === 'recovery' ? 'Exact route needs recovery' : undefined)}
+                  onResume={() => setActiveView({ name: 'enroute' })}
+                />
+              </View>
+            ) : null}
           </View>
         </SafeAreaView>
 
@@ -597,13 +792,28 @@ export function HomeScreen() {
           nearbyRoutes={nearbyRoutes}
           nearbyRefreshing={nearbyStatus.status === 'loaded' && nearbyStatus.refreshing === true}
           nearbyStatus={nearbyStatus.status}
+          onOpenRecentTrip={openRecentTrip}
           onOpenSavedLocation={openSavedLocation}
           onOpenRoute={openRoute}
           onTabChange={setHomeTab}
           onVisibleRouteIdsChange={setVisibleRouteIds}
+          recentTrips={trip.recents}
           savedLocations={savedLocations}
           savedRouteIds={savedRouteIds}
           scrollY={homeScrollY}
+        />
+        <ConfirmDialog
+          body={`${arrivedDestination ?? 'Your destination'} has been added to Recents.`}
+          cancelLabel="Stay on Home"
+          confirmLabel="View Recents"
+          onCancel={() => setArrivedDestination(null)}
+          onConfirm={() => {
+            setArrivedDestination(null);
+            setHomeTab('recents');
+          }}
+          testID="trip-arrived"
+          title="You’ve arrived"
+          visible={arrivedDestination !== null}
         />
       </View>
     </View>
@@ -613,6 +823,8 @@ export function HomeScreen() {
 const createStyles = (colors: Palette) => StyleSheet.create({
   viewport: { flex: 1, alignItems: 'center', backgroundColor: colors.background },
   screen: { width: '100%', maxWidth: 540, flex: 1, overflow: 'hidden', backgroundColor: colors.canvas },
+  hydration: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, backgroundColor: colors.canvas },
+  hydrationText: { color: colors.mutedInk, fontFamily: fontFamilies.bold, fontSize: 15 },
   safeArea: {
     position: 'absolute',
     top: 0,
@@ -621,6 +833,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     zIndex: 30,
   },
   header: { paddingTop: 10, paddingHorizontal: 16 },
+  resumeCardWrap: { marginTop: 8 },
   locationButton: {
     position: 'absolute',
     right: 16,

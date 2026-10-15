@@ -9,10 +9,11 @@ import { setRequestLogEnabled } from './requestLog';
 export const DEBUG_STORAGE_KEY = 'pathly.debug.v1';
 
 export type MockLocation = { label: string; latitude: number; longitude: number };
+export type TimestampedMockLocation = MockLocation & { capturedAt: number };
 export type { MockTime };
 export { appNow } from './clock';
 export type DebugOverlays = { ids: boolean; tapCoords: boolean };
-export type DebugState = { mockLocation?: MockLocation; mockTime?: MockTime; overlays: DebugOverlays };
+export type DebugState = { mockLocation?: TimestampedMockLocation; mockTime?: MockTime; overlays: DebugOverlays };
 
 const EMPTY_STATE: DebugState = { overlays: { ids: false, tapCoords: false } };
 
@@ -35,7 +36,9 @@ function parseState(raw: string | null): DebugState {
     const location = value.mockLocation;
     const time = value.mockTime;
     return {
-      ...(location && typeof location.latitude === 'number' && typeof location.longitude === 'number' && typeof location.label === 'string' ? { mockLocation: location } : {}),
+      ...(location && typeof location.latitude === 'number' && typeof location.longitude === 'number' && typeof location.label === 'string'
+        ? { mockLocation: { ...location, capturedAt: typeof location.capturedAt === 'number' ? location.capturedAt : Date.now() } }
+        : {}),
       ...(time && typeof time.at === 'number' && typeof time.setAtRealMs === 'number' ? { mockTime: time } : {}),
       overlays: { ids: value.overlays?.ids === true, tapCoords: value.overlays?.tapCoords === true },
     };
@@ -61,7 +64,11 @@ export function DebugProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     AsyncStorage.getItem(DEBUG_STORAGE_KEY)
       .then((raw) => {
-        if (!cancelled) setStored(parseState(raw));
+        if (cancelled) return;
+        const parsed = parseState(raw);
+        setStored(parsed);
+        const normalized = JSON.stringify(parsed);
+        if (raw !== null && raw !== normalized) AsyncStorage.setItem(DEBUG_STORAGE_KEY, normalized).catch(noop);
       })
       .catch(noop);
     return () => {
@@ -95,7 +102,15 @@ export function DebugProvider({ children }: { children: ReactNode }) {
   const value = useMemo<DebugValue>(() => ({
     ...state,
     isAdmin,
-    setMockLocation: (mockLocation) => update(({ mockLocation: _old, ...rest }) => (mockLocation ? { ...rest, mockLocation } : rest)),
+    setMockLocation: (mockLocation) => update(({ mockLocation: previous, ...rest }) => (mockLocation
+      ? {
+        ...rest,
+        mockLocation: {
+          ...mockLocation,
+          capturedAt: Math.max(Date.now(), (previous?.capturedAt ?? 0) + 1),
+        },
+      }
+      : rest)),
     setMockTime: (at) => update(({ mockTime: _old, ...rest }) => (at === undefined ? rest : { ...rest, mockTime: { at, setAtRealMs: Date.now() } })),
     setOverlay: (overlay, enabled) => update((current) => ({ ...current, overlays: { ...current.overlays, [overlay]: enabled } })),
   }), [isAdmin, state, update]);

@@ -6,12 +6,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card, createStyles as createProfileStyles, Header, SettingRow, ToggleRow } from '../components/ProfileView';
 import { PressableScale } from '../components/PressableScale';
 import { refreshLiveDataNow } from '../data/TransitLiveContext';
+import { LIVE_CACHE_KEY, NEARBY_CACHE_KEY } from '../data/deviceCache';
 import { clearTripPlanCache } from '../data/tripPlanning';
 import { callable } from '../lib/firebase';
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
-import { DEBUG_STORAGE_KEY, appNow, useDebug } from './DebugContext';
+import { appNow, useDebug } from './DebugContext';
 import { mockTimePresets, parseMockTime } from './mockTimes';
 import { MOCK_LOCATION_PRESETS } from './presets';
 import { getRequestLog, subscribeRequestLog, type RequestLogEntry } from './requestLog';
@@ -105,7 +106,8 @@ export function AdminToolsView({ onBack, onPickMockLocation }: AdminToolsViewPro
   };
 
   const clearDeviceCache = async () => {
-    const keys = (await AsyncStorage.getAllKeys()).filter((key) => key.startsWith('pathly.') && key !== DEBUG_STORAGE_KEY);
+    const disposableKeys = new Set([NEARBY_CACHE_KEY, LIVE_CACHE_KEY]);
+    const keys = (await AsyncStorage.getAllKeys()).filter((key) => disposableKeys.has(key));
     await AsyncStorage.multiRemove(keys);
     setFeedback(`Cleared ${keys.length} saved ${keys.length === 1 ? 'item' : 'items'} from this device`);
   };

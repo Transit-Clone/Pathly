@@ -3,6 +3,7 @@ import { ActivityIndicator, Animated, Platform, StyleSheet, Text, View, type Lay
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { applyRouteLive } from '../data/applyRouteLive';
+import type { RecentTripV1 } from '../data/navigationStorage';
 import { useTransitLiveMap } from '../data/TransitLiveContext';
 import type { RouteDetail } from '../data/transit';
 import type { SavedLocation } from '../data/userData';
@@ -16,6 +17,7 @@ import { SavedLocationCard } from './SavedLocationCard';
 import { NearbySkeleton } from './Skeleton';
 import { TransitCard } from './TransitCard';
 import { PressableScale } from './PressableScale';
+import { RecentTripCard } from './RecentTripCard';
 
 export type TransitTabId = 'nearby' | 'recents' | 'favorites';
 
@@ -30,12 +32,16 @@ type TransitSheetProps = {
   /** A re-search is in flight (e.g. for a new map center) while the current list stays visible. */
   nearbyRefreshing?: boolean;
   onOpenSavedLocation: (location: SavedLocation) => void;
+  /** Opens a fresh route search for a completed trip; stored provider results are never replayed. */
+  onOpenRecentTrip: (trip: RecentTripV1) => void;
   onOpenRoute: (routeId: string) => void;
   onTabChange: (tab: TransitTabId) => void;
   /** Destinations saved with a trip's star (Firestore savedLocations), under Favorites -> Places. */
   savedLocations: readonly SavedLocation[];
   /** Routes saved with the star: listed first in Nearby and under Favorites -> Routes. */
   savedRouteIds: readonly string[];
+  /** Completed local trips, newest first and already scoped to the signed-in account. */
+  recentTrips: readonly RecentTripV1[];
   scrollY: Animated.Value;
   /** The route ids of the cards currently on screen in the active tab, whenever that set changes. */
   onVisibleRouteIdsChange?: (routeIds: readonly string[]) => void;
@@ -67,9 +73,11 @@ export function TransitSheet({
   nearbyRoutes,
   nearbyStatus,
   onOpenSavedLocation,
+  onOpenRecentTrip,
   onOpenRoute,
   onTabChange,
   onVisibleRouteIdsChange,
+  recentTrips,
   savedLocations,
   savedRouteIds,
   scrollY,
@@ -305,11 +313,28 @@ export function TransitSheet({
               </View>
             </View>
           ) : activeTab === 'recents' ? (
-            <View style={[styles.tabContent, styles.emptyState, { minHeight: tabContentMinHeight }]} testID="recents-route-content">
-              <View style={styles.emptyIcon}><Icon name="recent" size={30} /></View>
-              <Text style={styles.emptyTitle}>No recent trips yet</Text>
-              <Text style={styles.emptyBody}>Trips you take will show up here.</Text>
-            </View>
+            recentTrips.length > 0 ? (
+              <View style={[styles.tabContent, { minHeight: tabContentMinHeight }]} testID="recents-route-content">
+                {recentTrips.map((trip) => (
+                  <RecentTripCard
+                    key={trip.sessionId}
+                    destination={trip.destination.label}
+                    endedAt={trip.endedAt}
+                    lines={trip.lines.map((line) => line.shortName ?? line.name)}
+                    onOpen={() => onOpenRecentTrip(trip)}
+                    origin={trip.origin.label}
+                    outcome={trip.outcome}
+                    testID={`recent-trip-${trip.sessionId}`}
+                  />
+                ))}
+              </View>
+            ) : (
+              <View style={[styles.tabContent, styles.emptyState, { minHeight: tabContentMinHeight }]} testID="recents-route-content">
+                <View style={styles.emptyIcon}><Icon name="recent" size={30} /></View>
+                <Text style={styles.emptyTitle}>No recent trips yet</Text>
+                <Text style={styles.emptyBody}>Trips you take will show up here.</Text>
+              </View>
+            )
           ) : (
             hasFavorites ? (
               <View onLayout={(event) => recordLayout('content', event)} style={[styles.tabContent, { minHeight: tabContentMinHeight }]} testID="favorites-route-content">

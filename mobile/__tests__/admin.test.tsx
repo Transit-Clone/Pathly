@@ -4,6 +4,7 @@ import { httpsCallable } from 'firebase/functions';
 import mockSafeAreaContext from 'react-native-safe-area-context/jest/mock';
 
 import App from '../App';
+import { navigationStorageKey } from '../src/data/navigationStorage';
 import { DEBUG_STORAGE_KEY } from '../src/debug/DebugContext';
 
 jest.mock('react-native-safe-area-context', () => mockSafeAreaContext);
@@ -42,6 +43,21 @@ it('shows no admin entry or banner to a rider, even with stored overrides', asyn
   expect(screen.queryByTestId('debug-banner')).toBeNull();
   fireEvent.press(screen.getByTestId('profile-trigger'));
   expect(screen.queryByTestId('settings-row-admin')).toBeNull();
+});
+
+it('migrates a legacy admin mock location to timestamped navigation evidence', async () => {
+  mockAuthUser.email = 'admin@gmail.com';
+  await AsyncStorage.setItem(DEBUG_STORAGE_KEY, JSON.stringify({ mockLocation: { label: 'Penn Station', ...PENN }, overlays: { ids: false, tapCoords: false } }));
+
+  const screen = render(<App />);
+  await screen.findByTestId('debug-banner');
+
+  await waitFor(async () => {
+    const raw = await AsyncStorage.getItem(DEBUG_STORAGE_KEY);
+    const stored = JSON.parse(raw ?? '{}') as { mockLocation?: { capturedAt?: number } };
+    expect(stored.mockLocation?.capturedAt).toEqual(expect.any(Number));
+  });
+  expect(screen.getByTestId('google-map-view').props.region).toMatchObject(PENN);
 });
 
 it('moves the map, Nearby, and trip planning to a mock location, and back when turned off', async () => {
@@ -166,7 +182,7 @@ describe('Admin tools screen', () => {
     expect(screen.getAllByText('getBackendStatus').length).toBeGreaterThan(0);
   });
 
-  it("clears the device cache but keeps the admin's own settings", async () => {
+  it("clears disposable caches but keeps admin, navigation, and unknown durable state", async () => {
     mockAuthUser.email = 'admin@gmail.com';
     const screen = render(<App />);
     await act(async () => undefined);
@@ -174,11 +190,17 @@ describe('Admin tools screen', () => {
     fireEvent.press(screen.getByTestId('admin-mock-location-jamaica'));
     await AsyncStorage.setItem('pathly.nearby.v1', '{}');
     await AsyncStorage.setItem('pathly.live.v1', '{}');
+    const activeSessionKey = navigationStorageKey('test-uid');
+    await AsyncStorage.setItem(activeSessionKey, '{"active":"demo"}');
+    await AsyncStorage.setItem('pathly.future-durable.v1', '{}');
     fireEvent.press(screen.getByTestId('admin-clear-device-cache'));
-    await waitFor(() => expect(screen.getByTestId('admin-feedback').props.children).toMatch(/^Cleared \d+ saved items? from this device$/));
+    await waitFor(() => expect(screen.getByTestId('admin-feedback').props.children).toBe('Cleared 2 saved items from this device'));
     const keys = await AsyncStorage.getAllKeys();
-    expect(keys.filter((key) => key.startsWith('pathly.') && key !== DEBUG_STORAGE_KEY)).toEqual([]);
     expect(keys).toContain(DEBUG_STORAGE_KEY);
+    expect(keys).toContain(activeSessionKey);
+    expect(keys).toContain('pathly.future-durable.v1');
+    expect(keys).not.toContain('pathly.nearby.v1');
+    expect(keys).not.toContain('pathly.live.v1');
   });
 
   it('shows route and stop IDs on route detail when the overlay is on', async () => {

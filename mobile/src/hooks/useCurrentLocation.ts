@@ -1,24 +1,33 @@
 import * as Location from 'expo-location';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AppState, type AppStateStatus } from 'react-native';
 
+import { NAVIGATION_THRESHOLDS, type NavigationFix } from '../data/enrouteNavigation';
 import { SERVICE_AREA_FALLBACK } from '../data/serviceArea';
 import { useDebug } from '../debug/DebugContext';
+import { useNow } from './useNow';
 
 export type Coordinates = { latitude: number; longitude: number };
 
-async function fetchCurrentCoordinates(): Promise<Coordinates | null> {
-  const { status } = await Location.requestForegroundPermissionsAsync();
-  if (status !== 'granted') return null;
+function navigationFixFromPosition(position: Location.LocationObject): NavigationFix {
+  const reportedAccuracy = position.coords.accuracy;
+  return {
+    point: { lat: position.coords.latitude, lng: position.coords.longitude },
+    accuracyMeters: typeof reportedAccuracy === 'number' && Number.isFinite(reportedAccuracy) && reportedAccuracy >= 0 ? reportedAccuracy : null,
+    capturedAt: Number.isFinite(position.timestamp) ? position.timestamp : Date.now(),
+    source: 'real',
+  };
+}
+
+async function fetchCurrentFix(): Promise<NavigationFix | null> {
   try {
-    const position = await Location.getCurrentPositionAsync({});
-    return { latitude: position.coords.latitude, longitude: position.coords.longitude };
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') return null;
+    return navigationFixFromPosition(await Location.getCurrentPositionAsync({}));
   } catch {
     return null;
   }
 }
-
-/** Re-centering on a mock location needs no fix. */
-const mockRefresh = () => Promise.resolve();
 
 const WATCH_OPTIONS = {
   accuracy: Location.Accuracy.Balanced,
@@ -28,45 +37,68 @@ const WATCH_OPTIONS = {
 
 /**
  * - 'loading': permission hasn't resolved yet, or it's granted and the first fix hasn't landed.
- * - 'located': `location` is a real GPS fix.
- * - 'unavailable': permission denied, or the fix failed — `location` is the Stony Brook fallback.
- *
- * While an admin has a mock location set, it stands in for the GPS everywhere (`mocked: true`)
- * and the GPS isn't used at all.
+ * - 'located': `location` and `navigationFix` represent a real or admin-mock fix.
+ * - 'unavailable': permission was denied or a fresh fix failed. `location` remains useful to
+ *   browsing screens, but `navigationFix` is null unless a prior real fix exists.
  */
 export type LocationStatus = 'loading' | 'located' | 'unavailable';
 
 /**
- * User's current GPS location, continuously updated as they actually move (not just on mount)
- * via a location subscription; falls back to Stony Brook if permission is denied or lookup
- * fails. Fetches an immediate one-shot fix on mount (in addition to starting the watch) so the
- * map centers on the user as soon as a fix is available, rather than sitting on the fallback
- * until the watch's first callback lands (which can take up to `WATCH_OPTIONS.timeInterval`) or
- * the user presses the locate button themselves. `refresh()` is still exposed separately for
- * the "center on me" button, so pressing it gets another fresh fix on demand.
+ * User location shared by browsing and active navigation.
+ *
+ * `location` preserves the product's service-area fallback for non-navigation screens.
+ * `navigationFix` deliberately never contains that fallback: it carries only timestamped,
+ * accuracy-aware GPS evidence or the admin's authoritative mock location. A last real fix is
+ * retained when a later refresh fails so maps can show it as stale while navigation rejects it
+ * using its timestamp/status.
  */
 export function useCurrentLocation() {
-  const [location, setLocation] = useState<Coordinates>(SERVICE_AREA_FALLBACK);
+  const [realFix, setRealFix] = useState<NavigationFix | null>(null);
   const [status, setStatus] = useState<LocationStatus>('loading');
+  const latestFixAtRef = useRef(Number.NEGATIVE_INFINITY);
+  const fixRevisionRef = useRef(0);
+  const refreshGenerationRef = useRef(0);
   const { mockLocation } = useDebug();
+  const freshnessNow = useNow(10_000);
   const mocked = mockLocation !== undefined;
   const mockLatitude = mockLocation?.latitude;
   const mockLongitude = mockLocation?.longitude;
-  const mockCoordinates = useMemo(
-    () => (mockLatitude !== undefined && mockLongitude !== undefined ? { latitude: mockLatitude, longitude: mockLongitude } : null),
-    [mockLatitude, mockLongitude],
+  const mockCapturedAt = mockLocation?.capturedAt;
+  const mockFix = useMemo<NavigationFix | null>(
+    () => (mockLatitude !== undefined && mockLongitude !== undefined && mockCapturedAt !== undefined
+      ? {
+        point: { lat: mockLatitude, lng: mockLongitude },
+        accuracyMeters: 0,
+        capturedAt: mockCapturedAt,
+        source: 'mock',
+      }
+      : null),
+    // Alighting and boarding can be distinct checkpoints at one platform coordinate.
+    [mockCapturedAt, mockLatitude, mockLongitude],
   );
 
-  const refresh = useCallback(async () => {
-    setStatus('loading');
-    const coordinates = await fetchCurrentCoordinates();
-    if (coordinates) {
-      setLocation(coordinates);
-      setStatus('located');
-    } else {
+  const acceptRealFix = useCallback((nextFix: NavigationFix) => {
+    if (nextFix.capturedAt < latestFixAtRef.current) return false;
+    latestFixAtRef.current = nextFix.capturedAt;
+    fixRevisionRef.current += 1;
+    setRealFix(nextFix);
+    setStatus('located');
+    return true;
+  }, []);
+
+  const refreshRealFix = useCallback(async () => {
+    const generation = refreshGenerationRef.current + 1;
+    refreshGenerationRef.current = generation;
+    const revisionAtStart = fixRevisionRef.current;
+    if (revisionAtStart === 0) setStatus('loading');
+    const nextFix = await fetchCurrentFix();
+    if (refreshGenerationRef.current !== generation) return;
+    if (nextFix) {
+      acceptRealFix(nextFix);
+    } else if (fixRevisionRef.current === revisionAtStart) {
       setStatus('unavailable');
     }
-  }, []);
+  }, [acceptRealFix]);
 
   useEffect(() => {
     if (mocked) return undefined;
@@ -74,36 +106,77 @@ export function useCurrentLocation() {
     let cancelled = false;
 
     (async () => {
-      const { status: permissionStatus } = await Location.requestForegroundPermissionsAsync();
+      let permissionStatus: Location.PermissionStatus;
+      try {
+        ({ status: permissionStatus } = await Location.requestForegroundPermissionsAsync());
+      } catch {
+        if (!cancelled) setStatus('unavailable');
+        return;
+      }
       if (cancelled) return;
       if (permissionStatus !== 'granted') {
         setStatus('unavailable');
         return;
       }
 
+      const revisionAtRequest = fixRevisionRef.current;
       try {
         const position = await Location.getCurrentPositionAsync({});
         if (!cancelled) {
-          setLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude });
-          setStatus('located');
+          acceptRealFix(navigationFixFromPosition(position));
         }
       } catch {
-        if (!cancelled) setStatus('unavailable');
+        if (!cancelled && fixRevisionRef.current === revisionAtRequest) setStatus('unavailable');
       }
       if (cancelled) return;
 
-      subscription = await Location.watchPositionAsync(WATCH_OPTIONS, (position) => {
-        setLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude });
-        setStatus('located');
-      });
+      try {
+        const nextSubscription = await Location.watchPositionAsync(WATCH_OPTIONS, (position) => {
+          if (cancelled) return;
+          acceptRealFix(navigationFixFromPosition(position));
+        });
+        if (cancelled) nextSubscription.remove();
+        else subscription = nextSubscription;
+      } catch {
+        // A usable one-shot fix remains valid even when the continuous watcher cannot start.
+        if (!cancelled && fixRevisionRef.current === revisionAtRequest) setStatus('unavailable');
+      }
     })();
 
     return () => {
       cancelled = true;
       subscription?.remove();
     };
-  }, [mocked]);
+  }, [acceptRealFix, mocked]);
 
-  if (mockCoordinates) return { location: mockCoordinates, status: 'located' as LocationStatus, refresh: mockRefresh, mocked: true };
-  return { location, status, refresh, mocked: false };
+  // Foreground-only navigation can miss movement while the app is suspended. Ask for one fresh
+  // position on every background/inactive -> active transition; the existing watch continues.
+  useEffect(() => {
+    if (mocked) return undefined;
+    let previousState: AppStateStatus = AppState.currentState;
+    const listener = AppState.addEventListener('change', (nextState) => {
+      const returnedToForeground = nextState === 'active' && previousState !== 'active';
+      previousState = nextState;
+      if (returnedToForeground) void refreshRealFix();
+    });
+    return () => listener.remove();
+  }, [mocked, refreshRealFix]);
+
+  const navigationFix = mockFix ?? realFix;
+  const navigationStale = Boolean(!mockFix && realFix && freshnessNow - realFix.capturedAt > NAVIGATION_THRESHOLDS.maxRealFixAgeMs);
+  const location = navigationFix
+    ? { latitude: navigationFix.point.lat, longitude: navigationFix.point.lng }
+    : SERVICE_AREA_FALLBACK;
+
+  if (mockFix) {
+    return {
+      location,
+      navigationFix: mockFix,
+      status: 'located' as LocationStatus,
+      refresh: async () => undefined,
+      mocked: true,
+      navigationStale: false,
+    };
+  }
+  return { location, navigationFix, navigationStale, status, refresh: refreshRealFix, mocked: false };
 }

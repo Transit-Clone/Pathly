@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { planTrip, type Itinerary, type TripEndpoints, type TripMode, type TripPlanProblem } from '../data/tripPlanning';
+import { planTrip, type Itinerary, type ResumePlanRequest, type TripEndpoints, type TripMode, type TripPlanProblem } from '../data/tripPlanning';
 import type { RoutePreference, TripTimeChoice } from '../data/transit';
 import type { Coordinates } from './useCurrentLocation';
 
 export type TripPlanState =
   | { status: 'loading' }
-  | { status: 'loaded'; itineraries: Itinerary[]; fetchedAt: number; refreshing: boolean }
+  | { status: 'loaded'; itineraries: Itinerary[]; fetchedAt: number; refreshing: boolean; resumeRequest: ResumePlanRequest }
   | { status: 'problem'; problem: TripPlanProblem; field?: 'origin' | 'destination' };
 
 type UseTripPlanOptions = {
@@ -60,7 +60,7 @@ export function useTripPlan({ endpoints, time, preference, modes, location, loca
         key,
         refresh: refreshCount,
         state: result.ok
-          ? { status: 'loaded', itineraries: result.itineraries, fetchedAt: result.fetchedAt, refreshing: false }
+          ? { status: 'loaded', itineraries: result.itineraries, fetchedAt: result.fetchedAt, refreshing: false, resumeRequest: result.resumeRequest }
           : { status: 'problem', problem: result.problem, ...(result.field ? { field: result.field } : {}) },
       });
     });

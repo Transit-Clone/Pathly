@@ -5,6 +5,13 @@ import { callable } from '../lib/firebase';
 import type { SearchPlace } from './placesSearch';
 import { appNow, isMockClock } from '../debug/clock';
 import type { RoutePreference, TripTimeChoice } from './transit';
+import {
+  createTripSelectionIdentity,
+  sameTripSelection,
+  type TripEndpointReference,
+  type TripSelectionIdentity,
+} from './enrouteNavigation';
+import { retimeItinerary } from './tripDepartures';
 
 /** Mirrors firebase/functions/src/tripPlanning.ts — the itinerary shape planTrip returns. */
 export type LatLng = { lat: number; lng: number };
@@ -59,11 +66,27 @@ export const TRIP_TIME_ZONE = 'America/New_York';
 /** Why there are no itineraries to show (besides loading). */
 export type TripPlanProblem = 'no-origin' | 'needs-place' | 'out-of-area' | 'unavailable';
 export type TripPlanResult =
-  | { ok: true; itineraries: Itinerary[]; fetchedAt: number }
+  | { ok: true; itineraries: Itinerary[]; fetchedAt: number; resumeRequest: ResumePlanRequest }
   /** `field`: which endpoint needs choosing from search (for 'needs-place'). */
   | { ok: false; problem: TripPlanProblem; field?: 'origin' | 'destination' };
 
 export type TripEndpoints = { origin: string; originPlace?: SearchPlace; destination: string; destinationPlace?: SearchPlace };
+
+/**
+ * The provider-light request kept for relaunch recovery. Unlike the route-results picker value,
+ * its time is an absolute instant, so reopening the app never changes "today" into a later day.
+ */
+export type ResumePlanRequest = {
+  origin: TripEndpointReference;
+  destination: TripEndpointReference;
+  time: { mode: 'depart' | 'arrive'; at: string };
+  preference: 'fastest' | 'transfers';
+  modes: TripMode[];
+};
+
+export type ResumePlanResult =
+  | { ok: true; itinerary: Itinerary; fetchedAt: number }
+  | { ok: false; problem: 'unavailable' | 'no-exact-match' };
 
 // ---------------------------------------------------------------------------------------------
 // Time: the picker's clock time means its next occurrence in New York, wherever the device is.
@@ -134,14 +157,29 @@ function placeLocation(place: SearchPlace | undefined): LatLng | undefined {
 type EndpointResult = { endpoint: TripEndpoint } | { problem: 'no-origin' | 'needs-place' };
 
 function endpointFor(label: string, place: SearchPlace | undefined, location: Coordinates | null): EndpointResult {
-  if (label === CURRENT_LOCATION_LABEL) {
-    return location ? { endpoint: { label, lat: location.latitude, lng: location.longitude } } : { problem: 'no-origin' };
-  }
   const usablePlace = place?.title === label ? place : undefined;
   const placeId = googlePlaceId(usablePlace);
   const point = placeLocation(usablePlace);
+  // A Recent can deliberately carry the coordinate that was called "Current location" when the
+  // trip ran. Prefer that explicit provider-light endpoint; ordinary new searches have no place
+  // object and continue to use the rider's live position.
+  if (label === CURRENT_LOCATION_LABEL && !placeId && !point) {
+    return location ? { endpoint: { label, lat: location.latitude, lng: location.longitude } } : { problem: 'no-origin' };
+  }
   if (!placeId && !point) return { problem: 'needs-place' };
   return { endpoint: { label, ...(placeId ? { placeId } : {}), ...(point ? point : {}) } };
+}
+
+function referenceFor(endpoint: TripEndpoint, savedAt: number): TripEndpointReference | null {
+  if (endpoint.placeId) return { kind: 'place', label: endpoint.label, placeId: endpoint.placeId };
+  if (endpoint.lat === undefined || endpoint.lng === undefined) return null;
+  return { kind: 'coordinate', label: endpoint.label, point: { lat: endpoint.lat, lng: endpoint.lng }, savedAt };
+}
+
+function requestEndpoint(reference: TripEndpointReference): TripEndpoint {
+  return reference.kind === 'place'
+    ? { label: reference.label, placeId: reference.placeId }
+    : { label: reference.label, lat: reference.point.lat, lng: reference.point.lng };
 }
 
 /** The rider's position for "Current location", once a real fix exists. */
@@ -182,6 +220,32 @@ export type PlanTripOptions = {
 };
 
 /**
+ * Captures the route-results request as a safe relaunch reference. Coordinate endpoints are
+ * timestamped so navigation storage can enforce the Routes API's 30-day coordinate lifetime.
+ */
+export function createResumePlanRequest(
+  { endpoints, location, time, preference, modes, now = new Date(appNow()) }: PlanTripOptions,
+  savedAt = Date.now(),
+): ResumePlanRequest | null {
+  const origin = endpointFor(endpoints.origin, endpoints.originPlace, location);
+  if ('problem' in origin) return null;
+  const destination = endpointFor(endpoints.destination, endpoints.destinationPlace, location);
+  if ('problem' in destination) return null;
+  const originReference = referenceFor(origin.endpoint, savedAt);
+  const destinationReference = referenceFor(destination.endpoint, savedAt);
+  if (!originReference || !destinationReference) return null;
+  return {
+    origin: originReference,
+    destination: destinationReference,
+    time: time.mode === 'now'
+      ? { mode: 'depart', at: now.toISOString() }
+      : { mode: time.mode, at: nextOccurrence(time.minutes, now).at },
+    preference: preference === 'transfers' ? 'transfers' : 'fastest',
+    modes: [...modes],
+  };
+}
+
+/**
  * Real itineraries for the trip criteria from the backend (Google Routes API). Results are kept
  * for two minutes in memory only, so moving between results and a trip doesn't plan (and bill)
  * again; they're never stored, since itineraries go stale and Google limits caching them.
@@ -201,6 +265,10 @@ export async function planTrip({ endpoints, location, time, preference, modes, r
     preference: preference === 'transfers' ? 'transfers' : 'fastest',
     modes: [...modes],
   };
+  // Coordinate retention is based on when the device actually saved it, not the admin's mock
+  // planning clock (which can deliberately be months in the past or future).
+  const resumeRequest = createResumePlanRequest({ endpoints, location, time, preference, modes, now }, Date.now());
+  if (!resumeRequest) return { ok: false, problem: 'needs-place' };
   const key = JSON.stringify({ ...request, minute: time.mode === 'now' ? Math.floor(now.getTime() / ONE_MINUTE_MS) : undefined });
   const cached = cache.get(key);
   if (!refresh && cached && now.getTime() - cached.at < CACHE_MS) return cached.result;
@@ -208,13 +276,67 @@ export async function planTrip({ endpoints, location, time, preference, modes, r
   let result: TripPlanResult;
   try {
     const { data } = await planTripCallable(request);
-    result = { ok: true, itineraries: data.itineraries, fetchedAt: now.getTime() };
+    result = { ok: true, itineraries: data.itineraries, fetchedAt: now.getTime(), resumeRequest };
   } catch (error) {
     const reason = (error as { details?: { reason?: string } } | null)?.details?.reason;
     return { ok: false, problem: reason === 'out-of-area' ? 'out-of-area' : 'unavailable' };
   }
   cache.set(key, { result, at: now.getTime() });
   return result;
+}
+
+const MAX_RESUME_VARIANTS = 512;
+
+/**
+ * Candidate variants include client-retimed departures. The provider itinerary id is unchanged
+ * by retiming, so id-only matching could otherwise restore the wrong train or bus.
+ */
+function exactResumeCandidate(itineraries: readonly Itinerary[], selection: TripSelectionIdentity): Itinerary | null {
+  let checked = 0;
+  for (const itinerary of itineraries) {
+    if (sameTripSelection(createTripSelectionIdentity(itinerary), selection)) return itinerary;
+
+    const legs = itinerary.steps.filter((step): step is TransitStep => step.kind === 'transit');
+    const visit = (legIndex: number, choices: ReadonlyMap<number, string>): Itinerary | null => {
+      if (checked >= MAX_RESUME_VARIANTS) return null;
+      if (legIndex === legs.length) {
+        checked += 1;
+        // This is identity reconstruction, not a "can I still catch it now?" decision. A time
+        // before the candidate keeps every stored departure eligible, including Arrive-by plans.
+        const variant = retimeItinerary(itinerary, choices, Date.parse(itinerary.departureTime) - ONE_DAY_MS);
+        return sameTripSelection(createTripSelectionIdentity(variant), selection) ? variant : null;
+      }
+      const leg = legs[legIndex]!;
+      const departures = [...new Set([leg.from.time, ...(leg.departures ?? []).map((departure) => departure.departs)])];
+      for (const departs of departures) {
+        const found = visit(legIndex + 1, new Map(choices).set(legIndex, departs));
+        if (found) return found;
+      }
+      return null;
+    };
+    const found = visit(0, new Map());
+    if (found) return found;
+  }
+  return null;
+}
+
+/** Fresh planning for a persisted session. A merely similar route is never substituted. */
+export async function planTripForResume(request: ResumePlanRequest, selection: TripSelectionIdentity): Promise<ResumePlanResult> {
+  try {
+    const { data } = await planTripCallable({
+      origin: requestEndpoint(request.origin),
+      destination: requestEndpoint(request.destination),
+      time: request.time,
+      preference: request.preference,
+      modes: [...request.modes],
+    });
+    const itinerary = exactResumeCandidate(data.itineraries, selection);
+    return itinerary
+      ? { ok: true, itinerary, fetchedAt: appNow() }
+      : { ok: false, problem: 'no-exact-match' };
+  } catch {
+    return { ok: false, problem: 'unavailable' };
+  }
 }
 
 /** Test isolation only. */

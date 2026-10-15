@@ -1,5 +1,6 @@
 import { stopRevealZoom } from './stopDeclutter';
 import { formatTripClock, type Itinerary, type LatLng } from './tripPlanning';
+import { distanceMeters, type NavigationCursor, type NormalizedNavigationPlan } from './enrouteNavigation';
 
 export type TripMapProps = {
   /** The planned trip; omitted while results load, when only the endpoints are shown. */
@@ -13,14 +14,29 @@ export type TripMapProps = {
   focusStop?: { point: LatLng; key: number } | null;
   /** The rider's real position: drawn on the map, and what the location button centers on. */
   userLocation?: LatLng | null;
+  /** Last on-route, usable evidence allowed to drive automatic follow-camera movement. */
+  followLocation?: LatLng | null;
   /** Incremented by the location button; each change centers the map on `userLocation`. */
   centerOnUserRequest?: number;
   /** The rider dragged the map, so the location button can drop its selected state. */
   onUserPan?: () => void;
+  /** Enroute-only route states and the next point the follow camera should keep in view. */
+  navigationProgress?: TripMapProgress | null;
+  /** Whether accepted location fixes should keep updating the camera. */
+  followUser?: boolean;
+  /** Keeps the last explicit marker but gives it a visually stale treatment. */
+  userLocationStale?: boolean;
+  /** Reports gesture-paused or locate-resumed follow mode. */
+  onFollowModeChange?: (following: boolean) => void;
   testID?: string;
 };
 
 export type TripMapLeg = { path: LatLng[]; walk: boolean; color?: string };
+export type TripMapProgressState = 'completed' | 'current' | 'upcoming';
+export type TripMapRenderSegment = TripMapLeg & {
+  state: TripMapProgressState;
+  stepIndex: number;
+};
 /** `stop`: where the rider boards or gets off; `via`: a stop passed in between. */
 export type TripMapStop = {
   point: LatLng;
@@ -30,6 +46,92 @@ export type TripMapStop = {
   /** The transit leg a boarding, alighting, or in-between stop belongs to. */
   leg?: number;
 };
+
+export type TripMapProgressStop = TripMapStop & {
+  state: TripMapProgressState;
+  /** Progress never removes a stop; renderers can still apply their normal zoom decluttering. */
+  visible: boolean;
+};
+
+export type TripMapProgress = {
+  segments: TripMapRenderSegment[];
+  stops: TripMapProgressStop[];
+  followTarget: LatLng | null;
+};
+
+function closestPathIndex(path: readonly LatLng[], point: LatLng): number {
+  let closest = 0;
+  let closestDistance = Number.POSITIVE_INFINITY;
+  path.forEach((candidate, index) => {
+    const distance = distanceMeters(candidate, point);
+    if (distance < closestDistance) {
+      closest = index;
+      closestDistance = distance;
+    }
+  });
+  return closest;
+}
+
+/** Completed/current/upcoming route pieces and the immediate route point for follow-camera framing. */
+export function navigationMapProgress(plan: NormalizedNavigationPlan, cursor: NavigationCursor): TripMapProgress {
+  const segments: TripMapRenderSegment[] = [];
+  const currentCheckpoint = plan.checkpoints[cursor.checkpointOrdinal];
+
+  for (const segment of plan.segments) {
+    const base = { walk: segment.kind === 'walk', color: segment.color, stepIndex: segment.stepIndex };
+    if (cursor.phase === 'arrived' || cursor.checkpointOrdinal >= segment.endCheckpointOrdinal) {
+      if (segment.path.length >= 2) segments.push({ ...base, path: segment.path, state: 'completed' });
+      continue;
+    }
+    if (cursor.checkpointOrdinal < segment.startCheckpointOrdinal) {
+      if (segment.path.length >= 2) segments.push({ ...base, path: segment.path, state: 'upcoming' });
+      continue;
+    }
+
+    const splitIndex = currentCheckpoint ? closestPathIndex(segment.path, currentCheckpoint.point) : 0;
+    const completed = segment.path.slice(0, splitIndex + 1);
+    const current = segment.path.slice(splitIndex);
+    if (completed.length >= 2) segments.push({ ...base, path: completed, state: 'completed' });
+    if (current.length >= 2) segments.push({ ...base, path: current, state: 'current' });
+  }
+
+  const stops: TripMapProgressStop[] = plan.checkpoints.flatMap((checkpoint) => {
+    if (checkpoint.kind === 'walk') return [];
+    const segment = plan.segments.find((candidate) => candidate.stepIndex === checkpoint.stepIndex && candidate.kind === 'transit');
+    const kind: TripMapStop['kind'] = checkpoint.kind === 'start'
+      ? 'start'
+      : checkpoint.kind === 'destination'
+        ? 'end'
+        : checkpoint.kind === 'transit-stop'
+          ? 'via'
+          : 'stop';
+    const state: TripMapProgressState = checkpoint.ordinal < cursor.checkpointOrdinal
+      ? 'completed'
+      : checkpoint.ordinal === cursor.checkpointOrdinal
+        ? 'current'
+        : 'upcoming';
+    return [{
+      point: checkpoint.point,
+      kind,
+      color: segment?.color,
+      label: checkpoint.time ? `${checkpoint.label} · ${formatTripClock(checkpoint.time)}` : checkpoint.label,
+      leg: checkpoint.transitLegIndex,
+      state,
+      visible: true,
+    }];
+  });
+
+  if (cursor.phase === 'arrived') return { segments, stops, followTarget: currentCheckpoint?.point ?? null };
+  const currentSegment = plan.segments.find((segment) => cursor.checkpointOrdinal >= segment.startCheckpointOrdinal
+    && cursor.checkpointOrdinal < segment.endCheckpointOrdinal);
+  let followTarget: LatLng | null = null;
+  if (currentSegment && currentCheckpoint && currentSegment.path.length > 0) {
+    const index = closestPathIndex(currentSegment.path, currentCheckpoint.point);
+    followTarget = currentSegment.path[Math.min(index + 1, currentSegment.path.length - 1)] ?? null;
+  }
+  followTarget ??= plan.checkpoints[cursor.checkpointOrdinal + 1]?.point ?? currentCheckpoint?.point ?? null;
+  return { segments, stops, followTarget };
+}
 
 /**
  * What a trip map draws, shared by the web and native maps: one line per step (walking flagged
