@@ -139,6 +139,33 @@ export function tripMinutes(seconds: number): number {
   return Math.max(1, Math.round(seconds / 60));
 }
 
+export type DurationDisplay = {
+  /** Compact rider-facing copy, such as "42 min" or "2hr 26m". */
+  visible: string;
+  /** Natural copy for screen readers, such as "2 hours 26 minutes". */
+  accessibility: string;
+};
+
+/** Formats a whole-minute trip duration without leaving long trips as one large minute count. */
+export function formatDurationMinutes(minutes: number): DurationDisplay {
+  const totalMinutes = Math.max(0, Math.round(minutes));
+  const hours = Math.floor(totalMinutes / 60);
+  const remainingMinutes = totalMinutes % 60;
+  if (hours === 0) {
+    return {
+      visible: `${remainingMinutes} min`,
+      accessibility: `${remainingMinutes} ${remainingMinutes === 1 ? 'minute' : 'minutes'}`,
+    };
+  }
+
+  const hourAccessibility = `${hours} ${hours === 1 ? 'hour' : 'hours'}`;
+  if (remainingMinutes === 0) return { visible: `${hours}hr`, accessibility: hourAccessibility };
+  return {
+    visible: `${hours}hr ${remainingMinutes}m`,
+    accessibility: `${hourAccessibility} ${remainingMinutes} ${remainingMinutes === 1 ? 'minute' : 'minutes'}`,
+  };
+}
+
 // ---------------------------------------------------------------------------------------------
 // Endpoints
 

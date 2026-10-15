@@ -7,6 +7,7 @@ import {
   CURRENT_LOCATION_LABEL,
   createResumePlanRequest,
   fareLabel,
+  formatDurationMinutes,
   lineBadge,
   transitSteps,
   filterItinerariesByMode,
@@ -36,6 +37,18 @@ const options = (overrides: Partial<PlanTripOptions> = {}): PlanTripOptions => (
 });
 
 beforeEach(() => planTripMock().mockClear());
+
+describe('formatDurationMinutes', () => {
+  it('keeps short trips in minutes and splits long trips into hours and minutes', () => {
+    expect(formatDurationMinutes(42)).toEqual({ visible: '42 min', accessibility: '42 minutes' });
+    expect(formatDurationMinutes(146)).toEqual({ visible: '2hr 26m', accessibility: '2 hours 26 minutes' });
+  });
+
+  it('omits zero-minute tails and uses singular accessible units', () => {
+    expect(formatDurationMinutes(60)).toEqual({ visible: '1hr', accessibility: '1 hour' });
+    expect(formatDurationMinutes(61)).toEqual({ visible: '1hr 1m', accessibility: '1 hour 1 minute' });
+  });
+});
 
 describe('nextOccurrence', () => {
   it('picks today when the time is still ahead in New York, else tomorrow', () => {

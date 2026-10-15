@@ -11,7 +11,7 @@ import {
   type NormalizedNavigationPlan,
 } from '../data/enrouteNavigation';
 import { navigationMapProgress } from '../data/tripMap';
-import { badgeMode, formatTripClock, tripMinutes } from '../data/tripPlanning';
+import { badgeMode, formatDurationMinutes, formatTripClock, tripMinutes } from '../data/tripPlanning';
 import { useClock } from '../hooks/useClock';
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
@@ -101,12 +101,13 @@ function distanceCopy(meters: number): FormattedCopy {
 function movementMetadata(distanceMeters: number | null, durationSeconds: number | null, phase: 'walking' | 'transferring'): FormattedCopy | null {
   const distance = distanceMeters === null ? null : distanceCopy(distanceMeters);
   const minutes = durationSeconds === null ? null : tripMinutes(durationSeconds);
-  const visible = [distance?.visible, minutes === null ? null : `${minutes} min`].filter(Boolean).join(' · ');
+  const duration = minutes === null ? null : formatDurationMinutes(minutes);
+  const visible = [distance?.visible, duration?.visible].filter(Boolean).join(' · ');
   if (!visible) return null;
   const action = phase === 'walking' ? 'Walking' : 'Transfer';
   const accessible = [
     distance ? `${action} distance ${distance.accessible}` : null,
-    minutes === null ? null : `estimated ${action.toLowerCase()} time ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`,
+    duration === null ? null : `estimated ${action.toLowerCase()} time ${duration.accessibility}`,
   ].filter(Boolean).join('. ');
   return { accessible: `${accessible}.`, visible };
 }

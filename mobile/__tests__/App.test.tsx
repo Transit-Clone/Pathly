@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { signOut } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
 import * as Location from 'expo-location';
+import * as ReactNative from 'react-native';
 import { Linking, ScrollView, StyleSheet, View } from 'react-native';
 import mockSafeAreaContext from 'react-native-safe-area-context/jest/mock';
 
@@ -476,6 +477,8 @@ describe('Pathly prototype navigation', () => {
 
   it('plans from the rider to the picked place, and replans when the time changes', async () => {
     const screen = await openResults();
+    expect(screen.getByTestId(`search-result-duration-${LIRR_TRIP.id}`).props.children).toBe('1hr 58m');
+    expect(screen.getByLabelText(/View trip details to 123 Terry Rd, 1 hour 58 minutes,/)).toBeTruthy();
     expect(planTripMock()).toHaveBeenLastCalledWith(expect.objectContaining({
       origin: { label: 'Current location', lat: 40.9126, lng: -73.1234 },
       destination: { label: '123 Terry Rd', placeId: 'terry-road-smithtown', lat: 40.8562, lng: -73.2005 },
@@ -500,8 +503,21 @@ describe('Pathly prototype navigation', () => {
     expect(textOf(await screen.findByTestId(`schedule-${LIRR_TRIP.id}`))).toBe('8:52 AM - 10:51 AM');
 
     fireEvent.press(screen.getByTestId(`search-result-view-${LIRR_TRIP.id}`));
+    expect(screen.getByTestId('search-trip-duration').props.children).toBe('1hr 58m');
     expect(screen.getByTestId('search-trip-leave-time').props.children).toBe('8:52 AM');
     expect(screen.getByTestId('search-trip-arrive-time').props.children).toBe('10:51 AM');
+    fireEvent.press(screen.getByTestId('search-trip-back'));
+    fireEvent.press(screen.getByTestId(`search-result-view-${BUS_TRIP.id}`));
+    expect(within(screen.getByTestId('search-trip-step-1')).getByText('1hr 19m')).toBeTruthy();
+  });
+
+  it('stacks long duration metrics when accessibility text is enlarged', async () => {
+    jest.spyOn(ReactNative, 'useWindowDimensions').mockReturnValue({ fontScale: 2, height: 640, scale: 2, width: 320 });
+    const screen = await openResults();
+
+    expect(StyleSheet.flatten(screen.getByTestId(`search-result-layout-${LIRR_TRIP.id}`).props.style).flexDirection).toBe('column');
+    fireEvent.press(screen.getByTestId(`search-result-view-${LIRR_TRIP.id}`));
+    expect(StyleSheet.flatten(screen.getByTestId('search-trip-summary-layout').props.style).flexDirection).toBe('column');
   });
 
   it('plans for an arrival deadline and discards a cancelled pick', async () => {

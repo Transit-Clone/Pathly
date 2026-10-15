@@ -9,6 +9,7 @@ import {
   CURRENT_LOCATION_LABEL,
   fareLabel,
   filterItinerariesByMode,
+  formatDurationMinutes,
   requestModes,
   formatTripClock,
   lineBadge,
@@ -135,7 +136,8 @@ export function RouteResultsView({
 }: RouteResultsViewProps) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
-  const { height } = useWindowDimensions();
+  const { fontScale, height, width } = useWindowDimensions();
+  const stackLargeTextMetrics = fontScale >= 1.5 || width <= 360;
   const { destination, enabledModes, origin, preference } = criteria;
   const setPreference = (next: RoutePreference) => onChangeCriteria({ ...criteria, preference: next });
   const setEnabledModes = (update: readonly TransitMode[] | ((current: readonly TransitMode[]) => readonly TransitMode[])) => (
@@ -503,7 +505,7 @@ export function RouteResultsView({
               const legs = transitSteps(itinerary);
               // The ride badges in order, with a walk icon wherever there's real walking to do.
               const parts = itinerary.steps.filter((step) => step.kind === 'transit' || step.durationSeconds >= SHOWN_WALK_SECONDS);
-              const minutes = tripMinutes(itinerary.durationSeconds);
+              const duration = formatDurationMinutes(tripMinutes(itinerary.durationSeconds));
               const fare = fareLabel(itinerary.fare);
               const leavesIn = Math.round((Date.parse(itinerary.departureTime) - now) / 60_000);
               const span = `${formatTripClock(itinerary.departureTime)} - ${formatTripClock(itinerary.arrivalTime)}`;
@@ -512,7 +514,7 @@ export function RouteResultsView({
                 <View key={itinerary.id} style={styles.itinerary} testID={`itinerary-${itinerary.id}`}>
                   <PressableScale
                     accessibilityHint="Opens the complete trip plan"
-                    accessibilityLabel={`View trip details to ${destination}, ${minutes} minutes, ${fare}, ${timing}`}
+                    accessibilityLabel={`View trip details to ${destination}, ${duration.accessibility}, ${fare}, ${timing}`}
                     accessibilityRole="button"
                     onPress={() => {
                       if (resumeRequest) onOpenTrip(itinerary, resumeRequest);
@@ -520,8 +522,8 @@ export function RouteResultsView({
                     style={styles.itineraryPressable}
                     testID={`search-result-view-${itinerary.id}`}
                   >
-                    <View style={styles.itineraryTop}>
-                      <View style={styles.segmentColumn}>
+                    <View style={[styles.itineraryTop, stackLargeTextMetrics && styles.itineraryTopLargeText]} testID={`search-result-layout-${itinerary.id}`}>
+                      <View style={[styles.segmentColumn, stackLargeTextMetrics && styles.segmentColumnLargeText]}>
                         <View style={styles.segmentRow}>
                           {legs.length === 0 && parts.length === 0 ? <Icon color={colors.mutedInk} filled={true} name="travel" size={18} /> : null}
                           {parts.map((step, partIndex) => (
@@ -544,11 +546,10 @@ export function RouteResultsView({
                         </View>
                         <Text style={styles.nextRide} testID={`schedule-${itinerary.id}`}>{timing}</Text>
                       </View>
-                      <View style={styles.summary}>
+                      <View style={[styles.summary, stackLargeTextMetrics && styles.summaryLargeText]}>
                         <Text style={styles.fare} testID={`fare-${itinerary.id}`}>{fare}</Text>
                         <View style={styles.durationGroup}>
-                          <Text style={styles.duration}>{minutes}</Text>
-                          <Text style={styles.minuteLabel}>min</Text>
+                          <Text accessibilityLabel={duration.accessibility} style={styles.duration} testID={`search-result-duration-${itinerary.id}`}>{duration.visible}</Text>
                         </View>
                       </View>
                     </View>
@@ -626,13 +627,15 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   itinerary: { overflow: 'hidden', borderWidth: 1, borderColor: colors.border, borderRadius: 12, backgroundColor: colors.surface },
   itineraryPressable: { paddingHorizontal: 12, paddingVertical: 10 },
   itineraryTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  itineraryTopLargeText: { flexDirection: 'column', alignItems: 'stretch' },
   segmentColumn: { minWidth: 0, flex: 1 },
+  segmentColumnLargeText: { flexGrow: 0 },
   segmentRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4 },
   segmentGroup: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   nextRide: { marginTop: 6, color: colors.mutedInk, ...typography.metadata, fontSize: 10 },
-  summary: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  summary: { minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  summaryLargeText: { justifyContent: 'space-between' },
   fare: { color: colors.primary, fontFamily: fontFamilies.extraBold, fontSize: 11 },
-  durationGroup: { alignItems: 'flex-end' },
-  duration: { color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 26, lineHeight: 28 },
-  minuteLabel: { color: colors.mutedInk, ...typography.metadata, fontSize: 9 },
+  durationGroup: { minWidth: 0, flexShrink: 1, alignItems: 'flex-end' },
+  duration: { flexShrink: 1, color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 26, lineHeight: 28, textAlign: 'right' },
 });
