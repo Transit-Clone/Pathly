@@ -107,6 +107,9 @@ test('validates the request shape and the plannable time window', () => {
   const ok = requiredPlanTripRequest({ ...validData, time: { mode: 'arrive', at: '2026-10-15T16:00:00Z' }, modes: ['bus', 'bus'] }, now);
   assert.deepEqual(ok.time, { mode: 'arrive', at: '2026-10-15T16:00:00.000Z' });
   assert.deepEqual(ok.modes, ['bus']);
+  bad({ lessWalking: 'yes' });
+  assert.equal(requiredPlanTripRequest({ ...validData, lessWalking: true }, now).lessWalking, true);
+  assert.equal('lessWalking' in requiredPlanTripRequest({ ...validData, lessWalking: false }, now), false);
 });
 
 test('the backend service area matches the app\'s', () => {

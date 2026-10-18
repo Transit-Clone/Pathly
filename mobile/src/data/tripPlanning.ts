@@ -58,6 +58,8 @@ type PlanTripRequest = {
   time: { mode: 'now' } | { mode: 'depart' | 'arrive'; at: string };
   preference: RoutePreference;
   modes: TripMode[];
+  /** Settings -> Travel preferences with walking off: ask Google for less walking. */
+  lessWalking?: boolean;
 };
 
 export const CURRENT_LOCATION_LABEL = 'Current location';
@@ -82,6 +84,8 @@ export type ResumePlanRequest = {
   time: { mode: 'depart' | 'arrive'; at: string };
   preference: 'fastest' | 'transfers';
   modes: TripMode[];
+  /** Planned asking for less walking, so a resumed trip is looked for among the same results. */
+  lessWalking?: true;
 };
 
 export type ResumePlanResult =
@@ -247,6 +251,8 @@ export type PlanTripOptions = {
   time: TripTimeChoice;
   preference: RoutePreference;
   modes: readonly TripMode[];
+  /** Ask for trips with less walking (Settings -> Travel preferences, walking off). */
+  lessWalking?: boolean;
   /** Skip the short-lived cache (the refresh control). */
   refresh?: boolean;
   now?: Date;
@@ -257,7 +263,7 @@ export type PlanTripOptions = {
  * timestamped so navigation storage can enforce the Routes API's 30-day coordinate lifetime.
  */
 export function createResumePlanRequest(
-  { endpoints, location, time, preference, modes, now = new Date(appNow()) }: PlanTripOptions,
+  { endpoints, location, time, preference, modes, lessWalking = false, now = new Date(appNow()) }: PlanTripOptions,
   savedAt = Date.now(),
 ): ResumePlanRequest | null {
   const origin = endpointFor(endpoints.origin, endpoints.originPlace, location);
@@ -275,7 +281,16 @@ export function createResumePlanRequest(
       : { mode: time.mode, at: nextOccurrence(time.minutes, now).at },
     preference: preference === 'transfers' ? 'transfers' : 'fastest',
     modes: [...modes],
+    ...(asksLessWalking(preference, lessWalking) ? { lessWalking: true as const } : {}),
   };
+}
+
+/**
+ * Whether to ask Google for less walking: the Less walking sort, or walking turned off in
+ * Settings. Google takes one routing preference, so fewer transfers wins over it.
+ */
+function asksLessWalking(preference: RoutePreference, lessWalking: boolean): boolean {
+  return preference === 'walking' || (lessWalking && preference !== 'transfers');
 }
 
 /**
@@ -283,7 +298,7 @@ export function createResumePlanRequest(
  * for two minutes in memory only, so moving between results and a trip doesn't plan (and bill)
  * again; they're never stored, since itineraries go stale and Google limits caching them.
  */
-export async function planTrip({ endpoints, location, time, preference, modes, refresh = false, now = new Date(appNow()) }: PlanTripOptions): Promise<TripPlanResult> {
+export async function planTrip({ endpoints, location, time, preference, modes, lessWalking = false, refresh = false, now = new Date(appNow()) }: PlanTripOptions): Promise<TripPlanResult> {
   const origin = endpointFor(endpoints.origin, endpoints.originPlace, location);
   if ('problem' in origin) return { ok: false, problem: origin.problem, field: 'origin' };
   const destination = endpointFor(endpoints.destination, endpoints.destinationPlace, location);
@@ -294,13 +309,15 @@ export async function planTrip({ endpoints, location, time, preference, modes, r
     destination: destination.endpoint,
     // The backend's "now" is real, so an admin's mock time goes as an explicit departure.
     time: time.mode === 'now' ? (isMockClock() ? { mode: 'depart', at: now.toISOString() } : { mode: 'now' }) : { mode: time.mode, at: nextOccurrence(time.minutes, now).at },
-    // Lowest fare and fastest sort the same results; only fewer transfers asks Google differently.
+    // Lowest fare and fastest sort the same results; fewer transfers and less walking ask Google
+    // differently.
     preference: preference === 'transfers' ? 'transfers' : 'fastest',
     modes: [...modes],
+    ...(asksLessWalking(preference, lessWalking) ? { lessWalking: true } : {}),
   };
   // Coordinate retention is based on when the device actually saved it, not the admin's mock
   // planning clock (which can deliberately be months in the past or future).
-  const resumeRequest = createResumePlanRequest({ endpoints, location, time, preference, modes, now }, Date.now());
+  const resumeRequest = createResumePlanRequest({ endpoints, location, time, preference, modes, lessWalking, now }, Date.now());
   if (!resumeRequest) return { ok: false, problem: 'needs-place' };
   const key = JSON.stringify({ ...request, minute: time.mode === 'now' ? Math.floor(now.getTime() / ONE_MINUTE_MS) : undefined });
   const cached = cache.get(key);
@@ -362,6 +379,7 @@ export async function planTripForResume(request: ResumePlanRequest, selection: T
       time: request.time,
       preference: request.preference,
       modes: [...request.modes],
+      ...(request.lessWalking ? { lessWalking: true } : {}),
     });
     const itinerary = exactResumeCandidate(data.itineraries, selection);
     return itinerary
@@ -392,6 +410,7 @@ export function orderItineraries(itineraries: readonly Itinerary[], preference: 
   const byArrival = (a: Itinerary, b: Itinerary) => arrival(a) - arrival(b);
   const sorted = [...itineraries];
   if (preference === 'transfers') return sorted.sort((a, b) => a.transfers - b.transfers || byArrival(a, b));
+  if (preference === 'walking') return sorted.sort((a, b) => walkingSeconds(a) - walkingSeconds(b) || byArrival(a, b));
   if (preference === 'cheapest') {
     return sorted.sort((a, b) => (a.fare ? 0 : 1) - (b.fare ? 0 : 1) || (a.fare?.cents ?? 0) - (b.fare?.cents ?? 0) || byArrival(a, b));
   }
@@ -405,6 +424,21 @@ export function orderItineraries(itineraries: readonly Itinerary[], preference: 
 export function requestModes(enabled: readonly TransitMode[]): TripMode[] {
   const known = enabled.filter((mode): mode is TripMode => mode !== 'ferry');
   return known.length > 0 ? known : ['subway', 'bus', 'rail'];
+}
+
+/** Total walking in a trip, in seconds. */
+export function walkingSeconds(itinerary: Itinerary): number {
+  return itinerary.steps.reduce((total, step) => total + (step.kind === 'walk' ? step.durationSeconds : 0), 0);
+}
+
+/**
+ * Trips within the rider's walking limit (Settings -> Travel preferences), or null when there's
+ * no limit or no trip fits, so the caller can show every trip rather than none.
+ */
+export function filterItinerariesByWalk(itineraries: readonly Itinerary[], maxWalkMinutes: number | null): Itinerary[] | null {
+  if (maxWalkMinutes === null) return null;
+  const within = itineraries.filter((itinerary) => walkingSeconds(itinerary) <= maxWalkMinutes * 60);
+  return within.length > 0 ? within : null;
 }
 
 /** Itineraries that use only enabled modes; Google treats excluded modes as a preference only. */

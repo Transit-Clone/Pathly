@@ -3,7 +3,8 @@ import type { Itinerary, TransitStep, TripDeparture, TripStep } from './tripPlan
 /**
  * Picking another departure for a leg of a planned trip (the departure box on each leg). The
  * backend lists each matched leg's scheduled departures between the same two stops; choosing one
- * re-times that leg, and every later leg moves to the first departure it can still make.
+ * re-times that leg, and every later leg moves to the first departure it can then make: later when
+ * the connection is missed, earlier when an earlier pick frees one up.
  */
 
 /** A rider's picks: transit leg index (0-based, transit legs only) -> the chosen `departs`. */
@@ -14,6 +15,8 @@ export type LegDepartureOption = TripDeparture & { selected: boolean; reachable:
 
 /** Departures within this of each other are the same one. */
 const SAME_DEPARTURE_MS = 60_000;
+/** The least time to change vehicles at the same stop, when a moved connection is re-picked. */
+const TRANSFER_BUFFER_MS = 60_000;
 
 const ms = (iso: string) => Date.parse(iso);
 
@@ -67,6 +70,9 @@ function retime(itinerary: Itinerary, choices: DepartureChoices, nowMs: number):
   const earliest: number[] = [];
   let legIndex = 0;
   let previousArrival: number | null = null;
+  // Whether an earlier leg runs at other times than planned; until one does, the plan's own
+  // connections stand.
+  let shifted = false;
   const steps = itinerary.steps.map((step): TripStep => {
     if (step.kind !== 'transit') return step;
     const index = legIndex;
@@ -81,13 +87,18 @@ function retime(itinerary: Itinerary, choices: DepartureChoices, nowMs: number):
     let option = picked;
     if (!option) {
       const planned = plannedDeparture(step);
-      // A later leg that's now missed moves to the first departure it can make; the first leg
-      // keeps its planned time unless the rider picks another.
-      option = previousArrival === null || ms(planned.departs) >= canMake
+      // The first leg keeps its planned time unless the rider picks another. A later leg after a
+      // moved one takes the first departure it can make (with time to change when there's no
+      // walk), earlier or later than planned; after unmoved legs, the plan's connection stands.
+      const firstMakeable = (from: number) => options.find((candidate) => ms(candidate.departs) >= from);
+      option = previousArrival === null
         ? planned
-        : options.find((candidate) => ms(candidate.departs) >= canMake) ?? planned;
+        : shifted
+          ? firstMakeable(canMake + (walkMs > 0 ? 0 : TRANSFER_BUFFER_MS)) ?? firstMakeable(canMake) ?? planned
+          : ms(planned.departs) >= canMake ? planned : firstMakeable(canMake) ?? planned;
     }
     const retimed = option.departs === step.from.time && option.arrives === step.to.time ? step : retimeStep(step, option);
+    if (retimed !== step) shifted = true;
     previousArrival = ms(retimed.to.time);
     return retimed;
   });

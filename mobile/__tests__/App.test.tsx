@@ -260,7 +260,7 @@ describe('Pathly prototype navigation', () => {
     const row = await screen.findByTestId('search-result-stony-brook-university');
     expect(within(row).getByText('location-outline', { includeHiddenElements: true })).toBeTruthy();
     expect(within(row).getByText('Stony Brook University')).toBeTruthy();
-    expect(within(row).getByText('Stony Brook, NY, USA')).toBeTruthy();
+    expect(within(row).getByText('Stony Brook, NY')).toBeTruthy();
     expect(mockAutocompletePlaces).toHaveBeenCalledTimes(1);
   });
 
@@ -477,7 +477,7 @@ describe('Pathly prototype navigation', () => {
 
   it('plans from the rider to the picked place, and replans when the time changes', async () => {
     const screen = await openResults();
-    expect(screen.getByTestId(`search-result-duration-${LIRR_TRIP.id}`).props.children).toBe('1hr 58m');
+    expect(screen.getByTestId(`search-result-duration-${LIRR_TRIP.id}`)).toHaveTextContent('1hr 58m');
     expect(screen.getByLabelText(/View trip details to 123 Terry Rd, 1 hour 58 minutes,/)).toBeTruthy();
     expect(planTripMock()).toHaveBeenLastCalledWith(expect.objectContaining({
       origin: { label: 'Current location', lat: 40.9126, lng: -73.1234 },
@@ -831,7 +831,7 @@ describe('Pathly prototype navigation', () => {
     expect(within(screen.getByTestId('favorite-routes')).getByTestId(`route-card-${eCardId}`)).toBeTruthy();
     const places = screen.getByTestId('saved-locations');
     expect(within(places).getByTestId('saved-location-123 Terry Rd')).toBeTruthy();
-    expect(within(places).getByText('123 Terry Rd, Smithtown, NY 11787, USA')).toBeTruthy();
+    expect(within(places).getByText('Smithtown, NY 11787')).toBeTruthy();
 
     fireEvent.press(within(screen.getByTestId('favorite-routes')).getByTestId(`route-card-${eCardId}-primary`));
     expect(screen.getByTestId(`route-detail-${eCardId}`)).toBeTruthy();
@@ -1191,7 +1191,7 @@ describe('Pathly prototype navigation', () => {
     });
   });
 
-  it('opens every profile category and keeps settings interactions local', async () => {
+  it('opens every profile category and each page does something real', async () => {
     const fetchMock = jest.fn();
     globalThis.fetch = fetchMock as unknown as typeof fetch;
     const screen = await renderHome();
@@ -1203,43 +1203,74 @@ describe('Pathly prototype navigation', () => {
 
     fireEvent.press(screen.getByTestId('settings-row-account'));
     fireEvent.press(screen.getByTestId('account-display-name'));
-    expect(screen.getByText(/coming soon/)).toBeTruthy();
+    expect(screen.getByTestId('account-name-input').props.value).toBe('Pathly Rider');
+    expect(screen.queryByText(/coming soon/)).toBeNull();
+    expect(screen.queryByTestId('account-phone')).toBeNull();
     fireEvent.press(screen.getByTestId('settings-back'));
 
     fireEvent.press(screen.getByTestId('settings-row-notifications'));
     fireEvent(screen.getByTestId('toggle-notifications'), 'valueChange', false);
-    expect(screen.getByText('Updated for this prototype session only')).toBeTruthy();
+    expect(screen.getByText('Notification preferences saved')).toBeTruthy();
+    expect(screen.getByTestId('notifications-not-sent')).toBeTruthy();
     fireEvent.press(screen.getByTestId('settings-back'));
 
     fireEvent.press(screen.getByTestId('settings-row-accessibility'));
     fireEvent.press(screen.getByTestId('text-size-large'));
     expect(screen.getByTestId('text-size-large').props.accessibilityState).toEqual({ selected: true });
+    fireEvent.press(screen.getByTestId('text-size-default'));
     fireEvent.press(screen.getByTestId('settings-back'));
 
     fireEvent.press(screen.getByTestId('settings-row-privacy'));
-    fireEvent(screen.getByTestId('toggle-location'), 'valueChange', false);
-    expect(screen.getByText(/do not change device permissions/)).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId('privacy-location')).toHaveTextContent(/Not allowed/));
     fireEvent.press(screen.getByTestId('settings-back'));
 
     fireEvent.press(screen.getByTestId('settings-row-travel'));
     fireEvent.press(screen.getByTestId('travel-mode-rail'));
-    expect(screen.getByTestId('travel-mode-rail').props.accessibilityState).toEqual({ selected: true });
+    expect(screen.getByTestId('travel-mode-rail').props.accessibilityState).toEqual({ checked: false });
     fireEvent.press(screen.getByTestId('settings-back'));
 
     fireEvent.press(screen.getByTestId('settings-row-places'));
+    // Adding a place searches for it, and cancelling comes back to Saved places.
     fireEvent.press(screen.getByTestId('add-saved-place'));
-    expect(screen.getByText(/session only/)).toBeTruthy();
+    expect(screen.getByTestId('search-input').props.placeholder).toBe('Search for a place to save');
+    fireEvent.press(screen.getByLabelText('Cancel destination search'));
+    expect(screen.getByTestId('settings-places')).toBeTruthy();
     fireEvent.press(screen.getByTestId('settings-back'));
 
     fireEvent.press(screen.getByTestId('settings-row-help'));
-    expect(screen.getByText('Version 0.1.0 · Local preview')).toBeTruthy();
+    expect(screen.getByText('Version 0.1.0')).toBeTruthy();
     fireEvent.press(screen.getByTestId('help-faq'));
-    expect(screen.getByText('FAQ preview opened locally')).toBeTruthy();
+    expect(screen.getByTestId('help-faq-content')).toBeTruthy();
     fireEvent.press(screen.getByTestId('settings-back'));
 
     fireEvent.press(screen.getByTestId('sign-out'));
     expect(signOut).toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('starts new trip searches from the travel preferences', async () => {
+    (Location.requestForegroundPermissionsAsync as jest.Mock).mockResolvedValue({ status: 'granted' });
+    (Location.getCurrentPositionAsync as jest.Mock).mockResolvedValue({ coords: { latitude: 40.9126, longitude: -73.1234 } });
+    const screen = await renderHome();
+    fireEvent.press(screen.getByTestId('profile-trigger'));
+    fireEvent.press(screen.getByTestId('settings-row-travel'));
+    fireEvent.press(screen.getByTestId('travel-mode-ferry'));
+    fireEvent(screen.getByTestId('toggle-fewer-transfers'), 'valueChange', true);
+    fireEvent(screen.getByTestId('toggle-walking'), 'valueChange', false);
+    fireEvent.press(screen.getByTestId('settings-back'));
+    fireEvent.press(screen.getByTestId('profile-back'));
+
+    const planTripMock = (httpsCallable as jest.Mock)({}, 'planTrip') as jest.Mock;
+    planTripMock.mockClear();
+    fireEvent.press(screen.getByTestId('search-trigger'));
+    await pickPlace(screen, 'times', 'times-square');
+
+    await waitFor(() => expect(planTripMock).toHaveBeenCalled());
+    // Ferry is off and fewer transfers wins over less walking (Google takes one routing preference).
+    expect(planTripMock.mock.calls.at(-1)?.[0]).toMatchObject({ preference: 'transfers', modes: ['subway', 'bus', 'rail'] });
+    expect(planTripMock.mock.calls.at(-1)?.[0].lessWalking).toBeUndefined();
+    fireEvent.press(screen.getByTestId('filter-control'));
+    expect(screen.getByTestId('preference-transfers').props.accessibilityState).toMatchObject({ selected: true });
   });
 
   it("batches each agency's cards into one request, without waiting on another agency", async () => {

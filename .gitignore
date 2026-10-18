@@ -43,3 +43,6 @@ npm-debug.log*
 .idea/
 .vscode/
 *.swp
+
+# Walking graph tiles: build with `npm run build:walking` in firebase/functions before deploying.
+firebase/functions/static_data/walking/

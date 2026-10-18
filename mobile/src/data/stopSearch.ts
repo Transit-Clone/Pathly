@@ -36,11 +36,14 @@ const searchTransitStopsCallable = callable<SearchTransitStopsRequest, SearchTra
 
 const nearPoint = (near?: { latitude: number; longitude: number } | null) => (near ? { near: { lat: near.latitude, lng: near.longitude } } : {});
 
-/** What a stop is, in words: "LIRR station", "Subway station", "Bus stop · NICE Bus", or "Ferry landing · NYC Ferry". */
+/**
+ * What a stop is, in words: "Subway station", "Bus stop", "Ferry landing", or "LIRR station". The
+ * agency is left to the route badges beside it, which already show whose lines stop there.
+ */
 export function stopKindLabel(mode: StopSuggestion['mode'], agencyLabel: string): string {
   if (mode === 'subway') return 'Subway station';
-  if (mode === 'bus') return `Bus stop · ${agencyLabel}`;
-  if (mode === 'ferry') return `Ferry landing · ${agencyLabel}`;
+  if (mode === 'bus') return 'Bus stop';
+  if (mode === 'ferry') return 'Ferry landing';
   return `${agencyLabel} station`;
 }
 

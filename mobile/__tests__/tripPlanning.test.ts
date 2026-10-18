@@ -119,6 +119,13 @@ describe('planTrip', () => {
     expect(await planTrip(options({ refresh: true }))).toEqual({ ok: false, problem: 'unavailable' });
   });
 
+  it('asks Google for less walking for the Less walking sort, and remembers it for resuming', async () => {
+    await planTrip(options({ preference: 'walking' }));
+    expect(planTripMock()).toHaveBeenLastCalledWith(expect.objectContaining({ preference: 'fastest', lessWalking: true }));
+    expect(createResumePlanRequest(options({ preference: 'walking' }))).toMatchObject({ preference: 'fastest', lessWalking: true });
+    expect(createResumePlanRequest(options())).not.toHaveProperty('lessWalking');
+  });
+
   it('serves a repeat from the short cache, while refresh plans again', async () => {
     await planTrip(options());
     await planTrip(options({ now: new Date('2026-10-14T12:30:30Z') }));
@@ -229,6 +236,8 @@ describe('ordering and filtering', () => {
     expect(orderItineraries([lirr, direct], 'transfers').map((i) => i.id)).toEqual(['direct', lirr.id]);
     const ordered = orderItineraries([priced(lirr), priced(busLirr, 2925), priced({ ...lirr, id: 'cheap' }, 1700)], 'cheapest');
     expect(ordered.map((i) => i.id)).toEqual(['cheap', busLirr.id, lirr.id]);
+    const strolling: Itinerary = { ...lirr, id: 'strolling', steps: [{ kind: 'walk', durationSeconds: 1800, distanceMeters: 2400, toName: 'Stop', path: [] }, ...lirr.steps] };
+    expect(orderItineraries([strolling, lirr], 'walking').map((i) => i.id)).toEqual([lirr.id, 'strolling']);
   });
 
   it('hides an itinerary that uses an excluded mode', () => {

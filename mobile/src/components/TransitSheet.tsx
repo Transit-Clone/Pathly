@@ -6,14 +6,14 @@ import { applyRouteLive } from '../data/applyRouteLive';
 import type { RecentTripV1 } from '../data/navigationStorage';
 import { useTransitLiveMap } from '../data/TransitLiveContext';
 import type { RouteDetail } from '../data/transit';
-import type { SavedLocation } from '../data/userData';
+import { sortSavedLocations, type SavedLocation } from '../data/userData';
 import { useNow } from '../hooks/useNow';
 import { useAppSettings, useTheme, useThemedStyles } from '../theme/AppSettings';
 import { useLayoutEase, useNativeDriver } from '../theme/motion';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
 import { Icon } from './Icon';
-import { SavedLocationCard } from './SavedLocationCard';
+import { AddSavedPlaceCard, SavedLocationCard } from './SavedLocationCard';
 import { NearbySkeleton } from './Skeleton';
 import { TransitCard } from './TransitCard';
 import { PressableScale } from './PressableScale';
@@ -32,6 +32,8 @@ type TransitSheetProps = {
   /** A re-search is in flight (e.g. for a new map center) while the current list stays visible. */
   nearbyRefreshing?: boolean;
   onOpenSavedLocation: (location: SavedLocation) => void;
+  /** Starts saving a new place; offered under Favorites -> Places when set. */
+  onAddSavedPlace?: () => void;
   /** Opens a fresh route search for a completed trip; stored provider results are never replayed. */
   onOpenRecentTrip: (trip: RecentTripV1) => void;
   onOpenRoute: (routeId: string) => void;
@@ -73,6 +75,7 @@ export function TransitSheet({
   nearbyRoutes,
   nearbyStatus,
   onOpenSavedLocation,
+  onAddSavedPlace,
   onOpenRecentTrip,
   onOpenRoute,
   onTabChange,
@@ -352,10 +355,10 @@ export function TransitSheet({
                     })}
                   </View>
                 ) : null}
-                {savedLocations.length > 0 ? (
+                {savedLocations.length > 0 || onAddSavedPlace ? (
                   <View style={styles.favoriteTrips} testID="saved-locations">
                     <Text style={[styles.sectionLabel, styles.sectionHeading, styles.flushHeading]}>PLACES</Text>
-                    {savedLocations.map((location) => (
+                    {sortSavedLocations(savedLocations).map((location) => (
                       <SavedLocationCard
                         key={location.id}
                         location={location}
@@ -363,6 +366,7 @@ export function TransitSheet({
                         testID={`saved-location-${location.address.name}`}
                       />
                     ))}
+                    {onAddSavedPlace ? <AddSavedPlaceCard onPress={onAddSavedPlace} /> : null}
                   </View>
                 ) : null}
               </View>
@@ -370,7 +374,8 @@ export function TransitSheet({
               <View style={[styles.tabContent, styles.emptyState, { minHeight: tabContentMinHeight }]} testID="favorites-route-content">
                 <View style={styles.emptyIcon}><Icon name="favorite" size={30} /></View>
                 <Text style={styles.emptyTitle}>No favorites yet</Text>
-                <Text style={styles.emptyBody}>Tap the star on a route, or on a trip to save its destination.</Text>
+                <Text style={styles.emptyBody}>Tap the star on a route, or save a place like home or work.</Text>
+                {onAddSavedPlace ? <View style={styles.emptyAction}><AddSavedPlaceCard onPress={onAddSavedPlace} /></View> : null}
               </View>
             )
           )}
@@ -448,6 +453,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 20,
   },
+  emptyAction: { alignSelf: 'stretch', marginTop: 16 },
   emptyIcon: { width: 60, height: 60, alignItems: 'center', justifyContent: 'center', borderRadius: 30, backgroundColor: colors.blueSoft },
   emptyTitle: { marginTop: 8, color: colors.ink, ...typography.sectionHeading, fontSize: 16 },
   emptyBody: {

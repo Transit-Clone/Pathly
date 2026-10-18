@@ -39,7 +39,20 @@ export type Location = {
   placeId: string;
   /** A transit stop's mode, agency, and lines, so its recent row keeps its icon and badges. */
   transit?: { kind: PlaceKind; agency: string; routes: StopRoute[] };
+  /** A saved place's own name ("Home", "Work", "Gym"), shown in place of the place's name. */
+  label?: string;
+  /** The icon the rider picked for a saved place; otherwise one follows from its name. */
+  icon?: SavedPlaceIcon;
 };
+
+/** Icons a rider can pick for a saved place (firestore.rules allows exactly these). */
+export const SAVED_PLACE_ICONS = ['home', 'work', 'school', 'place', 'favorite', 'heart', 'cafe', 'restaurant', 'cart', 'fitness', 'people', 'medical'] as const;
+export type SavedPlaceIcon = (typeof SAVED_PLACE_ICONS)[number];
+
+/** The longest saved-place label (firestore.rules allows this many characters). */
+export const MAX_PLACE_LABEL = 40;
+/** Labels a rider has at most one of: saving a new Home moves the label off the old one. */
+const UNIQUE_LABELS = ['home', 'work'];
 
 /** The most lines kept on a saved stop (firestore.rules allows this many). */
 const MAX_SAVED_ROUTES = 30;
@@ -110,11 +123,33 @@ export function findSavedLocation(saved: readonly SavedLocation[], place: Search
   return nameMatches.length === 1 ? nameMatches[0] : undefined;
 }
 
-function writeEntry(uid: string, collectionName: string, dateField: string, place: SearchPlace, type: LocationType) {
+function writeEntry(uid: string, collectionName: string, dateField: string, place: SearchPlace, type: LocationType, label?: string, icon?: SavedPlaceIcon) {
   return setDoc(doc(db, 'users', uid, collectionName, placeKey(place.id)), {
-    address: placeToLocation(place, type),
+    address: { ...placeToLocation(place, type), ...(label ? { label } : {}), ...(icon ? { icon } : {}) },
     [dateField]: serverTimestamp(),
   });
+}
+
+/** What a saved place is called: the rider's label when it has one, else the place's own name. */
+export function savedPlaceName(location: Location): string {
+  return location.label?.trim() || location.name;
+}
+
+/** Home first, then Work, then the rest as saved (newest first). */
+export function sortSavedLocations(saved: readonly SavedLocation[]): SavedLocation[] {
+  const rank = (entry: SavedLocation) => {
+    const index = UNIQUE_LABELS.indexOf(entry.address.label?.trim().toLowerCase() ?? '');
+    return index < 0 ? UNIQUE_LABELS.length : index;
+  };
+  return saved.map((entry, index) => ({ entry, index }))
+    .sort((a, b) => rank(a.entry) - rank(b.entry) || a.index - b.index)
+    .map(({ entry }) => entry);
+}
+
+/** The saved place labelled Home or Work, if there is one. */
+export function findLabeledLocation(saved: readonly SavedLocation[], label: string): SavedLocation | undefined {
+  const wanted = label.trim().toLowerCase();
+  return saved.find((entry) => entry.address.label?.trim().toLowerCase() === wanted);
 }
 
 /** Newest-first listener; `date` is null briefly while a just-written server timestamp is pending. */
@@ -157,6 +192,17 @@ export function recordNavigation(uid: string, place: SearchPlace) {
 
 export function saveLocation(uid: string, place: SearchPlace, type: LocationType = 'Other') {
   return writeEntry(uid, SAVED_LOCATIONS, 'dateSaved', place, type);
+}
+
+/**
+ * Saves a place under the rider's own label. Home and Work are one each, so a place that held the
+ * label before is dropped from saved places (it was only saved as that label).
+ */
+export async function saveLabeledLocation(uid: string, place: SearchPlace, label: string, saved: readonly SavedLocation[], icon?: SavedPlaceIcon) {
+  const trimmed = label.trim().slice(0, MAX_PLACE_LABEL);
+  const previous = UNIQUE_LABELS.includes(trimmed.toLowerCase()) ? findLabeledLocation(saved, trimmed) : undefined;
+  await writeEntry(uid, SAVED_LOCATIONS, 'dateSaved', place, 'Destination', trimmed || undefined, icon);
+  if (previous && previous.address.placeId !== place.id) await removeSavedLocation(uid, previous.address.placeId);
 }
 
 export function removeSavedLocation(uid: string, placeId: string) {

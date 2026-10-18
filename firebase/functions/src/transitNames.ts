@@ -25,9 +25,14 @@ function recaseWord(word: string, first: boolean): string {
   return lower.charAt(0).toUpperCase() + lower.slice(1);
 }
 
-/** A stop name or headsign as riders should read it: all-caps names recased, others unchanged. */
+/**
+ * A stop name or headsign as riders should read it: all-caps names recased, others unchanged. MTA
+ * bus headsigns are capitals around a lowercase "via" ("SOUTH FERRY via 2 AV"); a lowercase
+ * connector word doesn't make a name the agency's own mixed-case styling.
+ */
 export function displayTransitName(name: string): string {
-  if (!/[A-Z]/.test(name) || /[a-z]/.test(name)) return name;
+  if (typeof name !== 'string' || !/[A-Z]/.test(name)) return name;
+  if (/[a-z]/.test(name.replace(/\b[a-z]+\b/g, (word) => (MINOR_WORDS.has(word) ? '' : word)))) return name;
   let first = true;
   // Words are runs of letters, digits and apostrophes; separators ("/", "-", " ", "(") are kept.
   return name.replace(/[A-Z0-9']+/g, (word) => {

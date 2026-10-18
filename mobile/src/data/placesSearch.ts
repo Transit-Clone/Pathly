@@ -33,6 +33,28 @@ export function placeKindForTypes(types: readonly string[] | undefined): PlaceKi
   return types?.includes('transit_station') ? 'rail' : 'place';
 }
 
+/** Street words Google writes both ways ("William St" in one reply, "William Street" in another). */
+const ADDRESS_WORDS: Record<string, string> = {
+  street: 'st', avenue: 'ave', boulevard: 'blvd', road: 'rd', drive: 'dr', place: 'pl', lane: 'ln',
+  court: 'ct', parkway: 'pkwy', highway: 'hwy', turnpike: 'tpke', east: 'e', west: 'w', north: 'n', south: 's',
+};
+
+function addressKey(text: string): string {
+  return text.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).map((word) => ADDRESS_WORDS[word] ?? word).join(' ');
+}
+
+/**
+ * A place's second line, completing its first: the rest of the address under a street address
+ * ("123 William Street" / "New York, NY"), or the whole address under a named place. The country
+ * is dropped, and so is a repeat of the first line at the address's start.
+ */
+export function addressAfterName(title: string, address: string): string {
+  let parts = address.split(',').map((part) => part.trim()).filter(Boolean);
+  if (parts.length > 1 && /^(usa|united states)$/i.test(parts.at(-1)!)) parts = parts.slice(0, -1);
+  if (parts.length > 1 && addressKey(parts[0]!) === addressKey(title)) parts = parts.slice(1);
+  return parts.join(', ');
+}
+
 const PLACES_BASE_URL = 'https://places.googleapis.com/v1';
 const DETAILS_FIELD_MASK = 'id,displayName,formattedAddress,location';
 

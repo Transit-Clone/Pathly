@@ -25,13 +25,21 @@ jest.mock('@firebase/auth', () => ({
 
 jest.mock('firebase/auth', () => ({
   createUserWithEmailAndPassword: jest.fn(),
+  deleteUser: jest.fn(() => Promise.resolve()),
+  EmailAuthProvider: { credential: jest.fn((email, password) => ({ providerId: 'password', email, password })) },
+  reauthenticateWithCredential: jest.fn(() => Promise.resolve()),
+  sendPasswordResetEmail: jest.fn(() => Promise.resolve()),
   onAuthStateChanged: jest.fn((_auth, callback) => {
     callback(mockUser);
     return () => undefined;
   }),
   signInWithEmailAndPassword: jest.fn(),
   signOut: jest.fn(),
-  updateProfile: jest.fn(),
+  // Like Firebase, renames the User object in place.
+  updateProfile: jest.fn((user, profile) => {
+    Object.assign(user, profile);
+    return Promise.resolve();
+  }),
 }));
 
 // A tiny in-memory Firestore: refs are just paths, writes notify listeners synchronously (like
@@ -60,6 +68,8 @@ jest.mock('firebase/firestore', () => {
       return Promise.resolve();
     }),
     doc: jest.fn(ref),
+    getDoc: jest.fn((docRef) => Promise.resolve({ exists: () => mockDocs.has(docRef.path), data: () => mockDocs.get(docRef.path) })),
+    getDocs: jest.fn((queryRef) => Promise.resolve(snapshotOf(queryRef.path))),
     getFirestore: jest.fn(() => ({})),
     limit: jest.fn(),
     onSnapshot: jest.fn((queryRef, onNext) => {
@@ -80,9 +90,10 @@ jest.mock('firebase/firestore', () => {
       });
     }),
     serverTimestamp: jest.fn(() => null),
-    setDoc: jest.fn((docRef, data) => {
+    setDoc: jest.fn((docRef, data, options) => {
+      const merged = options?.merge ? { ...mockDocs.get(docRef.path), ...data } : data;
       mockDocs.delete(docRef.path);
-      mockDocs.set(docRef.path, data);
+      mockDocs.set(docRef.path, merged);
       notify();
       return Promise.resolve();
     }),
@@ -261,6 +272,7 @@ jest.mock('firebase/functions', () => {
 // Stony Brook fallback rather than racing a real (mocked) GPS lookup.
 jest.mock('expo-location', () => ({
   requestForegroundPermissionsAsync: jest.fn(() => Promise.resolve({ status: 'denied' })),
+  getForegroundPermissionsAsync: jest.fn(() => Promise.resolve({ status: 'denied', canAskAgain: false })),
   getCurrentPositionAsync: jest.fn(),
   watchPositionAsync: jest.fn(() => Promise.resolve({ remove: jest.fn() })),
   Accuracy: { Balanced: 3 },

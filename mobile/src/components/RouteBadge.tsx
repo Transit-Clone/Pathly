@@ -52,6 +52,14 @@ export function badgeLabel(route: { agency: string; shortName: string }): string
   return name.split(/\s+/).map((word) => word[0]?.toUpperCase() ?? '').join('').slice(0, MAX_BADGE_LABEL);
 }
 
+/**
+ * The MTA's peak-direction express variants (`6X`, `7X`, `FX`): the same line, signed as its
+ * letter in a diamond rather than a circle. Returns the line it runs as, or null.
+ */
+export function subwayExpressLine(shortName: string): string | null {
+  return /^[0-9A-Z]X$/.test(shortName) ? shortName[0]! : null;
+}
+
 const sizes = {
   small: { height: 28, fontSize: 12, icon: 13, padding: 7 },
   medium: { height: 36, fontSize: 14, icon: 15, padding: 9 },
@@ -89,6 +97,23 @@ export function RouteBadge({
   const metrics = sizes[size];
   // Ferries always carry the boat: with the pill shape, it's what sets them apart from buses.
   const showIcon = mode === 'rail' || mode === 'ferry' || (mode === 'bus' && withModeIcon);
+  const expressLine = mode === 'subway' ? subwayExpressLine(shortName) : null;
+
+  if (expressLine) {
+    // A square turned 45° fills the same box as the line's circle; the letter stays upright.
+    const side = Math.round(metrics.height / Math.SQRT2);
+    return (
+      <View
+        accessibilityLabel={`${expressLine} express ${modeLabels[mode]}`}
+        accessible={true}
+        style={[styles.badge, { width: metrics.height, height: metrics.height }, style]}
+        testID={testID}
+      >
+        <View style={[styles.diamond, { width: side, height: side, backgroundColor: color }]} />
+        <Text style={[styles.text, { fontSize: metrics.fontSize }, textColor ? { color: textColor } : null]}>{expressLine}</Text>
+      </View>
+    );
+  }
 
   return (
     <View
@@ -119,6 +144,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     gap: 3,
     flexShrink: 0,
   },
+  diamond: { position: 'absolute', borderRadius: 2, transform: [{ rotate: '45deg' }] },
   text: {
     color: colors.white,
     fontFamily: fontFamilies.extraBold,

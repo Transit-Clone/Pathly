@@ -10,6 +10,7 @@ import {
   loadRouteStopCounts,
   loadRouteStopTimes,
 } from './gtfsStaticData';
+import { walkingMeters } from './walkingGraph';
 
 export type NearbyStop = {
   /** The parent station's stop_id for agencies with directional platform stop_ids (one entry per physical station, not per direction); otherwise the stop's own id. */
@@ -69,12 +70,49 @@ export async function getRouteGeometry(agencyId: AgencyId, routeId: string, dire
   );
 }
 
+/** One direction's stop. `walkMeters` is the walk there along the street graph, or null when it fell back to straight line. */
+export type RouteDirectionStop = { stopId: string; name: string; headsign: string | null; walkMeters: number | null };
+
 export type NearestRouteStop = {
-  /** Smallest of direction1/direction0's distanceMeters — "how far is the nearest thing on this route", for display. */
+  /** Smallest straight-line distance to direction1's/direction0's stop — "how far is the nearest thing on this route", for display and the Nearby radius. */
   distanceMeters: number;
-  direction1: { stopId: string; name: string; headsign: string | null } | null;
-  direction0: { stopId: string; name: string; headsign: string | null } | null;
+  direction1: RouteDirectionStop | null;
+  direction0: RouteDirectionStop | null;
 };
+
+// Within this straight-line distance the stop is chosen by walking distance; farther out (an LIRR
+// station riders drive to) straight line is what matters, and searching that far would be slow.
+const WALK_RANGE_METERS = 2_500;
+// A walk longer than this isn't searched; such a stop counts as unreachable on foot.
+const WALK_LIMIT_METERS = 5_000;
+// The straight-line nearest few are enough: walking is never shorter than straight line, so the
+// search stops at the first stop farther in straight line than the best walk so far.
+const MAX_WALK_CANDIDATES = 6;
+
+type CandidateStop = { stopId: string; name: string; lat: number; lon: number; distanceMeters: number };
+
+/**
+ * The candidate nearest on foot from (lat, lon), or the straight-line nearest when walking data
+ * is missing, the stops are out of walking range, or none can be reached on foot. `candidates`
+ * must be sorted by straight-line distance.
+ */
+export function pickWalkingNearest(
+  candidates: readonly CandidateStop[],
+  lat: number,
+  lon: number,
+  walk: (toLat: number, toLon: number) => number | null = (toLat, toLon) => walkingMeters(lat, lon, toLat, toLon, WALK_LIMIT_METERS),
+): { stop: CandidateStop; walkMeters: number | null } | null {
+  const nearest = candidates[0];
+  if (!nearest) return null;
+  if (nearest.distanceMeters > WALK_RANGE_METERS) return { stop: nearest, walkMeters: null };
+  let best: { stop: CandidateStop; walkMeters: number } | null = null;
+  for (const stop of candidates.slice(0, MAX_WALK_CANDIDATES)) {
+    if (best && stop.distanceMeters >= best.walkMeters) break;
+    const meters = walk(stop.lat, stop.lon);
+    if (meters !== null && (!best || meters < best.walkMeters)) best = { stop, walkMeters: meters };
+  }
+  return best ?? { stop: nearest, walkMeters: null };
+}
 
 /**
  * The nearest stop *on one specific route* to a point, resolved independently for each
@@ -105,20 +143,20 @@ export async function getNearestStopForRoute(agencyId: AgencyId, routeId: string
   const tripCountByDirectionAndStop = await loadRouteStopCounts(agencyId, routeId);
 
   const MIN_SERVICE_FRACTION = 0.1;
-  const nearestInDirection = (directionId: 0 | 1): { stopId: string; name: string; headsign: string | null; distanceMeters: number } | null => {
+  const nearestInDirection = (directionId: 0 | 1): (RouteDirectionStop & { distanceMeters: number }) | null => {
     const tripCounts = tripCountByDirectionAndStop[directionId];
     const maxTripCount = Math.max(0, ...tripCounts.values());
-    let nearest: { stopId: string; name: string; distanceMeters: number } | null = null;
+    const candidates: CandidateStop[] = [];
     for (const [stopId, tripCount] of tripCounts) {
       if (tripCount < maxTripCount * MIN_SERVICE_FRACTION) continue;
       const stop = stopsById.get(stopId);
       if (!stop) continue;
-      const distanceMeters = haversineMeters(lat, lon, stop.lat, stop.lon);
-      if (!nearest || distanceMeters < nearest.distanceMeters) {
-        nearest = { stopId, name: stop.name, distanceMeters };
-      }
+      candidates.push({ stopId, name: stop.name, lat: stop.lat, lon: stop.lon, distanceMeters: haversineMeters(lat, lon, stop.lat, stop.lon) });
     }
-    if (!nearest) return null;
+    candidates.sort((a, b) => a.distanceMeters - b.distanceMeters);
+    const picked = pickWalkingNearest(candidates, lat, lon);
+    if (!picked) return null;
+    const nearest = { stopId: picked.stop.stopId, name: picked.stop.name, distanceMeters: picked.stop.distanceMeters, walkMeters: picked.walkMeters };
     let headsign: string | null = null;
     for (const trip of tripsById.values()) {
       if (trip.routeId === routeId && trip.directionId === directionId) {
@@ -133,10 +171,13 @@ export async function getNearestStopForRoute(agencyId: AgencyId, routeId: string
   const direction0 = nearestInDirection(0);
   if (!direction1 && !direction0) return null;
 
+  const withoutDistance = (stop: typeof direction1): RouteDirectionStop | null => (
+    stop ? { stopId: stop.stopId, name: stop.name, headsign: stop.headsign, walkMeters: stop.walkMeters } : null
+  );
   return {
     distanceMeters: Math.min(direction1?.distanceMeters ?? Infinity, direction0?.distanceMeters ?? Infinity),
-    direction1,
-    direction0,
+    direction1: withoutDistance(direction1),
+    direction0: withoutDistance(direction0),
   };
 }
 
@@ -150,8 +191,8 @@ export type DiscoveredRoute = {
   color: string;
   /** Smallest of direction1/direction0's own distance — see getNearestStopForRoute. */
   distanceMeters: number;
-  direction1: { stopId: string; name: string; headsign: string | null } | null;
-  direction0: { stopId: string; name: string; headsign: string | null } | null;
+  direction1: RouteDirectionStop | null;
+  direction0: RouteDirectionStop | null;
 };
 
 // "Nearest" isn't the same as "nearby" — findNearestStops always returns the N closest stops

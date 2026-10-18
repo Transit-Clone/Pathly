@@ -57,6 +57,24 @@ describe('picking a departure for a planned trip', () => {
     expect(retimed.durationSeconds).toBe(38 * 60);
   });
 
+  it('pulls later legs earlier when an earlier departure is picked', () => {
+    // Planned: ride 20→30, then the 35. Picking the 10 makes the 25 (after a minute to change) the connection.
+    const later: Itinerary = {
+      ...trip,
+      departureTime: at(15),
+      arrivalTime: at(53),
+      steps: [walk(5), leg(20, 30, [[10, 20], [20, 30]]), leg(35, 50, [[25, 40], [35, 50]]), walk(3)],
+    };
+    const retimed = retimeItinerary(later, new Map([[0, at(10)]]), now);
+    const [, second] = transit(retimed);
+    expect(second!.from.time).toBe(at(25));
+    expect(retimed.departureTime).toBe(at(5));
+    expect(retimed.arrivalTime).toBe(at(43));
+    // Arriving at 20 leaves too little time to change for one leaving at 20, so a same-minute connection isn't taken.
+    const tight = retimeItinerary({ ...later, steps: [walk(5), leg(20, 30, [[10, 20], [20, 30]]), leg(35, 50, [[20, 35], [35, 50]]), walk(3)] }, new Map([[0, at(10)]]), now);
+    expect(transit(tight)[1]!.from.time).toBe(at(35));
+  });
+
   it('marks which departures are taken and which can still be made', () => {
     const options = legDepartureOptions(trip, new Map([[0, at(20)]]), now);
     expect(options[0]!.map((option) => option.selected)).toEqual([false, true, false]);
@@ -80,7 +98,7 @@ describe('stop dots from far away', () => {
     const cityBus = stopRevealZoom(line(0.002)); // ~220 m apart
     const commuterRail = stopRevealZoom(line(0.03)); // ~3 km apart
     expect(cityBus).toBeGreaterThan(commuterRail);
-    expect(cityBus).toBeGreaterThan(13);
+    expect(cityBus).toBeGreaterThan(12);
     expect(commuterRail).toBeLessThan(11);
   });
 
@@ -99,7 +117,7 @@ describe('stop dots from far away', () => {
     ];
     const zooms = viaRevealZooms(stops);
     expect(zooms.get(0)).toBeLessThan(11);
-    expect(zooms.get(1)).toBeGreaterThan(14);
+    expect(zooms.get(1)).toBeGreaterThan(13);
   });
 
   it('reads a native region on the same zoom scale as the web map', () => {

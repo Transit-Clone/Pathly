@@ -9,6 +9,7 @@ import {
   CURRENT_LOCATION_LABEL,
   fareLabel,
   filterItinerariesByMode,
+  filterItinerariesByWalk,
   formatDurationMinutes,
   requestModes,
   formatTripClock,
@@ -24,6 +25,7 @@ import {
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { useClock } from '../hooks/useClock';
 import { useTripPlan } from '../hooks/useTripPlan';
+import { DEFAULT_PREFERENCES, useUserPreferences, type UserPreferences } from '../data/userPreferences';
 import { ThemedStatusBar, useAppSettings, useTheme, useThemedStyles } from '../theme/AppSettings';
 import { ScreenTransition, useLayoutEase } from '../theme/motion';
 import type { Palette } from '../theme/colors';
@@ -51,8 +53,16 @@ export type ResultsCriteria = {
 
 export { CURRENT_LOCATION_LABEL };
 
-export function initialResultsCriteria(destination: string, destinationPlace?: SearchPlace): ResultsCriteria {
-  return { origin: CURRENT_LOCATION_LABEL, destination, destinationPlace, preference: 'fastest', enabledModes: ['subway', 'bus', 'rail', 'ferry'] };
+/** A new search's criteria, starting from the rider's travel preferences (Settings -> Travel preferences). */
+export function initialResultsCriteria(destination: string, destinationPlace?: SearchPlace, travel: UserPreferences['travel'] = DEFAULT_PREFERENCES.travel): ResultsCriteria {
+  return {
+    origin: CURRENT_LOCATION_LABEL,
+    destination,
+    destinationPlace,
+    // Travel preferences set the starting sort; Fewer transfers wins, as it does with Google.
+    preference: travel.fewerTransfers ? 'transfers' : travel.allowWalking ? 'fastest' : 'walking',
+    enabledModes: travel.modes.length > 0 ? [...travel.modes] : ['subway', 'bus', 'rail', 'ferry'],
+  };
 }
 
 type RouteResultsViewProps = {
@@ -80,6 +90,7 @@ type RouteResultsViewProps = {
 const preferences: { id: RoutePreference; label: string }[] = [
   { id: 'fastest', label: 'Fastest' },
   { id: 'transfers', label: 'Fewer transfers' },
+  { id: 'walking', label: 'Less walking' },
   { id: 'cheapest', label: 'Lowest fare' },
 ];
 
@@ -139,6 +150,7 @@ export function RouteResultsView({
   const { fontScale, height, width } = useWindowDimensions();
   const stackLargeTextMetrics = fontScale >= 1.5 || width <= 360;
   const { destination, enabledModes, origin, preference } = criteria;
+  const travelPreferences = useUserPreferences().preferences.travel;
   const setPreference = (next: RoutePreference) => onChangeCriteria({ ...criteria, preference: next });
   const setEnabledModes = (update: readonly TransitMode[] | ((current: readonly TransitMode[]) => readonly TransitMode[])) => (
     onChangeCriteria({ ...criteria, enabledModes: typeof update === 'function' ? update(enabledModes) : update })
@@ -213,15 +225,22 @@ export function RouteResultsView({
     time: tripTime,
     preference,
     modes: requestModes(enabledModes),
+    lessWalking: !travelPreferences.allowWalking,
     location: riderLocation,
     locationPending,
   });
   const planned = useMemo(() => (plan.status === 'loaded' ? plan.itineraries : []), [plan]);
   const resumeRequest = plan.status === 'loaded' ? plan.resumeRequest : null;
-  const visibleItineraries = useMemo(
-    () => orderItineraries(filterItinerariesByMode(planned, enabledModes), preference),
-    [enabledModes, planned, preference],
-  );
+  const { maxWalkMinutes } = travelPreferences;
+  const { visibleItineraries, walkLimitMissed } = useMemo(() => {
+    const byMode = filterItinerariesByMode(planned, enabledModes);
+    const withinWalk = filterItinerariesByWalk(byMode, maxWalkMinutes);
+    return {
+      visibleItineraries: orderItineraries(withinWalk ?? byMode, preference),
+      // Every trip walks longer than the rider's limit, so all of them show with a note.
+      walkLimitMissed: maxWalkMinutes !== null && withinWalk === null && byMode.length > 0,
+    };
+  }, [enabledModes, maxWalkMinutes, planned, preference]);
   const modesFiltered = enabledModes.length < ALL_MODES.length;
   const tomorrow = tripTime.mode !== 'now' && nextOccurrence(tripTime.minutes, new Date(now)).tomorrow;
   const updatedLabel = plan.status !== 'loaded'
@@ -501,6 +520,11 @@ export function RouteResultsView({
                 </PressableScale>
               </View>
             ) : null}
+            {walkLimitMissed ? (
+              <Text accessibilityLiveRegion="polite" style={styles.walkLimitNote} testID="results-walk-limit-note">
+                {`Every trip walks more than your ${maxWalkMinutes}-minute limit, so all are shown.`}
+              </Text>
+            ) : null}
             {visibleItineraries.map((itinerary) => {
               const legs = transitSteps(itinerary);
               // The ride badges in order, with a walk icon wherever there's real walking to do.
@@ -549,7 +573,12 @@ export function RouteResultsView({
                       <View style={[styles.summary, stackLargeTextMetrics && styles.summaryLargeText]}>
                         <Text style={styles.fare} testID={`fare-${itinerary.id}`}>{fare}</Text>
                         <View style={styles.durationGroup}>
-                          <Text accessibilityLabel={duration.accessibility} style={styles.duration} testID={`search-result-duration-${itinerary.id}`}>{duration.visible}</Text>
+                          <Text accessibilityLabel={duration.accessibility} style={styles.duration} testID={`search-result-duration-${itinerary.id}`}>
+                            {/* Big numbers, small units: "2hr 26m" reads as 2 hr 26 m. */}
+                            {duration.visible.match(/\d+|\D+/g)?.map((part, partIndex) => (
+                              /^\d/.test(part) ? part : <Text key={partIndex} style={styles.durationUnit}>{part}</Text>
+                            ))}
+                          </Text>
                         </View>
                       </View>
                     </View>
@@ -618,6 +647,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   emptyResults: { alignItems: 'center', gap: 8, paddingVertical: 28 },
   emptyTitle: { color: colors.ink, ...typography.bodyStrong },
   emptyBody: { maxWidth: 280, color: colors.mutedInk, ...typography.metadata, textAlign: 'center' },
+  walkLimitNote: { marginHorizontal: 16, marginBottom: 8, color: colors.mutedInk, ...typography.metadata },
   resetButton: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 16, borderRadius: 20, backgroundColor: colors.primary },
   resetText: { color: colors.onPrimary, fontFamily: fontFamilies.extraBold, fontSize: 13 },
   resultHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 12, paddingHorizontal: 16 },
@@ -638,4 +668,5 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   fare: { color: colors.primary, fontFamily: fontFamilies.extraBold, fontSize: 11 },
   durationGroup: { minWidth: 0, flexShrink: 1, alignItems: 'flex-end' },
   duration: { flexShrink: 1, color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 26, lineHeight: 28, textAlign: 'right' },
+  durationUnit: { color: colors.mutedInk, fontFamily: fontFamilies.bold, fontSize: 12 },
 });

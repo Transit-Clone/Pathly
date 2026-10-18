@@ -99,7 +99,9 @@ test('all-caps bus stop names and headsigns are recased for riders', () => {
   const { displayTransitName } = require('../lib/transitNames');
   assert.equal(displayTransitName('1 AV/E 23 ST'), '1 Av/E 23 St');
   assert.equal(displayTransitName('HARLEM 126 ST'), 'Harlem 126 St');
-  assert.equal(displayTransitName('SBS SOUTH FERRY via 2 AV'), 'SBS SOUTH FERRY via 2 AV');
+  assert.equal(displayTransitName('SBS SOUTH FERRY via 2 AV'), 'SBS South Ferry via 2 Av');
+  assert.equal(displayTransitName('SELECT BUS SERVICE 125 ST via 1 AV'), 'Select Bus Service 125 St via 1 Av');
+  assert.equal(displayTransitName('ST GEORGE via VICTORY BLVD'), 'St George via Victory Blvd');
   assert.equal(displayTransitName('COLLEGE OF STATEN ISLAND'), 'College of Staten Island');
   assert.equal(displayTransitName('W 23RD ST/MCDONALD AV'), 'W 23rd St/McDonald Av');
   assert.equal(displayTransitName("JFK AIRPORT O'BRIEN PL"), "JFK Airport O'Brien Pl");

@@ -383,7 +383,7 @@ export const allNearbyRoutes = [
   routeById.n4,
 ] as const;
 
-export type RoutePreference = 'fastest' | 'transfers' | 'cheapest';
+export type RoutePreference = 'fastest' | 'transfers' | 'walking' | 'cheapest';
 export type TripTimeChoice =
   | { mode: 'now' }
   | { mode: 'depart' | 'arrive'; minutes: number };

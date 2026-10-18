@@ -5,9 +5,13 @@ import { StyleSheet, View } from 'react-native';
 import { GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_SCRIPT_ID } from '../data/googleMapsLoaderConfig';
 import { googleMapStyle } from '../data/mapStyle';
 import { SERVICE_AREA_BOUNDS } from '../data/serviceArea';
-import { locationPoint, type SavedLocation } from '../data/userData';
+import { addressAfterName } from '../data/placesSearch';
+import { SAVED_PIN, savedPinSvgUrl } from '../data/savedPlacePin';
+import { locationPoint, savedPlaceName, type SavedLocation } from '../data/userData';
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { useTheme } from '../theme/AppSettings';
+import { iconGlyph, type IconName } from './Icon';
+import { savedLocationIcon } from './SavedPlacesStrip';
 
 const ZOOM = 14;
 const MIN_ZOOM = 9;
@@ -98,6 +102,16 @@ const LONG_PRESS_MS = 600;
  * like native; the bottom is sized to the sheet's top. To keep `center` centered in the
  * visible gap below the header, the map is panned up by half the top padding.
  */
+/** A saved-place pin's icon as a marker label (a star when the icon font isn't available). */
+function pinLabel(icon: IconName): google.maps.MarkerLabel {
+  const glyph = icon in ICON_FALLBACK ? null : iconGlyph(icon as Parameters<typeof iconGlyph>[0]);
+  return glyph
+    ? { color: '#FFFFFF', fontFamily: glyph.fontFamily, fontSize: '18px', text: glyph.text }
+    : { color: '#FFFFFF', fontSize: '15px', fontWeight: '700', text: '★' };
+}
+/** Icons drawn from a font other than the one marker labels use. */
+const ICON_FALLBACK = { pin: true } as const;
+
 export function GoogleMapView({ initialCamera, location, onCameraChange, onLongPress, onPress, onSavedLocationPress, onUserMoveEnd, onUserPan, padding, recenterRequest = 0, savedLocations = [], testID = 'google-map-view' }: GoogleMapViewProps) {
   // The JS API has no long-press event: a press held still for LONG_PRESS_MS counts as one.
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -110,7 +124,7 @@ export function GoogleMapView({ initialCamera, location, onCameraChange, onLongP
   const userMoved = useRef(false);
   // No Map ID: Google ignores inline styles on cloud-styled maps. These hide its places and, in
   // the dark theme, recolor the map; changing them restyles the live map in place.
-  const { isDark } = useTheme();
+  const { colors, isDark } = useTheme();
   const mapOptions = useMemo(() => ({ ...baseMapOptions, styles: googleMapStyle(isDark) }), [isDark]);
   const { isLoaded } = useJsApiLoader({
     id: GOOGLE_MAPS_SCRIPT_ID,
@@ -192,14 +206,23 @@ export function GoogleMapView({ initialCamera, location, onCameraChange, onLongP
           {savedLocations.map((saved) => {
             const point = locationPoint(saved.address);
             if (!point) return null;
-            const markerLabel = saved.address.streetAddress
-              ? `Plan a trip to ${saved.address.name}, ${saved.address.streetAddress}`
-              : `Plan a trip to ${saved.address.name}`;
+            const name = savedPlaceName(saved.address);
+            const address = addressAfterName(name, saved.address.streetAddress);
+            const markerLabel = address
+              ? `Plan a trip to ${name}, ${address}`
+              : `Plan a trip to ${name}`;
             return (
               <Marker
                 clickable={onSavedLocationPress != null}
+                // Anchored at the point's tip, so the badge stands over the place at every zoom; the
+                // icon is the label, drawn in the icon font at the badge's exact center.
+                icon={{
+                  url: savedPinSvgUrl(colors.primary, colors.surface),
+                  anchor: new google.maps.Point(SAVED_PIN.size / 2, SAVED_PIN.size + SAVED_PIN.point),
+                  labelOrigin: new google.maps.Point(SAVED_PIN.size / 2, SAVED_PIN.size / 2),
+                }}
+                label={pinLabel(savedLocationIcon(saved.address))}
                 key={saved.id}
-                label={{ color: '#FFFFFF', fontSize: '13px', fontWeight: '700', text: '★' }}
                 onClick={() => onSavedLocationPress?.(saved)}
                 options={{ optimized: false }}
                 position={{ lat: point.latitude, lng: point.longitude }}

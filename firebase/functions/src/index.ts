@@ -396,14 +396,22 @@ export function requiredPlanTripRequest(data: unknown, nowMs = Date.now()): Plan
   const { preference, modes } = request;
   if (typeof preference !== 'string' || !TRIP_PREFERENCES.includes(preference as TripPreference)) throw badTripRequest('preference is invalid');
   if (!Array.isArray(modes) || modes.length === 0 || modes.some((mode) => !TRIP_MODES.includes(mode as TravelModeOption))) throw badTripRequest('modes are invalid');
-  return { origin, destination, time: tripTime, preference: preference as TripPreference, modes: [...new Set(modes as TravelModeOption[])] };
+  if (request.lessWalking !== undefined && typeof request.lessWalking !== 'boolean') throw badTripRequest('lessWalking is invalid');
+  return {
+    origin,
+    destination,
+    time: tripTime,
+    preference: preference as TripPreference,
+    modes: [...new Set(modes as TravelModeOption[])],
+    ...(request.lessWalking === true ? { lessWalking: true } : {}),
+  };
 }
 
 /**
  * Real transit itineraries between two places, from the Google Routes API (computeRoutes,
  * TRANSIT, with alternatives), reshaped into the app's itinerary format (tripPlanning.ts).
  * The Maps key stays server-side. An empty list means Google found no transit trip.
- * Client call: httpsCallable(functions, 'planTrip')({ origin, destination, time, preference, modes }).
+ * Client call: httpsCallable(functions, 'planTrip')({ origin, destination, time, preference, modes, lessWalking? }).
  */
 export const planTrip = onCall<PlanTripRequest, Promise<{ itineraries: Itinerary[] }>>(
   { ...protectedCallableOptions, secrets: [googleMapsApiKey], timeoutSeconds: 30 },

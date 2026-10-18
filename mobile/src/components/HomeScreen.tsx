@@ -19,6 +19,9 @@ import {
   saveLocation,
   subscribeToSavedLocations,
   type SavedLocation,
+  saveLabeledLocation,
+  savedPlaceName,
+  type SavedPlaceIcon,
 } from '../data/userData';
 import {
   routes,
@@ -43,7 +46,9 @@ import { EnrouteNavigationView, EnrouteRecoveryView, type EnrouteLocationState }
 import { GoogleMapView, type HomeMapCamera } from './GoogleMapView';
 import { PressableScale } from './PressableScale';
 import { ProfileView } from './ProfileView';
+import { useUserPreferences } from '../data/userPreferences';
 import { RouteDetailView } from './RouteDetailView';
+import { SavePlaceSheet, type SavePlaceRequest } from './SavePlaceSheet';
 import { ResumeTripCard } from './ResumeTripCard';
 import { CURRENT_LOCATION_LABEL, initialResultsCriteria, RouteResultsView, type ResultsCriteria } from './RouteResultsView';
 import { SearchHeader } from './SearchHeader';
@@ -63,19 +68,21 @@ const NEARBY_SEARCH_DEBOUNCE_MS = 600;
 // A cached nearby list older than a day is more misleading than helpful.
 const NEARBY_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
+/** Choosing a place to save: straight away under `label` when set, else named in SavePlaceSheet. */
+type SavedPlacePick = { label?: 'Home' | 'Work'; returnTo: 'search' | 'favorites' | 'settings' };
 type ResultsViewState = { name: 'results'; criteria: ResultsCriteria; returnTo: 'search' | 'favorites' | 'home' };
 
 type ActiveView =
   | { name: 'home' }
   // `editing`: changing one endpoint of an open Route Results, which this search returns to.
-  | { name: 'search'; editing?: { field: 'origin' | 'destination'; results: ResultsViewState }; pickMockLocation?: boolean }
+  | { name: 'search'; editing?: { field: 'origin' | 'destination'; results: ResultsViewState }; pickMockLocation?: boolean; pickSavedPlace?: SavedPlacePick }
   // `route` is the snapshot opened, so the page never depends on the route still being nearby.
   | { name: 'route'; routeId: string; route: RouteDetail; directionIndex?: number }
   // "More departures" for one direction of an opened route; back returns to that route and direction.
   | { name: 'departures'; routeId: string; route: RouteDetail; directionIndex: number }
   | ResultsViewState
   | { name: 'enroute' }
-  | { name: 'profile' }
+  | { name: 'profile'; route?: 'places' }
   | { name: 'admin' };
 
 
@@ -158,6 +165,12 @@ export function HomeScreen() {
   // A trip's star saves its destination to the account (Firestore), listed under Favorites -> Places.
   const { user } = useAuth();
   const uid = user?.uid;
+  // New searches start from the rider's travel preferences; a ref keeps the open callbacks stable.
+  const travelPreferences = useUserPreferences().preferences.travel;
+  const travelPreferencesRef = useRef(travelPreferences);
+  useEffect(() => {
+    travelPreferencesRef.current = travelPreferences;
+  }, [travelPreferences]);
   const trip = useActiveTrip(uid);
   const {
     advance: advanceTrip,
@@ -319,7 +332,7 @@ export function HomeScreen() {
   }, []);
   const showRouteResults = useCallback((place: SearchPlace) => {
     setSelectedTrip(null);
-    setActiveView({ name: 'results', criteria: initialResultsCriteria(place.title, place), returnTo: 'search' });
+    setActiveView({ name: 'results', criteria: initialResultsCriteria(place.title, place, travelPreferencesRef.current), returnTo: 'search' });
   }, []);
   const showFavorites = useCallback(() => {
     setHomeTab('favorites');
@@ -333,11 +346,11 @@ export function HomeScreen() {
     setActiveView({
       name: 'results',
       criteria: {
-        ...initialResultsCriteria(destinationPlace.title, destinationPlace),
+        ...initialResultsCriteria(destinationPlace.title, destinationPlace, travelPreferencesRef.current),
         origin: originPlace.title,
         originPlace,
       },
-      returnTo: 'search',
+      returnTo: 'home',
     });
   }, []);
   useEffect(() => {
@@ -356,12 +369,45 @@ export function HomeScreen() {
   const openSavedLocation = useCallback((location: SavedLocation) => {
     const place = locationToPlace(location.address);
     setSelectedTrip(null);
-    setActiveView({ name: 'results', criteria: initialResultsCriteria(place.title, place), returnTo: 'favorites' });
+    setActiveView({ name: 'results', criteria: initialResultsCriteria(place.title, place, travelPreferencesRef.current), returnTo: 'favorites' });
   }, []);
+  // Adding a saved place: search for it, then name it (or save it straight away as Home or Work).
+  const [saveRequest, setSaveRequest] = useState<SavePlaceRequest | null>(null);
+  const addSavedPlace = useCallback((returnTo: SavedPlacePick['returnTo'], label?: 'Home' | 'Work') => {
+    setActiveView({ name: 'search', pickSavedPlace: { label, returnTo } });
+  }, []);
+  const leaveSavedPlacePick = useCallback((returnTo: SavedPlacePick['returnTo']) => {
+    if (returnTo === 'favorites') showFavorites();
+    else if (returnTo === 'settings') setActiveView({ name: 'profile', route: 'places' });
+    else setActiveView({ name: 'search' });
+  }, [showFavorites]);
+  const saveNamedPlace = useCallback((place: SearchPlace, label: string, icon?: SavedPlaceIcon) => {
+    if (!uid) return;
+    // As with the star, the listener shows the write; a rejected one just leaves the list as it was.
+    saveLabeledLocation(uid, place, label, savedLocations, icon).catch(() => undefined);
+  }, [savedLocations, uid]);
+  const editSavedPlace = useCallback((location: SavedLocation) => {
+    const { address } = location;
+    setSaveRequest({ place: locationToPlace(address), label: savedPlaceName(address), icon: address.icon, editing: true });
+  }, []);
+  const savePlaceSheet = (
+    <SavePlaceSheet
+      onCancel={() => setSaveRequest(null)}
+      onRemove={() => {
+        if (uid && saveRequest) removeSavedLocation(uid, saveRequest.place.id).catch(() => undefined);
+        setSaveRequest(null);
+      }}
+      onSave={(label, icon) => {
+        if (saveRequest) saveNamedPlace(saveRequest.place, label, icon ?? saveRequest.icon);
+        setSaveRequest(null);
+      }}
+      request={saveRequest}
+    />
+  );
   const openSavedLocationFromMap = useCallback((location: SavedLocation) => {
     const place = locationToPlace(location.address);
     setSelectedTrip(null);
-    setActiveView({ name: 'results', criteria: initialResultsCriteria(place.title, place), returnTo: 'home' });
+    setActiveView({ name: 'results', criteria: initialResultsCriteria(place.title, place, travelPreferencesRef.current), returnTo: 'home' });
   }, []);
   const showPlannedTrip = useCallback((itinerary: Itinerary, resumeRequest: ResumePlanRequest) => {
     setSelectedTrip({ itinerary, resumeRequest });
@@ -429,6 +475,10 @@ export function HomeScreen() {
       setActiveView({ name: 'admin' });
       return;
     }
+    if (activeView.name === 'search' && activeView.pickSavedPlace) {
+      leaveSavedPlacePick(activeView.pickSavedPlace.returnTo);
+      return;
+    }
 
     if (activeView.name === 'results') {
       if (selectedTrip) {
@@ -451,7 +501,7 @@ export function HomeScreen() {
     }
 
     showHome();
-  }, [activeView, closePlannedTrip, closeResults, selectedTrip, showHome]);
+  }, [activeView, closePlannedTrip, closeResults, leaveSavedPlacePick, selectedTrip, showHome]);
 
   useEffect(() => {
     if (activeView.name === 'home' || Platform.OS === 'web') {
@@ -476,6 +526,7 @@ export function HomeScreen() {
   const screen = (node: ReactNode) => (
     <TransitLiveProvider activeRouteIds={activeLiveRouteIds} extraRoutes={liveRoutes} location={nearbyPoint}>
       <ScreenTransition key={transitionKey}>{node}</ScreenTransition>
+      {savePlaceSheet}
     </TransitLiveProvider>
   );
 
@@ -561,6 +612,22 @@ export function HomeScreen() {
     );
   }
 
+  if (activeView.name === 'search' && activeView.pickSavedPlace) {
+    const { label, returnTo } = activeView.pickSavedPlace;
+    return screen(
+      <SearchView
+        near={riderLocation(location, locationStatus)}
+        onCancel={() => leaveSavedPlacePick(returnTo)}
+        onSelect={(place) => {
+          if (label) saveNamedPlace(place, label);
+          else setSaveRequest({ place });
+          leaveSavedPlacePick(returnTo);
+        }}
+        placeholder={label ? `Search for your ${label.toLowerCase()} address` : 'Search for a place to save'}
+      />
+    );
+  }
+
   if (activeView.name === 'search') {
     const { editing } = activeView;
     if (editing) {
@@ -587,6 +654,7 @@ export function HomeScreen() {
     return screen(
       <SearchView
         near={riderLocation(location, locationStatus)}
+        onAddSavedPlace={uid ? (label) => addSavedPlace('search', label) : undefined}
         onCancel={showHome}
         onSelect={showRouteResults}
         savedPlaces={savedLocations}
@@ -672,7 +740,14 @@ export function HomeScreen() {
   }
 
   if (activeView.name === 'profile') {
-    return screen(<ProfileView onBack={showHome} onOpenAdminTools={isAdmin ? () => setActiveView({ name: 'admin' }) : undefined} />);
+    return screen(
+      <ProfileView
+        initialRoute={activeView.route}
+        onBack={showHome}
+        onOpenAdminTools={isAdmin ? () => setActiveView({ name: 'admin' }) : undefined}
+        savedPlaces={uid ? { locations: savedLocations, onAdd: (label) => addSavedPlace('settings', label), onEdit: editSavedPlace } : undefined}
+      />,
+    );
   }
 
   if (activeView.name === 'admin') {
@@ -802,6 +877,7 @@ export function HomeScreen() {
           nearbyRoutes={nearbyRoutes}
           nearbyRefreshing={nearbyStatus.status === 'loaded' && nearbyStatus.refreshing === true}
           nearbyStatus={nearbyStatus.status}
+          onAddSavedPlace={uid ? () => addSavedPlace('favorites') : undefined}
           onOpenRecentTrip={openRecentTrip}
           onOpenSavedLocation={openSavedLocation}
           onOpenRoute={openRoute}
@@ -812,6 +888,7 @@ export function HomeScreen() {
           savedRouteIds={savedRouteIds}
           scrollY={homeScrollY}
         />
+        {savePlaceSheet}
         <ConfirmDialog
           body={`${arrivedDestination ?? 'Your destination'} has been added to Recents.`}
           cancelLabel="Stay on Home"

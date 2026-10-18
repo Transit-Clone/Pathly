@@ -7,7 +7,7 @@
 type Point = { lat: number; lng: number };
 
 /** Gap needed between neighboring dots' centers, in screen pixels. */
-const MIN_SPACING_PX = 16;
+const MIN_SPACING_PX = 11;
 /** Share of stops that must have that gap; a few bunched-up pairs (a loop, a terminal) don't hold the rest back. */
 const CLEAR_SHARE = 0.8;
 /** From this many stops on, one bunched-up pair never holds the rest back. */

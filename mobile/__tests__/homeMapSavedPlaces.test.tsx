@@ -29,7 +29,8 @@ function settings(child: React.ReactNode) {
 
 describe('home map saved-place markers', () => {
   beforeAll(() => {
-    Object.assign(globalThis, { google: { maps: { SymbolPath: { CIRCLE: 'circle' } } } });
+    class Point { constructor(public x: number, public y: number) {} }
+    Object.assign(globalThis, { google: { maps: { Point, SymbolPath: { CIRCLE: 'circle' } } } });
   });
 
   it('renders only routable saved places on native and opens the selected place', () => {
@@ -45,7 +46,8 @@ describe('home map saved-place markers', () => {
     const marker = screen.getByTestId('saved-place-marker-work-place', { includeHiddenElements: true });
     expect(marker.props.coordinate).toEqual(WORK_PLACE.location);
     expect(marker.props.accessibilityLabel).toBe('Plan a trip to Work, 123 Main St');
-    expect(marker.props.pinColor).toBe('#0B4F9C');
+    // A custom badge pin, standing on its point's tip.
+    expect(marker.props.anchor).toEqual({ x: 0.5, y: 1 });
     expect(screen.queryByTestId('saved-place-marker-name%3AFuture', { includeHiddenElements: true })).toBeNull();
     fireEvent.press(marker);
     expect(onSavedLocationPress).toHaveBeenCalledWith(savedWork);
@@ -63,7 +65,9 @@ describe('home map saved-place markers', () => {
 
     const marker = screen.getByTestId('web-Plan a trip to Work, 123 Main St', { includeHiddenElements: true });
     expect(marker.props.position).toEqual({ lat: 40.75, lng: -73.99 });
-    expect(marker.props.label.text).toBe('★');
+    expect(marker.props.icon.url).toMatch(/^data:image\/svg\+xml/);
+    expect(decodeURIComponent(marker.props.icon.url)).toContain('fill="#0B4F9C"');
+    expect(marker.props.icon.anchor).toEqual({ x: 17, y: 41 });
     expect(marker.props.options).toEqual({ optimized: false });
     expect(screen.queryByTestId('web-Plan a trip to Future', { includeHiddenElements: true })).toBeNull();
     fireEvent(marker, 'click');

@@ -19,6 +19,8 @@ export type PlanTripRequest = {
   time: { mode: 'now' } | { mode: 'depart' | 'arrive'; at: string };
   preference: TripPreference;
   modes: TravelModeOption[];
+  /** The rider turned walking off (Settings -> Travel preferences): ask for less walking. */
+  lessWalking?: boolean;
 };
 
 export type TripStop = { name: string; location: LatLng; time: string };
@@ -106,7 +108,9 @@ export function buildRoutesRequest(request: PlanTripRequest): Record<string, unk
   const transitPreferences: Record<string, unknown> = {};
   const modes = ALL_MODES.filter((mode) => request.modes.includes(mode));
   if (modes.length > 0 && modes.length < ALL_MODES.length) transitPreferences.allowedTravelModes = modes.flatMap((mode) => GOOGLE_MODES[mode]);
+  // Google takes one routing preference; fewer transfers is the rider's explicit sort, so it wins.
   if (request.preference === 'transfers') transitPreferences.routingPreference = 'FEWER_TRANSFERS';
+  else if (request.lessWalking) transitPreferences.routingPreference = 'LESS_WALKING';
   if (Object.keys(transitPreferences).length > 0) body.transitPreferences = transitPreferences;
   return body;
 }

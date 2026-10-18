@@ -11,6 +11,7 @@
     "build": "tsc",
     "build:watch": "tsc --watch",
     "build:gtfs": "npm run build && node scripts/build-gtfs-index.js",
+    "build:walking": "npm run build && node --max-old-space-size=6144 scripts/build-walking-tiles.js",
     "test": "npm run build:gtfs && node --test test/*.test.js",
     "serve": "npm run build:gtfs && npx --yes firebase-tools@15.32.1 emulators:start --only functions",
     "shell": "npm run build && npx --yes firebase-tools@15.32.1 functions:shell",
@@ -25,6 +26,7 @@
     "gtfs-realtime-bindings": "^2.2.0"
   },
   "devDependencies": {
+    "osm-pbf-parser-node": "^1.1.4",
     "typescript": "~6.0.3"
   }
 }

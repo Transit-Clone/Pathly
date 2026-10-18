@@ -116,6 +116,8 @@ test('builds the transit request: waypoints, time, preference, and modes', () =>
 
   assert.deepEqual(buildRoutesRequest({ ...baseRequest, preference: 'transfers' }).transitPreferences, { routingPreference: 'FEWER_TRANSFERS' });
   assert.equal(buildRoutesRequest({ ...baseRequest, preference: 'cheapest' }).transitPreferences, undefined);
+  assert.deepEqual(buildRoutesRequest({ ...baseRequest, lessWalking: true }).transitPreferences, { routingPreference: 'LESS_WALKING' });
+  assert.deepEqual(buildRoutesRequest({ ...baseRequest, preference: 'transfers', lessWalking: true }).transitPreferences, { routingPreference: 'FEWER_TRANSFERS' });
   assert.deepEqual(buildRoutesRequest({ ...baseRequest, modes: ['subway', 'bus'] }).transitPreferences, { allowedTravelModes: ['SUBWAY', 'LIGHT_RAIL', 'BUS'] });
 });
 

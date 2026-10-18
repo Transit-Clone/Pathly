@@ -23,6 +23,8 @@ type UseTripPlanOptions = {
   time: TripTimeChoice;
   preference: RoutePreference;
   modes: readonly TripMode[];
+  /** Ask for trips with less walking (Settings -> Travel preferences). */
+  lessWalking?: boolean;
   /** The rider's real position, or null when unknown. */
   location: Coordinates | null;
   /** True while the first location fix is still coming; "Current location" trips wait for it. */
@@ -38,7 +40,7 @@ type Answer = { key: string; refresh: number; state: Exclude<TripPlanState, { st
  * refresh, which keeps showing the current itineraries meanwhile. The rider's position is read
  * when planning, so routine GPS updates don't plan (and bill) again.
  */
-export function useTripPlan({ endpoints, time, preference, modes, location, locationPending }: UseTripPlanOptions) {
+export function useTripPlan({ endpoints, time, preference, modes, lessWalking = false, location, locationPending }: UseTripPlanOptions) {
   const [answer, setAnswer] = useState<Answer | null>(null);
   const [refreshCount, setRefreshCount] = useState(0);
   const locationRef = useRef(location);
@@ -57,6 +59,7 @@ export function useTripPlan({ endpoints, time, preference, modes, location, loca
     time,
     transfers: preference === 'transfers',
     modes: [...modes].sort(),
+    lessWalking,
     hasLocation: needsLiveOrigin && location !== null,
   });
   // The refresh count the current criteria were first planned at: later counts are refreshes.
@@ -67,7 +70,7 @@ export function useTripPlan({ endpoints, time, preference, modes, location, loca
     const refresh = plannedAt.current?.key === key && plannedAt.current.refresh !== refreshCount;
     plannedAt.current = { key, refresh: refreshCount };
     let cancelled = false;
-    void planTrip({ endpoints, location: locationRef.current, time, preference, modes, refresh }).then((result) => {
+    void planTrip({ endpoints, location: locationRef.current, time, preference, modes, lessWalking, refresh }).then((result) => {
       if (cancelled) return;
       setAnswer({
         key,

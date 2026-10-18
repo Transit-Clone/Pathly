@@ -90,3 +90,44 @@ export const darkColors: Palette = {
 
 /** Light palette; components should read the active palette from `useTheme()`. */
 export const colors = lightColors;
+
+/** Accessibility -> High contrast, light: darker text, ink-dark borders, and a deeper primary. */
+export const highContrastLightColors: Palette = {
+  ...lightColors,
+  primary: '#063A75',
+  blue: '#063A75',
+  background: '#FFFFFF',
+  canvas: '#FFFFFF',
+  text: '#0B1220',
+  ink: '#0B1220',
+  mutedInk: '#2F3B4A',
+  surfaceMuted: '#EEF2F7',
+  border: '#5C6B7E',
+  blueSoft: '#D6E9FF',
+  green: '#0E6B2F',
+  success: '#0E6B2F',
+  red: '#A3202E',
+  amber: '#B54708',
+  warning: '#B54708',
+  routeGreen: '#0B5C44',
+  mapLabel: '#2F3B4A',
+};
+
+/** Accessibility -> High contrast, dark: pure white text, brighter muted text and borders. */
+export const highContrastDarkColors: Palette = {
+  ...darkColors,
+  primary: '#8DBBFF',
+  blue: '#8DBBFF',
+  surface: '#0E0F11',
+  text: '#FFFFFF',
+  ink: '#FFFFFF',
+  mutedInk: '#D5DAE1',
+  border: '#7A828E',
+  blueSoft: '#1B3556',
+  green: '#5FE08F',
+  success: '#5FE08F',
+  red: '#FF7A82',
+  amber: '#FFB067',
+  warning: '#FFB067',
+  mapLabel: '#E3E7EC',
+};
