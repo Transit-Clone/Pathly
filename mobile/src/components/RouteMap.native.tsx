@@ -26,6 +26,9 @@ const ARROW_SIZE = 22;
 // Stop dots are exactly as wide as the line, so they sit inside it like beads instead of
 // bulging out of it. Only the rider's own stop is drawn larger, so it stands out.
 const LINE_WIDTH = 8;
+// The walk to the stop, matching TripMap.native.tsx's walking legs.
+const WALK_WIDTH = 4;
+const WALK_DASH = [2, 8];
 const STOP_RING = 1.5;
 // The direction arrow sits this far out from the rider's stop (screen points, so it hugs the dot
 // at any zoom): a tall transparent box anchored at the stop, with the arrow at its far end.
@@ -59,6 +62,8 @@ type RouteMapProps = {
   /** Rider's real location; omitted while only the fallback is known. */
   userLocation?: Coordinates;
   vehicles: readonly RouteLiveVehicle[];
+  /** The walk along the streets from the rider to the focused stop, drawn dotted (as on the trip map). */
+  walkPath?: readonly { lat: number; lon: number }[];
 };
 
 /** Centers/zooms to fit every stop, with some breathing room around the edges. */
@@ -82,10 +87,10 @@ function regionFor(stops: readonly GeometryStop[], focusStop: GeometryStop | und
 }
 
 /** Real route map: actual stop positions, the real line, and live vehicles — for any route with a live feed. */
-export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusStopId, mode = 'rail', onUserPan, path, showRouteRequest = 0, stops, testID = 'route-map', userLocation, vehicles }: RouteMapProps) {
+export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusStopId, mode = 'rail', onUserPan, path, showRouteRequest = 0, stops, testID = 'route-map', userLocation, vehicles, walkPath }: RouteMapProps) {
   const mapRef = useRef<MapView>(null);
   // Places hidden, and recolored in the dark theme (see mapStyle.ts).
-  const { isDark } = useTheme();
+  const { colors, isDark } = useTheme();
   const mapStyle = useMemo(() => googleMapStyle(isDark), [isDark]);
   const riderMovedMap = useRef(false);
   // True from a location-button press until the rider pans (or asks for the whole route): keeps
@@ -180,6 +185,17 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
     >
       {line.behind.length > 1 ? <Polyline coordinates={line.behind} strokeColor={withAlpha(color, BEHIND_LINE_ALPHA)} strokeWidth={LINE_WIDTH} testID="route-line-behind" zIndex={0} /> : null}
       <Polyline coordinates={line.ahead} strokeColor={color} strokeWidth={LINE_WIDTH} testID="route-line" zIndex={1} />
+      {walkPath && walkPath.length > 1 ? (
+        // The walk to the stop, dotted like TripMap.native.tsx's walking legs.
+        <Polyline
+          coordinates={walkPath.map((point) => ({ latitude: point.lat, longitude: point.lon }))}
+          lineDashPattern={WALK_DASH}
+          strokeColor={colors.mutedInk}
+          strokeWidth={WALK_WIDTH}
+          testID="route-walk"
+          zIndex={2}
+        />
+      ) : null}
       {line.bearing != null && focusStop ? (
         // One arrow right beside the rider's stop, pointing at the next stop. The box is
         // anchored at the stop and turned to that bearing (`flat`, so it turns with the map); the

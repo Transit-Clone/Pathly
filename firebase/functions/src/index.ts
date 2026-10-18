@@ -6,7 +6,7 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { requireAdmin } from './admin';
 import { collectBackendStatus } from './backendStatus';
 import { enforceCallableSecurity, peekRateLimits, type CallableRateLimit } from './callableSecurity';
-import { findNearbyTransit as findNearbyTransitDiscovery, getNearestStopForRoute, getRouteGeometry as getRouteGeometryDiscovery } from './gtfsDiscovery';
+import { findNearbyTransit as findNearbyTransitDiscovery, getNearestStopForRoute, getRouteGeometry as getRouteGeometryDiscovery, getWalkingPathToStop } from './gtfsDiscovery';
 import { AGENCY_CONFIGS, type AgencyId } from './gtfsAgencies';
 import { getStopPredictions } from './gtfsSchedule';
 import { refreshAllGtfsSnapshots } from './gtfsSnapshots';
@@ -66,6 +66,8 @@ const RATE_LIMITS = {
   getStopDepartures: { userPerMinute: 60 },
   findNearbyTransit: { userPerMinute: 30 },
   getNearestRouteStop: { userPerMinute: 600 },
+  // Route detail asks again only when its stop changes or the rider moves.
+  getWalkingPath: { userPerMinute: 60 },
   getRouteGeometry: { userPerMinute: 120 },
   // Each plan is one billed Routes API request (Compute Routes Essentials).
   planTrip: { userPerMinute: 20 },
@@ -319,6 +321,24 @@ export const getNearestRouteStop = onCall<NearestRouteStopRequest>(protectedCall
   const stop = await getNearestStopForRoute(agencyId, routeId, lat, lon);
   if (!stop) throw new HttpsError('not-found', `No stops found for ${agencyId} route "${routeId}"`);
   return stop;
+});
+
+type WalkingPathRequest = { agencyId: AgencyId; stopId: string; lat: number; lon: number };
+
+/**
+ * The walk from the rider to a stop along the streets (walkingGraph.ts), for route detail's
+ * dotted line to the stop it shows. `walk` is null where there's no walk to draw: no walking data
+ * on this instance, the stop is out of walking range, or it can't be reached on foot.
+ * Client call: httpsCallable(functions, 'getWalkingPath')({ agencyId, stopId, lat, lon }).
+ */
+export const getWalkingPath = onCall<WalkingPathRequest>(protectedCallableOptions, async (request) => {
+  await enforceCallableSecurity(request, 'getWalkingPath', RATE_LIMITS.getWalkingPath);
+  const data = request.data ?? ({} as WalkingPathRequest);
+  const agencyId = requiredAgencyId(data.agencyId);
+  await prepareAgencyStaticData(agencyId);
+  const stopId = requiredString(data.stopId, 'stopId');
+  const { lat, lon } = requiredCoordinates(data.lat, data.lon);
+  return { walk: getWalkingPathToStop(agencyId, stopId, lat, lon) };
 });
 
 type RouteGeometryRequest = { agencyId: AgencyId; routeId: string; directionId: 0 | 1 } & WarmupRequest;

@@ -10,7 +10,8 @@ import {
   loadRouteStopCounts,
   loadRouteStopTimes,
 } from './gtfsStaticData';
-import { walkingMeters } from './walkingGraph';
+import { displayRouteColor } from './routeColors';
+import { walkingMeters, walkingPath } from './walkingGraph';
 
 export type NearbyStop = {
   /** The parent station's stop_id for agencies with directional platform stop_ids (one entry per physical station, not per direction); otherwise the stop's own id. */
@@ -112,6 +113,22 @@ export function pickWalkingNearest(
     if (meters !== null && (!best || meters < best.walkMeters)) best = { stop, walkMeters: meters };
   }
   return best ?? { stop: nearest, walkMeters: null };
+}
+
+/**
+ * The walk from a point to one stop, for drawing — the same walk pickWalkingNearest measured when
+ * it chose that stop. Null when the stop is unknown, out of walking range (where the stop was
+ * chosen by straight line), or not reachable on foot.
+ */
+export function getWalkingPathToStop(
+  agencyId: AgencyId,
+  stopId: string,
+  lat: number,
+  lon: number,
+): { meters: number; path: { lat: number; lon: number }[] } | null {
+  const stop = loadAgencyStaticData(agencyId).stopsById.get(stopId);
+  if (!stop || haversineMeters(lat, lon, stop.lat, stop.lon) > WALK_RANGE_METERS) return null;
+  return walkingPath(lat, lon, stop.lat, stop.lon, WALK_LIMIT_METERS);
 }
 
 /**
@@ -279,7 +296,7 @@ export async function findNearbyTransit(lat: number, lon: number, limit = MAX_NE
       routeId,
       routeName: route.name,
       shortName: route.shortName,
-      color: `#${route.color}`,
+      color: displayRouteColor(agencyId, route),
       distanceMeters: nearest.distanceMeters,
       direction1: nearest.direction1,
       direction0: nearest.direction0,

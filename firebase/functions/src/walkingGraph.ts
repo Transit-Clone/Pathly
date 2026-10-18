@@ -220,15 +220,18 @@ class NodeHeap {
 class WalkingSearch {
   private readonly settled = new Map<number, number>();
   private readonly best = new Map<number, number>();
+  // Each reached node's previous node on its shortest walk (-1 for where the walk starts), for paths.
+  private readonly previous = new Map<number, number>();
   private readonly heap = new NodeHeap();
 
   constructor(lat: number, lon: number) {
-    for (const start of snap(lat, lon)) this.relax(start.id, start.meters);
+    for (const start of snap(lat, lon)) this.relax(start.id, start.meters, -1);
   }
 
-  private relax(id: number, meters: number): void {
+  private relax(id: number, meters: number, from: number): void {
     if (this.settled.has(id) || meters >= (this.best.get(id) ?? Infinity)) return;
     this.best.set(id, meters);
+    this.previous.set(id, from);
     this.heap.push(id, meters);
   }
 
@@ -241,15 +244,15 @@ class WalkingSearch {
       const { x, y, localIndex } = splitNodeId(id);
       const tile = loadTile(x, y);
       for (let edge = tile.edgeStart[localIndex]!; edge < tile.edgeStart[localIndex + 1]!; edge += 1) {
-        this.relax(tile.edgeTarget[edge]!, key + tile.edgeMeters[edge]!);
+        this.relax(tile.edgeTarget[edge]!, key + tile.edgeMeters[edge]!, id);
       }
     }
   }
 
-  private readonly answers = new Map<string, number | null>();
+  private readonly answers = new Map<string, { meters: number; endId: number } | null>();
 
-  /** Walking meters to a point, or null when it isn't reachable on foot within `limitMeters`. */
-  metersTo(lat: number, lon: number, limitMeters: number): number | null {
+  /** The walk to a point (its length and the graph node it reaches the point from), or null when it isn't reachable on foot within `limitMeters`. */
+  walkTo(lat: number, lon: number, limitMeters: number): { meters: number; endId: number } | null {
     const key = `${lat},${lon},${limitMeters}`;
     if (this.answers.has(key)) return this.answers.get(key)!;
     const answer = this.search(lat, lon, limitMeters);
@@ -257,22 +260,35 @@ class WalkingSearch {
     return answer;
   }
 
-  private search(lat: number, lon: number, limitMeters: number): number | null {
+  /** The graph nodes of a settled node's shortest walk, from where it starts to `endId`. */
+  nodesTo(endId: number): number[] {
+    const nodes: number[] = [];
+    for (let id = endId; id !== -1; id = this.previous.get(id) ?? -1) nodes.push(id);
+    return nodes.reverse();
+  }
+
+  private search(lat: number, lon: number, limitMeters: number): { meters: number; endId: number } | null {
     const ends = snap(lat, lon);
     if (ends.length === 0) return null;
-    let bestMeters = Infinity;
+    let best: { meters: number; endId: number } | null = null;
     // Settle outward in steps, stopping once nothing nearer can still turn up.
     for (let reach = 0; reach <= limitMeters; ) {
       reach = Math.min(limitMeters, reach + 400);
       this.expandTo(reach);
       for (const end of ends) {
         const meters = this.settled.get(end.id);
-        if (meters !== undefined) bestMeters = Math.min(bestMeters, meters + end.meters);
+        if (meters !== undefined && (!best || meters + end.meters < best.meters)) best = { meters: meters + end.meters, endId: end.id };
       }
-      if (bestMeters <= reach || reach >= limitMeters) break;
+      if ((best && best.meters <= reach) || reach >= limitMeters) break;
     }
-    return bestMeters <= limitMeters ? Math.round(bestMeters) : null;
+    return best && best.meters <= limitMeters ? { meters: Math.round(best.meters), endId: best.endId } : null;
   }
+}
+
+function nodeLatLon(id: number): { lat: number; lon: number } {
+  const { x, y, localIndex } = splitNodeId(id);
+  const tile = loadTile(x, y);
+  return { lat: tile.lat[localIndex]! / 1e6, lon: tile.lon[localIndex]! / 1e6 };
 }
 
 // Searches by origin rounded to about 10 m: a rider standing still (and every route in one
@@ -297,9 +313,32 @@ function searchFrom(lat: number, lon: number): WalkingSearch {
 export function walkingMeters(fromLat: number, fromLon: number, toLat: number, toLon: number, limitMeters: number): number | null {
   if (!hasWalkingData()) return null;
   try {
-    return searchFrom(fromLat, fromLon).metersTo(toLat, toLon, limitMeters);
+    return searchFrom(fromLat, fromLon).walkTo(toLat, toLon, limitMeters)?.meters ?? null;
   } catch {
     // A missing or corrupt tile mustn't break Nearby: the caller falls back to straight line.
+    return null;
+  }
+}
+
+/**
+ * The walk itself, as points from (fromLat, fromLon) along the streets to (toLat, toLon) — the
+ * same walk walkingMeters measures — for drawing. Null whenever walkingMeters would be.
+ */
+export function walkingPath(
+  fromLat: number,
+  fromLon: number,
+  toLat: number,
+  toLon: number,
+  limitMeters: number,
+): { meters: number; path: { lat: number; lon: number }[] } | null {
+  if (!hasWalkingData()) return null;
+  try {
+    const search = searchFrom(fromLat, fromLon);
+    const walk = search.walkTo(toLat, toLon, limitMeters);
+    if (!walk) return null;
+    const path = [{ lat: fromLat, lon: fromLon }, ...search.nodesTo(walk.endId).map(nodeLatLon), { lat: toLat, lon: toLon }];
+    return { meters: walk.meters, path };
+  } catch {
     return null;
   }
 }

@@ -8,6 +8,11 @@
  *   1. Download https://download.geofabrik.de/north-america/us/new-york-latest.osm.pbf (~500 MB)
  *      somewhere outside the repo.
  *   2. node --max-old-space-size=6144 scripts/build-walking-tiles.js <path-to>/new-york-latest.osm.pbf
+ *   node scripts/build-walking-tiles.js --check   build nothing; exit 1 if the tiles are missing or
+ *                                                 incomplete (run before every deploy)
+ *
+ * The tiles are gitignored, so a fresh checkout has none until step 2 runs. Without them Nearby
+ * still works but quietly falls back to straight-line distance, which is why deploys check.
  *
  * Reads the file twice: first the walkable ways (which nodes they use), then those nodes'
  * coordinates. Keeps only the service area, joins ways at shared nodes, drops points along a
@@ -21,6 +26,7 @@ const path = require('path');
 
 const { haversineMeters } = require('../lib/geo');
 const { SERVICE_AREA_BOUNDS } = require('../lib/serviceArea');
+const { WALKING_FORMAT_VERSION, WALKING_TILE_DEGREES } = require('../lib/walkingGraph');
 const { writeWalkingTiles } = require('../lib/walkingTilesBuild');
 
 const OUT_DIR = path.join(__dirname, '../static_data/walking');
@@ -59,7 +65,34 @@ class Float64List {
   view() { return this.data.subarray(0, this.length); }
 }
 
+/** Why the bundled tiles can't be used, or null when they're all there in the current format. */
+function checkTiles() {
+  const manifestPath = path.join(OUT_DIR, 'manifest.json');
+  if (!fs.existsSync(manifestPath)) return `${manifestPath} is missing`;
+  let manifest;
+  try {
+    manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+  } catch (error) {
+    return `${manifestPath} is unreadable: ${error.message}`;
+  }
+  if (manifest.version !== WALKING_FORMAT_VERSION || manifest.tileDegrees !== WALKING_TILE_DEGREES) return 'tiles are in an older format';
+  if (!Array.isArray(manifest.tiles) || manifest.tiles.length === 0) return 'the manifest lists no tiles';
+  const missing = manifest.tiles.filter((key) => !fs.existsSync(path.join(OUT_DIR, `${key}.bin.gz`)));
+  if (missing.length > 0) return `${missing.length} of ${manifest.tiles.length} tiles are missing (e.g. ${missing[0]})`;
+  return null;
+}
+
 async function main() {
+  if (process.argv[2] === '--check') {
+    const problem = checkTiles();
+    if (problem) {
+      console.error(`Walking tiles are not ready: ${problem}.`);
+      console.error('Build them first (see scripts/build-walking-tiles.js): npm --prefix firebase/functions run build:walking -- <new-york-latest.osm.pbf>');
+      process.exit(1);
+    }
+    console.log('Walking tiles are ready.');
+    return;
+  }
   const source = process.argv[2];
   if (!source || !fs.existsSync(source)) {
     console.error('Usage: node --max-old-space-size=6144 scripts/build-walking-tiles.js <new-york-latest.osm.pbf>');

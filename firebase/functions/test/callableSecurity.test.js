@@ -12,6 +12,7 @@ const {
   findNearbyTransit,
   geocodeAddress,
   getNearestRouteStop,
+  getWalkingPath,
   getRouteGeometry,
   getRouteLiveStatus,
   getRoutesLiveStatus,
@@ -35,7 +36,7 @@ test('requires an authenticated Firebase user', async () => {
 });
 
 test('every callable rejects anonymous traffic before validation or provider work', async () => {
-  for (const callable of [findNearbyTransit, geocodeAddress, getNearestRouteStop, getRouteGeometry, getRouteLiveStatus, getRoutesLiveStatus, getStopDepartures]) {
+  for (const callable of [findNearbyTransit, geocodeAddress, getNearestRouteStop, getRouteGeometry, getRouteLiveStatus, getRoutesLiveStatus, getStopDepartures, getWalkingPath]) {
     await assert.rejects(
       () => callable.run({ auth: null, data: {}, rawRequest: request(null).rawRequest }),
       (error) => error.code === 'unauthenticated',
@@ -44,7 +45,7 @@ test('every callable rejects anonymous traffic before validation or provider wor
 });
 
 test('serializes transit requests so a response cannot mix two GTFS snapshots', () => {
-  for (const callable of [findNearbyTransit, getNearestRouteStop, getRouteGeometry]) {
+  for (const callable of [findNearbyTransit, getNearestRouteStop, getRouteGeometry, getWalkingPath]) {
     assert.equal(callable.__endpoint.concurrency, 1);
     assert.equal(callable.__endpoint.maxInstances, 10);
     assert.equal(

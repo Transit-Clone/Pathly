@@ -7,6 +7,8 @@ import { useTransitLive } from '../data/TransitLiveContext';
 import { fetchRouteGeometry, type RouteGeometry } from '../data/routeGeometry';
 import { STATION_TRANSFERS, type StationTransfer, type TransferMode } from '../data/stationTransfers';
 import { departureDisplay, directionDestination, formatClockTime, scheduleStopsFromNow, stopsForDirection, type RouteDetail, type RoutePrediction } from '../data/transit';
+import { useWalkingPath } from '../data/walkingPath';
+import { transferColor } from '../data/routeColors';
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
 import { useLayoutEase } from '../theme/motion';
@@ -146,12 +148,15 @@ const OWN_TRANSFER_KIND: Record<NonNullable<RouteDetail['liveSource']>['agencyId
 function TransferChip({ testID, transfer }: { testID: string; transfer: StationTransfer }) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
+  const color = transferColor(transfer);
+  // Recolored buses are white-on-color, like every bus badge; rail keeps its own text color.
+  const textColor = color && color !== transfer.color ? colors.white : transfer.textColor ?? colors.white;
   return (
     <View
-      style={[styles.transferChip, transfer.mode === 'subway' && styles.subwayChip, { backgroundColor: transfer.color ?? colors.surfaceMuted }]}
+      style={[styles.transferChip, transfer.mode === 'subway' && styles.subwayChip, { backgroundColor: color ?? colors.surfaceMuted }]}
       testID={testID}
     >
-      <Text numberOfLines={1} style={[styles.transferText, { color: transfer.color ? transfer.textColor ?? colors.white : colors.ink }]}>{transfer.name}</Text>
+      <Text numberOfLines={1} style={[styles.transferText, { color: color ? textColor : colors.ink }]}>{transfer.name}</Text>
     </View>
   );
 }
@@ -351,6 +356,8 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
 
   const activeDirection = route.directions[activeDirectionIndex] ?? route.directions[0];
   const activeDestination = directionDestination(activeDirection.direction);
+  // The walk from the rider to the stop shown, drawn dotted on the map.
+  const walkPath = useWalkingPath(route.liveSource?.agencyId, activeDirection.stopId, locationKnown ? location : undefined);
 
   // Real geometry is fetched on demand for whichever route is actually open, derived
   // generically on the backend from its real schedule (gtfsDiscovery.ts) — not hand-authored
@@ -456,6 +463,7 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
         stops={geometryStatus.geometry.stops}
         userLocation={locationKnown ? location : undefined}
         vehicles={vehicles}
+        walkPath={walkPath ?? undefined}
       />
       {/* Overlay that ignores touches, so the badge never blocks panning the live map under it. */}
       <View pointerEvents="none" style={StyleSheet.absoluteFill}>

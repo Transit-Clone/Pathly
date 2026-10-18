@@ -235,6 +235,15 @@ describe('RouteMap', () => {
     expect(screen.getByTestId('route-line', hidden).props.coordinates).toHaveLength(3);
     expect(screen.queryByTestId('route-line-behind', hidden)).toBeNull();
     expect(screen.queryByTestId('route-direction-arrow', hidden)).toBeNull();
+    expect(screen.queryByTestId('route-walk', hidden)).toBeNull();
+  });
+
+  it('draws the walk to the stop as a dotted line', () => {
+    const walkPath = [{ lat: 40.905, lon: -73.2 }, { lat: 40.902, lon: -73.2 }, { lat: 40.9, lon: -73.2 }];
+    const screen = render(<RouteMap color="#A626AA" focusStopId="0" stops={stops} vehicles={[]} walkPath={walkPath} />);
+    const walk = screen.getByTestId('route-walk', { includeHiddenElements: true });
+    expect(walk.props.coordinates).toEqual(walkPath.map((point) => ({ latitude: point.lat, longitude: point.lon })));
+    expect(walk.props.lineDashPattern).toEqual([2, 8]);
   });
 });
 

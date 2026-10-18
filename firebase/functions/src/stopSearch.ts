@@ -1,6 +1,7 @@
 import { haversineMeters } from './geo';
 import { AGENCY_CONFIGS, type AgencyId } from './gtfsAgencies';
 import { availableAgencyIds, loadAgencyStaticData, loadGlobalStopRouteIndex, type GtfsRoute } from './gtfsStaticData';
+import { displayRouteColor } from './routeColors';
 
 /**
  * Searching Pathly's own transit stops by name, so search can show stations and bus stops with
@@ -88,7 +89,7 @@ function buildAgencyIndex(agencyId: AgencyId, routeIndex: Map<string, Set<string
       .map((routeId) => routesById.get(routeId))
       .filter((route): route is GtfsRoute => route !== undefined)
       .sort((a, b) => routeOrder.compare(routeLabel(a), routeLabel(b)))
-      .map((route) => ({ shortName: routeLabel(route), color: route.color ? `#${route.color.replace(/^#/, '')}` : '#0B4F9C' }));
+      .map((route) => ({ shortName: routeLabel(route), color: displayRouteColor(agencyId, route) }));
     if (routes.length === 0) continue;
     const lat = stopIds.reduce((sum, stopId) => sum + stopsById.get(stopId)!.lat, 0) / stopIds.length;
     const lng = stopIds.reduce((sum, stopId) => sum + stopsById.get(stopId)!.lon, 0) / stopIds.length;

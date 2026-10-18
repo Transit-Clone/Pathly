@@ -291,5 +291,16 @@ describe('Settings', () => {
       });
       expect(openURL).toHaveBeenCalledWith(ISSUES_URL);
     });
+
+    it('credits OpenStreetMap for walking distances and links to its copyright page', async () => {
+      const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
+      const screen = renderSettings();
+      await openPage(screen, 'help');
+      expect(screen.getByText('Walking distances use map data © OpenStreetMap contributors')).toBeTruthy();
+      await act(async () => {
+        fireEvent.press(screen.getByTestId('help-osm'));
+      });
+      expect(openURL).toHaveBeenCalledWith('https://www.openstreetmap.org/copyright');
+    });
   });
 });

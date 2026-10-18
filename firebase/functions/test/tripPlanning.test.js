@@ -4,6 +4,8 @@ const path = require('node:path');
 const test = require('node:test');
 
 const { buildRoutesRequest, decodePolyline, modeForVehicle, normalizeRoutesResponse } = require('../lib/tripPlanning');
+const { displayStepColor } = require('../lib/routeColors');
+const { agencyIdsForStep } = require('../lib/tripAgencies');
 
 // Real Routes API responses (Stony Brook University, Wednesday 8:30 AM), recorded with the
 // app's field mask; see openspec real-trip-planning task 1.1.
@@ -35,7 +37,9 @@ for (const name of ['routes-sbu-penn.json', 'routes-sbu-mall.json']) {
         assert.equal(step.from.name, details.stopDetails.departureStop.name);
         assert.equal(step.to.name, details.stopDetails.arrivalStop.name);
         assert.equal(step.to.time, details.stopDetails.arrivalTime);
-        assert.equal(step.line.color, details.transitLine.color);
+        // Buses take Pathly's agency colors (routeColors.ts); everything else keeps Google's.
+        const busColor = displayStepColor(agencyIdsForStep(step), { name: details.transitLine.name, shortName: details.transitLine.nameShort, color: details.transitLine.color });
+        assert.equal(step.line.color, busColor ?? details.transitLine.color);
         assert.equal(step.agency.name, details.transitLine.agencies[0].name);
         assert.equal(step.stopCount, details.stopCount);
         assert.ok(step.path.length >= 2, 'transit leg has a path');

@@ -5,12 +5,12 @@ export type RouteId = 'ronkonkoma' | 's1' | 'e' | '51' | '7' | 'n4';
 
 export const routeColors: Record<RouteId, string> = {
   ronkonkoma: '#a625a9',
-  s1: '#d6173f',
+  // Buses use their agency's color, as the backend shows them (firebase/functions/src/routeColors.ts).
+  s1: '#c63f49',
   e: '#0139a6',
-  '51': '#ff0011',
+  '51': '#c63f49',
   '7': '#a625a9',
-  // Real NICE Bus route color (routes.txt route_color for n4).
-  n4: '#ef853f',
+  n4: '#257489',
 };
 
 export type TransitDirection = {

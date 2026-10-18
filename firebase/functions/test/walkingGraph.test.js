@@ -6,7 +6,7 @@ const test = require('node:test');
 
 const { pickWalkingNearest } = require('../lib/gtfsDiscovery');
 const { haversineMeters } = require('../lib/geo');
-const { setWalkingDataForTests, walkingMeters } = require('../lib/walkingGraph');
+const { setWalkingDataForTests, walkingMeters, walkingPath } = require('../lib/walkingGraph');
 const { writeWalkingTiles } = require('../lib/walkingTilesBuild');
 
 // A rider beside a highway with no crossing nearby. Stop "across" is 100 m east as the crow
@@ -50,6 +50,18 @@ test('walking distance crosses tiles and respects the limit', () => {
   const walk = walkingMeters(rider.lat, rider.lon, far.lat, far.lon, 10_000);
   assert.ok(walk > 4_000, `walk was ${walk}`);
   assert.equal(walkingMeters(rider.lat, rider.lon, far.lat, far.lon, 3_000), null);
+});
+
+test('the walking path runs from the rider over the bridge to the stop', () => {
+  const walk = walkingPath(rider.lat, rider.lon, across.lat, across.lon, 5_000);
+  assert.equal(walk.meters, walkingMeters(rider.lat, rider.lon, across.lat, across.lon, 5_000));
+  const at = (point) => walk.path.findIndex((step) => Math.abs(step.lat - point.lat) < 1e-6 && Math.abs(step.lon - point.lon) < 1e-6);
+  assert.deepEqual(walk.path[0], rider);
+  assert.deepEqual(walk.path.at(-1), across);
+  // North on the rider's side, over the bridge, then south: in that order.
+  const order = [nodes[2], nodes[3]].map(at);
+  assert.ok(order[0] > 0 && order[1] > order[0], `path was ${JSON.stringify(walk.path)}`);
+  assert.equal(walkingPath(rider.lat, rider.lon, 40.80, -73.90, 5_000), null);
 });
 
 test('a point far from every path is off the graph', () => {

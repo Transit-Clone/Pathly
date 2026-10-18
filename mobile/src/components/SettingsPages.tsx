@@ -426,6 +426,8 @@ const TERMS: readonly string[] = [
   'Map and trip data are provided by Google and subject to Google’s terms.',
 ];
 
+export const OSM_COPYRIGHT_URL = 'https://www.openstreetmap.org/copyright';
+
 export function HelpSettings({ onFeedback }: PageProps) {
   const { page, profile } = useStyles();
   const [open, setOpen] = useState<HelpDoc | null>(null);
@@ -436,6 +438,13 @@ export function HelpSettings({ onFeedback }: PageProps) {
       await Linking.openURL(url);
     } catch {
       onFeedback(SUPPORT_EMAIL ? `Email ${SUPPORT_EMAIL} for support` : `Report problems at ${ISSUES_URL}`);
+    }
+  };
+  const openOsmCopyright = async () => {
+    try {
+      await Linking.openURL(OSM_COPYRIGHT_URL);
+    } catch {
+      onFeedback(`See ${OSM_COPYRIGHT_URL}`);
     }
   };
   return (
@@ -449,6 +458,8 @@ export function HelpSettings({ onFeedback }: PageProps) {
         {open === 'privacy' ? <View style={page.doc} testID="help-privacy-content">{PRIVACY.map((line) => <Text key={line} style={[page.docBody, page.docItem]}>{line}</Text>)}</View> : null}
         <SettingRow label="Terms of use" onPress={() => toggle('terms')} testID="help-terms" />
         {open === 'terms' ? <View style={page.doc} testID="help-terms-content">{TERMS.map((line) => <Text key={line} style={[page.docBody, page.docItem]}>{line}</Text>)}</View> : null}
+        {/* Nearby's walking distances come from OpenStreetMap, whose license (ODbL) requires this credit. */}
+        <SettingRow detail="Walking distances use map data © OpenStreetMap contributors" label="Map data" onPress={() => void openOsmCopyright()} testID="help-osm" />
       </Card>
     </>
   );

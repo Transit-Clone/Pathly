@@ -108,6 +108,8 @@ jest.mock('firebase/functions', () => {
   // Every callable's mock, by name, so the batch mock can answer through the per-route one.
   const mockCallables = new Map();
   const create = (name) => {
+    // No walk to draw unless a test says otherwise.
+    if (name === 'getWalkingPath') return jest.fn(() => Promise.resolve({ data: { walk: null } }));
     if (name === 'findNearbyTransit') {
       // Mirrors every demo-catalog live route as a "discovered" result, so tests can open a
       // route through the real dynamic-discovery path, not just a pinned one. Which of these

@@ -41,7 +41,9 @@ test('Manhattan buses show up nearby, the SBS under its full name', async () => 
   const buses = routes.filter((route) => route.agencyId === 'mn');
   assert.deepEqual(buses.map((route) => route.shortName).sort(), ['M15', 'M15-SBS']);
   assert.equal(buses[0].agencyDisplayName, 'MTA Bus');
-  assert.equal(buses.find((route) => route.shortName === 'M15').color, '#00AEEF');
+  // A local bus takes MTA's local-bus color (routeColors.ts), whatever its GTFS color.
+  assert.equal(buses.find((route) => route.shortName === 'M15').color, '#006CB7');
+  assert.equal(buses.find((route) => route.shortName === 'M15-SBS').color, '#00AEEF');
 });
 
 test('an on-demand agency with no data on this instance is left out', async () => {

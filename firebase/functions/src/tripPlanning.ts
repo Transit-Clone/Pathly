@@ -1,6 +1,8 @@
 import { createHash } from 'crypto';
 
 import { simplifyPath } from './gtfsGeometry';
+import { displayStepColor } from './routeColors';
+import { agencyIdsForStep } from './tripAgencies';
 
 /**
  * Real transit trip planning through the Google Routes API (computeRoutes, travelMode TRANSIT):
@@ -216,15 +218,21 @@ function transitStep(step: GoogleStep): TransitStep {
   const agency = line.agencies?.[0];
   const departure = stops.departureTime ?? '';
   const arrival = stops.arrivalTime ?? '';
+  const mode = modeForVehicle(line.vehicle?.type);
+  const agencyName = agency?.name ?? 'Transit';
+  // Buses get the same colors as everywhere else in Pathly (routeColors.ts), not Google's.
+  const busColor = displayStepColor(agencyIdsForStep({ agency: { name: agencyName }, mode }), { name: line.name, shortName: line.nameShort, color: line.color });
   return {
     kind: 'transit',
-    mode: modeForVehicle(line.vehicle?.type),
-    agency: { name: agency?.name ?? 'Transit', ...(agency?.uri ? { url: agency.uri } : {}) },
+    mode,
+    agency: { name: agencyName, ...(agency?.uri ? { url: agency.uri } : {}) },
     line: {
       name: line.name ?? line.nameShort ?? 'Transit',
       ...(line.nameShort ? { shortName: line.nameShort } : {}),
-      ...(line.color ? { color: line.color } : {}),
-      ...(line.textColor ? { textColor: line.textColor } : {}),
+      ...(busColor ? { color: busColor, textColor: '#FFFFFF' } : {
+        ...(line.color ? { color: line.color } : {}),
+        ...(line.textColor ? { textColor: line.textColor } : {}),
+      }),
       ...(line.vehicle?.name?.text ? { vehicleName: line.vehicle.name.text } : {}),
     },
     ...(details.headsign ? { headsign: details.headsign } : {}),
