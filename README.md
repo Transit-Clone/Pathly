@@ -1,15 +1,23 @@
 # Pathly
 
+<!-- <img src="mobile/assets/pathly-logo.png" width="200"> -->
+<!-- <img src="mobile/assets/home-screen.png" width="200"> -->
+
 Pathly is a mobile transportation app for riders in New York City and Long Island, inspired by Transit, Citymapper, and Google Maps. Riders can search for transit routes, view nearby stops, compare routes, and navigate to their destinations using real-time and scheduled transit data.
 
-The app is a React Native / Expo client (`mobile/`) backed by Firebase Cloud Functions (`firebase/functions/`). It covers the LIRR, the subway, MTA city buses (all five boroughs and MTA Bus Company), NICE Bus, Suffolk County Transit, NYC Ferry, and the Staten Island Ferry.
+The app is a React Native + Expo client (`mobile/`) backed by Firebase Cloud Functions (`firebase/functions/`). It covers the LIRR, the subway, MTA city buses (all five boroughs and MTA Bus Company), NICE Bus, Suffolk County Transit, NYC Ferry, and the Staten Island Ferry.
 
 Project documents are in `docs/`:
 
-- `Design(M3).ipynb`: the current (M3) design document
-- `Design.ipynb`: the original M2 design
+- `M3 Design.ipynb`: the current (M3) design document
+- `M2 Design.ipynb`: the original M2 design
 - `Proposal.ipynb`: the project proposal
-- `Testing-Plan.md`: the testing plan
+- `TestPlan.ipynb`: the testing plan
+
+<img src="mobile/assets/home-screen.png" width="200">
+<img src="mobile/assets/route-view.png" width="200">
+<img src="mobile/assets/route-results.png" width="200">
+<img src="mobile/assets/trip-details.png" width="200">
 
 ## Requirements
 
@@ -101,30 +109,30 @@ If the phone can't load the project, check that both devices are on the same net
 
 ## Commands
 
-| Command                    | Purpose                                                       |
-| -------------------------- | ------------------------------------------------------------- |
-| `npm start` / `npm run dev` | Start the Expo development server (QR code for Expo Go)      |
-| `npm run dev:web`          | Start the web app                                             |
-| `npm run dev:ios`          | Start Expo and open the iOS Simulator                         |
-| `npm run dev:android`      | Start Expo and open the Android emulator                      |
-| `npm run lint`             | Lint the mobile workspace                                     |
-| `npm run typecheck`        | Type-check the mobile workspace                               |
-| `npm test`                 | Run the mobile tests, then the Functions tests                |
-| `npm run build`            | Export the Android, iOS, and web bundles to `mobile/dist`     |
-| `npm run functions:build`  | Compile the Cloud Functions                                   |
-| `npm run functions:test`   | Build the timetable indexes and run the Functions tests       |
-| `npm run functions:shell`  | Open the Firebase Functions shell                             |
-| `npm run deploy:functions` | Deploy Cloud Functions only                                   |
-| `npm run deploy:backend`   | Deploy Storage rules and Cloud Functions                      |
+| Command                     | Purpose                                                   |
+| --------------------------- | --------------------------------------------------------- |
+| `npm start` / `npm run dev` | Start the Expo development server (QR code for Expo Go)   |
+| `npm run dev:web`           | Start the web app                                         |
+| `npm run dev:ios`           | Start Expo and open the iOS Simulator                     |
+| `npm run dev:android`       | Start Expo and open the Android emulator                  |
+| `npm run lint`              | Lint the mobile workspace                                 |
+| `npm run typecheck`         | Type-check the mobile workspace                           |
+| `npm test`                  | Run the mobile tests, then the Functions tests            |
+| `npm run build`             | Export the Android, iOS, and web bundles to `mobile/dist` |
+| `npm run functions:build`   | Compile the Cloud Functions                               |
+| `npm run functions:test`    | Build the timetable indexes and run the Functions tests   |
+| `npm run functions:shell`   | Open the Firebase Functions shell                         |
+| `npm run deploy:functions`  | Deploy Cloud Functions only                               |
+| `npm run deploy:backend`    | Deploy Storage rules and Cloud Functions                  |
 
 These commands run in `firebase/functions` (`npm --prefix firebase/functions run <script>` from the root):
 
-| Command                 | Purpose                                                                 |
-| ----------------------- | ----------------------------------------------------------------------- |
-| `build:gtfs`            | Build the per-route timetable indexes (add `-- --force` to rebuild all) |
-| `build:walking`         | Build the walking-graph tiles from an OpenStreetMap extract             |
-| `serve`                 | Build the indexes and start the local Functions emulator                |
-| `logs`                  | Show deployed Functions logs                                            |
+| Command         | Purpose                                                                 |
+| --------------- | ----------------------------------------------------------------------- |
+| `build:gtfs`    | Build the per-route timetable indexes (add `-- --force` to rebuild all) |
+| `build:walking` | Build the walking-graph tiles from an OpenStreetMap extract             |
+| `serve`         | Build the indexes and start the local Functions emulator                |
+| `logs`          | Show deployed Functions logs                                            |
 
 ## Backend
 
