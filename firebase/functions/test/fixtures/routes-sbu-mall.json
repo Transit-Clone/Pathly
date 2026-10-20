@@ -1,0 +1,2692 @@
+{
+  "routes": [
+    {
+      "legs": [
+        {
+          "startLocation": {
+            "latLng": {
+              "latitude": 40.9125869,
+              "longitude": -73.1234711
+            }
+          },
+          "endLocation": {
+            "latLng": {
+              "latitude": 40.8572784,
+              "longitude": -73.197946000000016
+            }
+          },
+          "steps": [
+            {
+              "distanceMeters": 22,
+              "staticDuration": "19s",
+              "polyline": {
+                "encodedPolyline": "uvuxFt|h}Ld@P"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9125869,
+                  "longitude": -73.1234711
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.912397299999995,
+                  "longitude": -73.1235578
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 28,
+              "staticDuration": "21s",
+              "polyline": {
+                "encodedPolyline": "ouuxFf}h}LN|@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.912397299999995,
+                  "longitude": -73.1235578
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9123188,
+                  "longitude": -73.1238719
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 97,
+              "staticDuration": "80s",
+              "polyline": {
+                "encodedPolyline": "_uuxFd_i}L]r@Ql@k@n@Cb@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9123188,
+                  "longitude": -73.1238719
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9128039,
+                  "longitude": -73.12478209999999
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 156,
+              "staticDuration": "125s",
+              "polyline": {
+                "encodedPolyline": "_xuxFzdi}Lu@^oDk@QBQIE?"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9128039,
+                  "longitude": -73.12478209999999
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9141562,
+                  "longitude": -73.124686
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 98,
+              "staticDuration": "73s",
+              "polyline": {
+                "encodedPolyline": "o`vxFhdi}LmDc@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9141562,
+                  "longitude": -73.124686
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9150315,
+                  "longitude": -73.1245125
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 36,
+              "staticDuration": "26s",
+              "polyline": {
+                "encodedPolyline": "}evxFdci}L_@XQX"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9150315,
+                  "longitude": -73.1245125
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.915281,
+                  "longitude": -73.1247715
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 10,
+              "staticDuration": "7s",
+              "polyline": {
+                "encodedPolyline": "ogvxFxdi}LQC"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.915281,
+                  "longitude": -73.1247715
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9153698,
+                  "longitude": -73.124752
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 89,
+              "staticDuration": "68s",
+              "polyline": {
+                "encodedPolyline": "ahvxFtdi}LYnE"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9153698,
+                  "longitude": -73.124752
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.915496200000007,
+                  "longitude": -73.1257948
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 11,
+              "staticDuration": "9s",
+              "polyline": {
+                "encodedPolyline": "{hvxFdki}LKDAF"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.915496200000007,
+                  "longitude": -73.1257948
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9155705,
+                  "longitude": -73.1258624
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 225,
+              "staticDuration": "190s",
+              "polyline": {
+                "encodedPolyline": "iivxFrki}LkAIMxAEn@GDCNwAMIHS@UL]E?BUD"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9155705,
+                  "longitude": -73.1258624
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.917069399999995,
+                  "longitude": -73.1266891
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 414,
+              "staticDuration": "325s",
+              "polyline": {
+                "encodedPolyline": "urvxFxpi}LIYCCeAGqASIJg@p@OJwAPa@X}A~AqAnAmAn@QLKT"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.917069399999995,
+                  "longitude": -73.1266891
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.920263000000006,
+                  "longitude": -73.12828549999999
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 11,
+              "staticDuration": "10s",
+              "polyline": {
+                "encodedPolyline": "sfwxFxzi}LQM"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.920263000000006,
+                  "longitude": -73.12828549999999
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9203507,
+                  "longitude": -73.1282172
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 89,
+              "staticDuration": "82s",
+              "polyline": {
+                "encodedPolyline": "egwxFjzi}LM^XRK\\[OQj@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9203507,
+                  "longitude": -73.1282172
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9205824,
+                  "longitude": -73.1287663
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 134,
+              "staticDuration": "109s",
+              "polyline": {
+                "encodedPolyline": "shwxFx}i}LmBw@wAmAKM"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9205824,
+                  "longitude": -73.1287663
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9216312,
+                  "longitude": -73.12803439999999
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 9569,
+              "staticDuration": "600s",
+              "polyline": {
+                "encodedPolyline": "_gwxFl|i}L?@zIhFrB`BhCbCbAhAtClDjApB|BdExG|Mv@hAj@n@VT~@p@~CnAvBLjAEx@GrMwCdAQtAIf@?hBRtA`@jAl@d@\\jAfAjJnKrAlAdAn@hDxAdr@xUzBnAlBbBn@v@|Z|d@j[je@~CrEjFfIzAvB`M`R`@p@fYpb@zHfL|\\ng@bd@xp@|AfCjGzKtBpDjClFxCpFf@bA~@rCj@~BfEjVC@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.920322,
+                  "longitude": -73.128548000000009
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.856548,
+                  "longitude": -73.198028999999991
+                }
+              },
+              "transitDetails": {
+                "stopDetails": {
+                  "arrivalStop": {
+                    "name": "Smithtown",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.856548,
+                        "longitude": -73.198028999999991
+                      }
+                    }
+                  },
+                  "arrivalTime": "2026-10-14T13:22:00Z",
+                  "departureStop": {
+                    "name": "Stony Brook",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.920322,
+                        "longitude": -73.128548000000009
+                      }
+                    }
+                  },
+                  "departureTime": "2026-10-14T13:12:00Z"
+                },
+                "localizedValues": {
+                  "arrivalTime": {
+                    "time": {
+                      "text": "9:22 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  },
+                  "departureTime": {
+                    "time": {
+                      "text": "9:12 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  }
+                },
+                "headsign": "Hicksville",
+                "transitLine": {
+                  "agencies": [
+                    {
+                      "name": "Long Island Rail Road",
+                      "phoneNumber": "+1 718-217-5477",
+                      "uri": "http://www.mta.info/lirr"
+                    }
+                  ],
+                  "name": "Port Jefferson Branch",
+                  "color": "#006ec7",
+                  "nameShort": "LIRR",
+                  "textColor": "#ffffff",
+                  "vehicle": {
+                    "name": {
+                      "text": "Train"
+                    },
+                    "type": "HEAVY_RAIL",
+                    "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/rail2.png"
+                  }
+                },
+                "stopCount": 2
+              },
+              "travelMode": "TRANSIT"
+            },
+            {
+              "distanceMeters": 12,
+              "staticDuration": "16s",
+              "polyline": {
+                "encodedPolyline": "avjxFlvw}LRI"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.8561665,
+                  "longitude": -73.199269
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.8560654,
+                  "longitude": -73.19921579999999
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 35,
+              "staticDuration": "29s",
+              "polyline": {
+                "encodedPolyline": "mujxFbvw}LSmA"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.8560654,
+                  "longitude": -73.19921579999999
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.8561706,
+                  "longitude": -73.198826099999991
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 228,
+              "staticDuration": "196s",
+              "polyline": {
+                "encodedPolyline": "avjxFtsw}LSHs@mEYJHb@[p@aBqAGB"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.8561706,
+                  "longitude": -73.198826099999991
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.8572784,
+                  "longitude": -73.197946000000016
+                }
+              },
+              "travelMode": "WALK"
+            }
+          ]
+        }
+      ],
+      "distanceMeters": 11264,
+      "duration": "1986s",
+      "travelAdvisory": {
+        "transitFare": {}
+      },
+      "localizedValues": {
+        "transitFare": {}
+      }
+    },
+    {
+      "legs": [
+        {
+          "startLocation": {
+            "latLng": {
+              "latitude": 40.9125869,
+              "longitude": -73.1234711
+            }
+          },
+          "endLocation": {
+            "latLng": {
+              "latitude": 40.8572784,
+              "longitude": -73.197946000000016
+            }
+          },
+          "steps": [
+            {
+              "distanceMeters": 22,
+              "staticDuration": "19s",
+              "polyline": {
+                "encodedPolyline": "uvuxFt|h}Ld@P"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9125869,
+                  "longitude": -73.1234711
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.912397299999995,
+                  "longitude": -73.1235578
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 61,
+              "staticDuration": "47s",
+              "polyline": {
+                "encodedPolyline": "ouuxFf}h}LXbBRX"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.912397299999995,
+                  "longitude": -73.1235578
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.912167,
+                  "longitude": -73.1241897
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 40,
+              "staticDuration": "32s",
+              "polyline": {
+                "encodedPolyline": "atuxFdai}LPn@LRHD"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.912167,
+                  "longitude": -73.1241897
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9119574,
+                  "longitude": -73.1245607
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 9,
+              "staticDuration": "8s",
+              "polyline": {
+                "encodedPolyline": "wruxFnci}LAT"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9119574,
+                  "longitude": -73.1245607
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.911972399999996,
+                  "longitude": -73.1246714
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 149,
+              "staticDuration": "129s",
+              "polyline": {
+                "encodedPolyline": "yruxFddi}LT^RLz@jAFlBNv@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.911972399999996,
+                  "longitude": -73.1246714
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9113434,
+                  "longitude": -73.126107699999991
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 32,
+              "staticDuration": "32s",
+              "polyline": {
+                "encodedPolyline": "{nuxFdmi}Ln@f@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9113434,
+                  "longitude": -73.126107699999991
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.911097399999996,
+                  "longitude": -73.1263087
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 13,
+              "staticDuration": "11s",
+              "polyline": {
+                "encodedPolyline": "kmuxFlni}LKX"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.911097399999996,
+                  "longitude": -73.1263087
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9111602,
+                  "longitude": -73.1264408
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 9068,
+              "staticDuration": "1560s",
+              "polyline": {
+                "encodedPolyline": "mmuxFpoi}LKGjAeDh@sBl@qCb@}AJGTg@`@i@PEPWAWKSIEQcBKc@h@wI@gBAo@Im@GQc@s@e@WoBI}@O{Bo@{@M_BE_@BqARyBj@_APm@B}@GeB[P{ATiAjAoD\\oAX_BXwB`BqKFU`@y@`@a@n@Yn@GzBXvBT~A@dBUjA_@~@c@bIuExEkCrA[d@Ej@?`ALl@Np@\\v@l@n@v@n@jA`@tATnAH`A@vCAbGBj@d@zB^zAtAg@p@a@hIwDfDmA|DiAx}@yTjDaAjDqAbD}AtC_BnH_F|EiD`Am@j@IZCXJLHNBz_@zv@fAtBfE`JpDlHrAbChGbNbDxHtBpFj@tAhBpDjB`E~A`E~CnHjAdChAlCxDfItAfC~@zAjAlAb@KFKdF{@c@iFpCa@SkCLC"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.911106,
+                  "longitude": -73.126486
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.864931999999996,
+                  "longitude": -73.13271499999999
+                }
+              },
+              "transitDetails": {
+                "stopDetails": {
+                  "arrivalStop": {
+                    "name": "Smith Haven Mall (51SB)",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.864931999999996,
+                        "longitude": -73.13271499999999
+                      }
+                    }
+                  },
+                  "arrivalTime": "2026-10-14T13:17:00Z",
+                  "departureStop": {
+                    "name": "Circle Rd/Engineering Dr",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.911106,
+                        "longitude": -73.126486
+                      }
+                    }
+                  },
+                  "departureTime": "2026-10-14T12:51:00Z"
+                },
+                "localizedValues": {
+                  "arrivalTime": {
+                    "time": {
+                      "text": "9:17 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  },
+                  "departureTime": {
+                    "time": {
+                      "text": "8:51 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  }
+                },
+                "headsign": "Patchogue RR",
+                "transitLine": {
+                  "agencies": [
+                    {
+                      "name": "Suffolk County Transit",
+                      "phoneNumber": "+1 631-852-5200",
+                      "uri": "https://sctbus.org/"
+                    }
+                  ],
+                  "name": "51 - Patchogue RR to Port Jefferson Station",
+                  "color": "#c63f49",
+                  "nameShort": "51",
+                  "textColor": "#ffffff",
+                  "vehicle": {
+                    "name": {
+                      "text": "Bus"
+                    },
+                    "type": "BUS",
+                    "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/bus2.png"
+                  }
+                },
+                "stopCount": 13
+              },
+              "travelMode": "TRANSIT"
+            },
+            {
+              "distanceMeters": 18,
+              "staticDuration": "18s",
+              "polyline": {
+                "encodedPolyline": "{llxFnvj}LDh@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.8649428,
+                  "longitude": -73.1327179
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.8649099,
+                  "longitude": -73.132930899999991
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 6577,
+              "staticDuration": "780s",
+              "polyline": {
+                "encodedPolyline": "sllxFxwj}LMB]yDS[QwA_Ev@R|BfAKfAnNgF|@EHc@JxBfCxBvBpCvB|CjB|@^xEhCHR`@Xf@n@b@r@^bA\\rALb@HRp@|NDZPpEG|DI~EFvTF~Bt@xI^~El@|F`@~DJd@JhAfA|SAN\\~CRxAr@nDt@hCL`@t@~B~CzHpA|Cv@xCdDzN`ApE`@pCd@dEfAzHZvCzAvQ@|@_@`EmB~Kw@rFC\\]fEGzCClCIbFArFEn@?fEJdHRtEThCn@dFpB~N\\nCLpBEvCUvDObBc@bDMr@KE"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.864899,
+                  "longitude": -73.132927999999993
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.85543,
+                  "longitude": -73.198933
+                }
+              },
+              "transitDetails": {
+                "stopDetails": {
+                  "arrivalStop": {
+                    "name": "W Main St/Redwood Ln",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.85543,
+                        "longitude": -73.198933
+                      }
+                    }
+                  },
+                  "arrivalTime": "2026-10-14T13:52:00Z",
+                  "departureStop": {
+                    "name": "Smith Haven Mall (4, 5)",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.864899,
+                        "longitude": -73.132927999999993
+                      }
+                    }
+                  },
+                  "departureTime": "2026-10-14T13:39:00Z"
+                },
+                "localizedValues": {
+                  "arrivalTime": {
+                    "time": {
+                      "text": "9:52 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  },
+                  "departureTime": {
+                    "time": {
+                      "text": "9:39 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  }
+                },
+                "headsign": "Babylon RR",
+                "transitLine": {
+                  "agencies": [
+                    {
+                      "name": "Suffolk County Transit - West",
+                      "phoneNumber": "+1 631-852-5200",
+                      "uri": "https://sctbus.org/"
+                    }
+                  ],
+                  "name": "05 - Babylon RR to Smith Haven Mall",
+                  "color": "#c63f49",
+                  "nameShort": "5",
+                  "textColor": "#ffffff",
+                  "vehicle": {
+                    "name": {
+                      "text": "Bus"
+                    },
+                    "type": "BUS",
+                    "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/bus2.png"
+                  }
+                },
+                "stopCount": 12
+              },
+              "travelMode": "TRANSIT"
+            },
+            {
+              "distanceMeters": 32,
+              "staticDuration": "25s",
+              "polyline": {
+                "encodedPolyline": "kqjxFjtw}LSdA"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.8554221,
+                  "longitude": -73.198937
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.8555212,
+                  "longitude": -73.1992915
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 80,
+              "staticDuration": "66s",
+              "polyline": {
+                "encodedPolyline": "_rjxFpvw}LoAm@GSC[AG"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.8555212,
+                  "longitude": -73.1992915
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.855993500000004,
+                  "longitude": -73.1987824
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 20,
+              "staticDuration": "21s",
+              "polyline": {
+                "encodedPolyline": "}tjxFjsw}L_@T"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.855993500000004,
+                  "longitude": -73.1987824
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.8561517,
+                  "longitude": -73.19889169999999
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 6,
+              "staticDuration": "6s",
+              "polyline": {
+                "encodedPolyline": "}ujxF`tw}LCK"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.8561517,
+                  "longitude": -73.19889169999999
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.8561706,
+                  "longitude": -73.198826099999991
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 228,
+              "staticDuration": "196s",
+              "polyline": {
+                "encodedPolyline": "avjxFtsw}LSHs@mEYJHb@[p@aBqAGB"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.8561706,
+                  "longitude": -73.198826099999991
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.8572784,
+                  "longitude": -73.197946000000016
+                }
+              },
+              "travelMode": "WALK"
+            }
+          ]
+        }
+      ],
+      "distanceMeters": 16355,
+      "duration": "4319s",
+      "travelAdvisory": {
+        "transitFare": {}
+      },
+      "localizedValues": {
+        "transitFare": {}
+      }
+    },
+    {
+      "legs": [
+        {
+          "startLocation": {
+            "latLng": {
+              "latitude": 40.9125869,
+              "longitude": -73.1234711
+            }
+          },
+          "endLocation": {
+            "latLng": {
+              "latitude": 40.8572784,
+              "longitude": -73.197946000000016
+            }
+          },
+          "steps": [
+            {
+              "distanceMeters": 22,
+              "staticDuration": "19s",
+              "polyline": {
+                "encodedPolyline": "uvuxFt|h}Ld@P"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9125869,
+                  "longitude": -73.1234711
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.912397299999995,
+                  "longitude": -73.1235578
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 28,
+              "staticDuration": "21s",
+              "polyline": {
+                "encodedPolyline": "ouuxFf}h}LN|@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.912397299999995,
+                  "longitude": -73.1235578
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9123188,
+                  "longitude": -73.1238719
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 97,
+              "staticDuration": "80s",
+              "polyline": {
+                "encodedPolyline": "_uuxFd_i}L]r@Ql@k@n@Cb@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9123188,
+                  "longitude": -73.1238719
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9128039,
+                  "longitude": -73.12478209999999
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 156,
+              "staticDuration": "125s",
+              "polyline": {
+                "encodedPolyline": "_xuxFzdi}Lu@^oDk@QBQIE?"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9128039,
+                  "longitude": -73.12478209999999
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9141562,
+                  "longitude": -73.124686
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 98,
+              "staticDuration": "73s",
+              "polyline": {
+                "encodedPolyline": "o`vxFhdi}LmDc@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9141562,
+                  "longitude": -73.124686
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9150315,
+                  "longitude": -73.1245125
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 36,
+              "staticDuration": "26s",
+              "polyline": {
+                "encodedPolyline": "}evxFdci}L_@XQX"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9150315,
+                  "longitude": -73.1245125
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.915281,
+                  "longitude": -73.1247715
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 10,
+              "staticDuration": "7s",
+              "polyline": {
+                "encodedPolyline": "ogvxFxdi}LQC"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.915281,
+                  "longitude": -73.1247715
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9153698,
+                  "longitude": -73.124752
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 89,
+              "staticDuration": "68s",
+              "polyline": {
+                "encodedPolyline": "ahvxFtdi}LYnE"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9153698,
+                  "longitude": -73.124752
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.915496200000007,
+                  "longitude": -73.1257948
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 11,
+              "staticDuration": "9s",
+              "polyline": {
+                "encodedPolyline": "{hvxFdki}LKDAF"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.915496200000007,
+                  "longitude": -73.1257948
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9155705,
+                  "longitude": -73.1258624
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 225,
+              "staticDuration": "190s",
+              "polyline": {
+                "encodedPolyline": "iivxFrki}LkAIMxAEn@GDCNwAMIHS@UL]E?BUD"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9155705,
+                  "longitude": -73.1258624
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.917069399999995,
+                  "longitude": -73.1266891
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 414,
+              "staticDuration": "325s",
+              "polyline": {
+                "encodedPolyline": "urvxFxpi}LIYCCeAGqASIJg@p@OJwAPa@X}A~AqAnAmAn@QLKT"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.917069399999995,
+                  "longitude": -73.1266891
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.920263000000006,
+                  "longitude": -73.12828549999999
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 11,
+              "staticDuration": "10s",
+              "polyline": {
+                "encodedPolyline": "sfwxFxzi}LQM"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.920263000000006,
+                  "longitude": -73.12828549999999
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9203507,
+                  "longitude": -73.1282172
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 89,
+              "staticDuration": "82s",
+              "polyline": {
+                "encodedPolyline": "egwxFjzi}LM^XRK\\[OQj@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9203507,
+                  "longitude": -73.1282172
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9205824,
+                  "longitude": -73.1287663
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 134,
+              "staticDuration": "109s",
+              "polyline": {
+                "encodedPolyline": "shwxFx}i}LmBw@wAmAKM"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9205824,
+                  "longitude": -73.1287663
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9216312,
+                  "longitude": -73.12803439999999
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 9569,
+              "staticDuration": "660s",
+              "polyline": {
+                "encodedPolyline": "_gwxFl|i}L?@zIhFrB`BhCbCbAhAtClDjApB|BdExG|Mv@hAj@n@VT~@p@~CnAvBLjAEx@GrMwCdAQtAIf@?hBRtA`@jAl@d@\\jAfAjJnKrAlAdAn@hDxAdr@xUzBnAlBbBn@v@|Z|d@j[je@~CrEjFfIzAvB`M`R`@p@fYpb@zHfL|\\ng@bd@xp@|AfCjGzKtBpDjClFxCpFf@bA~@rCj@~BfEjVC@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.920322,
+                  "longitude": -73.128548000000009
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.856548,
+                  "longitude": -73.198028999999991
+                }
+              },
+              "transitDetails": {
+                "stopDetails": {
+                  "arrivalStop": {
+                    "name": "Smithtown",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.856548,
+                        "longitude": -73.198028999999991
+                      }
+                    }
+                  },
+                  "arrivalTime": "2026-10-14T14:11:00Z",
+                  "departureStop": {
+                    "name": "Stony Brook",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.920322,
+                        "longitude": -73.128548000000009
+                      }
+                    }
+                  },
+                  "departureTime": "2026-10-14T14:00:00Z"
+                },
+                "localizedValues": {
+                  "arrivalTime": {
+                    "time": {
+                      "text": "10:11 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  },
+                  "departureTime": {
+                    "time": {
+                      "text": "10:00 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  }
+                },
+                "headsign": "Jamaica",
+                "transitLine": {
+                  "agencies": [
+                    {
+                      "name": "Long Island Rail Road",
+                      "phoneNumber": "+1 718-217-5477",
+                      "uri": "http://www.mta.info/lirr"
+                    }
+                  ],
+                  "name": "Port Jefferson Branch",
+                  "color": "#006ec7",
+                  "nameShort": "LIRR",
+                  "textColor": "#ffffff",
+                  "vehicle": {
+                    "name": {
+                      "text": "Train"
+                    },
+                    "type": "HEAVY_RAIL",
+                    "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/rail2.png"
+                  }
+                },
+                "stopCount": 2
+              },
+              "travelMode": "TRANSIT"
+            },
+            {
+              "distanceMeters": 12,
+              "staticDuration": "16s",
+              "polyline": {
+                "encodedPolyline": "avjxFlvw}LRI"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.8561665,
+                  "longitude": -73.199269
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.8560654,
+                  "longitude": -73.19921579999999
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 35,
+              "staticDuration": "29s",
+              "polyline": {
+                "encodedPolyline": "mujxFbvw}LSmA"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.8560654,
+                  "longitude": -73.19921579999999
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.8561706,
+                  "longitude": -73.198826099999991
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 228,
+              "staticDuration": "196s",
+              "polyline": {
+                "encodedPolyline": "avjxFtsw}LSHs@mEYJHb@[p@aBqAGB"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.8561706,
+                  "longitude": -73.198826099999991
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.8572784,
+                  "longitude": -73.197946000000016
+                }
+              },
+              "travelMode": "WALK"
+            }
+          ]
+        }
+      ],
+      "distanceMeters": 11264,
+      "duration": "2046s",
+      "travelAdvisory": {
+        "transitFare": {}
+      },
+      "localizedValues": {
+        "transitFare": {}
+      }
+    },
+    {
+      "legs": [
+        {
+          "startLocation": {
+            "latLng": {
+              "latitude": 40.9125869,
+              "longitude": -73.1234711
+            }
+          },
+          "endLocation": {
+            "latLng": {
+              "latitude": 40.8572784,
+              "longitude": -73.197946000000016
+            }
+          },
+          "steps": [
+            {
+              "distanceMeters": 22,
+              "staticDuration": "19s",
+              "polyline": {
+                "encodedPolyline": "uvuxFt|h}Ld@P"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9125869,
+                  "longitude": -73.1234711
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.912397299999995,
+                  "longitude": -73.1235578
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 61,
+              "staticDuration": "47s",
+              "polyline": {
+                "encodedPolyline": "ouuxFf}h}LXbBRX"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.912397299999995,
+                  "longitude": -73.1235578
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.912167,
+                  "longitude": -73.1241897
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 40,
+              "staticDuration": "32s",
+              "polyline": {
+                "encodedPolyline": "atuxFdai}LPn@LRHD"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.912167,
+                  "longitude": -73.1241897
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9119574,
+                  "longitude": -73.1245607
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 9,
+              "staticDuration": "8s",
+              "polyline": {
+                "encodedPolyline": "wruxFnci}LAT"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9119574,
+                  "longitude": -73.1245607
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.911972399999996,
+                  "longitude": -73.1246714
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 149,
+              "staticDuration": "129s",
+              "polyline": {
+                "encodedPolyline": "yruxFddi}LT^RLz@jAFlBNv@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.911972399999996,
+                  "longitude": -73.1246714
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9113434,
+                  "longitude": -73.126107699999991
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 32,
+              "staticDuration": "32s",
+              "polyline": {
+                "encodedPolyline": "{nuxFdmi}Ln@f@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9113434,
+                  "longitude": -73.126107699999991
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.911097399999996,
+                  "longitude": -73.1263087
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 13,
+              "staticDuration": "11s",
+              "polyline": {
+                "encodedPolyline": "kmuxFlni}LKX"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.911097399999996,
+                  "longitude": -73.1263087
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9111602,
+                  "longitude": -73.1264408
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 9068,
+              "staticDuration": "1320s",
+              "polyline": {
+                "encodedPolyline": "mmuxFpoi}LKGjAeDh@sBl@qCb@}AJGTg@`@i@PEPWAWKSIEQcBKc@h@wI@gBAo@Im@GQc@s@e@WoBI}@O{Bo@{@M_BE_@BqARyBj@_APm@B}@GeB[P{ATiAjAoD\\oAX_BXwB`BqKFU`@y@`@a@n@Yn@GzBXvBT~A@dBUjA_@~@c@bIuExEkCrA[d@Ej@?`ALl@Np@\\v@l@n@v@n@jA`@tATnAH`A@vCAbGBj@d@zB^zAtAg@p@a@hIwDfDmA|DiAx}@yTjDaAjDqAbD}AtC_BnH_F|EiD`Am@j@IZCXJLHNBz_@zv@fAtBfE`JpDlHrAbChGbNbDxHtBpFj@tAhBpDjB`E~A`E~CnHjAdChAlCxDfItAfC~@zAjAlAb@KFKdF{@c@iFpCa@SkCLC"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.911106,
+                  "longitude": -73.126486
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.864931999999996,
+                  "longitude": -73.13271499999999
+                }
+              },
+              "transitDetails": {
+                "stopDetails": {
+                  "arrivalStop": {
+                    "name": "Smith Haven Mall (51SB)",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.864931999999996,
+                        "longitude": -73.13271499999999
+                      }
+                    }
+                  },
+                  "arrivalTime": "2026-10-14T14:15:00Z",
+                  "departureStop": {
+                    "name": "Circle Rd/Engineering Dr",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.911106,
+                        "longitude": -73.126486
+                      }
+                    }
+                  },
+                  "departureTime": "2026-10-14T13:53:00Z"
+                },
+                "localizedValues": {
+                  "arrivalTime": {
+                    "time": {
+                      "text": "10:15 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  },
+                  "departureTime": {
+                    "time": {
+                      "text": "9:53 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  }
+                },
+                "headsign": "Patchogue RR",
+                "transitLine": {
+                  "agencies": [
+                    {
+                      "name": "Suffolk County Transit",
+                      "phoneNumber": "+1 631-852-5200",
+                      "uri": "https://sctbus.org/"
+                    }
+                  ],
+                  "name": "51 - Patchogue RR to Port Jefferson Station",
+                  "color": "#c63f49",
+                  "nameShort": "51",
+                  "textColor": "#ffffff",
+                  "vehicle": {
+                    "name": {
+                      "text": "Bus"
+                    },
+                    "type": "BUS",
+                    "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/bus2.png"
+                  }
+                },
+                "stopCount": 13
+              },
+              "travelMode": "TRANSIT"
+            },
+            {
+              "distanceMeters": 18,
+              "staticDuration": "18s",
+              "polyline": {
+                "encodedPolyline": "{llxFnvj}LDh@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.8649428,
+                  "longitude": -73.1327179
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.8649099,
+                  "longitude": -73.132930899999991
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 6577,
+              "staticDuration": "780s",
+              "polyline": {
+                "encodedPolyline": "sllxFxwj}LMB]yDS[QwA_Ev@R|BfAKfAnNgF|@EHc@JxBfCxBvBpCvB|CjB|@^xEhCHR`@Xf@n@b@r@^bA\\rALb@HRp@|NDZPpEG|DI~EFvTF~Bt@xI^~El@|F`@~DJd@JhAfA|SAN\\~CRxAr@nDt@hCL`@t@~B~CzHpA|Cv@xCdDzN`ApE`@pCd@dEfAzHZvCzAvQ@|@_@`EmB~Kw@rFC\\]fEGzCClCIbFArFEn@?fEJdHRtEThCn@dFpB~N\\nCLpBEvCUvDObBc@bDMr@KE"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.864899,
+                  "longitude": -73.132927999999993
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.85543,
+                  "longitude": -73.198933
+                }
+              },
+              "transitDetails": {
+                "stopDetails": {
+                  "arrivalStop": {
+                    "name": "W Main St/Redwood Ln",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.85543,
+                        "longitude": -73.198933
+                      }
+                    }
+                  },
+                  "arrivalTime": "2026-10-14T14:52:00Z",
+                  "departureStop": {
+                    "name": "Smith Haven Mall (4, 5)",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.864899,
+                        "longitude": -73.132927999999993
+                      }
+                    }
+                  },
+                  "departureTime": "2026-10-14T14:39:00Z"
+                },
+                "localizedValues": {
+                  "arrivalTime": {
+                    "time": {
+                      "text": "10:52 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  },
+                  "departureTime": {
+                    "time": {
+                      "text": "10:39 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  }
+                },
+                "headsign": "Babylon RR",
+                "transitLine": {
+                  "agencies": [
+                    {
+                      "name": "Suffolk County Transit - West",
+                      "phoneNumber": "+1 631-852-5200",
+                      "uri": "https://sctbus.org/"
+                    }
+                  ],
+                  "name": "05 - Babylon RR to Smith Haven Mall",
+                  "color": "#c63f49",
+                  "nameShort": "5",
+                  "textColor": "#ffffff",
+                  "vehicle": {
+                    "name": {
+                      "text": "Bus"
+                    },
+                    "type": "BUS",
+                    "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/bus2.png"
+                  }
+                },
+                "stopCount": 12
+              },
+              "travelMode": "TRANSIT"
+            },
+            {
+              "distanceMeters": 32,
+              "staticDuration": "25s",
+              "polyline": {
+                "encodedPolyline": "kqjxFjtw}LSdA"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.8554221,
+                  "longitude": -73.198937
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.8555212,
+                  "longitude": -73.1992915
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 80,
+              "staticDuration": "66s",
+              "polyline": {
+                "encodedPolyline": "_rjxFpvw}LoAm@GSC[AG"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.8555212,
+                  "longitude": -73.1992915
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.855993500000004,
+                  "longitude": -73.1987824
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 20,
+              "staticDuration": "21s",
+              "polyline": {
+                "encodedPolyline": "}tjxFjsw}L_@T"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.855993500000004,
+                  "longitude": -73.1987824
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.8561517,
+                  "longitude": -73.19889169999999
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 6,
+              "staticDuration": "6s",
+              "polyline": {
+                "encodedPolyline": "}ujxF`tw}LCK"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.8561517,
+                  "longitude": -73.19889169999999
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.8561706,
+                  "longitude": -73.198826099999991
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 228,
+              "staticDuration": "196s",
+              "polyline": {
+                "encodedPolyline": "avjxFtsw}LSHs@mEYJHb@[p@aBqAGB"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.8561706,
+                  "longitude": -73.198826099999991
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.8572784,
+                  "longitude": -73.197946000000016
+                }
+              },
+              "travelMode": "WALK"
+            }
+          ]
+        }
+      ],
+      "distanceMeters": 16355,
+      "duration": "4199s",
+      "travelAdvisory": {
+        "transitFare": {}
+      },
+      "localizedValues": {
+        "transitFare": {}
+      }
+    },
+    {
+      "legs": [
+        {
+          "startLocation": {
+            "latLng": {
+              "latitude": 40.9125869,
+              "longitude": -73.1234711
+            }
+          },
+          "endLocation": {
+            "latLng": {
+              "latitude": 40.8572784,
+              "longitude": -73.197946000000016
+            }
+          },
+          "steps": [
+            {
+              "distanceMeters": 22,
+              "staticDuration": "19s",
+              "polyline": {
+                "encodedPolyline": "uvuxFt|h}Ld@P"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9125869,
+                  "longitude": -73.1234711
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.912397299999995,
+                  "longitude": -73.1235578
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 61,
+              "staticDuration": "47s",
+              "polyline": {
+                "encodedPolyline": "ouuxFf}h}LXbBRX"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.912397299999995,
+                  "longitude": -73.1235578
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.912167,
+                  "longitude": -73.1241897
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 40,
+              "staticDuration": "32s",
+              "polyline": {
+                "encodedPolyline": "atuxFdai}LPn@LRHD"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.912167,
+                  "longitude": -73.1241897
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9119574,
+                  "longitude": -73.1245607
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 9,
+              "staticDuration": "8s",
+              "polyline": {
+                "encodedPolyline": "wruxFnci}LAT"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9119574,
+                  "longitude": -73.1245607
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.911972399999996,
+                  "longitude": -73.1246714
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 149,
+              "staticDuration": "129s",
+              "polyline": {
+                "encodedPolyline": "yruxFddi}LT^RLz@jAFlBNv@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.911972399999996,
+                  "longitude": -73.1246714
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9113434,
+                  "longitude": -73.126107699999991
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 32,
+              "staticDuration": "32s",
+              "polyline": {
+                "encodedPolyline": "{nuxFdmi}Ln@f@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9113434,
+                  "longitude": -73.126107699999991
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.911097399999996,
+                  "longitude": -73.1263087
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 13,
+              "staticDuration": "11s",
+              "polyline": {
+                "encodedPolyline": "kmuxFlni}LKX"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.911097399999996,
+                  "longitude": -73.1263087
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9111602,
+                  "longitude": -73.1264408
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 9068,
+              "staticDuration": "1320s",
+              "polyline": {
+                "encodedPolyline": "mmuxFpoi}LKGjAeDh@sBl@qCb@}AJGTg@`@i@PEPWAWKSIEQcBKc@h@wI@gBAo@Im@GQc@s@e@WoBI}@O{Bo@{@M_BE_@BqARyBj@_APm@B}@GeB[P{ATiAjAoD\\oAX_BXwB`BqKFU`@y@`@a@n@Yn@GzBXvBT~A@dBUjA_@~@c@bIuExEkCrA[d@Ej@?`ALl@Np@\\v@l@n@v@n@jA`@tATnAH`A@vCAbGBj@d@zB^zAtAg@p@a@hIwDfDmA|DiAx}@yTjDaAjDqAbD}AtC_BnH_F|EiD`Am@j@IZCXJLHNBz_@zv@fAtBfE`JpDlHrAbChGbNbDxHtBpFj@tAhBpDjB`E~A`E~CnHjAdChAlCxDfItAfC~@zAjAlAb@KFKdF{@c@iFpCa@SkCLC"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.911106,
+                  "longitude": -73.126486
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.864931999999996,
+                  "longitude": -73.13271499999999
+                }
+              },
+              "transitDetails": {
+                "stopDetails": {
+                  "arrivalStop": {
+                    "name": "Smith Haven Mall (51SB)",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.864931999999996,
+                        "longitude": -73.13271499999999
+                      }
+                    }
+                  },
+                  "arrivalTime": "2026-10-14T14:45:00Z",
+                  "departureStop": {
+                    "name": "Circle Rd/Engineering Dr",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.911106,
+                        "longitude": -73.126486
+                      }
+                    }
+                  },
+                  "departureTime": "2026-10-14T14:23:00Z"
+                },
+                "localizedValues": {
+                  "arrivalTime": {
+                    "time": {
+                      "text": "10:45 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  },
+                  "departureTime": {
+                    "time": {
+                      "text": "10:23 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  }
+                },
+                "headsign": "Patchogue RR",
+                "transitLine": {
+                  "agencies": [
+                    {
+                      "name": "Suffolk County Transit",
+                      "phoneNumber": "+1 631-852-5200",
+                      "uri": "https://sctbus.org/"
+                    }
+                  ],
+                  "name": "51 - Patchogue RR to Port Jefferson Station",
+                  "color": "#c63f49",
+                  "nameShort": "51",
+                  "textColor": "#ffffff",
+                  "vehicle": {
+                    "name": {
+                      "text": "Bus"
+                    },
+                    "type": "BUS",
+                    "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/bus2.png"
+                  }
+                },
+                "stopCount": 13
+              },
+              "travelMode": "TRANSIT"
+            },
+            {
+              "distanceMeters": 18,
+              "staticDuration": "18s",
+              "polyline": {
+                "encodedPolyline": "{llxFnvj}LDh@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.8649428,
+                  "longitude": -73.1327179
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.8649099,
+                  "longitude": -73.132930899999991
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 6577,
+              "staticDuration": "780s",
+              "polyline": {
+                "encodedPolyline": "sllxFxwj}LMB]yDS[QwA_Ev@R|BfAKfAnNgF|@EHc@JxBfCxBvBpCvB|CjB|@^xEhCHR`@Xf@n@b@r@^bA\\rALb@HRp@|NDZPpEG|DI~EFvTF~Bt@xI^~El@|F`@~DJd@JhAfA|SAN\\~CRxAr@nDt@hCL`@t@~B~CzHpA|Cv@xCdDzN`ApE`@pCd@dEfAzHZvCzAvQ@|@_@`EmB~Kw@rFC\\]fEGzCClCIbFArFEn@?fEJdHRtEThCn@dFpB~N\\nCLpBEvCUvDObBc@bDMr@KE"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.864899,
+                  "longitude": -73.132927999999993
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.85543,
+                  "longitude": -73.198933
+                }
+              },
+              "transitDetails": {
+                "stopDetails": {
+                  "arrivalStop": {
+                    "name": "W Main St/Redwood Ln",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.85543,
+                        "longitude": -73.198933
+                      }
+                    }
+                  },
+                  "arrivalTime": "2026-10-14T15:22:00Z",
+                  "departureStop": {
+                    "name": "Smith Haven Mall (4, 5)",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.864899,
+                        "longitude": -73.132927999999993
+                      }
+                    }
+                  },
+                  "departureTime": "2026-10-14T15:09:00Z"
+                },
+                "localizedValues": {
+                  "arrivalTime": {
+                    "time": {
+                      "text": "11:22 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  },
+                  "departureTime": {
+                    "time": {
+                      "text": "11:09 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  }
+                },
+                "headsign": "Babylon RR",
+                "transitLine": {
+                  "agencies": [
+                    {
+                      "name": "Suffolk County Transit - West",
+                      "phoneNumber": "+1 631-852-5200",
+                      "uri": "https://sctbus.org/"
+                    }
+                  ],
+                  "name": "05 - Babylon RR to Smith Haven Mall",
+                  "color": "#c63f49",
+                  "nameShort": "5",
+                  "textColor": "#ffffff",
+                  "vehicle": {
+                    "name": {
+                      "text": "Bus"
+                    },
+                    "type": "BUS",
+                    "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/bus2.png"
+                  }
+                },
+                "stopCount": 12
+              },
+              "travelMode": "TRANSIT"
+            },
+            {
+              "distanceMeters": 32,
+              "staticDuration": "25s",
+              "polyline": {
+                "encodedPolyline": "kqjxFjtw}LSdA"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.8554221,
+                  "longitude": -73.198937
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.8555212,
+                  "longitude": -73.1992915
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 80,
+              "staticDuration": "66s",
+              "polyline": {
+                "encodedPolyline": "_rjxFpvw}LoAm@GSC[AG"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.8555212,
+                  "longitude": -73.1992915
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.855993500000004,
+                  "longitude": -73.1987824
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 20,
+              "staticDuration": "21s",
+              "polyline": {
+                "encodedPolyline": "}tjxFjsw}L_@T"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.855993500000004,
+                  "longitude": -73.1987824
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.8561517,
+                  "longitude": -73.19889169999999
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 6,
+              "staticDuration": "6s",
+              "polyline": {
+                "encodedPolyline": "}ujxF`tw}LCK"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.8561517,
+                  "longitude": -73.19889169999999
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.8561706,
+                  "longitude": -73.198826099999991
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 228,
+              "staticDuration": "196s",
+              "polyline": {
+                "encodedPolyline": "avjxFtsw}LSHs@mEYJHb@[p@aBqAGB"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.8561706,
+                  "longitude": -73.198826099999991
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.8572784,
+                  "longitude": -73.197946000000016
+                }
+              },
+              "travelMode": "WALK"
+            }
+          ]
+        }
+      ],
+      "distanceMeters": 16355,
+      "duration": "4199s",
+      "travelAdvisory": {
+        "transitFare": {}
+      },
+      "localizedValues": {
+        "transitFare": {}
+      }
+    },
+    {
+      "legs": [
+        {
+          "startLocation": {
+            "latLng": {
+              "latitude": 40.9125869,
+              "longitude": -73.1234711
+            }
+          },
+          "endLocation": {
+            "latLng": {
+              "latitude": 40.8572784,
+              "longitude": -73.197946000000016
+            }
+          },
+          "steps": [
+            {
+              "distanceMeters": 22,
+              "staticDuration": "19s",
+              "polyline": {
+                "encodedPolyline": "uvuxFt|h}Ld@P"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9125869,
+                  "longitude": -73.1234711
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.912397299999995,
+                  "longitude": -73.1235578
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 28,
+              "staticDuration": "21s",
+              "polyline": {
+                "encodedPolyline": "ouuxFf}h}LN|@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.912397299999995,
+                  "longitude": -73.1235578
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9123188,
+                  "longitude": -73.1238719
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 97,
+              "staticDuration": "80s",
+              "polyline": {
+                "encodedPolyline": "_uuxFd_i}L]r@Ql@k@n@Cb@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9123188,
+                  "longitude": -73.1238719
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9128039,
+                  "longitude": -73.12478209999999
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 156,
+              "staticDuration": "125s",
+              "polyline": {
+                "encodedPolyline": "_xuxFzdi}Lu@^oDk@QBQIE?"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9128039,
+                  "longitude": -73.12478209999999
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9141562,
+                  "longitude": -73.124686
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 98,
+              "staticDuration": "73s",
+              "polyline": {
+                "encodedPolyline": "o`vxFhdi}LmDc@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9141562,
+                  "longitude": -73.124686
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9150315,
+                  "longitude": -73.1245125
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 36,
+              "staticDuration": "26s",
+              "polyline": {
+                "encodedPolyline": "}evxFdci}L_@XQX"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9150315,
+                  "longitude": -73.1245125
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.915281,
+                  "longitude": -73.1247715
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 10,
+              "staticDuration": "7s",
+              "polyline": {
+                "encodedPolyline": "ogvxFxdi}LQC"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.915281,
+                  "longitude": -73.1247715
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9153698,
+                  "longitude": -73.124752
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 89,
+              "staticDuration": "68s",
+              "polyline": {
+                "encodedPolyline": "ahvxFtdi}LYnE"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9153698,
+                  "longitude": -73.124752
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.915496200000007,
+                  "longitude": -73.1257948
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 11,
+              "staticDuration": "9s",
+              "polyline": {
+                "encodedPolyline": "{hvxFdki}LKDAF"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.915496200000007,
+                  "longitude": -73.1257948
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9155705,
+                  "longitude": -73.1258624
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 225,
+              "staticDuration": "190s",
+              "polyline": {
+                "encodedPolyline": "iivxFrki}LkAIMxAEn@GDCNwAMIHS@UL]E?BUD"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9155705,
+                  "longitude": -73.1258624
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.917069399999995,
+                  "longitude": -73.1266891
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 414,
+              "staticDuration": "325s",
+              "polyline": {
+                "encodedPolyline": "urvxFxpi}LIYCCeAGqASIJg@p@OJwAPa@X}A~AqAnAmAn@QLKT"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.917069399999995,
+                  "longitude": -73.1266891
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.920263000000006,
+                  "longitude": -73.12828549999999
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 11,
+              "staticDuration": "10s",
+              "polyline": {
+                "encodedPolyline": "sfwxFxzi}LQM"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.920263000000006,
+                  "longitude": -73.12828549999999
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9203507,
+                  "longitude": -73.1282172
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 89,
+              "staticDuration": "82s",
+              "polyline": {
+                "encodedPolyline": "egwxFjzi}LM^XRK\\[OQj@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9203507,
+                  "longitude": -73.1282172
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9205824,
+                  "longitude": -73.1287663
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 134,
+              "staticDuration": "109s",
+              "polyline": {
+                "encodedPolyline": "shwxFx}i}LmBw@wAmAKM"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.9205824,
+                  "longitude": -73.1287663
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.9216312,
+                  "longitude": -73.12803439999999
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 9569,
+              "staticDuration": "660s",
+              "polyline": {
+                "encodedPolyline": "_gwxFl|i}L?@zIhFrB`BhCbCbAhAtClDjApB|BdExG|Mv@hAj@n@VT~@p@~CnAvBLjAEx@GrMwCdAQtAIf@?hBRtA`@jAl@d@\\jAfAjJnKrAlAdAn@hDxAdr@xUzBnAlBbBn@v@|Z|d@j[je@~CrEjFfIzAvB`M`R`@p@fYpb@zHfL|\\ng@bd@xp@|AfCjGzKtBpDjClFxCpFf@bA~@rCj@~BfEjVC@"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.920322,
+                  "longitude": -73.128548000000009
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.856548,
+                  "longitude": -73.198028999999991
+                }
+              },
+              "transitDetails": {
+                "stopDetails": {
+                  "arrivalStop": {
+                    "name": "Smithtown",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.856548,
+                        "longitude": -73.198028999999991
+                      }
+                    }
+                  },
+                  "arrivalTime": "2026-10-14T15:06:00Z",
+                  "departureStop": {
+                    "name": "Stony Brook",
+                    "location": {
+                      "latLng": {
+                        "latitude": 40.920322,
+                        "longitude": -73.128548000000009
+                      }
+                    }
+                  },
+                  "departureTime": "2026-10-14T14:55:00Z"
+                },
+                "localizedValues": {
+                  "arrivalTime": {
+                    "time": {
+                      "text": "11:06 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  },
+                  "departureTime": {
+                    "time": {
+                      "text": "10:55 AM"
+                    },
+                    "timeZone": "America/New_York"
+                  }
+                },
+                "headsign": "Huntington",
+                "transitLine": {
+                  "agencies": [
+                    {
+                      "name": "Long Island Rail Road",
+                      "phoneNumber": "+1 718-217-5477",
+                      "uri": "http://www.mta.info/lirr"
+                    }
+                  ],
+                  "name": "Port Jefferson Branch",
+                  "color": "#006ec7",
+                  "nameShort": "LIRR",
+                  "textColor": "#ffffff",
+                  "vehicle": {
+                    "name": {
+                      "text": "Train"
+                    },
+                    "type": "HEAVY_RAIL",
+                    "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/rail2.png"
+                  }
+                },
+                "stopCount": 2
+              },
+              "travelMode": "TRANSIT"
+            },
+            {
+              "distanceMeters": 12,
+              "staticDuration": "16s",
+              "polyline": {
+                "encodedPolyline": "avjxFlvw}LRI"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.8561665,
+                  "longitude": -73.199269
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.8560654,
+                  "longitude": -73.19921579999999
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 35,
+              "staticDuration": "29s",
+              "polyline": {
+                "encodedPolyline": "mujxFbvw}LSmA"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.8560654,
+                  "longitude": -73.19921579999999
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.8561706,
+                  "longitude": -73.198826099999991
+                }
+              },
+              "travelMode": "WALK"
+            },
+            {
+              "distanceMeters": 228,
+              "staticDuration": "196s",
+              "polyline": {
+                "encodedPolyline": "avjxFtsw}LSHs@mEYJHb@[p@aBqAGB"
+              },
+              "startLocation": {
+                "latLng": {
+                  "latitude": 40.8561706,
+                  "longitude": -73.198826099999991
+                }
+              },
+              "endLocation": {
+                "latLng": {
+                  "latitude": 40.8572784,
+                  "longitude": -73.197946000000016
+                }
+              },
+              "travelMode": "WALK"
+            }
+          ]
+        }
+      ],
+      "distanceMeters": 11264,
+      "duration": "2046s",
+      "travelAdvisory": {
+        "transitFare": {}
+      },
+      "localizedValues": {
+        "transitFare": {}
+      }
+    }
+  ]
+}

@@ -1,16 +1,20 @@
-import { fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render } from '@testing-library/react-native';
 import mockSafeAreaContext from 'react-native-safe-area-context/jest/mock';
-import { Animated, processColor, StyleSheet, Text } from 'react-native';
+import { Animated, Platform, processColor, StyleSheet, Text } from 'react-native';
 
 import { Icon } from '../src/components/Icon';
 import { LiveSignal } from '../src/components/LiveSignal';
 import { MapBackdrop, fitMap } from '../src/components/MapBackdrop';
 import { PressableScale } from '../src/components/PressableScale';
+import { NearbySkeleton } from '../src/components/Skeleton';
+import { TransitCard } from '../src/components/TransitCard';
+import { routeById, type RouteDetail } from '../src/data/transit';
 import { AppSettingsProvider } from '../src/theme/AppSettings';
 import { ScreenTransition } from '../src/theme/motion';
 import { darkColors, lightColors } from '../src/theme/colors';
 import { badgeLabel, RouteBadge, transitModeForAgency } from '../src/components/RouteBadge';
 import { RouteMap } from '../src/components/RouteMap';
+import { SavedPlacesStrip } from '../src/components/SavedPlacesStrip';
 
 jest.mock('react-native-safe-area-context', () => mockSafeAreaContext);
 
@@ -36,6 +40,17 @@ describe('RouteBadge', () => {
     expect(transitModeForAgency('MTA Subway')).toBe('subway');
     expect(transitModeForAgency('LIRR')).toBe('rail');
     expect(transitModeForAgency('Suffolk County Transit')).toBe('bus');
+    expect(transitModeForAgency('MTA Bus')).toBe('bus');
+    expect(transitModeForAgency('NYC Ferry')).toBe('ferry');
+    expect(transitModeForAgency('Staten Island Ferry')).toBe('ferry');
+  });
+
+  it('draws a ferry as a pill with a boat, announced as a ferry', () => {
+    const screen = render(<RouteBadge agency="NYC Ferry" color="#00839C" shortName="ER" size="large" testID="ferry" />);
+    const badge = screen.getByTestId('ferry');
+    expect(badge.props.accessibilityLabel).toBe('ER ferry');
+    expect(StyleSheet.flatten(badge.props.style).borderRadius).toBe(23);
+    expect(screen.getByText('boat', { includeHiddenElements: true })).toBeTruthy();
   });
 
   it.each([
@@ -113,6 +128,66 @@ describe('LiveSignal', () => {
   });
 });
 
+describe('loading placeholders', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('shows three pulsing card-shaped placeholders, announced once as a group', () => {
+    const loop = jest.spyOn(Animated, 'loop');
+    const screen = render(<AppSettingsProvider><NearbySkeleton /></AppSettingsProvider>);
+    const group = screen.getByLabelText('Loading nearby transit');
+    expect(group.props.accessible).toBe(true);
+    expect(screen.getAllByTestId('nearby-placeholder-card')).toHaveLength(3);
+    for (const card of screen.getAllByTestId('nearby-placeholder-card')) {
+      expect(StyleSheet.flatten(card.props.style)).toEqual(expect.objectContaining({ height: 104, borderRadius: 14, backgroundColor: lightColors.skeleton }));
+    }
+    expect(loop).toHaveBeenCalledTimes(1);
+    screen.unmount();
+  });
+
+  it('fades the placeholders down and back up over time when motion is allowed', () => {
+    // Web drives the fade from JS (no native driver), so its opacity can be sampled here.
+    jest.replaceProperty(Platform, 'OS', 'web');
+    jest.useFakeTimers();
+    try {
+      const screen = render(<AppSettingsProvider><NearbySkeleton /></AppSettingsProvider>);
+      const opacity = () => StyleSheet.flatten(screen.getAllByTestId('nearby-placeholder-card')[0]!.props.style).opacity as number;
+      const samples = [opacity()];
+      for (let step = 0; step < 16; step += 1) {
+        act(() => jest.advanceTimersByTime(100));
+        samples.push(opacity());
+      }
+      expect(samples[0]).toBe(1);
+      expect(Math.min(...samples)).toBeLessThan(0.5);
+      expect(samples.at(-1)!).toBeGreaterThan(0.95);
+      screen.unmount();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('uses the dark placeholder gray in dark mode and holds still under Reduce motion', () => {
+    const loop = jest.spyOn(Animated, 'loop');
+    const screen = render(<AppSettingsProvider initialAppearance="dark" initialReducedMotion={true}><NearbySkeleton /></AppSettingsProvider>);
+    expect(loop).not.toHaveBeenCalled();
+    for (const card of screen.getAllByTestId('nearby-placeholder-card')) {
+      expect(StyleSheet.flatten(card.props.style)).toEqual(expect.objectContaining({ opacity: 1, backgroundColor: darkColors.skeleton }));
+    }
+  });
+
+  it('fills each card time box with a placeholder while its live times load, and a dash if they fail', () => {
+    const base = routeById.ronkonkoma;
+    const [first, second] = base.directions;
+    const waiting: RouteDetail = { ...base, liveStatus: 'loading', directions: [{ ...first, unavailable: true }, { ...second, unavailable: true }] };
+    const screen = render(<AppSettingsProvider><TransitCard onPress={() => undefined} route={waiting} /></AppSettingsProvider>);
+    expect(screen.getAllByTestId('transit-time-placeholder').length).toBeGreaterThan(0);
+    expect(screen.getAllByLabelText(/Loading live data\.$/).length).toBeGreaterThan(0);
+
+    screen.rerender(<AppSettingsProvider><TransitCard onPress={() => undefined} route={{ ...waiting, liveStatus: 'error' }} /></AppSettingsProvider>);
+    expect(screen.queryByTestId('transit-time-placeholder')).toBeNull();
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
+  });
+});
+
 describe('motion', () => {
   afterEach(() => jest.restoreAllMocks());
 
@@ -161,6 +236,15 @@ describe('RouteMap', () => {
     expect(screen.getByTestId('route-line', hidden).props.coordinates).toHaveLength(3);
     expect(screen.queryByTestId('route-line-behind', hidden)).toBeNull();
     expect(screen.queryByTestId('route-direction-arrow', hidden)).toBeNull();
+    expect(screen.queryByTestId('route-walk', hidden)).toBeNull();
+  });
+
+  it('draws the walk to the stop as a dotted line', () => {
+    const walkPath = [{ lat: 40.905, lon: -73.2 }, { lat: 40.902, lon: -73.2 }, { lat: 40.9, lon: -73.2 }];
+    const screen = render(<RouteMap color="#A626AA" focusStopId="0" stops={stops} vehicles={[]} walkPath={walkPath} />);
+    const walk = screen.getByTestId('route-walk', { includeHiddenElements: true });
+    expect(walk.props.coordinates).toEqual(walkPath.map((point) => ({ latitude: point.lat, longitude: point.lon })));
+    expect(walk.props.lineDashPattern).toEqual([2, 8]);
   });
 });
 
@@ -169,7 +253,31 @@ describe('badgeLabel', () => {
     expect(badgeLabel({ agency: 'Suffolk County Transit', shortName: '51' })).toBe('51');
     expect(badgeLabel({ agency: 'MTA Subway', shortName: 'E' })).toBe('E');
     expect(badgeLabel({ agency: 'LIRR', shortName: 'Port Jefferson Branch' })).toBe('PJ');
+    // NYC DOT publishes no route_short_name, so the ferry's badge is its initials.
+    expect(badgeLabel({ agency: 'Staten Island Ferry', shortName: 'Staten Island Ferry' })).toBe('SIF');
     expect(badgeLabel({ agency: 'LIRR', shortName: 'Ronkonkoma Branch' })).toBe('RK');
     expect(badgeLabel({ agency: 'NICE Bus', shortName: 'Roosevelt Field Shuttle Line' })).toBe('RFS');
+    // A single route code is shown whole: "S" would read as the S shuttle, not the SIM3C.
+    expect(badgeLabel({ agency: 'MTA Bus Company', shortName: 'SIM3C' })).toBe('SIM3C');
+    expect(badgeLabel({ agency: 'MTA New York City Transit', shortName: 'Q44-SBS' })).toBe('Q44-SBS');
+  });
+});
+
+describe('SavedPlacesStrip', () => {
+  const place = (id: string, name: string) => ({ id, dateSaved: null, address: { name, streetAddress: `${id} Main St`, coordinates: [40.7, -73.9] as [number, number], type: 'Destination' as const, placeId: id } });
+
+  it('lists saved places by name then address in a sideways row, and opens the tapped one', () => {
+    const onSelect = jest.fn();
+    const places = [place('a', 'Home'), place('b', 'Work'), place('c', 'Gym')];
+    const screen = render(<AppSettingsProvider><SavedPlacesStrip onSelect={onSelect} places={places} /></AppSettingsProvider>);
+    expect(screen.getByTestId('search-saved-places').props.horizontal).toBe(true);
+    expect(screen.getByLabelText('Home, a Main St')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('search-saved-place-b'));
+    expect(onSelect).toHaveBeenCalledWith(places[1]);
+  });
+
+  it('shows nothing without saved places', () => {
+    const screen = render(<AppSettingsProvider><SavedPlacesStrip onSelect={jest.fn()} places={[]} /></AppSettingsProvider>);
+    expect(screen.queryByTestId('search-saved-places')).toBeNull();
   });
 });

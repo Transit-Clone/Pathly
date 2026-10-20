@@ -5,8 +5,13 @@ import { StyleSheet, View } from 'react-native';
 import { GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_SCRIPT_ID } from '../data/googleMapsLoaderConfig';
 import { googleMapStyle } from '../data/mapStyle';
 import { SERVICE_AREA_BOUNDS } from '../data/serviceArea';
+import { addressAfterName } from '../data/placesSearch';
+import { metersPerPixelAtZoom, SAVED_PIN, savedPinSvgUrl, stackSavedPins } from '../data/savedPlacePin';
+import { locationPoint, savedPlaceName, type SavedLocation } from '../data/userData';
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { useTheme } from '../theme/AppSettings';
+import { iconGlyph, type IconName } from './Icon';
+import { savedLocationIcon } from './SavedPlacesStrip';
 
 const ZOOM = 14;
 const MIN_ZOOM = 9;
@@ -76,8 +81,19 @@ type GoogleMapViewProps = {
    */
   onOrientationChange?: (orientation: { heading: number; rotated: boolean }) => void;
   reorientRequest?: number;
+  /** A click on the map (admin: show its coordinates). */
+  onPress?: (point: Coordinates) => void;
+  /** A long press (or right-click) on the map (admin: choose a mock location). */
+  onLongPress?: (point: Coordinates) => void;
+  /** Saved destinations with valid coordinates, drawn as tappable pins. */
+  savedLocations?: readonly SavedLocation[];
+  onSavedLocationPress?: (location: SavedLocation) => void;
+  /** Accepted for parity with native: the web map always draws its own location dot. */
+  simulatedLocation?: boolean;
   testID?: string;
 };
+
+const LONG_PRESS_MS = 600;
 
 /**
  * react-native-maps has no web build; this renders the real Google Maps JS API instead.
@@ -86,12 +102,29 @@ type GoogleMapViewProps = {
  * like native; the bottom is sized to the sheet's top. To keep `center` centered in the
  * visible gap below the header, the map is panned up by half the top padding.
  */
-export function GoogleMapView({ initialCamera, location, onCameraChange, onUserMoveEnd, onUserPan, padding, recenterRequest = 0, testID = 'google-map-view' }: GoogleMapViewProps) {
+/** A saved-place pin's icon as a marker label (a star when the icon font isn't available). */
+function pinLabel(icon: IconName): google.maps.MarkerLabel {
+  const glyph = icon in ICON_FALLBACK ? null : iconGlyph(icon as Parameters<typeof iconGlyph>[0]);
+  return glyph
+    ? { color: '#FFFFFF', fontFamily: glyph.fontFamily, fontSize: '18px', text: glyph.text }
+    : { color: '#FFFFFF', fontSize: '15px', fontWeight: '700', text: '★' };
+}
+/** Icons drawn from a font other than the one marker labels use. */
+const ICON_FALLBACK = { pin: true } as const;
+
+export function GoogleMapView({ initialCamera, location, onCameraChange, onLongPress, onPress, onSavedLocationPress, onUserMoveEnd, onUserPan, padding, recenterRequest = 0, savedLocations = [], testID = 'google-map-view' }: GoogleMapViewProps) {
+  // The JS API has no long-press event: a press held still for LONG_PRESS_MS counts as one.
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelLongPress = () => {
+    if (longPressTimer.current) clearTimeout(longPressTimer.current);
+    longPressTimer.current = null;
+  };
+  const pointOf = (event: google.maps.MapMouseEvent): Coordinates | null => (event.latLng ? { latitude: event.latLng.lat(), longitude: event.latLng.lng() } : null);
   // Set by a rider drag so programmatic moves (recentering on GPS) don't count as exploring.
   const userMoved = useRef(false);
   // No Map ID: Google ignores inline styles on cloud-styled maps. These hide its places and, in
   // the dark theme, recolor the map; changing them restyles the live map in place.
-  const { isDark } = useTheme();
+  const { colors, isDark } = useTheme();
   const mapOptions = useMemo(() => ({ ...baseMapOptions, styles: googleMapStyle(isDark) }), [isDark]);
   const { isLoaded } = useJsApiLoader({
     id: GOOGLE_MAPS_SCRIPT_ID,
@@ -110,6 +143,16 @@ export function GoogleMapView({ initialCamera, location, onCameraChange, onUserM
   const [mountRecenterRequest] = useState(recenterRequest);
   const [restoredCenter] = useState(() => (initialCamera ? { lat: initialCamera.latitude, lng: initialCamera.longitude } : null));
   const [initialZoom] = useState(() => initialCamera?.zoom ?? ZOOM);
+  // Followed so saved-place pins can stack once zooming out would make them collide.
+  const [zoom, setZoom] = useState(initialZoom);
+  const savedPins = useMemo(() => {
+    const placed = savedLocations.flatMap((saved) => {
+      const point = locationPoint(saved.address);
+      return point ? [{ saved, point }] : [];
+    });
+    const stacks = stackSavedPins(placed.map(({ point }) => point), metersPerPixelAtZoom(zoom, placed[0]?.point.latitude ?? 0));
+    return placed.map((pin, index) => ({ ...pin, ...stacks[index]! }));
+  }, [savedLocations, zoom]);
   const center = useMemo(
     () => (recenterRequest === mountRecenterRequest && restoredCenter ? restoredCenter : { ...position }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the request only; `position` is read at request time
@@ -136,7 +179,22 @@ export function GoogleMapView({ initialCamera, location, onCameraChange, onUserM
         <GoogleMap
           center={center}
           mapContainerStyle={containerStyle}
+          onMouseDown={onLongPress ? (event) => {
+            const point = pointOf(event);
+            cancelLongPress();
+            if (point) longPressTimer.current = setTimeout(() => onLongPress(point), LONG_PRESS_MS);
+          } : undefined}
+          onMouseUp={onLongPress ? cancelLongPress : undefined}
+          onClick={onPress ? (event) => {
+            const point = pointOf(event);
+            if (point) onPress(point);
+          } : undefined}
+          onRightClick={onLongPress ? (event) => {
+            const point = pointOf(event);
+            if (point) onLongPress(point);
+          } : undefined}
           onDragStart={() => {
+            cancelLongPress();
             userMoved.current = true;
             onUserPan?.();
           }}
@@ -150,11 +208,42 @@ export function GoogleMapView({ initialCamera, location, onCameraChange, onUserM
             if (visibleCenter) onUserMoveEnd?.(visibleCenter);
           }}
           onLoad={setMap}
+          onZoomChanged={() => {
+            const next = map?.getZoom();
+            if (next !== undefined) setZoom(next);
+          }}
           onUnmount={() => setMap(null)}
           options={mapOptions}
           zoom={initialZoom}
         >
           <Rectangle bounds={SERVICE_AREA_BOUNDS} options={serviceAreaOutlineOptions} />
+          {savedPins.map(({ saved, position: pinPosition, leader }) => {
+            const name = savedPlaceName(saved.address);
+            const address = addressAfterName(name, saved.address.streetAddress);
+            const markerLabel = address
+              ? `Plan a trip to ${name}, ${address}`
+              : `Plan a trip to ${name}`;
+            return (
+              <Marker
+                clickable={onSavedLocationPress != null}
+                // Anchored at the point's tip, so the badge stands over the place at every zoom; the
+                // icon is the label, drawn in the icon font at the badge's exact center.
+                icon={{
+                  url: savedPinSvgUrl(colors.primary, colors.surface),
+                  anchor: new google.maps.Point(SAVED_PIN.size / 2, SAVED_PIN.size + SAVED_PIN.point),
+                  labelOrigin: new google.maps.Point(SAVED_PIN.size / 2, SAVED_PIN.size / 2),
+                }}
+                // Only a stack's top pin shows its icon: the map draws every label above every pin.
+                label={leader ? pinLabel(savedLocationIcon(saved.address)) : undefined}
+                key={saved.id}
+                onClick={() => onSavedLocationPress?.(saved)}
+                options={{ optimized: false }}
+                position={{ lat: pinPosition.latitude, lng: pinPosition.longitude }}
+                title={markerLabel}
+                zIndex={leader ? 2 : 1}
+              />
+            );
+          })}
           {/* The rider's blue "you are here" dot, following every GPS update. */}
           <Marker
             clickable={false}

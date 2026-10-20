@@ -1,7 +1,6 @@
-import { httpsCallable } from 'firebase/functions';
 
 import type { Coordinates } from '../hooks/useCurrentLocation';
-import { functions } from '../lib/firebase';
+import { callable } from '../lib/firebase';
 import type { LiveSource } from './transit';
 
 /** A direction's nearest stop — resolved independently of the other direction, so it's never assumed to share a station (NICE Bus/Suffolk County Transit's stops never do; LIRR's/subway's happen to). Absent if this route has no real trips in that direction at all. */
@@ -19,10 +18,10 @@ type NearestRouteStopResponse = {
   direction0: { stopId: string; name: string; headsign: string | null } | null;
 };
 
-const getNearestRouteStopCallable = httpsCallable<
+const getNearestRouteStopCallable = callable<
   { agencyId: string; routeId: string; lat: number; lon: number },
   NearestRouteStopResponse
->(functions, 'getNearestRouteStop');
+>('getNearestRouteStop');
 
 /**
  * Whichever stop *on this specific route* is actually closest to the rider right now, resolved

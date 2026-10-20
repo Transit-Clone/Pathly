@@ -1,11 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type GestureResponderEvent, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type GestureResponderEvent, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useDebug } from '../debug/DebugContext';
 import { useTransitLive } from '../data/TransitLiveContext';
 import { fetchRouteGeometry, type RouteGeometry } from '../data/routeGeometry';
 import { STATION_TRANSFERS, type StationTransfer, type TransferMode } from '../data/stationTransfers';
 import { departureDisplay, directionDestination, formatClockTime, scheduleStopsFromNow, stopsForDirection, type RouteDetail, type RoutePrediction } from '../data/transit';
+import { LATE_THRESHOLD_MINUTES, routeNotices } from '../data/routeNotices';
+import { useWalkingPath } from '../data/walkingPath';
+import { transferColor } from '../data/routeColors';
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
 import { useLayoutEase } from '../theme/motion';
@@ -20,6 +24,7 @@ import { RouteMap } from './RouteMap';
 import { pointAlong, routeFocus, RouteLines, VehicleMarker, type MapLeg } from './RouteMapOverlay';
 import { badgeLabel, RouteBadge, transitModeForAgency } from './RouteBadge';
 import { PressableScale } from './PressableScale';
+import { MapSkeleton, PredictionTilesSkeleton, StopListSkeleton } from './Skeleton';
 
 type RouteDetailViewProps = {
   /** Direction to open on (by `directions` index), e.g. when returning from the departures page. */
@@ -131,18 +136,29 @@ const OWN_TRANSFER_KIND: Record<NonNullable<RouteDetail['liveSource']>['agencyId
   subway: { agency: 'NYC Subway', mode: 'subway' },
   nice: { agency: 'NICE Bus', mode: 'bus' },
   suffolk: { agency: 'Suffolk County Transit', mode: 'bus' },
+  bx: { agency: 'MTA Bus', mode: 'bus' },
+  bk: { agency: 'MTA Bus', mode: 'bus' },
+  mn: { agency: 'MTA Bus', mode: 'bus' },
+  qn: { agency: 'MTA Bus', mode: 'bus' },
+  si: { agency: 'MTA Bus', mode: 'bus' },
+  busco: { agency: 'MTA Bus', mode: 'bus' },
+  nycferry: { agency: 'NYC Ferry', mode: 'ferry' },
+  siferry: { agency: 'Staten Island Ferry', mode: 'ferry' },
 };
 
 /** One connecting line, in its agency's color; subway bullets are round. */
 function TransferChip({ testID, transfer }: { testID: string; transfer: StationTransfer }) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
+  const color = transferColor(transfer);
+  // Recolored buses are white-on-color, like every bus badge; rail keeps its own text color.
+  const textColor = color && color !== transfer.color ? colors.white : transfer.textColor ?? colors.white;
   return (
     <View
-      style={[styles.transferChip, transfer.mode === 'subway' && styles.subwayChip, { backgroundColor: transfer.color ?? colors.surfaceMuted }]}
+      style={[styles.transferChip, transfer.mode === 'subway' && styles.subwayChip, { backgroundColor: color ?? colors.surfaceMuted }]}
       testID={testID}
     >
-      <Text numberOfLines={1} style={[styles.transferText, { color: transfer.color ? transfer.textColor ?? colors.white : colors.ink }]}>{transfer.name}</Text>
+      <Text numberOfLines={1} style={[styles.transferText, { color: color ? textColor : colors.ink }]}>{transfer.name}</Text>
     </View>
   );
 }
@@ -177,6 +193,7 @@ const TRANSFER_MODE_HEADINGS: readonly { mode: TransferMode; title: string }[] =
   { mode: 'rail', title: 'Rail' },
   { mode: 'subway', title: 'Subway' },
   { mode: 'bus', title: 'Bus' },
+  { mode: 'ferry', title: 'Ferry' },
 ];
 
 /** Every transfer at one station, grouped by mode — opened from a row's `+N`. */
@@ -224,6 +241,7 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
   const [transfersSheet, setTransfersSheet] = useState<{ stopName: string; transfers: readonly StationTransfer[] } | null>(null);
   const ease = useLayoutEase();
   const liveStatus = useTransitLive(route.id);
+  const debug = useDebug();
   const vehicles = liveStatus.status === 'loaded' ? liveStatus.data.vehicles : [];
   const [isLocationCentered, setIsLocationCentered] = useState(false);
   // Bumped on each location-button press; the live map re-centers on the rider whenever it changes.
@@ -340,6 +358,8 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
 
   const activeDirection = route.directions[activeDirectionIndex] ?? route.directions[0];
   const activeDestination = directionDestination(activeDirection.direction);
+  // The walk from the rider to the stop shown, drawn dotted on the map.
+  const walkPath = useWalkingPath(route.liveSource?.agencyId, activeDirection.stopId, locationKnown ? location : undefined);
 
   // Real geometry is fetched on demand for whichever route is actually open, derived
   // generically on the backend from its real schedule (gtfsDiscovery.ts) — not hand-authored
@@ -383,7 +403,12 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
   const liveStopsResult = liveStopsFor(route, activeDirectionIndex, activeDirection, geometryStatus, nowMinutes, leadMinutes);
 
   const vehicleIcon = transitModeForAgency(route.agency);
-  const hasDelay = !route.alert.startsWith('No delays');
+  // Delays on the shown direction's tracked departures, then MTA alerts, under the time cards.
+  const notices = routeNotices(route, activePredictions, vehicleIcon);
+  const hasDelays = notices.some((notice) => notice.kind === 'delay');
+  // The stop list follows the selected departure, so its chip says whether that one is late.
+  const selectedPrediction = activePredictions[selectedPredictionIndex] ?? activePredictions[0];
+  const selectedDelay = selectedPrediction?.live && (selectedPrediction.delayMinutes ?? 0) >= LATE_THRESHOLD_MINUTES ? selectedPrediction.delayMinutes! : null;
 
   // Only ever rendered below for a route with no `liveSource` — every entry in the static demo
   // catalog has real values here; a dynamically-discovered route always has a `liveSource`
@@ -445,22 +470,18 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
         stops={geometryStatus.geometry.stops}
         userLocation={locationKnown ? location : undefined}
         vehicles={vehicles}
+        walkPath={walkPath ?? undefined}
       />
       {/* Overlay that ignores touches, so the badge never blocks panning the live map under it. */}
       <View pointerEvents="none" style={StyleSheet.absoluteFill}>
         {mapBadge}
       </View>
     </>
+  ) : geometryStatus.status === 'loading' ? (
+    <MapSkeleton />
   ) : (
     <View style={styles.mapFallback} testID="route-map-fallback">
-      {geometryStatus.status === 'loading' ? (
-        <>
-          <ActivityIndicator color={route.color} />
-          <Text style={styles.mapFallbackText}>{`Loading the map for ${route.routeName}…`}</Text>
-        </>
-      ) : (
-        <Text style={styles.mapFallbackText}>Map unavailable</Text>
-      )}
+      <Text style={styles.mapFallbackText}>Map unavailable</Text>
     </View>
   );
 
@@ -547,11 +568,15 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
         </View>
       </View>
 
+      {debug.mockTime ? <Text style={styles.debugNote} testID="route-live-real-time">{"Live times are real-time; mock time doesn't apply to them."}</Text> : null}
+      {debug.overlays.ids ? <Text selectable={true} style={styles.debugNote} testID="route-debug-ids">{route.liveSource ? `${route.liveSource.agencyId}:${route.liveSource.routeId}` : `route ${route.id}`}</Text> : null}
+
       {/* The active direction's departures: their own horizontal scroll, separate from the direction swipe. */}
-      {activePredictions.length === 0 ? (
+      {activePredictions.length === 0 && route.liveStatus === 'loading' ? (
+        <PredictionTilesSkeleton accessibilityLabel={predictionsEmptyMessage(route) ?? 'Loading departures'} gap={TILE_GAP} tileWidth={tileWidth} />
+      ) : activePredictions.length === 0 ? (
         <View style={styles.predictions}>
           <View accessible={true} style={styles.predictionsEmpty} testID="route-predictions-empty">
-            {route.liveStatus === 'loading' ? <ActivityIndicator color={route.color} style={styles.predictionsEmptySpinner} /> : null}
             <Text style={styles.predictionsEmptyText}>{predictionsEmptyMessage(route)}</Text>
           </View>
         </View>
@@ -614,25 +639,35 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
         </ScrollView>
       )}
 
-      {/* Only routes with an advisory get an alert row; "No delays" needs no dropdown. */}
-      {hasDelay ? (
+      {/* Only a route with a delay or an alert gets this row; "No delays" needs no dropdown. */}
+      {notices.length > 0 ? (
         <>
           <PressableScale accessibilityLabel="Service alerts" accessibilityRole="button" accessibilityState={{ expanded: alertsOpen }} onPress={() => {
             ease();
             setAlertsOpen((value) => !value);
           }} style={styles.alertButton} testID="service-alerts">
-            <Icon color={colors.warning} filled={true} name="alert" size={18} style={styles.alertIcon} /><Text style={styles.alertText}>Service alerts</Text><Text style={[styles.alertStatus, { color: colors.warning }]}>Advisory</Text><Icon color={colors.mutedInk} name={alertsOpen ? 'collapse' : 'expand'} size={18} style={styles.chevron} />
+            <Icon color={colors.warning} filled={true} name="alert" size={18} style={styles.alertIcon} /><Text style={styles.alertText}>{hasDelays ? 'Delays and alerts' : 'Service alerts'}</Text><Text style={[styles.alertStatus, { color: colors.warning }]}>{hasDelays ? 'Delayed' : notices.length > 1 ? `${notices.length} advisories` : 'Advisory'}</Text><Icon color={colors.mutedInk} name={alertsOpen ? 'collapse' : 'expand'} size={18} style={styles.chevron} />
           </PressableScale>
-          {alertsOpen ? <Text style={styles.alertBody}>{route.alert}</Text> : null}
+          {alertsOpen ? (
+            <View style={styles.alertList} testID="service-alerts-list">
+              {notices.map((notice, index) => (
+                <View key={`${notice.kind}-${index}`} style={index > 0 ? styles.alertItemSpaced : undefined}>
+                  <Text style={[styles.alertBody, notice.detail ? styles.alertTitle : null]}>{notice.title}</Text>
+                  {notice.detail ? <Text style={styles.alertBody}>{notice.detail}</Text> : null}
+                </View>
+              ))}
+            </View>
+          ) : null}
         </>
       ) : null}
 
-      <View style={styles.timelineHeading}><Text style={styles.timelineTitle}>Route stops</Text><View style={styles.onTimeChip}><View style={styles.onTimeDot} /><Text style={styles.onTimeText}>On time</Text></View></View>
+      <View style={styles.timelineHeading}><Text style={styles.timelineTitle}>Route stops</Text><View style={[styles.onTimeChip, selectedDelay !== null && styles.lateChip]} testID="route-stops-status"><View style={[styles.onTimeDot, selectedDelay !== null && styles.lateDot]} /><Text style={[styles.onTimeText, selectedDelay !== null && styles.lateText]}>{selectedDelay !== null ? `${selectedDelay} min late` : 'On time'}</Text></View></View>
       <View accessibilityLabel="Stops for the next departure">
-        {liveStopsResult.status !== 'ready' ? (
+        {liveStopsResult.status === 'loading' ? (
+          <StopListSkeleton color={route.color} />
+        ) : liveStopsResult.status !== 'ready' ? (
           <View accessible={true} style={styles.predictionsEmpty} testID="route-stops-empty">
-            {liveStopsResult.status === 'loading' ? <ActivityIndicator color={route.color} style={styles.predictionsEmptySpinner} /> : null}
-            <Text style={styles.predictionsEmptyText}>{liveStopsResult.status === 'loading' ? `Loading stops for ${route.routeName}…` : 'Stop times unavailable right now.'}</Text>
+            <Text style={styles.predictionsEmptyText}>Stop times unavailable right now.</Text>
           </View>
         ) : (
           (() => {
@@ -665,7 +700,7 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
                   <View style={styles.timelineRail}>{!isFirst ? <View style={[styles.rail, styles.railTop, { backgroundColor: route.color }]} /> : null}<View style={[styles.stopDot, { borderColor: route.color }, isHighlighted && { backgroundColor: route.color }]} />{!isLast ? <View style={[styles.rail, styles.railBottom, { backgroundColor: route.color }]} /> : null}</View>
                   {/* One divider spans the name and the time, not just the name. */}
                   <View style={styles.stopBody} testID={`stop-row-body-${stop.name}`}>
-                    <View style={styles.stopCopy}><Text style={styles.stopName}>{stop.name}</Text>{transfers.length > 0 ? <TransferChips onShowAll={() => setTransfersSheet({ stopName: stop.name, transfers })} stopName={stop.name} transfers={transfers} /> : null}</View>
+                    <View style={styles.stopCopy}><Text style={styles.stopName}>{stop.name}</Text>{debug.overlays.ids && stop.stopId ? <Text selectable={true} style={styles.debugNote} testID={`stop-debug-id-${stop.stopId}`}>{`stop ${stop.stopId}`}</Text> : null}{transfers.length > 0 ? <TransferChips onShowAll={() => setTransfersSheet({ stopName: stop.name, transfers })} stopName={stop.name} transfers={transfers} /> : null}</View>
                     <Text style={styles.stopTime}>{stop.time}</Text>
                   </View>
                 </View>
@@ -680,6 +715,7 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
 }
 
 const createStyles = (colors: Palette) => StyleSheet.create({
+  debugNote: { marginTop: 2, color: colors.mutedInk, ...typography.metadata, fontSize: 11 },
   mapRouteBadge: {
     position: 'absolute',
     left: 14,
@@ -767,9 +803,6 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     borderWidth: 2,
     borderColor: colors.border,
     borderRadius: 20,
-  },
-  predictionsEmptySpinner: {
-    marginRight: 2,
   },
   predictionsEmptyText: {
     flexShrink: 1,
@@ -891,6 +924,19 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     color: colors.mutedInk,
     ...typography.metadata,
   },
+  alertList: {
+    paddingBottom: 4,
+  },
+  alertItemSpaced: {
+    marginTop: 6,
+    paddingTop: 2,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  alertTitle: {
+    color: colors.ink,
+    fontFamily: fontFamilies.bold,
+  },
   timelineHeading: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -920,6 +966,15 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     color: colors.success,
     fontFamily: fontFamilies.extraBold,
     fontSize: 10,
+  },
+  lateChip: {
+    backgroundColor: colors.amberSoft,
+  },
+  lateDot: {
+    backgroundColor: colors.warning,
+  },
+  lateText: {
+    color: colors.warning,
   },
   stopRow: {
     minHeight: 74,

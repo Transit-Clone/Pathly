@@ -72,6 +72,7 @@ export function applyRouteLive(route: RouteDetail, liveStatus: RouteLiveStatus, 
   return {
     ...route,
     liveStatus: 'loaded',
+    serviceAlerts: live.alerts ?? [],
     predictions: predictionsByIndex[0],
     reversePredictions: predictionsByIndex[1],
     directions,

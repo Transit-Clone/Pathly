@@ -10,6 +10,17 @@ export const HIDE_POINTS_OF_INTEREST: MapStyle = [
 ];
 
 /**
+ * Highways in plain gray in the light theme: Google draws them in a saturated color that competes
+ * with Pathly's route lines. Their number shields go too; the road names stay.
+ */
+const MUTED_HIGHWAYS: MapStyle = [
+  { featureType: 'road.highway', elementType: 'geometry.fill', stylers: [{ color: '#DADCE0' }] },
+  { featureType: 'road.highway', elementType: 'geometry.stroke', stylers: [{ color: '#C4C7CC' }] },
+  { featureType: 'road.highway', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+  { featureType: 'road.highway', elementType: 'labels.text.fill', stylers: [{ color: '#70757A' }] },
+];
+
+/**
  * Google's map recolored to the app's dark theme (black and dark-gray surfaces, light-gray
  * labels), so the map isn't a bright block on a dark screen. Water and parks stay just
  * distinguishable; major roads are a step lighter than local streets.
@@ -28,6 +39,7 @@ const DARK_MAP: MapStyle = [
   { featureType: 'road.arterial', elementType: 'geometry', stylers: [{ color: '#32353C' }] },
   { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#3C4048' }] },
   { featureType: 'road.highway.controlled_access', elementType: 'geometry', stylers: [{ color: '#454A53' }] },
+  { featureType: 'road.highway', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
   { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#9AA0A8' }] },
   { featureType: 'transit', elementType: 'geometry', stylers: [{ color: '#2A2D33' }] },
   { featureType: 'transit.station', elementType: 'labels.text.fill', stylers: [{ color: '#B3B9C1' }] },
@@ -37,10 +49,10 @@ const DARK_MAP: MapStyle = [
 
 /**
  * Style for every real Google map (home and route detail, web and native): places hidden in both
- * themes, plus the dark recolor in the dark theme. Applied on web as the map's `styles` option
+ * themes, highways grayed, plus the dark recolor in the dark theme. Applied on web as the map's `styles` option
  * (maps here use no Map ID, which would make Google ignore it) and on native as
  * react-native-maps' `customMapStyle`.
  */
 export function googleMapStyle(isDark: boolean): MapStyle {
-  return isDark ? [...DARK_MAP, ...HIDE_POINTS_OF_INTEREST] : HIDE_POINTS_OF_INTEREST;
+  return isDark ? [...DARK_MAP, ...HIDE_POINTS_OF_INTEREST] : [...MUTED_HIGHWAYS, ...HIDE_POINTS_OF_INTEREST];
 }

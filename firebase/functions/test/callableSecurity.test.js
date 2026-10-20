@@ -12,6 +12,7 @@ const {
   findNearbyTransit,
   geocodeAddress,
   getNearestRouteStop,
+  getWalkingPath,
   getRouteGeometry,
   getRouteLiveStatus,
   getRoutesLiveStatus,
@@ -35,7 +36,7 @@ test('requires an authenticated Firebase user', async () => {
 });
 
 test('every callable rejects anonymous traffic before validation or provider work', async () => {
-  for (const callable of [findNearbyTransit, geocodeAddress, getNearestRouteStop, getRouteGeometry, getRouteLiveStatus, getRoutesLiveStatus, getStopDepartures]) {
+  for (const callable of [findNearbyTransit, geocodeAddress, getNearestRouteStop, getRouteGeometry, getRouteLiveStatus, getRoutesLiveStatus, getStopDepartures, getWalkingPath]) {
     await assert.rejects(
       () => callable.run({ auth: null, data: {}, rawRequest: request(null).rawRequest }),
       (error) => error.code === 'unauthenticated',
@@ -44,7 +45,7 @@ test('every callable rejects anonymous traffic before validation or provider wor
 });
 
 test('serializes transit requests so a response cannot mix two GTFS snapshots', () => {
-  for (const callable of [findNearbyTransit, getNearestRouteStop, getRouteGeometry]) {
+  for (const callable of [findNearbyTransit, getNearestRouteStop, getRouteGeometry, getWalkingPath]) {
     assert.equal(callable.__endpoint.concurrency, 1);
     assert.equal(callable.__endpoint.maxInstances, 10);
     assert.equal(
@@ -171,4 +172,22 @@ test('batched live status bounds its size and answers each route on its own', as
   // One unknown route doesn't fail the batch; it reports its own error.
   const { results } = await run({ routes: [{ agencyId: 'subway', routeId: 'no-such-route', direction1StopId: 'x', direction0StopId: 'x' }] });
   assert.deepEqual(results, [{ ok: false, code: 'invalid-argument' }]);
+});
+
+test('a warm-up call is authenticated, rate-limited, and returns no transit data', async () => {
+  const consumed = [];
+  setSharedRateLimitConsumerForTests(async (key, limit, nowMs) => {
+    consumed.push(key.split(':')[0]);
+    return consumeTokenBucket(undefined, limit, nowMs);
+  });
+  for (const [callable, endpoint] of [[findNearbyTransit, 'findNearbyTransit'], [getRouteGeometry, 'getRouteGeometry']]) {
+    await assert.rejects(
+      () => callable.run({ auth: null, data: { warmup: true }, rawRequest: request(null).rawRequest }),
+      (error) => error.code === 'unauthenticated',
+    );
+    const result = await callable.run({ auth: { uid: 'warm-user' }, data: { warmup: true }, rawRequest: request('warm-user').rawRequest });
+    assert.deepEqual(result, { warmed: true });
+    assert.equal(consumed.at(-1), endpoint, `${endpoint} warm-up consumed a rate-limit token`);
+  }
+  assert.deepEqual(consumed, ['findNearbyTransit', 'getRouteGeometry']);
 });

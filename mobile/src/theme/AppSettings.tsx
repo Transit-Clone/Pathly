@@ -1,22 +1,38 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StatusBar } from 'expo-status-bar';
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AccessibilityInfo, useColorScheme } from 'react-native';
 
-import { darkColors, lightColors, type Palette } from './colors';
+import { darkColors, highContrastDarkColors, highContrastLightColors, lightColors, type Palette } from './colors';
 
 export type Appearance = 'light' | 'dark' | 'system';
 export type ColorScheme = 'light' | 'dark';
+export type TextSize = 'compact' | 'default' | 'large';
+
+/** How much each text size scales every font size and line height. */
+export const TEXT_SCALE: Record<TextSize, number> = { compact: 0.9, default: 1, large: 1.15 };
+
+/** Display settings are the device's, not the account's, so they apply on the sign-in screen too. */
+export const DISPLAY_SETTINGS_KEY = 'pathly.display.v1';
+
+type DisplaySettings = { appearance: Appearance; reducedMotion: boolean; textSize: TextSize; highContrast: boolean };
 
 type AppSettingsValue = {
   appearance: Appearance;
   colors: Palette;
+  highContrast: boolean;
   isDark: boolean;
   /** True when either the app toggle or the device asks for reduced motion. */
   reducedMotionActive: boolean;
   reducedMotion: boolean;
   scheme: ColorScheme;
+  textSize: TextSize;
+  /** TEXT_SCALE for textSize; useThemedStyles applies it to every themed font size. */
+  textScale: number;
   setAppearance: (appearance: Appearance) => void;
+  setHighContrast: (value: boolean) => void;
   setReducedMotion: (value: boolean) => void;
+  setTextSize: (value: TextSize) => void;
 };
 
 const AppSettingsContext = createContext<AppSettingsValue | null>(null);
@@ -26,18 +42,55 @@ export function resolveScheme(appearance: Appearance, systemScheme: string | nul
   return appearance;
 }
 
+export function paletteFor(scheme: ColorScheme, highContrast: boolean): Palette {
+  if (highContrast) return scheme === 'dark' ? highContrastDarkColors : highContrastLightColors;
+  return scheme === 'dark' ? darkColors : lightColors;
+}
+
+/** Keeps only well-formed saved values, so a stale or hand-edited entry can't break the theme. */
+function parseDisplaySettings(text: string | null): Partial<DisplaySettings> {
+  if (!text) return {};
+  try {
+    const saved = JSON.parse(text) as Record<string, unknown>;
+    const settings: Partial<DisplaySettings> = {};
+    if (saved.appearance === 'light' || saved.appearance === 'dark' || saved.appearance === 'system') settings.appearance = saved.appearance;
+    if (typeof saved.reducedMotion === 'boolean') settings.reducedMotion = saved.reducedMotion;
+    if (saved.textSize === 'compact' || saved.textSize === 'default' || saved.textSize === 'large') settings.textSize = saved.textSize;
+    if (typeof saved.highContrast === 'boolean') settings.highContrast = saved.highContrast;
+    return settings;
+  } catch {
+    return {};
+  }
+}
+
 type AppSettingsProviderProps = {
   children: ReactNode;
   initialAppearance?: Appearance;
   initialReducedMotion?: boolean;
+  initialTextSize?: TextSize;
+  initialHighContrast?: boolean;
 };
 
-/** Session-only app preferences that every screen reads (appearance and motion). */
-export function AppSettingsProvider({ children, initialAppearance = 'light', initialReducedMotion = false }: AppSettingsProviderProps) {
+/** App preferences every screen reads (appearance, motion, text size, contrast), saved on the device. */
+export function AppSettingsProvider({ children, initialAppearance = 'light', initialReducedMotion = false, initialTextSize = 'default', initialHighContrast = false }: AppSettingsProviderProps) {
   const systemScheme = useColorScheme();
-  const [appearance, setAppearance] = useState<Appearance>(initialAppearance);
-  const [reducedMotion, setReducedMotion] = useState(initialReducedMotion);
+  const [settings, setSettings] = useState<DisplaySettings>({ appearance: initialAppearance, reducedMotion: initialReducedMotion, textSize: initialTextSize, highContrast: initialHighContrast });
   const [deviceReducedMotion, setDeviceReducedMotion] = useState(false);
+  // A choice made before the saved settings finish loading wins over them.
+  const changedBeforeLoad = useRef(false);
+
+  useEffect(() => {
+    let mounted = true;
+    AsyncStorage.getItem(DISPLAY_SETTINGS_KEY)
+      .then((text) => {
+        const saved = parseDisplaySettings(text);
+        if (mounted && !changedBeforeLoad.current && Object.keys(saved).length > 0) setSettings((current) => ({ ...current, ...saved }));
+      })
+      .catch(() => undefined);
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -53,19 +106,34 @@ export function AppSettingsProvider({ children, initialAppearance = 'light', ini
     };
   }, []);
 
+  const update = useCallback((patch: Partial<DisplaySettings>) => {
+    changedBeforeLoad.current = true;
+    setSettings((current) => {
+      const next = { ...current, ...patch };
+      AsyncStorage.setItem(DISPLAY_SETTINGS_KEY, JSON.stringify(next)).catch(() => undefined);
+      return next;
+    });
+  }, []);
+
   const value = useMemo<AppSettingsValue>(() => {
+    const { appearance, highContrast, reducedMotion, textSize } = settings;
     const scheme = resolveScheme(appearance, systemScheme);
     return {
       appearance,
-      colors: scheme === 'dark' ? darkColors : lightColors,
+      colors: paletteFor(scheme, highContrast),
+      highContrast,
       isDark: scheme === 'dark',
       reducedMotion,
       reducedMotionActive: reducedMotion || deviceReducedMotion,
       scheme,
-      setAppearance,
-      setReducedMotion,
+      textSize,
+      textScale: TEXT_SCALE[textSize],
+      setAppearance: (next) => update({ appearance: next }),
+      setHighContrast: (next) => update({ highContrast: next }),
+      setReducedMotion: (next) => update({ reducedMotion: next }),
+      setTextSize: (next) => update({ textSize: next }),
     };
-  }, [appearance, deviceReducedMotion, reducedMotion, systemScheme]);
+  }, [deviceReducedMotion, settings, systemScheme, update]);
 
   return <AppSettingsContext.Provider value={value}>{children}</AppSettingsContext.Provider>;
 }
@@ -73,12 +141,17 @@ export function AppSettingsProvider({ children, initialAppearance = 'light', ini
 const fallback: AppSettingsValue = {
   appearance: 'light',
   colors: lightColors,
+  highContrast: false,
   isDark: false,
   reducedMotion: false,
   reducedMotionActive: false,
   scheme: 'light',
+  textSize: 'default',
+  textScale: 1,
   setAppearance: () => undefined,
+  setHighContrast: () => undefined,
   setReducedMotion: () => undefined,
+  setTextSize: () => undefined,
 };
 
 export function useAppSettings() {
@@ -90,10 +163,39 @@ export function useTheme() {
   return { colors, isDark, scheme };
 }
 
-/** Builds a StyleSheet from the active palette, rebuilding only when the theme changes. */
+/** Half-point steps keep scaled text crisp. */
+function scaled(value: number, scale: number) {
+  return Math.round(value * scale * 2) / 2;
+}
+
+/**
+ * Scales the font size and line height of every style in a stylesheet (Accessibility -> Text
+ * size). Styles without text keep their identity; at the default size the sheet is unchanged.
+ */
+export function scaleTypography<T>(styles: T, scale: number): T {
+  if (scale === 1 || styles === null || typeof styles !== 'object') return styles;
+  const result: Record<string, unknown> = {};
+  for (const [key, style] of Object.entries(styles as Record<string, unknown>)) {
+    if (style !== null && typeof style === 'object' && !Array.isArray(style)) {
+      const { fontSize, lineHeight } = style as { fontSize?: unknown; lineHeight?: unknown };
+      if (typeof fontSize === 'number' || typeof lineHeight === 'number') {
+        result[key] = {
+          ...style,
+          ...(typeof fontSize === 'number' ? { fontSize: scaled(fontSize, scale) } : {}),
+          ...(typeof lineHeight === 'number' ? { lineHeight: scaled(lineHeight, scale) } : {}),
+        };
+        continue;
+      }
+    }
+    result[key] = style;
+  }
+  return result as T;
+}
+
+/** Builds a StyleSheet from the active palette and text size, rebuilding only when either changes. */
 export function useThemedStyles<T>(factory: (colors: Palette) => T): T {
-  const { colors } = useAppSettings();
-  return useMemo(() => factory(colors), [colors, factory]);
+  const { colors, textScale } = useAppSettings();
+  return useMemo(() => scaleTypography(factory(colors), textScale), [colors, factory, textScale]);
 }
 
 /** Status bar whose content color follows the active theme. */

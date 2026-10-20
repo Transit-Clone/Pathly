@@ -12,16 +12,51 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '../auth/AuthContext';
-import { fetchPlaceDetails, type SearchPlace } from '../data/placesSearch';
-import { locationToPlace, recordSearch, removeSearch, subscribeToSearches } from '../data/userData';
+import { addressAfterName, fetchPlaceDetails, type PlaceKind, type SearchPlace } from '../data/placesSearch';
+import { locationToPlace, recordSearch, removeSearch, subscribeToSearches, type SavedLocation } from '../data/userData';
+import { normalizeStopName } from '../data/stopSearch';
 import { usePlacesSearch } from '../hooks/usePlacesSearch';
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { typography } from '../theme/typography';
-import { Icon } from './Icon';
+import { Icon, type IconName } from './Icon';
 import { PressableScale } from './PressableScale';
+import { badgeLabel, RouteBadge, type TransitMode } from './RouteBadge';
+import { SavedPlacesStrip } from './SavedPlacesStrip';
 
 const MAX_RECENT_SEARCHES = 8;
+/** Recent searches shown above the results while typing. */
+const MAX_MATCHING_RECENTS = 3;
+
+/** A recent search matches when every typed word starts a word of its name or address. */
+function recentMatches(place: SearchPlace, query: string): boolean {
+  const words = normalizeStopName(`${place.title} ${place.subtitle}`).split(' ');
+  const typed = normalizeStopName(query).split(' ').filter(Boolean);
+  return typed.length > 0 && typed.every((token) => words.some((word) => word.startsWith(token)));
+}
+/** Badges on a stop row before the rest are summarized as "+N". */
+const MAX_ROW_BADGES = 6;
+
+const KIND_ICONS: Record<Exclude<PlaceKind, 'place'>, IconName> = { subway: 'subway', rail: 'rail', bus: 'bus', ferry: 'ferry' };
+const KIND_BADGE_MODES: Record<Exclude<PlaceKind, 'place'>, TransitMode> = { subway: 'subway', rail: 'rail', bus: 'bus', ferry: 'ferry' };
+
+/** "Jamaica, LIRR station, lines PJ, RK, and 8 more" for a stop; "name, address" for a place. */
+/** A stop's kind in words; older recents saved it with its agency ("Bus stop · NICE Bus"). */
+function stopKindText(place: SearchPlace): string {
+  return place.subtitle.split(' · ')[0] ?? place.subtitle;
+}
+
+function rowLabel(place: SearchPlace): string {
+  if (!place.routes?.length || !place.kind || place.kind === 'place') {
+    const address = addressAfterName(place.title, place.subtitle);
+    return address ? `${place.title}, ${address}` : place.title;
+  }
+  const names = place.routes.slice(0, 3).map((route) => badgeLabel({ agency: place.agency ?? '', shortName: route.shortName }));
+  const more = place.routes.length - names.length;
+  const lines = more > 0 ? `${names.join(', ')}, and ${more} more` : names.join(', ');
+  const what = place.kind === 'bus' ? 'stop' : place.kind === 'ferry' ? 'landing' : 'station';
+  return `${place.title}, ${place.agency ?? stopKindText(place)} ${what}, ${place.routes.length === 1 ? 'line' : 'lines'} ${lines}`;
+}
 
 export type SearchViewProps = {
   initialQuery?: string;
@@ -29,6 +64,13 @@ export type SearchViewProps = {
   onSelect: (place: SearchPlace) => void;
   /** When set (editing a trip's start), a "Current location" choice is offered first. */
   onSelectCurrentLocation?: () => void;
+  /** The rider's location, to rank equally good transit stops nearest first. */
+  near?: { latitude: number; longitude: number } | null;
+  /** The rider's saved places, offered in a swipeable row above Recent. */
+  savedPlaces?: readonly SavedLocation[];
+  /** When set, the saved places row offers Set home, Set work, and Add. */
+  onAddSavedPlace?: (label?: 'Home' | 'Work') => void;
+  placeholder?: string;
 };
 
 type SearchResultRowProps = {
@@ -48,9 +90,10 @@ function SearchIcon() {
 function SearchResultRow({ onPress, onRemove, place, recent = false, resolving = false }: SearchResultRowProps) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
+  const transitKind = place.kind && place.kind !== 'place' ? place.kind : undefined;
   const row = (
     <PressableScale
-      accessibilityLabel={`${place.title}, ${place.subtitle}`}
+      accessibilityLabel={rowLabel(place)}
       accessibilityRole="button"
       accessibilityState={{ busy: resolving }}
       onPress={onPress}
@@ -61,7 +104,7 @@ function SearchResultRow({ onPress, onRemove, place, recent = false, resolving =
         {resolving ? (
           <ActivityIndicator color={colors.primary} size="small" testID={`search-result-resolving-${place.id}`} />
         ) : (
-          <Icon color={colors.mutedInk} name={recent ? 'recent' : 'place'} size={20} />
+          <Icon color={transitKind ? colors.primary : colors.mutedInk} name={transitKind ? KIND_ICONS[transitKind] : recent ? 'recent' : 'place'} size={20} testID={`search-kind-icon-${transitKind ?? (recent ? 'recent' : 'place')}`} />
         )}
       </View>
 
@@ -69,8 +112,25 @@ function SearchResultRow({ onPress, onRemove, place, recent = false, resolving =
         <Text numberOfLines={1} style={styles.resultTitle}>
           {place.title}
         </Text>
+        {transitKind && place.routes?.length ? (
+          <View style={styles.badgeRow} testID={`search-routes-${place.id}`}>
+            {place.routes.slice(0, MAX_ROW_BADGES).map((route) => (
+              <RouteBadge
+                key={route.shortName}
+                agency={place.agency ?? ''}
+                color={route.color}
+                mode={KIND_BADGE_MODES[transitKind]}
+                shortName={badgeLabel({ agency: place.agency ?? '', shortName: route.shortName })}
+                size="small"
+              />
+            ))}
+            {place.routes.length > MAX_ROW_BADGES ? <Text style={styles.moreRoutes}>{`+${place.routes.length - MAX_ROW_BADGES}`}</Text> : null}
+          </View>
+        ) : null}
+        {/* A stop: its lines, then what it is; a place: the address that completes its name. */}
         <Text numberOfLines={1} style={styles.resultSubtitle}>
-          {place.subtitle}
+          {/* A recent stop shows its mode icon, so its row says it's recent in words. */}
+          {transitKind ? (recent ? `Recent · ${stopKindText(place)}` : stopKindText(place)) : addressAfterName(place.title, place.subtitle)}
         </Text>
       </View>
     </PressableScale>
@@ -113,7 +173,7 @@ function Message({ body, children, title }: MessageProps) {
 }
 
 /** Full-screen destination search: search field pinned on top, a flat result list below. */
-export function SearchView({ initialQuery = '', onCancel, onSelect, onSelectCurrentLocation }: SearchViewProps) {
+export function SearchView({ initialQuery = '', near, onAddSavedPlace, onCancel, onSelect, onSelectCurrentLocation, placeholder = 'Where to?', savedPlaces = [] }: SearchViewProps) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
   const [query, setQuery] = useState(initialQuery);
@@ -136,8 +196,12 @@ export function SearchView({ initialQuery = '', onCancel, onSelect, onSelectCurr
   const forgetPlace = (place: SearchPlace) => {
     if (uid) removeSearch(uid, place.id).catch(() => undefined);
   };
-  const { endSession, getSessionToken, retry, status, suggestions } = usePlacesSearch(query);
+  const { endSession, getSessionToken, retry, status, suggestions } = usePlacesSearch(query, near);
   const isSearching = status !== 'idle';
+  // While typing, recent searches that match come first, as in Google Maps.
+  const matchingRecents = isSearching ? recentPlaces.filter((place) => recentMatches(place, query)).slice(0, MAX_MATCHING_RECENTS) : [];
+  const recentIds = new Set(matchingRecents.map((place) => place.id));
+  const results = suggestions.filter((place) => !recentIds.has(place.id));
 
   // Not an effect dependency, so a parent re-render (new onSelect identity) can't restart the request.
   const finishSelection = useEffectEvent((place: SearchPlace) => {
@@ -176,6 +240,13 @@ export function SearchView({ initialQuery = '', onCancel, onSelect, onSelectCurr
 
   const selectSuggestion = (suggestion: SearchPlace) => {
     if (resolvingId) return;
+    // Pathly's own stops already know where they are: no details request.
+    if (suggestion.source === 'pathly' && suggestion.location) {
+      endSession();
+      rememberPlace(suggestion);
+      onSelect(suggestion);
+      return;
+    }
     setResolvingId(suggestion.id);
     setSelectionFailed(false);
   };
@@ -205,10 +276,10 @@ export function SearchView({ initialQuery = '', onCancel, onSelect, onSelectCurr
         </View>
       );
     }
-    if (suggestions.length === 0) {
-      return <Message body="Try a street address, a business, or a station name." title="No places found" />;
+    if (results.length === 0) {
+      return matchingRecents.length > 0 ? null : <Message body="Try a street address, a business, or a station name." title="No places found" />;
     }
-    return suggestions.map((place) => (
+    return results.map((place) => (
       <SearchResultRow
         key={place.id}
         onPress={() => selectSuggestion(place)}
@@ -238,7 +309,7 @@ export function SearchView({ initialQuery = '', onCancel, onSelect, onSelectCurr
                 autoCorrect={false}
                 autoFocus={true}
                 onChangeText={changeQuery}
-                placeholder="Where to?"
+                placeholder={placeholder}
                 placeholderTextColor={colors.mutedInk}
                 returnKeyType="search"
                 selectionColor={colors.blue}
@@ -268,6 +339,8 @@ export function SearchView({ initialQuery = '', onCancel, onSelect, onSelectCurr
               <Text style={styles.cancelText}>Cancel</Text>
             </PressableScale>
           </View>
+          {/* Saved places lead the page, under the search field, until the rider starts typing. */}
+          {!isSearching ? <SavedPlacesStrip onAdd={onAddSavedPlace} onSelect={(saved) => selectRecent(locationToPlace(saved.address))} places={savedPlaces} /> : null}
         </SafeAreaView>
 
         <ScrollView
@@ -304,7 +377,14 @@ export function SearchView({ initialQuery = '', onCancel, onSelect, onSelectCurr
             </PressableScale>
           ) : null}
 
-          {isSearching ? renderSearchState() : recentPlaces.length > 0 ? (
+          {isSearching ? (
+            <>
+              {matchingRecents.map((place) => (
+                <SearchResultRow key={`recent-${place.id}`} onPress={() => selectRecent(place)} place={place} recent={true} />
+              ))}
+              {renderSearchState()}
+            </>
+          ) : recentPlaces.length > 0 ? (
             <>
               <Text accessibilityRole="header" style={styles.heading}>
                 Recent
@@ -441,6 +521,8 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     ...typography.bodyStrong,
     fontSize: 15,
   },
+  badgeRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 4, marginTop: 4, marginBottom: 2 },
+  moreRoutes: { color: colors.mutedInk, ...typography.metadata, fontSize: 12 },
   resultSubtitle: {
     marginTop: 2,
     color: colors.mutedInk,

@@ -1,14 +1,17 @@
 import { haversineMeters } from './geo';
 import { AGENCY_CONFIGS, agencyConfig, type AgencyId } from './gtfsAgencies';
+import { computeRouteGeometry, type RouteGeometry } from './gtfsGeometry';
 import {
-  gtfsTimeToSeconds,
+  availableAgencyIds,
   loadAgencyShapes,
   loadAgencyStaticData,
   loadGlobalStopRouteIndex,
+  loadPreparedRouteGeometry,
   loadRouteStopCounts,
   loadRouteStopTimes,
-  type ShapePoint,
 } from './gtfsStaticData';
+import { displayRouteColor } from './routeColors';
+import { walkingMeters, walkingPath } from './walkingGraph';
 
 export type NearbyStop = {
   /** The parent station's stop_id for agencies with directional platform stop_ids (one entry per physical station, not per direction); otherwise the stop's own id. */
@@ -54,209 +57,93 @@ export async function findNearestStops(agencyId: AgencyId, lat: number, lon: num
   return results.slice(0, limit);
 }
 
-export type RouteGeometryStop = { stopId: string; name: string; lat: number; lon: number; offsetMinutes: number };
-/** `path` is the published track/street geometry (GTFS shapes) for the chained trips, when the agency has one. */
-export type RouteGeometry = { headsign: string; stops: RouteGeometryStop[]; path?: ShapePoint[] };
+export type { RouteGeometry, RouteGeometryStop } from './gtfsGeometry';
 
-/** Chain-building only — `timeSeconds` is each stop's real scheduled time, converted to the public `offsetMinutes` (relative to the chain's own first stop) once the full chain is assembled. */
-type ChainStop = { stopId: string; name: string; lat: number; lon: number; timeSeconds: number };
-type TripShape = { tripId: string; headsign: string; stops: ChainStop[] };
-
-/**
- * A representative real station sequence — with each stop's real scheduled time offset from
- * the first stop — for one route_id/direction_id. Works for any route on any configured
- * agency, including branches whose trips split partway (LIRR's Port Jefferson Branch splits at
- * Huntington: electric trains run Penn Station<->Huntington, diesel trains run
- * Huntington<->Port Jefferson, so no single trip covers the whole branch). Starts from the
- * longest scheduled trip, then repeatedly chains on any other trip whose first stop matches
- * the current chain's last stop, splicing them together at the shared station — this is
- * exactly how a human would reconstruct the full branch from its real timetable, just
- * automated, so it needs no hand-authored geometry (or timing) for any specific route. This is
- * the one real source of a route's full stop sequence and timing — the client uses it for both
- * the map and the "Route stops" list, rather than keeping a second, hand-authored stop list
- * that can silently drift from (or simply never match) this real one.
- */
-// Douglas-Peucker tolerance for returned paths: visually identical at street zoom while keeping
-// payloads to a few hundred points per direction.
-const PATH_SIMPLIFY_METERS = 4;
-
-function metresXY(point: ShapePoint): [number, number] {
-  return [point.lon * 111_320 * Math.cos((point.lat * Math.PI) / 180), point.lat * 110_540];
-}
-
-function nearestPointIndex(points: readonly ShapePoint[], target: { lat: number; lon: number }): number {
-  const [tx, ty] = metresXY(target);
-  let best = 0;
-  let bestDistance = Infinity;
-  points.forEach((point, index) => {
-    const [x, y] = metresXY(point);
-    const distance = (x - tx) ** 2 + (y - ty) ** 2;
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      best = index;
-    }
-  });
-  return best;
-}
-
-/** Iterative Douglas-Peucker (no recursion depth limits on long shapes). */
-function simplifyPath(points: readonly ShapePoint[], toleranceMeters: number): ShapePoint[] {
-  if (points.length < 3) return [...points];
-  const xy = points.map(metresXY);
-  const keep = new Uint8Array(points.length);
-  keep[0] = 1;
-  keep[points.length - 1] = 1;
-  const stack: [number, number][] = [[0, points.length - 1]];
-  while (stack.length > 0) {
-    const [start, end] = stack.pop()!;
-    const [ax, ay] = xy[start]!;
-    const [bx, by] = xy[end]!;
-    const length = Math.hypot(bx - ax, by - ay) || 1;
-    let farthest = -1;
-    let farthestDistance = 0;
-    for (let i = start + 1; i < end; i += 1) {
-      const [px, py] = xy[i]!;
-      const distance = Math.abs((by - ay) * px - (bx - ax) * py + bx * ay - by * ax) / length;
-      if (distance > farthestDistance) {
-        farthestDistance = distance;
-        farthest = i;
-      }
-    }
-    if (farthest >= 0 && farthestDistance > toleranceMeters) {
-      keep[farthest] = 1;
-      stack.push([start, farthest], [farthest, end]);
-    }
-  }
-  return points.filter((_, index) => keep[index] === 1);
-}
-
-/** A trip's shape_id, or (subway, whose trips.txt often leaves it blank) the shape named by its trip_id suffix. */
-function shapeForTrip(agencyId: AgencyId, tripId: string): ShapePoint[] | undefined {
-  const shapes = loadAgencyShapes(agencyId);
-  const trip = loadAgencyStaticData(agencyId).tripsById.get(tripId);
-  if (trip?.shapeId && shapes.has(trip.shapeId)) return shapes.get(trip.shapeId);
-  const suffix = tripId.slice(tripId.lastIndexOf('_') + 1);
-  return shapes.get(suffix);
-}
-
-/**
- * The chained trips' real track/street geometry: each trip's shape trimmed to the stretch
- * between its own first and last stop, joined in travel order, then simplified. Undefined when
- * any trip has no published shape, so the client falls back to joining stops.
- */
-function pathForTrips(agencyId: AgencyId, trips: readonly TripShape[]): ShapePoint[] | undefined {
-  const joined: ShapePoint[] = [];
-  for (const trip of trips) {
-    const shape = shapeForTrip(agencyId, trip.tripId);
-    const first = trip.stops[0];
-    const last = trip.stops[trip.stops.length - 1];
-    if (!shape || shape.length < 2 || !first || !last) return undefined;
-    const from = nearestPointIndex(shape, first);
-    const to = nearestPointIndex(shape, last);
-    const piece = from <= to ? shape.slice(from, to + 1) : shape.slice(to, from + 1).reverse();
-    joined.push(...(joined.length > 0 ? piece.slice(1) : piece));
-  }
-  return joined.length >= 2 ? simplifyPath(joined, PATH_SIMPLIFY_METERS) : undefined;
-}
-
+/** See computeRouteGeometry. Reads the route's prepared geometry when available. */
 export async function getRouteGeometry(agencyId: AgencyId, routeId: string, directionId: 0 | 1): Promise<RouteGeometry | null> {
-  const config = agencyConfig(agencyId);
+  const prepared = loadPreparedRouteGeometry(agencyId, routeId);
+  if (prepared) return (await prepared)?.[directionId] ?? null;
   const { tripsById, stopsById } = loadAgencyStaticData(agencyId);
   const { byTrip } = await loadRouteStopTimes(agencyId, routeId);
-
-  const resolveStop = (stopId: string): { stopId: string; name: string; lat: number; lon: number } | null => {
-    const stop = stopsById.get(stopId);
-    if (!stop) return null;
-    const resolved = config.directionalStops && stop.parentStation ? stopsById.get(stop.parentStation) : stop;
-    return resolved ? { stopId: resolved.stopId, name: resolved.name, lat: resolved.lat, lon: resolved.lon } : null;
-  };
-
-  const candidateTrips: TripShape[] = [];
-  for (const [tripId, stopTimes] of byTrip) {
-    const trip = tripsById.get(tripId);
-    if (!trip || trip.directionId !== directionId) continue;
-    const stops = [...stopTimes]
-      .sort((a, b) => a.stopSequence - b.stopSequence)
-      .map((stopTime): ChainStop | null => {
-        const resolved = resolveStop(stopTime.stopId);
-        if (!resolved) return null;
-        return { ...resolved, timeSeconds: gtfsTimeToSeconds(stopTime.arrivalTime || stopTime.departureTime) };
-      })
-      .filter((stop): stop is ChainStop => stop !== null);
-    if (stops.length > 0) candidateTrips.push({ tripId, headsign: trip.headsign, stops });
-  }
-  if (candidateTrips.length === 0) return null;
-
-  candidateTrips.sort((a, b) => b.stops.length - a.stops.length);
-  const base = candidateTrips[0]!;
-  const usedTripIds = new Set([base.tripId]);
-  // Trips in travel order, so their shapes can be joined the same way their stops are.
-  const orderedTrips: TripShape[] = [base];
-  let headsign = base.headsign;
-  let stops = base.stops;
-
-  // Chains in both directions: appending a trip whose first stop matches the chain's current
-  // last stop (and adopting its headsign, since that becomes the new true final destination —
-  // e.g. a Penn<->Huntington trip's "Huntington" headsign is replaced by a chained-on
-  // Huntington<->Port Jefferson trip's "Port Jefferson"), or prepending a trip whose last stop
-  // matches the chain's current first stop (headsign unchanged — the destination doesn't
-  // change just because an earlier leg was found).
-  //
-  // A chained-on trip is a *different, unrelated* trip_id that just happens to share a stop_id
-  // with the current chain (e.g. LIRR's electric Penn<->Huntington and diesel
-  // Huntington<->Port Jefferson trips) — it is not necessarily the same physical train
-  // continuing, and its own schedule can be anchored at a completely different time of day, so
-  // its absolute stop times can't be trusted as-is (splicing them in directly produced
-  // nonsensical negative offsets for stops past Huntington). Each spliced-on segment is
-  // rebased by a constant so its shared stop lines up exactly with the chain's existing time
-  // there — this preserves every real per-hop duration *within* that segment (only a flat
-  // shift is applied) while guaranteeing the assembled chain's offsets increase smoothly
-  // through the splice, the same way the station list was hand-chained end to end before this
-  // was automated, just derived from real data instead of estimated.
-  let extended = true;
-  while (extended) {
-    extended = false;
-    const lastStopId = stops[stops.length - 1]?.stopId;
-    const firstStopId = stops[0]?.stopId;
-    for (const candidate of candidateTrips) {
-      if (usedTripIds.has(candidate.tripId)) continue;
-      if (candidate.stops[0]?.stopId === lastStopId) {
-        const correction = stops[stops.length - 1]!.timeSeconds - candidate.stops[0]!.timeSeconds;
-        const rebased = candidate.stops.map((stop) => ({ ...stop, timeSeconds: stop.timeSeconds + correction }));
-        stops = [...stops, ...rebased.slice(1)];
-        usedTripIds.add(candidate.tripId);
-        orderedTrips.push(candidate);
-        headsign = candidate.headsign;
-        extended = true;
-        break;
-      }
-      if (candidate.stops[candidate.stops.length - 1]?.stopId === firstStopId) {
-        const correction = stops[0]!.timeSeconds - candidate.stops[candidate.stops.length - 1]!.timeSeconds;
-        const rebased = candidate.stops.map((stop) => ({ ...stop, timeSeconds: stop.timeSeconds + correction }));
-        stops = [...rebased.slice(0, -1), ...stops];
-        usedTripIds.add(candidate.tripId);
-        orderedTrips.unshift(candidate);
-        extended = true;
-        break;
-      }
-    }
-  }
-
-  const firstTimeSeconds = stops[0]?.timeSeconds ?? 0;
-  const path = pathForTrips(agencyId, orderedTrips);
-  return {
-    headsign,
-    stops: stops.map(({ timeSeconds, ...stop }) => ({ ...stop, offsetMinutes: Math.round((timeSeconds - firstTimeSeconds) / 60) })),
-    ...(path ? { path } : {}),
-  };
+  return computeRouteGeometry(
+    { directionalStops: agencyConfig(agencyId).directionalStops, stopsById, tripsById, byTrip, shapes: () => loadAgencyShapes(agencyId) },
+    directionId,
+  );
 }
 
+/** One direction's stop. `walkMeters` is the walk there along the street graph, or null when it fell back to straight line. */
+export type RouteDirectionStop = { stopId: string; name: string; headsign: string | null; walkMeters: number | null };
+
 export type NearestRouteStop = {
-  /** Smallest of direction1/direction0's distanceMeters — "how far is the nearest thing on this route", for display. */
+  /** Smallest straight-line distance to direction1's/direction0's stop — "how far is the nearest thing on this route", for display and the Nearby radius. */
   distanceMeters: number;
-  direction1: { stopId: string; name: string; headsign: string | null } | null;
-  direction0: { stopId: string; name: string; headsign: string | null } | null;
+  direction1: RouteDirectionStop | null;
+  direction0: RouteDirectionStop | null;
 };
+
+// Within this straight-line distance the stop is chosen by walking distance; farther out (an LIRR
+// station riders drive to) straight line is what matters, and searching that far would be slow.
+const WALK_RANGE_METERS = 2_500;
+// A walk longer than this isn't searched; such a stop counts as unreachable on foot.
+const WALK_LIMIT_METERS = 5_000;
+// The straight-line nearest few are enough: walking is never shorter than straight line, so the
+// search stops at the first stop farther in straight line than the best walk so far.
+const MAX_WALK_CANDIDATES = 6;
+
+type CandidateStop = { stopId: string; name: string; lat: number; lon: number; distanceMeters: number };
+
+/**
+ * The candidate nearest on foot from (lat, lon), or the straight-line nearest when walking data
+ * is missing, the stops are out of walking range, or none can be reached on foot. `candidates`
+ * must be sorted by straight-line distance.
+ */
+export function pickWalkingNearest(
+  candidates: readonly CandidateStop[],
+  lat: number,
+  lon: number,
+  walk: (toLat: number, toLon: number) => number | null = (toLat, toLon) => walkingMeters(lat, lon, toLat, toLon, WALK_LIMIT_METERS),
+): { stop: CandidateStop; walkMeters: number | null } | null {
+  const nearest = candidates[0];
+  if (!nearest) return null;
+  if (nearest.distanceMeters > WALK_RANGE_METERS) return { stop: nearest, walkMeters: null };
+  let best: { stop: CandidateStop; walkMeters: number } | null = null;
+  for (const stop of candidates.slice(0, MAX_WALK_CANDIDATES)) {
+    if (best && stop.distanceMeters >= best.walkMeters) break;
+    const meters = walk(stop.lat, stop.lon);
+    if (meters !== null && (!best || meters < best.walkMeters)) best = { stop, walkMeters: meters };
+  }
+  return best ?? { stop: nearest, walkMeters: null };
+}
+
+/** Per direction, the stops some trip of the route leaves from (every stop but a trip's last). */
+async function departureStopsByDirection(agencyId: AgencyId, routeId: string): Promise<Record<0 | 1, Set<string>>> {
+  const { tripsById } = loadAgencyStaticData(agencyId);
+  const { byTrip } = await loadRouteStopTimes(agencyId, routeId);
+  const stops: Record<0 | 1, Set<string>> = { 0: new Set(), 1: new Set() };
+  for (const [tripId, stopTimes] of byTrip) {
+    const directionId = tripsById.get(tripId)?.directionId;
+    if (directionId !== 0 && directionId !== 1) continue;
+    const ordered = [...stopTimes].sort((a, b) => a.stopSequence - b.stopSequence);
+    for (const stopTime of ordered.slice(0, -1)) stops[directionId].add(stopTime.stopId);
+  }
+  return stops;
+}
+
+/**
+ * The walk from a point to one stop, for drawing — the same walk pickWalkingNearest measured when
+ * it chose that stop. Null when the stop is unknown, out of walking range (where the stop was
+ * chosen by straight line), or not reachable on foot.
+ */
+export function getWalkingPathToStop(
+  agencyId: AgencyId,
+  stopId: string,
+  lat: number,
+  lon: number,
+): { meters: number; path: { lat: number; lon: number }[] } | null {
+  const stop = loadAgencyStaticData(agencyId).stopsById.get(stopId);
+  if (!stop || haversineMeters(lat, lon, stop.lat, stop.lon) > WALK_RANGE_METERS) return null;
+  return walkingPath(lat, lon, stop.lat, stop.lon, WALK_LIMIT_METERS);
+}
 
 /**
  * The nearest stop *on one specific route* to a point, resolved independently for each
@@ -285,22 +172,24 @@ export type NearestRouteStop = {
 export async function getNearestStopForRoute(agencyId: AgencyId, routeId: string, lat: number, lon: number): Promise<NearestRouteStop | null> {
   const { stopsById, tripsById } = loadAgencyStaticData(agencyId);
   const tripCountByDirectionAndStop = await loadRouteStopCounts(agencyId, routeId);
+  const departureStops = agencyConfig(agencyId).terminalShuttle ? await departureStopsByDirection(agencyId, routeId) : null;
 
   const MIN_SERVICE_FRACTION = 0.1;
-  const nearestInDirection = (directionId: 0 | 1): { stopId: string; name: string; headsign: string | null; distanceMeters: number } | null => {
+  const nearestInDirection = (directionId: 0 | 1): (RouteDirectionStop & { distanceMeters: number }) | null => {
     const tripCounts = tripCountByDirectionAndStop[directionId];
     const maxTripCount = Math.max(0, ...tripCounts.values());
-    let nearest: { stopId: string; name: string; distanceMeters: number } | null = null;
+    const candidates: CandidateStop[] = [];
     for (const [stopId, tripCount] of tripCounts) {
       if (tripCount < maxTripCount * MIN_SERVICE_FRACTION) continue;
+      if (departureStops && !departureStops[directionId].has(stopId)) continue;
       const stop = stopsById.get(stopId);
       if (!stop) continue;
-      const distanceMeters = haversineMeters(lat, lon, stop.lat, stop.lon);
-      if (!nearest || distanceMeters < nearest.distanceMeters) {
-        nearest = { stopId, name: stop.name, distanceMeters };
-      }
+      candidates.push({ stopId, name: stop.name, lat: stop.lat, lon: stop.lon, distanceMeters: haversineMeters(lat, lon, stop.lat, stop.lon) });
     }
-    if (!nearest) return null;
+    candidates.sort((a, b) => a.distanceMeters - b.distanceMeters);
+    const picked = pickWalkingNearest(candidates, lat, lon);
+    if (!picked) return null;
+    const nearest = { stopId: picked.stop.stopId, name: picked.stop.name, distanceMeters: picked.stop.distanceMeters, walkMeters: picked.walkMeters };
     let headsign: string | null = null;
     for (const trip of tripsById.values()) {
       if (trip.routeId === routeId && trip.directionId === directionId) {
@@ -315,10 +204,13 @@ export async function getNearestStopForRoute(agencyId: AgencyId, routeId: string
   const direction0 = nearestInDirection(0);
   if (!direction1 && !direction0) return null;
 
+  const withoutDistance = (stop: typeof direction1): RouteDirectionStop | null => (
+    stop ? { stopId: stop.stopId, name: stop.name, headsign: stop.headsign, walkMeters: stop.walkMeters } : null
+  );
   return {
     distanceMeters: Math.min(direction1?.distanceMeters ?? Infinity, direction0?.distanceMeters ?? Infinity),
-    direction1,
-    direction0,
+    direction1: withoutDistance(direction1),
+    direction0: withoutDistance(direction0),
   };
 }
 
@@ -332,8 +224,8 @@ export type DiscoveredRoute = {
   color: string;
   /** Smallest of direction1/direction0's own distance — see getNearestStopForRoute. */
   distanceMeters: number;
-  direction1: { stopId: string; name: string; headsign: string | null } | null;
-  direction0: { stopId: string; name: string; headsign: string | null } | null;
+  direction1: RouteDirectionStop | null;
+  direction0: RouteDirectionStop | null;
 };
 
 // "Nearest" isn't the same as "nearby" — findNearestStops always returns the N closest stops
@@ -346,6 +238,8 @@ const MAX_NEARBY_DISTANCE_METERS: Partial<Record<AgencyId, number>> = {
   lirr: 8_000, // ~5 miles — LIRR branches are sparse; riders commonly drive to a station.
   nice: 2_400, // ~1.5 miles — suburban bus stops are sparser than subway but denser than LIRR.
   suffolk: 2_400,
+  nycferry: 2_400, // ferry landings are few and far between, like LIRR stations but on foot.
+  siferry: 2_400,
 };
 const DEFAULT_MAX_NEARBY_DISTANCE_METERS = 1_600;
 
@@ -362,6 +256,8 @@ const MAX_NEARBY_CAP_METERS: Partial<Record<AgencyId, number>> = {
   lirr: 30_000,
   nice: 12_000,
   suffolk: 12_000,
+  nycferry: 12_000,
+  siferry: 12_000,
 };
 const DEFAULT_MAX_NEARBY_CAP_METERS = 6_000;
 
@@ -397,7 +293,8 @@ export function pickNearbyRoutes(
  * it show up here automatically.
  */
 export async function findNearbyTransit(lat: number, lon: number, limit = MAX_NEARBY_ROUTES): Promise<DiscoveredRoute[]> {
-  const agencyIds = Object.keys(AGENCY_CONFIGS) as AgencyId[];
+  // Agencies without readable data on this instance (an on-demand one not yet published) are skipped.
+  const agencyIds = availableAgencyIds();
   const baseRadius = (agencyId: AgencyId) => MAX_NEARBY_DISTANCE_METERS[agencyId] ?? DEFAULT_MAX_NEARBY_DISTANCE_METERS;
   const capRadius = (agencyId: AgencyId) => MAX_NEARBY_CAP_METERS[agencyId] ?? DEFAULT_MAX_NEARBY_CAP_METERS;
   const candidateStops = new Map(
@@ -417,7 +314,7 @@ export async function findNearbyTransit(lat: number, lon: number, limit = MAX_NE
       routeId,
       routeName: route.name,
       shortName: route.shortName,
-      color: `#${route.color}`,
+      color: displayRouteColor(agencyId, route),
       distanceMeters: nearest.distanceMeters,
       direction1: nearest.direction1,
       direction0: nearest.direction0,

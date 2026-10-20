@@ -1,26 +1,164 @@
 import { parse } from 'csv-parse';
-import { parse as parseSync } from 'csv-parse/sync';
 import { createReadStream, existsSync, readFileSync } from 'fs';
 import { readFile, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join, resolve, sep } from 'path';
 import { logger } from 'firebase-functions';
 
-import { agencyConfig, type AgencyId } from './gtfsAgencies';
-import { DERIVED_DIR, DERIVED_VERSION, MANIFEST_FILE, STOP_INDEXES_FILE, STOP_TIMES_DIR, derivedSources, routeFileName, type DerivedManifest, type DerivedStopIndexes } from './gtfsDerived';
-import { hydrateCurrentGtfsSnapshot } from './gtfsSnapshots';
+import { AGENCY_CONFIGS, agencyConfig, type AgencyId } from './gtfsAgencies';
+import {
+  DERIVED_DIR,
+  DERIVED_VERSION,
+  GEOMETRY_DIR,
+  MANIFEST_FILE,
+  STOP_INDEXES_FILE,
+  STOP_TIMES_DIR,
+  derivedSources,
+  indexStopTimeRows,
+  routeFileName,
+  type DerivedManifest,
+  type DerivedRouteGeometry,
+  type DerivedStopIndexes,
+  type DerivedStopTimeRow,
+  type RouteStopTimes,
+} from './gtfsDerived';
+import { readAgencyStaticData, readShapes, type AgencyStaticData, type GtfsStopTime, type ShapePoint, type StopTimeRow } from './gtfsFeed';
+import { downloadRouteFile, hydrateCurrentGtfsSnapshot, ROUTE_FILES_INDEX, type RouteFileIndex } from './gtfsSnapshots';
+import type { RouteGeometry } from './gtfsGeometry';
+import { displayTransitName } from './transitNames';
+
+export { gtfsTimeToSeconds } from './gtfsFeed';
+export type { GtfsCalendar, GtfsRoute, GtfsStop, GtfsStopTime, GtfsTrip, ShapePoint } from './gtfsFeed';
 
 const STATIC_DATA_ROOT = join(__dirname, '../static_data');
-const activeDataRoots = new Map<AgencyId, { dataDir: string; version: string }>();
+const activeDataRoots = new Map<AgencyId, { dataDir: string; version: string; routeFilesPrefix?: string }>();
 
 /**
- * GTFS times are "HH:MM:SS" and can exceed 24:00:00 for a post-midnight trip of the same
- * service day. Shared by gtfsSchedule.ts and gtfsDiscovery.ts rather than defined twice —
- * both already depend on this module for the underlying stop/trip data.
+ * Whether an agency's timetable can be read on this instance. Every agency with a committed copy
+ * always can; an on-demand agency (no committed copy) only once its snapshot is hydrated.
  */
-export function gtfsTimeToSeconds(hms: string): number {
-  const parts = hms.split(':').map(Number);
-  return (parts[0] ?? 0) * 3600 + (parts[1] ?? 0) * 60 + (parts[2] ?? 0);
+export function isAgencyAvailable(agencyId: AgencyId): boolean {
+  const root = activeDataRoots.get(agencyId);
+  if (root) return existsSync(join(root.dataDir, 'routes.txt'));
+  return !agencyConfig(agencyId).onDemandRouteFiles && existsSync(join(STATIC_DATA_ROOT, agencyConfig(agencyId).dataDir, 'routes.txt'));
+}
+
+/** The configured agencies whose timetables this instance can read (call after preparing them). */
+export function availableAgencyIds(): AgencyId[] {
+  return (Object.keys(AGENCY_CONFIGS) as AgencyId[]).filter(isAgencyAvailable);
+}
+
+// ---------------------------------------------------------------------------------------------
+// On-demand route files: an agency whose snapshot carries a route-files prefix reads each route's
+// prepared stop times and geometry from Cloud Storage the first time it's needed, verified against
+// the core archive's route-files.json, and keeps the parsed results in a bounded LRU.
+
+/** Stop-time rows kept across all on-demand routes (about 100 bytes each when parsed). */
+const ON_DEMAND_ROW_BUDGET = 1_500_000;
+/** Route geometries kept across all on-demand routes. */
+const ON_DEMAND_GEOMETRY_ROUTES = 300;
+
+const routeFileIndexes = new Map<AgencyId, Promise<RouteFileIndex | null>>();
+
+function routeFileIndex(agencyId: AgencyId): Promise<RouteFileIndex | null> {
+  let index = routeFileIndexes.get(agencyId);
+  if (!index) {
+    const path = join(dataDirFor(agencyId), DERIVED_DIR, ROUTE_FILES_INDEX);
+    index = existsSync(path) ? readFile(path, 'utf-8').then((text) => JSON.parse(text) as RouteFileIndex) : Promise.resolve(null);
+    routeFileIndexes.set(agencyId, index);
+  }
+  return index;
+}
+
+function isOnDemand(agencyId: AgencyId): boolean {
+  return activeDataRoots.get(agencyId)?.routeFilesPrefix !== undefined;
+}
+
+/**
+ * A route's prepared file ("stop_times/<route>.json" or "geometry/<route>.json"): on disk for
+ * agencies hydrated whole, from Cloud Storage for on-demand ones. Null when the route has none.
+ */
+async function readPreparedRouteFile(agencyId: AgencyId, dir: string, routeId: string): Promise<string | null> {
+  const name = `${dir}/${routeFileName(routeId)}`;
+  const root = activeDataRoots.get(agencyId);
+  if (root?.routeFilesPrefix !== undefined) {
+    const expected = (await routeFileIndex(agencyId))?.[name];
+    if (!expected) return null;
+    try {
+      return (await downloadRouteFile(`${root.routeFilesPrefix}/${name}`, expected)).toString('utf-8');
+    } catch (error) {
+      logger.warn('Could not load an on-demand GTFS route file', {
+        agencyId,
+        event: 'gtfs_route_file_failed',
+        file: name,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+  const path = join(dataDirFor(agencyId), DERIVED_DIR, dir, routeFileName(routeId));
+  return existsSync(path) ? readFile(path, 'utf-8') : null;
+}
+
+type LruEntry<T> = { promise: Promise<T>; weight: number };
+
+/** Least-recently-used promises, evicted once their summed weight passes `budget`. */
+export class WeightedLru<T> {
+  private readonly entries = new Map<string, LruEntry<T>>();
+  private total = 0;
+
+  constructor(private readonly budget: number, private readonly weigh: (value: T) => number) {}
+
+  get(key: string): Promise<T> | undefined {
+    const entry = this.entries.get(key);
+    if (!entry) return undefined;
+    this.entries.delete(key);
+    this.entries.set(key, entry);
+    return entry.promise;
+  }
+
+  set(key: string, promise: Promise<T>): void {
+    const entry: LruEntry<T> = { promise, weight: 0 };
+    this.entries.set(key, entry);
+    promise.then((value) => {
+      if (this.entries.get(key) !== entry) return;
+      entry.weight = this.weigh(value);
+      this.total += entry.weight;
+      for (const [oldKey, old] of this.entries) {
+        if (this.total <= this.budget || old === entry) break;
+        this.entries.delete(oldKey);
+        this.total -= old.weight;
+      }
+    }, () => {
+      if (this.entries.get(key) === entry) this.entries.delete(key);
+    });
+  }
+
+  deleteWhere(matches: (key: string) => boolean): void {
+    for (const [key, entry] of this.entries) {
+      if (!matches(key)) continue;
+      this.entries.delete(key);
+      this.total -= entry.weight;
+    }
+  }
+
+  get size(): number {
+    return this.entries.size;
+  }
+}
+
+const onDemandStopTimes = new WeightedLru<RouteStopTimes>(ON_DEMAND_ROW_BUDGET, (times) => [...times.byTrip.values()].reduce((sum, rows) => sum + rows.length, 0));
+const onDemandGeometry = new WeightedLru<DerivedRouteGeometry | null>(ON_DEMAND_GEOMETRY_ROUTES, () => 1);
+
+/** Unit-test introspection only: how many on-demand routes' stop times are cached. */
+export function onDemandCachedRoutesForTests(): number {
+  return onDemandStopTimes.size;
+}
+
+/** Unit-test dependency injection only: an agency's active data as if hydrated from a snapshot. */
+export function setAgencyDataForTests(agencyId: AgencyId, dataDir: string, routeFilesPrefix?: string): void {
+  activeDataRoots.set(agencyId, { dataDir, version: `test-${dataDir}`, ...(routeFilesPrefix ? { routeFilesPrefix } : {}) });
+  clearAgencyCaches(agencyId);
 }
 
 function dataDirFor(agencyId: AgencyId): string {
@@ -60,43 +198,6 @@ function useDerived(agencyId: AgencyId): boolean {
   return valid;
 }
 
-function loadCsvSync<T>(agencyId: AgencyId, filename: string): T[] {
-  const path = join(dataDirFor(agencyId), filename);
-  if (!existsSync(path)) return [];
-  return parseSync(readFileSync(path, 'utf-8'), { columns: true }) as T[];
-}
-
-type RouteRow = { route_id: string; route_short_name: string; route_long_name: string; route_color: string };
-type StopRow = { stop_id: string; stop_name: string; stop_lat: string; stop_lon: string; parent_station?: string };
-type TripRow = { trip_id: string; route_id: string; trip_headsign: string; direction_id: string; service_id: string; peak_offpeak?: string; shape_id?: string };
-type ShapeRow = { shape_id: string; shape_pt_lat: string; shape_pt_lon: string; shape_pt_sequence: string };
-type StopTimeRow = { trip_id: string; stop_id: string; arrival_time: string; departure_time: string; stop_sequence: string };
-type CalendarRow = {
-  service_id: string;
-  monday: string; tuesday: string; wednesday: string; thursday: string; friday: string; saturday: string; sunday: string;
-  start_date: string; end_date: string;
-};
-type CalendarDateRow = { service_id: string; date: string; exception_type: string };
-
-export type GtfsStop = { stopId: string; name: string; lat: number; lon: number; parentStation: string | null };
-/** `peakOffpeak` is LIRR's own real schedule classification (trips.txt's peak_offpeak column) — null for agencies whose trips.txt doesn't have that column (e.g. subway, which doesn't have peak/off-peak fares at all). */
-export type GtfsTrip = { tripId: string; routeId: string; headsign: string; directionId: number; serviceId: string; peakOffpeak: boolean | null; shapeId: string | null };
-export type ShapePoint = { lat: number; lon: number };
-export type GtfsRoute = { routeId: string; shortName: string; name: string; color: string };
-/** One scheduled stop event from stop_times.txt — arrival/departure are "HH:MM:SS" local time, can exceed 24:00:00 for a post-midnight trip of the same service day. */
-export type GtfsStopTime = { tripId: string; stopId: string; arrivalTime: string; departureTime: string; stopSequence: number };
-/** A service_id's weekly pattern and the date range it's valid for — absent for agencies (like LIRR) that publish service exclusively via calendar_dates.txt exceptions. */
-export type GtfsCalendar = { daysOfWeek: readonly boolean[]; startDate: string; endDate: string };
-
-type AgencyStaticData = {
-  routesById: Map<string, GtfsRoute>;
-  stopsById: Map<string, GtfsStop>;
-  tripsById: Map<string, GtfsTrip>;
-  calendarByService: Map<string, GtfsCalendar>;
-  /** service_id -> "YYYYMMDD" dates added (exception_type 1) or removed (exception_type 2) on top of the weekly pattern (or, for calendar.txt-less agencies, the *entire* schedule). */
-  calendarExceptionsByService: Map<string, Map<string, '1' | '2'>>;
-};
-
 const staticDataCache = new Map<AgencyId, AgencyStaticData>();
 
 /** Loads and indexes one agency's small-to-medium static GTFS files (not stop_times.txt — see loadRouteStopTimes/loadGlobalStopRouteIndex, both sized for files too big to load whole). Cached per agency. */
@@ -104,55 +205,7 @@ export function loadAgencyStaticData(agencyId: AgencyId): AgencyStaticData {
   const cached = staticDataCache.get(agencyId);
   if (cached) return cached;
 
-  const routesById = new Map<string, GtfsRoute>();
-  for (const row of loadCsvSync<RouteRow>(agencyId, 'routes.txt')) {
-    // LIRR's routes.txt has no route_short_name column at all (not just blank) — fall all the
-    // way back to the route_id itself rather than leaving this undefined.
-    const shortName = row.route_short_name || row.route_long_name || row.route_id;
-    routesById.set(row.route_id, { routeId: row.route_id, shortName, name: row.route_long_name || shortName, color: row.route_color });
-  }
-
-  const stopsById = new Map<string, GtfsStop>();
-  for (const row of loadCsvSync<StopRow>(agencyId, 'stops.txt')) {
-    stopsById.set(row.stop_id, {
-      stopId: row.stop_id,
-      name: row.stop_name,
-      lat: Number(row.stop_lat),
-      lon: Number(row.stop_lon),
-      parentStation: row.parent_station || null,
-    });
-  }
-
-  const tripsById = new Map<string, GtfsTrip>();
-  for (const row of loadCsvSync<TripRow>(agencyId, 'trips.txt')) {
-    tripsById.set(row.trip_id, {
-      tripId: row.trip_id,
-      routeId: row.route_id,
-      headsign: row.trip_headsign,
-      directionId: Number(row.direction_id),
-      serviceId: row.service_id,
-      peakOffpeak: row.peak_offpeak === undefined ? null : row.peak_offpeak === '1',
-      shapeId: row.shape_id || null,
-    });
-  }
-
-  const calendarByService = new Map<string, GtfsCalendar>();
-  for (const row of loadCsvSync<CalendarRow>(agencyId, 'calendar.txt')) {
-    calendarByService.set(row.service_id, {
-      daysOfWeek: [row.sunday, row.monday, row.tuesday, row.wednesday, row.thursday, row.friday, row.saturday].map((v) => v === '1'),
-      startDate: row.start_date,
-      endDate: row.end_date,
-    });
-  }
-
-  const calendarExceptionsByService = new Map<string, Map<string, '1' | '2'>>();
-  for (const row of loadCsvSync<CalendarDateRow>(agencyId, 'calendar_dates.txt')) {
-    const exceptions = calendarExceptionsByService.get(row.service_id) ?? new Map<string, '1' | '2'>();
-    exceptions.set(row.date, row.exception_type === '2' ? '2' : '1');
-    calendarExceptionsByService.set(row.service_id, exceptions);
-  }
-
-  const data: AgencyStaticData = { routesById, stopsById, tripsById, calendarByService, calendarExceptionsByService };
+  const data = readAgencyStaticData(dataDirFor(agencyId));
   staticDataCache.set(agencyId, data);
   return data;
 }
@@ -177,8 +230,6 @@ export function isServiceRunningOn(agencyId: AgencyId, serviceId: string, dateKe
   return calendar.daysOfWeek[dayOfWeek] ?? false;
 }
 
-type RouteStopTimes = { byStop: Map<string, GtfsStopTime[]>; byTrip: Map<string, GtfsStopTime[]> };
-
 // Keyed by `${agencyId}:${routeId}`. Caches the in-flight *promise*, not just the resolved
 // value — several callers (geometry, headsigns, platform lookup, predictions) can ask for the
 // same route concurrently, and without this each would race to start its own redundant stream.
@@ -194,15 +245,23 @@ const routeStopTimesCache = new Map<string, Promise<RouteStopTimes>>();
  */
 export function loadRouteStopTimes(agencyId: AgencyId, routeId: string): Promise<RouteStopTimes> {
   const cacheKey = `${agencyId}:${routeId}`;
+  if (isOnDemand(agencyId)) {
+    const cachedOnDemand = onDemandStopTimes.get(cacheKey);
+    if (cachedOnDemand) return cachedOnDemand;
+    const promise = readPreparedRouteFile(agencyId, STOP_TIMES_DIR, routeId).then((text) => (
+      text ? indexStopTimeRows((JSON.parse(text) as { rows: DerivedStopTimeRow[] }).rows) : { byStop: new Map(), byTrip: new Map() }
+    ));
+    onDemandStopTimes.set(cacheKey, promise);
+    return promise;
+  }
   const cached = routeStopTimesCache.get(cacheKey);
   if (cached) return cached;
 
   // Prepared per-route file: read just this route instead of scanning the whole feed.
   if (useDerived(agencyId)) {
-    const path = join(dataDirFor(agencyId), DERIVED_DIR, STOP_TIMES_DIR, routeFileName(routeId));
-    const promise = existsSync(path)
-      ? readFile(path, 'utf-8').then((text) => indexStopTimeRows((JSON.parse(text) as { rows: DerivedStopTimeRow[] }).rows))
-      : Promise.resolve<RouteStopTimes>({ byStop: new Map(), byTrip: new Map() });
+    const promise = readPreparedRouteFile(agencyId, STOP_TIMES_DIR, routeId).then((text) => (
+      text ? indexStopTimeRows((JSON.parse(text) as { rows: DerivedStopTimeRow[] }).rows) : { byStop: new Map(), byTrip: new Map() }
+    ));
     routeStopTimesCache.set(cacheKey, promise);
     return promise;
   }
@@ -238,25 +297,6 @@ type AgencyStopIndexes = {
 
 const agencyStopIndexesCache = new Map<AgencyId, Promise<AgencyStopIndexes>>();
 
-/** One prepared stop_times row: [tripId, stopId, arrivalTime, departureTime, stopSequence]. */
-type DerivedStopTimeRow = [string, string, string, string, number];
-
-/** A route's prepared rows, indexed the same way (and in the same order) as the CSV scan. */
-function indexStopTimeRows(rows: readonly DerivedStopTimeRow[]): RouteStopTimes {
-  const byStop = new Map<string, GtfsStopTime[]>();
-  const byTrip = new Map<string, GtfsStopTime[]>();
-  for (const [tripId, stopId, arrivalTime, departureTime, stopSequence] of rows) {
-    const entry: GtfsStopTime = { tripId, stopId, arrivalTime, departureTime, stopSequence };
-    const stopList = byStop.get(stopId);
-    if (stopList) stopList.push(entry);
-    else byStop.set(stopId, [entry]);
-    const tripList = byTrip.get(tripId);
-    if (tripList) tripList.push(entry);
-    else byTrip.set(tripId, [entry]);
-  }
-  return { byStop, byTrip };
-}
-
 type StopTimeBatch = { routeIds: Set<string>; done: Promise<Map<string, RouteStopTimes>> };
 const pendingStopTimeBatches = new Map<AgencyId, StopTimeBatch>();
 
@@ -273,7 +313,7 @@ async function streamStopTimesForRoutes(agencyId: AgencyId, routeIds: ReadonlySe
   const path = join(dataDirFor(agencyId), 'stop_times.txt');
   if (!existsSync(path)) return byRoute;
 
-  const parser = createReadStream(path).pipe(parse({ columns: true }));
+  const parser = createReadStream(path).pipe(parse({ bom: true, columns: true }));
   for await (const row of parser as AsyncIterable<StopTimeRow>) {
     const routeId = routeOfTrip.get(row.trip_id);
     if (!routeId) continue;
@@ -322,7 +362,7 @@ function loadAgencyStopIndexes(agencyId: AgencyId): Promise<AgencyStopIndexes> {
     const stopCountsByRoute = new Map<string, RouteStopCounts>();
     const path = join(dataDirFor(agencyId), 'stop_times.txt');
     if (existsSync(path)) {
-      const parser = createReadStream(path).pipe(parse({ columns: true }));
+      const parser = createReadStream(path).pipe(parse({ bom: true, columns: true }));
       for await (const row of parser as AsyncIterable<StopTimeRow>) {
         const trip = tripsById.get(row.trip_id);
         if (!trip) continue;
@@ -353,6 +393,36 @@ export async function loadRouteStopCounts(agencyId: AgencyId, routeId: string): 
   return (await loadAgencyStopIndexes(agencyId)).stopCountsByRoute.get(routeId) ?? { 0: new Map(), 1: new Map() };
 }
 
+// Keyed by `${agencyId}:${routeId}`, like routeStopTimesCache.
+const routeGeometryCache = new Map<string, Promise<DerivedRouteGeometry | null>>();
+
+/**
+ * A route's prepared geometry (both directions), or null when the route has no prepared file
+ * (no stop times). Undefined when this agency has no usable prepared files, so the caller
+ * computes geometry from the timetable instead.
+ */
+function displayDirection(geometry: RouteGeometry | null): RouteGeometry | null {
+  if (!geometry) return null;
+  return { ...geometry, headsign: displayTransitName(geometry.headsign), stops: geometry.stops.map((stop) => ({ ...stop, name: displayTransitName(stop.name) })) };
+}
+
+function displayGeometry(geometry: DerivedRouteGeometry): DerivedRouteGeometry {
+  return { 0: displayDirection(geometry[0]), 1: displayDirection(geometry[1]) };
+}
+
+export function loadPreparedRouteGeometry(agencyId: AgencyId, routeId: string): Promise<DerivedRouteGeometry | null> | undefined {
+  if (!useDerived(agencyId)) return undefined;
+  const cacheKey = `${agencyId}:${routeId}`;
+  const onDemand = isOnDemand(agencyId);
+  const cached = onDemand ? onDemandGeometry.get(cacheKey) : routeGeometryCache.get(cacheKey);
+  if (cached) return cached;
+  // Files built before names were recased still carry all-caps bus names; they're recased here.
+  const promise = readPreparedRouteFile(agencyId, GEOMETRY_DIR, routeId).then((text) => (text ? displayGeometry(JSON.parse(text) as DerivedRouteGeometry) : null));
+  if (onDemand) onDemandGeometry.set(cacheKey, promise);
+  else routeGeometryCache.set(cacheKey, promise);
+  return promise;
+}
+
 const shapesCache = new Map<AgencyId, Map<string, ShapePoint[]>>();
 
 /**
@@ -363,14 +433,7 @@ const shapesCache = new Map<AgencyId, Map<string, ShapePoint[]>>();
 export function loadAgencyShapes(agencyId: AgencyId): Map<string, ShapePoint[]> {
   const cached = shapesCache.get(agencyId);
   if (cached) return cached;
-  const withSequence = new Map<string, { sequence: number; point: ShapePoint }[]>();
-  for (const row of loadCsvSync<ShapeRow>(agencyId, 'shapes.txt')) {
-    const list = withSequence.get(row.shape_id) ?? [];
-    list.push({ sequence: Number(row.shape_pt_sequence), point: { lat: Number(row.shape_pt_lat), lon: Number(row.shape_pt_lon) } });
-    withSequence.set(row.shape_id, list);
-  }
-  const shapes = new Map<string, ShapePoint[]>();
-  for (const [shapeId, list] of withSequence) shapes.set(shapeId, list.sort((a, b) => a.sequence - b.sequence).map((entry) => entry.point));
+  const shapes = readShapes(dataDirFor(agencyId));
   shapesCache.set(agencyId, shapes);
   return shapes;
 }
@@ -381,8 +444,13 @@ function clearAgencyCaches(agencyId: AgencyId): void {
   agencyStopIndexesCache.delete(agencyId);
   shapesCache.delete(agencyId);
   pendingStopTimeBatches.delete(agencyId);
-  for (const key of routeStopTimesCache.keys()) {
-    if (key.startsWith(`${agencyId}:`)) routeStopTimesCache.delete(key);
+  routeFileIndexes.delete(agencyId);
+  onDemandStopTimes.deleteWhere((key) => key.startsWith(`${agencyId}:`));
+  onDemandGeometry.deleteWhere((key) => key.startsWith(`${agencyId}:`));
+  for (const cache of [routeStopTimesCache, routeGeometryCache]) {
+    for (const key of cache.keys()) {
+      if (key.startsWith(`${agencyId}:`)) cache.delete(key);
+    }
   }
 }
 
@@ -393,6 +461,9 @@ function clearAgencyCaches(agencyId: AgencyId): void {
  */
 export async function prepareAgencyStaticData(agencyId: AgencyId, nowMs = Date.now()): Promise<void> {
   const snapshot = await hydrateCurrentGtfsSnapshot(agencyId, nowMs);
+  // An on-demand agency has no committed copy to fall back to: without a snapshot it stays
+  // unavailable (isAgencyAvailable), and callers skip it.
+  if (!snapshot && agencyConfig(agencyId).onDemandRouteFiles) return;
   const next = snapshot ?? {
     dataDir: join(STATIC_DATA_ROOT, agencyConfig(agencyId).dataDir),
     version: 'bundled',
@@ -427,9 +498,13 @@ export async function prepareAgencyStaticData(agencyId: AgencyId, nowMs = Date.n
 /** Unit-test isolation only. */
 export function resetGtfsStaticDataForTests(): void {
   activeDataRoots.clear();
+  routeFileIndexes.clear();
+  onDemandStopTimes.deleteWhere(() => true);
+  onDemandGeometry.deleteWhere(() => true);
   derivedValidity.clear();
   staticDataCache.clear();
   routeStopTimesCache.clear();
+  routeGeometryCache.clear();
   agencyStopIndexesCache.clear();
   shapesCache.clear();
   pendingStopTimeBatches.clear();

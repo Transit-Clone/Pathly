@@ -68,6 +68,12 @@ async function loadRoute(route: RouteDetail, at: Coordinates): Promise<RouteLive
  * succeeded reports `error`. A route that *has* loaded before keeps its last good value if a
  * later poll fails, rather than flashing to an error state over one transient network hiccup.
  */
+// Admin tools' "Refresh live data now": every mounted provider refetches its routes on screen.
+const refreshListeners = new Set<() => void>();
+export function refreshLiveDataNow(): void {
+  refreshListeners.forEach((listener) => listener());
+}
+
 export function TransitLiveProvider({
   activeRouteIds,
   children,
@@ -219,6 +225,14 @@ export function TransitLiveProvider({
     return () => clearInterval(interval);
     // Keyed on the coordinate primitives, not the `location` object (new every GPS update).
   }, [location.latitude, location.longitude, fetchRoutes]);
+
+  useEffect(() => {
+    const listener = () => fetchRoutes(latest.current.activeRoutes, latest.current.location);
+    refreshListeners.add(listener);
+    return () => {
+      refreshListeners.delete(listener);
+    };
+  }, [fetchRoutes]);
 
   // Routes that just came into view, right away (unless just fetched) — routes that were already
   // in view keep their own poll timing.

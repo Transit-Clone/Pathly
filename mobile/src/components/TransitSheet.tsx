@@ -3,29 +3,25 @@ import { ActivityIndicator, Animated, Platform, StyleSheet, Text, View, type Lay
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { applyRouteLive } from '../data/applyRouteLive';
-import { realFareForRecentTrip } from '../data/lirrFares';
+import type { RecentTripV1 } from '../data/navigationStorage';
 import { useTransitLiveMap } from '../data/TransitLiveContext';
-import {
-  recentTrips,
-  type RecentTripId,
-  type RouteDetail,
-} from '../data/transit';
-import type { SavedLocation } from '../data/userData';
+import type { RouteDetail } from '../data/transit';
+import { sortSavedLocations, type SavedLocation } from '../data/userData';
 import { useNow } from '../hooks/useNow';
 import { useAppSettings, useTheme, useThemedStyles } from '../theme/AppSettings';
 import { useLayoutEase, useNativeDriver } from '../theme/motion';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
 import { Icon } from './Icon';
-import { SavedLocationCard } from './SavedLocationCard';
+import { AddSavedPlaceCard, SavedLocationCard } from './SavedLocationCard';
+import { NearbySkeleton } from './Skeleton';
 import { TransitCard } from './TransitCard';
-import { TripCard } from './TripCard';
 import { PressableScale } from './PressableScale';
+import { RecentTripCard } from './RecentTripCard';
 
 export type TransitTabId = 'nearby' | 'recents' | 'favorites';
 
 type TransitSheetProps = {
-  activeTripId: RecentTripId | null;
   activeTab: TransitTabId;
   /** Resolves a route id — the demo catalog's own or a dynamically-discovered one — to its full data, for pinned/favorited routes which can be either kind. */
   findRoute: (routeId: string) => RouteDetail | undefined;
@@ -36,15 +32,18 @@ type TransitSheetProps = {
   /** A re-search is in flight (e.g. for a new map center) while the current list stays visible. */
   nearbyRefreshing?: boolean;
   onOpenSavedLocation: (location: SavedLocation) => void;
+  /** Starts saving a new place; offered under Favorites -> Places when set. */
+  onAddSavedPlace?: () => void;
+  /** Opens a fresh route search for a completed trip; stored provider results are never replayed. */
+  onOpenRecentTrip: (trip: RecentTripV1) => void;
   onOpenRoute: (routeId: string) => void;
-  onOpenTrip: (tripId: RecentTripId) => void;
-  onEndTrip: () => void;
-  onStartTrip: (tripId: RecentTripId) => void;
   onTabChange: (tab: TransitTabId) => void;
   /** Destinations saved with a trip's star (Firestore savedLocations), under Favorites -> Places. */
   savedLocations: readonly SavedLocation[];
   /** Routes saved with the star: listed first in Nearby and under Favorites -> Routes. */
   savedRouteIds: readonly string[];
+  /** Completed local trips, newest first and already scoped to the signed-in account. */
+  recentTrips: readonly RecentTripV1[];
   scrollY: Animated.Value;
   /** The route ids of the cards currently on screen in the active tab, whenever that set changes. */
   onVisibleRouteIdsChange?: (routeIds: readonly string[]) => void;
@@ -56,7 +55,7 @@ const TAB_GAP = 4;
 const TRANSIT_CARD_HEIGHT = 104;
 // Expanded = sheet scrolled up to just below the fixed search header (HomeScreen's 80pt top inset).
 const EXPANDED_TOP = 80;
-const DRAG_HANDLE_HEIGHT = 28;
+const DRAG_HANDLE_HEIGHT = 24;
 // Any scroll beyond this counts as "moved off rest", so a handle tap collapses instead of expanding.
 const AT_REST_TOLERANCE = 8;
 
@@ -69,7 +68,6 @@ const tabs: { id: TransitTabId; label: string }[] = [
 ];
 
 export function TransitSheet({
-  activeTripId,
   activeTab,
   findRoute,
   mapHeight,
@@ -77,12 +75,12 @@ export function TransitSheet({
   nearbyRoutes,
   nearbyStatus,
   onOpenSavedLocation,
+  onAddSavedPlace,
+  onOpenRecentTrip,
   onOpenRoute,
-  onOpenTrip,
-  onEndTrip,
-  onStartTrip,
   onTabChange,
   onVisibleRouteIdsChange,
+  recentTrips,
   savedLocations,
   savedRouteIds,
   scrollY,
@@ -307,37 +305,39 @@ export function TransitSheet({
                     />
                   </View>
                 ))}
-                {nearbyStatus !== 'loaded' || nearbyCards.length === 0 ? (
+                {nearbyStatus === 'loading' && nearbyCards.length === 0 ? <NearbySkeleton /> : null}
+                {nearbyStatus !== 'loading' && (nearbyStatus !== 'loaded' || nearbyCards.length === 0) ? (
                   <View accessible={true} style={styles.nearbyEmpty} testID="nearby-routes-empty">
-                    {nearbyStatus === 'loading' ? <ActivityIndicator color={colors.primary} style={styles.nearbyEmptySpinner} /> : null}
                     <Text style={styles.nearbyEmptyText}>
-                      {nearbyStatus === 'loading'
-                        ? 'Finding transit near you…'
-                        : nearbyStatus === 'error'
-                          ? 'Could not check for nearby transit right now.'
-                          : 'No other nearby transit found.'}
+                      {nearbyStatus === 'error' ? 'Could not check for nearby transit right now.' : 'No other nearby transit found.'}
                     </Text>
                   </View>
                 ) : null}
               </View>
             </View>
           ) : activeTab === 'recents' ? (
-            <View style={[styles.tabContent, styles.recentList, { minHeight: tabContentMinHeight }]} testID="recents-route-content">
-              {recentTrips.map((trip) => {
-                const isActive = trip.id === activeTripId;
-                return (
-                  <TripCard
-                    key={trip.id}
-                    actionTestID={isActive ? `recent-trip-end-${trip.id}` : `recent-trip-go-${trip.id}`}
-                    isActive={isActive}
-                    onAction={isActive ? onEndTrip : () => onStartTrip(trip.id)}
-                    onOpen={() => onOpenTrip(trip.id)}
-                    testID={`recent-trip-${trip.id}`}
-                    trip={{ ...trip, fare: realFareForRecentTrip(trip) }}
+            recentTrips.length > 0 ? (
+              <View style={[styles.tabContent, { minHeight: tabContentMinHeight }]} testID="recents-route-content">
+                {recentTrips.map((trip) => (
+                  <RecentTripCard
+                    key={trip.sessionId}
+                    destination={trip.destination.label}
+                    endedAt={trip.endedAt}
+                    lines={trip.lines.map((line) => line.shortName ?? line.name)}
+                    onOpen={() => onOpenRecentTrip(trip)}
+                    origin={trip.origin.label}
+                    outcome={trip.outcome}
+                    testID={`recent-trip-${trip.sessionId}`}
                   />
-                );
-              })}
-            </View>
+                ))}
+              </View>
+            ) : (
+              <View style={[styles.tabContent, styles.emptyState, { minHeight: tabContentMinHeight }]} testID="recents-route-content">
+                <View style={styles.emptyIcon}><Icon name="recent" size={30} /></View>
+                <Text style={styles.emptyTitle}>No recent trips yet</Text>
+                <Text style={styles.emptyBody}>Trips you take will show up here.</Text>
+              </View>
+            )
           ) : (
             hasFavorites ? (
               <View onLayout={(event) => recordLayout('content', event)} style={[styles.tabContent, { minHeight: tabContentMinHeight }]} testID="favorites-route-content">
@@ -355,10 +355,10 @@ export function TransitSheet({
                     })}
                   </View>
                 ) : null}
-                {savedLocations.length > 0 ? (
+                {savedLocations.length > 0 || onAddSavedPlace ? (
                   <View style={styles.favoriteTrips} testID="saved-locations">
                     <Text style={[styles.sectionLabel, styles.sectionHeading, styles.flushHeading]}>PLACES</Text>
-                    {savedLocations.map((location) => (
+                    {sortSavedLocations(savedLocations).map((location) => (
                       <SavedLocationCard
                         key={location.id}
                         location={location}
@@ -366,6 +366,7 @@ export function TransitSheet({
                         testID={`saved-location-${location.address.name}`}
                       />
                     ))}
+                    {onAddSavedPlace ? <AddSavedPlaceCard onPress={onAddSavedPlace} /> : null}
                   </View>
                 ) : null}
               </View>
@@ -373,7 +374,8 @@ export function TransitSheet({
               <View style={[styles.tabContent, styles.emptyState, { minHeight: tabContentMinHeight }]} testID="favorites-route-content">
                 <View style={styles.emptyIcon}><Icon name="favorite" size={30} /></View>
                 <Text style={styles.emptyTitle}>No favorites yet</Text>
-                <Text style={styles.emptyBody}>Tap the star on a route, or on a trip to save its destination.</Text>
+                <Text style={styles.emptyBody}>Tap the star on a route, or save a place like home or work.</Text>
+                {onAddSavedPlace ? <View style={styles.emptyAction}><AddSavedPlaceCard onPress={onAddSavedPlace} /></View> : null}
               </View>
             )
           )}
@@ -407,7 +409,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     pointerEvents: 'box-none',
   },
   tabs: {
-    paddingTop: 12,
+    paddingTop: 2,
     flexDirection: 'row',
     gap: TAB_GAP,
     paddingHorizontal: TAB_ROW_PADDING,
@@ -441,18 +443,17 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   },
   cardStack: { gap: 0 },
   nearbyEmpty: { alignItems: 'center', paddingVertical: 20, paddingHorizontal: 20, gap: 8 },
-  nearbyEmptySpinner: { marginBottom: 2 },
   nearbyRefreshing: { paddingVertical: 8 },
   nearbyEmptyText: { color: colors.mutedInk, ...typography.metadata, textAlign: 'center' },
   sectionHeading: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 },
   sectionLabel: { color: colors.mutedInk, ...typography.label },
   favoriteTrips: { gap: 10, paddingHorizontal: 12, paddingBottom: 12 },
   flushHeading: { paddingHorizontal: 4 },
-  recentList: { paddingHorizontal: 12, paddingVertical: 12, gap: 10 },
   emptyState: {
     alignItems: 'center',
     paddingVertical: 20,
   },
+  emptyAction: { alignSelf: 'stretch', marginTop: 16 },
   emptyIcon: { width: 60, height: 60, alignItems: 'center', justifyContent: 'center', borderRadius: 30, backgroundColor: colors.blueSoft },
   emptyTitle: { marginTop: 8, color: colors.ink, ...typography.sectionHeading, fontSize: 16 },
   emptyBody: {

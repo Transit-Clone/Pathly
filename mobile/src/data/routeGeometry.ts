@@ -1,6 +1,6 @@
-import { httpsCallable } from 'firebase/functions';
 
-import { functions } from '../lib/firebase';
+import { callable } from '../lib/firebase';
+import { whenWarm } from './backendWarmup';
 import type { LiveSource } from './transit';
 
 /** `offsetMinutes` is this stop's real scheduled time, relative to `stops[0]` — see gtfsDiscovery.ts's getRouteGeometry. */
@@ -10,9 +10,7 @@ export type RouteGeometry = { headsign: string; stops: readonly GeometryStop[]; 
 
 type RouteGeometryResponse = { headsign: string; stops: GeometryStop[]; path?: { lat: number; lon: number }[] };
 
-const getRouteGeometryCallable = httpsCallable<{ agencyId: string; routeId: string; directionId: 0 | 1 }, RouteGeometryResponse>(
-  functions,
-  'getRouteGeometry',
+const getRouteGeometryCallable = callable<{ agencyId: string; routeId: string; directionId: 0 | 1 }, RouteGeometryResponse>('getRouteGeometry',
 );
 
 const cache = new Map<string, Promise<RouteGeometry | null>>();
@@ -28,7 +26,8 @@ export function fetchRouteGeometry(source: LiveSource, directionId: 0 | 1): Prom
   const cached = cache.get(cacheKey);
   if (cached) return cached;
 
-  const promise = getRouteGeometryCallable({ agencyId: source.agencyId, routeId: source.routeId, directionId })
+  const promise = whenWarm('getRouteGeometry')
+    .then(() => getRouteGeometryCallable({ agencyId: source.agencyId, routeId: source.routeId, directionId }))
     .then(({ data }) => data)
     .catch(() => null);
   cache.set(cacheKey, promise);

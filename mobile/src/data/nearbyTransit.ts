@@ -1,7 +1,7 @@
-import { httpsCallable } from 'firebase/functions';
 
 import type { Coordinates } from '../hooks/useCurrentLocation';
-import { functions } from '../lib/firebase';
+import { callable } from '../lib/firebase';
+import { whenWarm } from './backendWarmup';
 import type { LiveSource, RouteDetail, TransitDirection } from './transit';
 
 type DiscoveredDirection = { stopId: string; name: string; headsign: string | null } | null;
@@ -21,9 +21,7 @@ export type DiscoveredRoute = {
 
 type FindNearbyTransitResponse = { routes: DiscoveredRoute[] };
 
-const findNearbyTransitCallable = httpsCallable<{ lat: number; lon: number }, FindNearbyTransitResponse>(
-  functions,
-  'findNearbyTransit',
+const findNearbyTransitCallable = callable<{ lat: number; lon: number }, FindNearbyTransitResponse>('findNearbyTransit',
 );
 
 /**
@@ -38,6 +36,7 @@ const findNearbyTransitCallable = httpsCallable<{ lat: number; lon: number }, Fi
  * principle applied everywhere else live data is fetched in this app.
  */
 export async function fetchNearbyTransit(location: Coordinates): Promise<readonly DiscoveredRoute[]> {
+  await whenWarm('findNearbyTransit');
   const { data } = await findNearbyTransitCallable({ lat: location.latitude, lon: location.longitude });
   return data.routes;
 }

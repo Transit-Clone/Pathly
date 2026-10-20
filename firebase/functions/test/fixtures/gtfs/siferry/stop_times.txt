@@ -1,0 +1,17 @@
+trip_id,arrival_time,departure_time,stop_id,stop_sequence
+dailystgeorge0600,06:00:00,06:00:00,stgeorge,1
+dailystgeorge0600,06:25:00,06:25:00,whitehall,2
+dailywhitehall0630,06:30:00,06:30:00,whitehall,1
+dailywhitehall0630,06:55:00,06:55:00,stgeorge,2
+dailystgeorge1200,12:00:00,12:00:00,stgeorge,1
+dailystgeorge1200,12:25:00,12:25:00,whitehall,2
+dailywhitehall1230,12:30:00,12:30:00,whitehall,1
+dailywhitehall1230,12:55:00,12:55:00,stgeorge,2
+dailystgeorge1800,18:00:00,18:00:00,stgeorge,1
+dailystgeorge1800,18:25:00,18:25:00,whitehall,2
+dailywhitehall1830,18:30:00,18:30:00,whitehall,1
+dailywhitehall1830,18:55:00,18:55:00,stgeorge,2
+dailystgeorge2300,23:00:00,23:00:00,stgeorge,1
+dailystgeorge2300,23:25:00,23:25:00,whitehall,2
+dailywhitehall2330,23:30:00,23:30:00,whitehall,1
+dailywhitehall2330,23:55:00,23:55:00,stgeorge,2

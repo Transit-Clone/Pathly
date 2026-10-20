@@ -156,6 +156,31 @@ export async function enforceCallableSecurity<T>(
   return uid;
 }
 
+/**
+ * How many requests the caller could make right now on each endpoint, without consuming any.
+ * Reads the shared bucket when deployed (the one that actually limits), else this instance's.
+ */
+export async function peekRateLimits(
+  uid: string,
+  limits: Record<string, CallableRateLimit>,
+  nowMs = Date.now(),
+): Promise<Record<string, { remaining: number; perMinute: number }>> {
+  const shared = Boolean(process.env.K_SERVICE);
+  const app = shared ? getApps()[0] ?? initializeApp() : undefined;
+  const entries = await Promise.all(Object.entries(limits).map(async ([endpoint, limit]) => {
+    const key = `${endpoint}:user:${hashIdentifier(uid)}`;
+    let current: Pick<TokenBucket, 'tokens' | 'updatedAtMs'> | undefined = buckets.get(key);
+    if (app) {
+      const data = (await getFirestore(app).collection(SHARED_BUCKET_COLLECTION).doc(hashIdentifier(key)).get()).data();
+      current = typeof data?.tokens === 'number' && typeof data.updatedAtMs === 'number' ? { tokens: data.tokens, updatedAtMs: data.updatedAtMs } : undefined;
+    }
+    const refill = current ? (Math.max(0, nowMs - current.updatedAtMs) / WINDOW_MS) * limit.userPerMinute : 0;
+    const remaining = current ? Math.min(limit.userPerMinute, current.tokens + refill) : limit.userPerMinute;
+    return [endpoint, { remaining: Math.floor(remaining), perMinute: limit.userPerMinute }] as const;
+  }));
+  return Object.fromEntries(entries);
+}
+
 /** Unit-test isolation only. */
 export function resetCallableSecurityForTests(): void {
   buckets.clear();

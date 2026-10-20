@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { directionDestination, formatClockTime, type LiveSource, type RouteDetail, type RoutePrediction } from '../data/transit';
@@ -11,6 +11,7 @@ import { Icon } from './Icon';
 import { LiveSignal } from './LiveSignal';
 import { PressableScale } from './PressableScale';
 import { RouteBadge } from './RouteBadge';
+import { DepartureListSkeleton } from './Skeleton';
 import { predictionsForDirection } from './RouteDetailView';
 
 type DeparturesViewProps = {
@@ -87,10 +88,7 @@ export function DeparturesView({ directionIndex, onBack, route }: DeparturesView
         </View>
 
         {state.status === 'loading' ? (
-          <View style={styles.message} testID="departures-loading">
-            <ActivityIndicator color={route.color} />
-            <Text style={styles.messageText}>Loading departures…</Text>
-          </View>
+          <DepartureListSkeleton />
         ) : state.status === 'error' ? (
           <View style={styles.message} testID="departures-unavailable">
             <Text style={styles.messageText}>Departures unavailable right now.</Text>

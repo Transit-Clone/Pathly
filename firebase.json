@@ -23,7 +23,8 @@
       ],
       "predeploy": [
         "npm --prefix firebase/functions run build:gtfs",
-        "node firebase/functions/scripts/build-gtfs-index.js --check"
+        "node firebase/functions/scripts/build-gtfs-index.js --check",
+        "node firebase/functions/scripts/build-walking-tiles.js --check"
       ]
     }
   ],

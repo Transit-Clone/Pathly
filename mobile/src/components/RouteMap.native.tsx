@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, useWindowDimensions, View, type LayoutChangeEvent } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE, type Region } from 'react-native-maps';
 
 import { formatAge, visibleTrains } from '../data/liveTrains';
 import { googleMapStyle } from '../data/mapStyle';
 import { bearingToNextStop, splitIndexAtStop, withAlpha } from '../data/routeDirection';
+import { stopRevealZoom, zoomForRegion } from '../data/stopDeclutter';
 import type { RouteLiveVehicle } from '../data/transitLive';
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { useNow } from '../hooks/useNow';
@@ -25,6 +26,9 @@ const ARROW_SIZE = 22;
 // Stop dots are exactly as wide as the line, so they sit inside it like beads instead of
 // bulging out of it. Only the rider's own stop is drawn larger, so it stands out.
 const LINE_WIDTH = 8;
+// The walk to the stop, matching TripMap.native.tsx's walking legs.
+const WALK_WIDTH = 4;
+const WALK_DASH = [2, 8];
 const STOP_RING = 1.5;
 // The direction arrow sits this far out from the rider's stop (screen points, so it hugs the dot
 // at any zoom): a tall transparent box anchored at the stop, with the arrow at its far end.
@@ -58,6 +62,8 @@ type RouteMapProps = {
   /** Rider's real location; omitted while only the fallback is known. */
   userLocation?: Coordinates;
   vehicles: readonly RouteLiveVehicle[];
+  /** The walk along the streets from the rider to the focused stop, drawn dotted (as on the trip map). */
+  walkPath?: readonly { lat: number; lon: number }[];
 };
 
 /** Centers/zooms to fit every stop, with some breathing room around the edges. */
@@ -81,10 +87,10 @@ function regionFor(stops: readonly GeometryStop[], focusStop: GeometryStop | und
 }
 
 /** Real route map: actual stop positions, the real line, and live vehicles — for any route with a live feed. */
-export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusStopId, mode = 'rail', onUserPan, path, showRouteRequest = 0, stops, testID = 'route-map', userLocation, vehicles }: RouteMapProps) {
+export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusStopId, mode = 'rail', onUserPan, path, showRouteRequest = 0, stops, testID = 'route-map', userLocation, vehicles, walkPath }: RouteMapProps) {
   const mapRef = useRef<MapView>(null);
   // Places hidden, and recolored in the dark theme (see mapStyle.ts).
-  const { isDark } = useTheme();
+  const { colors, isDark } = useTheme();
   const mapStyle = useMemo(() => googleMapStyle(isDark), [isDark]);
   const riderMovedMap = useRef(false);
   // True from a location-button press until the rider pans (or asks for the whole route): keeps
@@ -95,6 +101,24 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
   // Custom-view stop markers must render at least once with tracking on (Android otherwise can
   // draw them blank), then stop tracking so static dots aren't re-rasterized every frame.
   const [tracksStopViews, setTracksStopViews] = useState(true);
+  // Stop dots are drawn only once they're zoomed apart (stopDeclutter.ts); the rider's stop always is.
+  const [mapWidth, setMapWidth] = useState(0);
+  // Before the map's own layout arrives, the window's width stands in.
+  const { width: windowWidth } = useWindowDimensions();
+  const [zoom, setZoom] = useState(() => zoomForRegion(initialRegion.longitudeDelta, windowWidth));
+  const revealZoom = useMemo(() => stopRevealZoom(stops.map((stop) => ({ lat: stop.lat, lng: stop.lon }))), [stops]);
+  const dotsShown = zoom >= revealZoom;
+  // Dots shown again are new markers: they render once with tracking on, like on first load.
+  const [trackedDotsShown, setTrackedDotsShown] = useState(dotsShown);
+  if (dotsShown !== trackedDotsShown) {
+    setTrackedDotsShown(dotsShown);
+    if (dotsShown) setTracksStopViews(true);
+  }
+  useEffect(() => {
+    if (!tracksStopViews || !dotsShown) return undefined;
+    const timer = setTimeout(() => setTracksStopViews(false), 500);
+    return () => clearTimeout(timer);
+  }, [dotsShown, tracksStopViews]);
   const now = useNow(1000);
   const shownVehicles = visibleTrains(vehicles, directionId, now);
   // Split at the rider's stop: faint behind it, full strength ahead, with an arrow toward the next stop.
@@ -141,12 +165,14 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
   return (
     <MapView
       initialRegion={initialRegion}
+      onLayout={(event: LayoutChangeEvent) => setMapWidth(event.nativeEvent.layout.width)}
       onMapReady={() => setTracksStopViews(false)}
       onPanDrag={() => {
         riderMovedMap.current = true;
         followRider.current = false;
         onUserPan?.();
       }}
+      onRegionChangeComplete={(region: Region) => setZoom(zoomForRegion(region.longitudeDelta, mapWidth || windowWidth))}
       customMapStyle={mapStyle}
       provider={PROVIDER_GOOGLE}
       ref={mapRef}
@@ -159,6 +185,17 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
     >
       {line.behind.length > 1 ? <Polyline coordinates={line.behind} strokeColor={withAlpha(color, BEHIND_LINE_ALPHA)} strokeWidth={LINE_WIDTH} testID="route-line-behind" zIndex={0} /> : null}
       <Polyline coordinates={line.ahead} strokeColor={color} strokeWidth={LINE_WIDTH} testID="route-line" zIndex={1} />
+      {walkPath && walkPath.length > 1 ? (
+        // The walk to the stop, dotted like TripMap.native.tsx's walking legs.
+        <Polyline
+          coordinates={walkPath.map((point) => ({ latitude: point.lat, longitude: point.lon }))}
+          lineDashPattern={WALK_DASH}
+          strokeColor={colors.mutedInk}
+          strokeWidth={WALK_WIDTH}
+          testID="route-walk"
+          zIndex={2}
+        />
+      ) : null}
       {line.bearing != null && focusStop ? (
         // One arrow right beside the rider's stop, pointing at the next stop. The box is
         // anchored at the stop and turned to that bearing (`flat`, so it turns with the map); the
@@ -182,6 +219,7 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
       ) : null}
       {stops.map((stop, stopIndex) => {
         const focused = stop === focusStop;
+        if (!focused && !dotsShown) return null;
         // Stops behind the rider's stop in this direction fade with the line behind it.
         const passed = focusStop != null && stopIndex < stops.indexOf(focusStop);
         return (

@@ -10,6 +10,8 @@ const { routeById: mockRouteById, routes: mockRoutes, stopsForDirection: mockSto
 // Firebase needs real project config (unavailable in Jest) and hits the network on init;
 // stub it so existing screens still render as if a user is already signed in.
 const mockUser = { uid: 'test-uid', email: 'rider@example.com', displayName: 'Pathly Rider' };
+// Tests sign in as the admin by changing this email (jest.setupAfterEnv.js resets it).
+globalThis.__mockAuthUser = mockUser;
 
 jest.mock('firebase/app', () => ({
   getApps: jest.fn(() => []),
@@ -23,13 +25,21 @@ jest.mock('@firebase/auth', () => ({
 
 jest.mock('firebase/auth', () => ({
   createUserWithEmailAndPassword: jest.fn(),
+  deleteUser: jest.fn(() => Promise.resolve()),
+  EmailAuthProvider: { credential: jest.fn((email, password) => ({ providerId: 'password', email, password })) },
+  reauthenticateWithCredential: jest.fn(() => Promise.resolve()),
+  sendPasswordResetEmail: jest.fn(() => Promise.resolve()),
   onAuthStateChanged: jest.fn((_auth, callback) => {
     callback(mockUser);
     return () => undefined;
   }),
   signInWithEmailAndPassword: jest.fn(),
   signOut: jest.fn(),
-  updateProfile: jest.fn(),
+  // Like Firebase, renames the User object in place.
+  updateProfile: jest.fn((user, profile) => {
+    Object.assign(user, profile);
+    return Promise.resolve();
+  }),
 }));
 
 // A tiny in-memory Firestore: refs are just paths, writes notify listeners synchronously (like
@@ -58,6 +68,8 @@ jest.mock('firebase/firestore', () => {
       return Promise.resolve();
     }),
     doc: jest.fn(ref),
+    getDoc: jest.fn((docRef) => Promise.resolve({ exists: () => mockDocs.has(docRef.path), data: () => mockDocs.get(docRef.path) })),
+    getDocs: jest.fn((queryRef) => Promise.resolve(snapshotOf(queryRef.path))),
     getFirestore: jest.fn(() => ({})),
     limit: jest.fn(),
     onSnapshot: jest.fn((queryRef, onNext) => {
@@ -78,9 +90,10 @@ jest.mock('firebase/firestore', () => {
       });
     }),
     serverTimestamp: jest.fn(() => null),
-    setDoc: jest.fn((docRef, data) => {
+    setDoc: jest.fn((docRef, data, options) => {
+      const merged = options?.merge ? { ...mockDocs.get(docRef.path), ...data } : data;
       mockDocs.delete(docRef.path);
-      mockDocs.set(docRef.path, data);
+      mockDocs.set(docRef.path, merged);
       notify();
       return Promise.resolve();
     }),
@@ -95,6 +108,8 @@ jest.mock('firebase/functions', () => {
   // Every callable's mock, by name, so the batch mock can answer through the per-route one.
   const mockCallables = new Map();
   const create = (name) => {
+    // No walk to draw unless a test says otherwise.
+    if (name === 'getWalkingPath') return jest.fn(() => Promise.resolve({ data: { walk: null } }));
     if (name === 'findNearbyTransit') {
       // Mirrors every demo-catalog live route as a "discovered" result, so tests can open a
       // route through the real dynamic-discovery path, not just a pinned one. Which of these
@@ -185,6 +200,11 @@ jest.mock('firebase/functions', () => {
         ...(request.lat !== undefined ? { lat: request.lat, lon: request.lon } : {}),
       }).then(({ data }) => ({ ok: true, data }), () => ({ ok: false, code: 'internal' })))).then((results) => ({ data: { results } })));
     }
+    if (name === 'planTrip') {
+      // Two real itineraries (Stony Brook University to Penn Station), normalized from a recorded
+      // Routes API response: LIRR with a Hicksville change, and Suffolk bus 51 to the LIRR.
+      return jest.fn(() => Promise.resolve({ data: { itineraries: JSON.parse(JSON.stringify(require('./__tests__/fixtures/itineraries-sbu-penn.json'))) } }));
+    }
     if (name === 'getStopDepartures') {
       // A short full-day list: one live departure, then the timetable.
       return jest.fn(() => Promise.resolve({
@@ -194,6 +214,38 @@ jest.mock('firebase/functions', () => {
             { minutes: 34, live: false, peakOffpeak: null },
             { minutes: 95, live: false, peakOffpeak: null },
           ],
+        },
+      }));
+    }
+    if (name === 'searchTransitStops') {
+      // Pathly's own stops: Jamaica's LIRR station for "jamaica", nothing otherwise. Station lookups
+      // (Google's station rows) find Sutphin Blvd's subway station.
+      const sutphin = { id: 'subway:G06', name: 'Sutphin Blvd-Archer Av-JFK Airport', agencyLabel: 'MTA Subway', mode: 'subway', location: { lat: 40.7003, lng: -73.8079 }, routes: [{ shortName: 'E', color: '#0062CF' }, { shortName: 'J', color: '#8E5C33' }, { shortName: 'Z', color: '#8E5C33' }] };
+      return jest.fn(({ query, stations }) => Promise.resolve({
+        data: stations ? { stations: stations.map((station) => (station.name.toLowerCase().startsWith('sutphin') ? sutphin : null)) } : {
+          stops: String(query).toLowerCase().includes('jamaica')
+            ? [{
+              id: 'lirr:15',
+              name: 'Jamaica',
+              agencyLabel: 'LIRR',
+              mode: 'rail',
+              location: { lat: 40.6995, lng: -73.8087 },
+              routes: ['Babylon Branch', 'Far Rockaway Branch', 'Hempstead Branch', 'Long Beach Branch', 'Montauk Branch', 'Oyster Bay Branch', 'Port Jefferson Branch', 'Ronkonkoma Branch']
+                .map((shortName) => ({ shortName, color: '#00985F' })),
+            }]
+            : [],
+        },
+      }));
+    }
+    if (name === 'getBackendStatus') {
+      return jest.fn(() => Promise.resolve({
+        data: {
+          checkedAt: '2026-10-14T12:00:00.000Z',
+          agencies: [
+            { agencyId: 'lirr', displayName: 'LIRR', snapshot: { state: 'published', version: 'abcdef123456', publishedAt: '2026-10-14T06:00:00.000Z', serviceEndDate: '20261231' }, ageHours: 6, lastRefresh: { at: '2026-10-14T06:00:00.000Z', ok: true, result: 'unchanged' }, live: { configured: true, ok: true, ms: 120, status: 200 } },
+            { agencyId: 'nice', displayName: 'NICE Bus', snapshot: { state: 'missing' }, lastRefresh: null, live: { configured: false } },
+          ],
+          myRateLimits: { planTrip: { remaining: 19, perMinute: 20 } },
         },
       }));
     }
@@ -222,6 +274,7 @@ jest.mock('firebase/functions', () => {
 // Stony Brook fallback rather than racing a real (mocked) GPS lookup.
 jest.mock('expo-location', () => ({
   requestForegroundPermissionsAsync: jest.fn(() => Promise.resolve({ status: 'denied' })),
+  getForegroundPermissionsAsync: jest.fn(() => Promise.resolve({ status: 'denied', canAskAgain: false })),
   getCurrentPositionAsync: jest.fn(),
   watchPositionAsync: jest.fn(() => Promise.resolve({ remove: jest.fn() })),
   Accuracy: { Balanced: 3 },

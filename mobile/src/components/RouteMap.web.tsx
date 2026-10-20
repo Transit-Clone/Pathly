@@ -6,6 +6,7 @@ import { GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_SCRIPT_ID } from '../data/googleMaps
 import { formatAge, visibleTrains } from '../data/liveTrains';
 import { googleMapStyle } from '../data/mapStyle';
 import { bearingToNextStop, splitIndexAtStop } from '../data/routeDirection';
+import { stopRevealZoom } from '../data/stopDeclutter';
 import type { RouteLiveVehicle } from '../data/transitLive';
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { useNow } from '../hooks/useNow';
@@ -35,6 +36,8 @@ const DIRECTION_ARROW_PATH = 'M 0 -8 L 6 4 L 0 1 L -6 4 Z';
 const DIRECTION_ARROW_SCALE = 1.5;
 const DIRECTION_ARROW_ANCHOR_Y = 12;
 const STOP_DOT_SCALE = (LINE_WIDTH - STOP_RING) / 2;
+// The walk to the stop: a row of dots, matching TripMap.web.tsx's walking legs.
+const WALK_DOT_SCALE = 2.5;
 
 // Vehicle marker geometry: circle at bottom-left of a larger box so the age badge can overhang its top-right.
 const VEHICLE_SIZE = 42;
@@ -91,20 +94,27 @@ type RouteMapProps = {
   /** Rider's real location; omitted while only the fallback is known. */
   userLocation?: Coordinates;
   vehicles: readonly RouteLiveVehicle[];
+  /** The walk along the streets from the rider to the focused stop, drawn dotted (as on the trip map). */
+  walkPath?: readonly { lat: number; lon: number }[];
 };
 
 /** Real route map: actual stop positions, the real line, and live vehicles — for any route with a live feed. */
-export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusStopId, mode = 'rail', onUserPan, path, showRouteRequest = 0, stops, testID = 'route-map', userLocation, vehicles }: RouteMapProps) {
+export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusStopId, mode = 'rail', onUserPan, path, showRouteRequest = 0, stops, testID = 'route-map', userLocation, vehicles, walkPath }: RouteMapProps) {
   const { isLoaded } = useJsApiLoader({
     id: GOOGLE_MAPS_SCRIPT_ID,
     googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY ?? '',
     libraries: GOOGLE_MAPS_LIBRARIES,
   });
   // Places hidden, and recolored in the dark theme (see mapStyle.ts).
-  const { isDark } = useTheme();
+  const { colors, isDark } = useTheme();
   const mapOptions = useMemo(() => ({ ...baseMapOptions, styles: googleMapStyle(isDark) }), [isDark]);
   const [selectedStop, setSelectedStop] = useState<GeometryStop | null>(null);
   const [map, setMap] = useState<google.maps.Map | null>(null);
+  // Stop dots are drawn only once they're zoomed apart (stopDeclutter.ts); the rider's stop always is.
+  const [zoom, setZoom] = useState(0);
+  // The loaded map, readable from its first zoom change (before `map` state has updated).
+  const zoomSource = useRef<google.maps.Map | null>(null);
+  const revealZoom = useMemo(() => stopRevealZoom(stops.map((stop) => ({ lat: stop.lat, lng: stop.lon }))), [stops]);
   const riderMovedMap = useRef(false);
   // True from a location-button press until the rider drags (or asks for the whole route): keeps
   // following fresh GPS fixes.
@@ -129,6 +139,7 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
   // Opens on the rider's nearest stop when known, otherwise fits every stop with some breathing room.
   const onLoad = useCallback((loadedMap: google.maps.Map) => {
     setMap(loadedMap);
+    zoomSource.current = loadedMap;
     if (focusStop) {
       loadedMap.setCenter({ lat: focusStop.lat, lng: focusStop.lon });
       loadedMap.setZoom(FOCUS_ZOOM);
@@ -185,12 +196,24 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
             onUserPan?.();
           }}
           onLoad={onLoad}
+          onZoomChanged={() => setZoom(zoomSource.current?.getZoom() ?? 0)}
           onUnmount={() => setMap(null)}
           options={mapOptions}
           zoom={9}
         >
           {line.behind.length > 1 ? <Polyline options={behindPolylineOptions} path={line.behind} /> : null}
           <Polyline options={polylineOptions} path={line.ahead} />
+          {walkPath && walkPath.length > 1 ? (
+            <Polyline
+              options={{
+                strokeOpacity: 0,
+                icons: [{ icon: { path: google.maps.SymbolPath.CIRCLE, scale: WALK_DOT_SCALE, fillColor: colors.mutedInk, fillOpacity: 1, strokeOpacity: 0 }, offset: '0', repeat: '10px' }],
+                zIndex: 2,
+                clickable: false,
+              }}
+              path={walkPath.map((point) => ({ lat: point.lat, lng: point.lon }))}
+            />
+          ) : null}
           {line.bearing != null && focusStop ? (
             // One arrow right beside the rider's stop, pointing at the next stop.
             <Marker
@@ -211,6 +234,7 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
           ) : null}
           {stops.map((stop, stopIndex) => {
             const focused = stop === focusStop;
+            if (!focused && zoom < revealZoom && stop !== selectedStop) return null;
             // Stops behind the rider's stop in this direction fade with the line behind it.
             const passed = line.focusIndex >= 0 && stopIndex < line.focusIndex;
             return (

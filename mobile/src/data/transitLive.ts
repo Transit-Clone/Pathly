@@ -1,9 +1,8 @@
-import { httpsCallable } from 'firebase/functions';
 
 import type { Coordinates } from '../hooks/useCurrentLocation';
-import { functions } from '../lib/firebase';
+import { callable } from '../lib/firebase';
 import type { NearestRouteStop } from './nearestRouteStop';
-import type { LiveSource } from './transit';
+import type { LiveSource, ServiceAlert } from './transit';
 
 export type RouteLiveVehicle = {
   tripId: string;
@@ -19,6 +18,8 @@ export type DirectionPrediction = {
   live: boolean;
   /** This specific trip's real LIRR peak/off-peak classification — null for agencies without fare tiers (e.g. subway's flat fare) or if it couldn't be resolved. */
   peakOffpeak: boolean | null;
+  /** Minutes a tracked trip runs behind its timetable; absent from functions deployed before it was added. */
+  delayMinutes?: number | null;
 };
 
 type StopPredictions = {
@@ -32,6 +33,8 @@ type RouteLiveStatusResponse = {
   /** `timestamp` is epoch seconds; absent from functions deployed before it was added. */
   vehicles: { tripId: string; directionId: number; lat: number; lon: number; timestamp?: number | null }[];
   stopPredictions: StopPredictions;
+  /** Absent from functions deployed before service alerts were added. */
+  alerts?: ServiceAlert[];
 };
 
 export type RouteLiveData = {
@@ -44,6 +47,8 @@ export type RouteLiveData = {
     towardDirection0: readonly DirectionPrediction[];
   };
   vehicles: readonly RouteLiveVehicle[];
+  /** MTA service alerts in effect on the route (empty when there are none, or the agency isn't covered). */
+  alerts?: readonly ServiceAlert[];
   /** When this data was fetched (epoch ms), so countdowns can be aged between polls. */
   fetchedAt: number;
   /**
@@ -59,10 +64,10 @@ type NearestStopResponse = {
   direction0: { stopId: string; name: string } | null;
 } | null;
 
-const getRouteLiveStatus = httpsCallable<
+const getRouteLiveStatus = callable<
   { agencyId: string; routeId: string; direction1StopId: string; direction0StopId: string; lat?: number; lon?: number },
   RouteLiveStatusResponse & { nearestStop?: NearestStopResponse }
->(functions, 'getRouteLiveStatus');
+>('getRouteLiveStatus');
 
 /**
  * Upcoming departures (both directions) and live vehicle positions for one route on any
@@ -93,10 +98,10 @@ function routeRequest(source: LiveSource): RouteRequest {
 /** The most routes the backend answers in one batch (getRoutesLiveStatus's MAX_BATCH_ROUTES). */
 export const MAX_BATCH_ROUTES = 12;
 
-const getRoutesLiveStatus = httpsCallable<
+const getRoutesLiveStatus = callable<
   { routes: RouteRequest[]; lat?: number; lon?: number },
   { results: ({ ok: true; data: RouteLiveStatusResponse & { nearestStop?: NearestStopResponse } } | { ok: false; code: string })[] }
->(functions, 'getRoutesLiveStatus');
+>('getRoutesLiveStatus');
 
 /** Thrown when the deployed backend predates batching, so callers can fall back to one request per route. */
 export class BatchUnavailableError extends Error {}
@@ -143,6 +148,7 @@ function toRouteLiveData(data: RouteLiveStatusResponse & { nearestStop?: Nearest
       towardDirection1: data.stopPredictions.towardDirection1,
       towardDirection0: data.stopPredictions.towardDirection0,
     },
+    alerts: data.alerts ?? [],
     vehicles: data.vehicles.map((vehicle) => ({
       tripId: vehicle.tripId,
       directionId: vehicle.directionId,
@@ -153,10 +159,10 @@ function toRouteLiveData(data: RouteLiveStatusResponse & { nearestStop?: Nearest
   };
 }
 
-const getStopDeparturesCallable = httpsCallable<
+const getStopDeparturesCallable = callable<
   { agencyId: string; routeId: string; direction1StopId: string; direction0StopId: string; directionId: 0 | 1 },
   { departures: DirectionPrediction[] }
->(functions, 'getStopDepartures');
+>('getStopDepartures');
 
 /**
  * Every remaining departure today (plus the next service day's first ones late at night) from
