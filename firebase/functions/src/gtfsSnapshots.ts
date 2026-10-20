@@ -632,6 +632,72 @@ export function assertGtfsServiceIsCurrent(extracted: ExtractedGtfsArchive, now 
   return daysRemaining;
 }
 
+function csvField(value: string): string {
+  return /[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
+}
+
+/**
+ * For a feed whose trips.txt leaves direction_id blank (see fillTripDirections in
+ * gtfsAgencies.ts): the same archive with each such trip's direction_id filled in from its first
+ * and last stop — 0 when the first stop_id sorts before the last, else 1, so the two ways between
+ * a pair of terminals get opposite directions — and a blank trip_headsign set to its last stop's
+ * name. A trip without a direction that starts and ends at the same stop has none to fill in, and
+ * is left out with its stop times (the Staten Island Ferry's never-scheduled "threeboat" service
+ * has 15 St. George to St. George trips, which would add a phantom St. George departure and loop
+ * the route map). The filled-in archive is what gets published, so hydration (which may leave stop_times.txt
+ * compressed) reads the directions as published. Entry times are fixed, so the same source
+ * yields the same bytes. An archive with nothing to fill is returned unchanged.
+ */
+export function fillTripDirections(archive: Uint8Array): Buffer {
+  const entries = unzipSync(archive);
+  const entryName = (file: string) => Object.keys(entries).find((name) => normalizedBasename(name) === file);
+  const tripsEntry = entryName('trips.txt');
+  const stopTimesEntry = entryName('stop_times.txt');
+  const stopsEntry = entryName('stops.txt');
+  if (!tripsEntry || !stopTimesEntry || !stopsEntry) return Buffer.from(archive);
+  const read = (name: string) => parseCsv(Buffer.from(entries[name]!), { bom: true, columns: true, relax_column_count: true, skip_empty_lines: true }) as CsvRecord[];
+
+  const trips = read(tripsEntry);
+  if (trips.every((trip) => trip.direction_id?.trim())) return Buffer.from(archive);
+
+  const stopNames = new Map(read(stopsEntry).map((stop) => [stop.stop_id ?? '', stop.stop_name ?? '']));
+  const ends = new Map<string, { first: [number, string]; last: [number, string] }>();
+  for (const row of read(stopTimesEntry)) {
+    const tripId = row.trip_id ?? '';
+    const sequence = Number(row.stop_sequence);
+    const stop: [number, string] = [sequence, row.stop_id ?? ''];
+    const known = ends.get(tripId);
+    if (!known) ends.set(tripId, { first: stop, last: stop });
+    else if (sequence < known.first[0]) known.first = stop;
+    else if (sequence > known.last[0]) known.last = stop;
+  }
+
+  const dropped = new Set<string>();
+  for (const trip of trips) {
+    const tripId = trip.trip_id ?? '';
+    const tripEnds = ends.get(tripId);
+    if (!tripEnds || trip.direction_id?.trim()) continue;
+    if (tripEnds.first[1] === tripEnds.last[1]) {
+      dropped.add(tripId);
+      continue;
+    }
+    trip.direction_id = tripEnds.first[1] < tripEnds.last[1] ? '0' : '1';
+    if (!trip.trip_headsign?.trim()) trip.trip_headsign = stopNames.get(tripEnds.last[1]) ?? '';
+  }
+
+  const csvText = (name: string, records: readonly CsvRecord[], extraColumns: readonly string[] = []) => {
+    const [header = []] = csvRows(Buffer.from(entries[name]!.subarray(0, entries[name]!.indexOf(10) + 1)));
+    const columns = [...header, ...extraColumns.filter((column) => !header.includes(column))];
+    const lines = [columns.join(','), ...records.map((record) => columns.map((column) => csvField(record[column] ?? '')).join(','))];
+    return new TextEncoder().encode(`${lines.join('\n')}\n`);
+  };
+  const filled: Zippable = {};
+  for (const name of Object.keys(entries).sort()) filled[name] = entries[name]!;
+  filled[tripsEntry] = csvText(tripsEntry, trips.filter((trip) => !dropped.has(trip.trip_id ?? '')), ['direction_id', 'trip_headsign']);
+  if (dropped.size > 0) filled[stopTimesEntry] = csvText(stopTimesEntry, read(stopTimesEntry).filter((row) => !dropped.has(row.trip_id ?? '')));
+  return Buffer.from(zipSync(filled, { level: 6, mtime: DERIVED_ZIP_MTIME }));
+}
+
 /** Extract only files the runtime reads and reject incomplete or unexpectedly large feeds. */
 export function extractGtfsArchive(
   archive: Uint8Array,
@@ -922,9 +988,10 @@ async function readCurrentManifest(agencyId: AgencyId): Promise<CurrentManifest>
 async function downloadArchive(
   sourceUrl: string,
   maxBytes: number,
+  headers: Record<string, string> = {},
 ): Promise<{ archive: Buffer; sourceLastModified: string | null }> {
   const response = await fetch(sourceUrl, {
-    headers: { 'User-Agent': 'Pathly-GTFS-Refresh/1.0' },
+    headers: { 'User-Agent': 'Pathly-GTFS-Refresh/1.0', ...headers },
     // Sources are version-controlled HTTPS URLs. Refuse redirects so a compromised upstream
     // cannot turn the scheduled server-side fetch into a request to an internal endpoint.
     redirect: 'error',
@@ -1206,7 +1273,9 @@ export async function refreshGtfsSnapshot(agencyId: AgencyId): Promise<'publishe
   // while this one is still downloading or validating its source feed.
   const current = await readCurrentManifest(agencyId);
   const limits = snapshotLimitsFor(agencyId);
-  const { archive, sourceLastModified } = await downloadArchive(config.staticFeedUrl, limits.archiveBytes);
+  const downloaded = await downloadArchive(config.staticFeedUrl, limits.archiveBytes, config.staticFeedHeaders);
+  const { sourceLastModified } = downloaded;
+  const archive = config.fillTripDirections ? fillTripDirections(downloaded.archive) : downloaded.archive;
   const extracted = extractGtfsArchive(archive, { limits });
   validateAgencySnapshotContract(agencyId, extracted);
   const daysOfServiceRemaining = assertGtfsServiceIsCurrent(extracted);

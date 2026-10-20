@@ -30,7 +30,12 @@ export type RoutePrediction = {
   minutes: number;
   /** This specific trip's real LIRR peak/off-peak classification, when live data provided one — absent for the static mock predictions and for agencies without fare tiers. */
   peakOffpeak?: boolean | null;
+  /** Minutes a tracked trip is running behind its timetable (negative: ahead); null or absent when unknown or not tracked. */
+  delayMinutes?: number | null;
 };
+
+/** One MTA service alert in effect on a route (delays, reroutes, suspensions, planned work). */
+export type ServiceAlert = { id: string; header: string; description: string | null };
 
 export function minuteLabel(minutes: number): string {
   return minutes === 1 ? 'minute' : 'minutes';
@@ -88,7 +93,7 @@ export type RouteStop = {
  */
 export type LiveSource = {
   /** Mirrors the backend's AgencyId (firebase/functions/src/gtfsAgencies.ts). */
-  agencyId: 'lirr' | 'subway' | 'nice' | 'suffolk' | 'bx' | 'bk' | 'mn' | 'qn' | 'si' | 'busco' | 'nycferry';
+  agencyId: 'lirr' | 'subway' | 'nice' | 'suffolk' | 'bx' | 'bk' | 'mn' | 'qn' | 'si' | 'busco' | 'nycferry' | 'siferry';
   routeId: string;
   direction1StopId: string;
   direction0StopId: string;
@@ -124,6 +129,8 @@ export type RouteDetail = {
   /** Index into `mapPath` for each entry of `mapLabels`. */
   mapStops?: readonly number[];
   predictions: readonly RoutePrediction[];
+  /** MTA service alerts in effect on this route, from its last live update; absent before one, or for agencies the alert feed doesn't cover. */
+  serviceAlerts?: readonly ServiceAlert[];
   /** Real live predictions for the reverse direction (directions[1]). Routes with a `liveSource` always set this (possibly to an empty array — see applyRouteLive), so the illustrative synthetic estimate is only ever used for routes with no `liveSource` at all. */
   reversePredictions?: readonly RoutePrediction[];
   routeName: string;

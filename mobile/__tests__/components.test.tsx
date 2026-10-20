@@ -42,6 +42,7 @@ describe('RouteBadge', () => {
     expect(transitModeForAgency('Suffolk County Transit')).toBe('bus');
     expect(transitModeForAgency('MTA Bus')).toBe('bus');
     expect(transitModeForAgency('NYC Ferry')).toBe('ferry');
+    expect(transitModeForAgency('Staten Island Ferry')).toBe('ferry');
   });
 
   it('draws a ferry as a pill with a boat, announced as a ferry', () => {
@@ -252,6 +253,8 @@ describe('badgeLabel', () => {
     expect(badgeLabel({ agency: 'Suffolk County Transit', shortName: '51' })).toBe('51');
     expect(badgeLabel({ agency: 'MTA Subway', shortName: 'E' })).toBe('E');
     expect(badgeLabel({ agency: 'LIRR', shortName: 'Port Jefferson Branch' })).toBe('PJ');
+    // NYC DOT publishes no route_short_name, so the ferry's badge is its initials.
+    expect(badgeLabel({ agency: 'Staten Island Ferry', shortName: 'Staten Island Ferry' })).toBe('SIF');
     expect(badgeLabel({ agency: 'LIRR', shortName: 'Ronkonkoma Branch' })).toBe('RK');
     expect(badgeLabel({ agency: 'NICE Bus', shortName: 'Roosevelt Field Shuttle Line' })).toBe('RFS');
     // A single route code is shown whole: "S" would read as the S shuttle, not the SIM3C.

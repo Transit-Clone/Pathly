@@ -10,7 +10,7 @@ export type TransitMode = 'subway' | 'bus' | 'rail' | 'ferry';
 export function transitModeForAgency(agency: string): TransitMode {
   if (agency === 'MTA Subway') return 'subway';
   if (agency === 'LIRR') return 'rail';
-  if (agency === 'NYC Ferry') return 'ferry';
+  if (agency === 'NYC Ferry' || agency === 'Staten Island Ferry') return 'ferry';
   return 'bus';
 }
 

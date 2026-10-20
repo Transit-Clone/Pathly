@@ -115,6 +115,20 @@ export function pickWalkingNearest(
   return best ?? { stop: nearest, walkMeters: null };
 }
 
+/** Per direction, the stops some trip of the route leaves from (every stop but a trip's last). */
+async function departureStopsByDirection(agencyId: AgencyId, routeId: string): Promise<Record<0 | 1, Set<string>>> {
+  const { tripsById } = loadAgencyStaticData(agencyId);
+  const { byTrip } = await loadRouteStopTimes(agencyId, routeId);
+  const stops: Record<0 | 1, Set<string>> = { 0: new Set(), 1: new Set() };
+  for (const [tripId, stopTimes] of byTrip) {
+    const directionId = tripsById.get(tripId)?.directionId;
+    if (directionId !== 0 && directionId !== 1) continue;
+    const ordered = [...stopTimes].sort((a, b) => a.stopSequence - b.stopSequence);
+    for (const stopTime of ordered.slice(0, -1)) stops[directionId].add(stopTime.stopId);
+  }
+  return stops;
+}
+
 /**
  * The walk from a point to one stop, for drawing — the same walk pickWalkingNearest measured when
  * it chose that stop. Null when the stop is unknown, out of walking range (where the stop was
@@ -158,6 +172,7 @@ export function getWalkingPathToStop(
 export async function getNearestStopForRoute(agencyId: AgencyId, routeId: string, lat: number, lon: number): Promise<NearestRouteStop | null> {
   const { stopsById, tripsById } = loadAgencyStaticData(agencyId);
   const tripCountByDirectionAndStop = await loadRouteStopCounts(agencyId, routeId);
+  const departureStops = agencyConfig(agencyId).terminalShuttle ? await departureStopsByDirection(agencyId, routeId) : null;
 
   const MIN_SERVICE_FRACTION = 0.1;
   const nearestInDirection = (directionId: 0 | 1): (RouteDirectionStop & { distanceMeters: number }) | null => {
@@ -166,6 +181,7 @@ export async function getNearestStopForRoute(agencyId: AgencyId, routeId: string
     const candidates: CandidateStop[] = [];
     for (const [stopId, tripCount] of tripCounts) {
       if (tripCount < maxTripCount * MIN_SERVICE_FRACTION) continue;
+      if (departureStops && !departureStops[directionId].has(stopId)) continue;
       const stop = stopsById.get(stopId);
       if (!stop) continue;
       candidates.push({ stopId, name: stop.name, lat: stop.lat, lon: stop.lon, distanceMeters: haversineMeters(lat, lon, stop.lat, stop.lon) });
@@ -223,6 +239,7 @@ const MAX_NEARBY_DISTANCE_METERS: Partial<Record<AgencyId, number>> = {
   nice: 2_400, // ~1.5 miles — suburban bus stops are sparser than subway but denser than LIRR.
   suffolk: 2_400,
   nycferry: 2_400, // ferry landings are few and far between, like LIRR stations but on foot.
+  siferry: 2_400,
 };
 const DEFAULT_MAX_NEARBY_DISTANCE_METERS = 1_600;
 
@@ -240,6 +257,7 @@ const MAX_NEARBY_CAP_METERS: Partial<Record<AgencyId, number>> = {
   nice: 12_000,
   suffolk: 12_000,
   nycferry: 12_000,
+  siferry: 12_000,
 };
 const DEFAULT_MAX_NEARBY_CAP_METERS = 6_000;
 

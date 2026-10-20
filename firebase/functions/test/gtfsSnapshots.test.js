@@ -14,6 +14,7 @@ const {
   derivedArchiveObject,
   daysUntilGtfsServiceEnd,
   extractGtfsArchive,
+  fillTripDirections,
   hydrateCurrentGtfsSnapshot,
   parseGtfsSnapshotManifest,
   refreshAllGtfsSnapshots,
@@ -85,6 +86,7 @@ const AGENCY_FIXTURES = {
   si: [{ routeId: 'S79', stopIds: ['500', '501'] }],
   busco: [{ routeId: 'BXM10', stopIds: ['600', '601'] }],
   nycferry: [{ routeId: 'ER', stopIds: ['87', '20'] }],
+  siferry: [{ routeId: 'SIF', stopIds: ['stgeorge', 'whitehall'] }],
 };
 
 function currentAgencyFiles(agencyId) {
@@ -1127,4 +1129,73 @@ test('an empty optional file counts as absent (NYC Ferry ships an empty calendar
   assert.equal(extractGtfsArchive(archive(zeroBytes)).files.has('shapes.txt'), false);
   // A required file still may not be empty.
   assert.throws(() => extractGtfsArchive(archive({ ...validFiles(), 'routes.txt': strToU8('route_id\n') })), /routes\.txt/);
+});
+
+/** NYC DOT's Staten Island Ferry feed as it ships: byte-order marks, no direction_id or headsigns, and a never-scheduled loop trip. */
+function siFerrySourceFiles() {
+  const bom = '﻿';
+  return {
+    'routes.txt': strToU8(`${bom}route_id,agency_id,route_short_name,route_long_name,route_type,route_color\nSIF,NYC DOT,,Staten Island Ferry,4,FF8330\n`),
+    'stops.txt': strToU8(`${bom}stop_id,stop_name,stop_lat,stop_lon\nstgeorge,St. George Ferry Terminal,40.644169,-74.072201\nwhitehall,Whitehall Ferry Terminal,40.70136,-74.012666\n`),
+    'trips.txt': strToU8(`${bom}route_id,service_id,trip_id,trip_headsign,direction_id,shape_id\nSIF,daily,dailystgeorge0800,,,stgeorge\nSIF,daily,dailywhitehall0830,,,whitehall\nSIF,never,neverstgeorge0900,,,stgeorge\n`),
+    'stop_times.txt': strToU8(
+      `${bom}trip_id,arrival_time,departure_time,stop_id,stop_sequence\n`
+      + 'dailystgeorge0800,08:00:00,08:00:00,stgeorge,1\ndailystgeorge0800,08:25:00,08:25:00,whitehall,2\n'
+      + 'dailywhitehall0830,08:30:00,08:30:00,whitehall,1\ndailywhitehall0830,08:55:00,08:55:00,stgeorge,2\n'
+      + 'neverstgeorge0900,09:00:00,09:00:00,stgeorge,1\nneverstgeorge0900,09:25:00,09:25:00,stgeorge,2\n',
+    ),
+    'calendar.txt': strToU8(
+      `${bom}service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n`
+      + 'daily,1,1,1,1,1,1,1,20260101,20991231\nnever,0,0,0,0,0,0,0,20260101,20991231\n',
+    ),
+  };
+}
+
+test('fills in a feed\'s missing trip directions and headsigns, dropping trips that go nowhere', () => {
+  const source = archive(siFerrySourceFiles());
+  assert.throws(() => extractGtfsArchive(source), /invalid direction_id/);
+
+  const filled = fillTripDirections(source);
+  const extracted = extractGtfsArchive(filled);
+  assert.equal(extracted.files.get('trips.txt').toString('utf8'), [
+    'route_id,service_id,trip_id,trip_headsign,direction_id,shape_id',
+    'SIF,daily,dailystgeorge0800,Whitehall Ferry Terminal,0,stgeorge',
+    'SIF,daily,dailywhitehall0830,St. George Ferry Terminal,1,whitehall',
+    '',
+  ].join('\n'));
+  assert.doesNotMatch(extracted.files.get('stop_times.txt').toString('utf8'), /neverstgeorge0900/);
+  assert.match(extracted.files.get('stop_times.txt').toString('utf8'), /dailywhitehall0830,08:55:00,08:55:00,stgeorge,2/);
+
+  // The same source always becomes the same bytes, and a filled-in or complete feed is left alone.
+  assert.deepEqual(fillTripDirections(source), filled);
+  assert.deepEqual(fillTripDirections(filled), filled);
+  const complete = archive();
+  assert.deepEqual(fillTripDirections(complete), Buffer.from(complete));
+});
+
+test('downloads the Staten Island Ferry with a browser User-Agent and publishes it with directions filled in', async () => {
+  const fakeBucket = new FakeBucket();
+  setGtfsSnapshotBucketForTests(fakeBucket);
+  const originalFetch = global.fetch;
+  const userAgents = new Map();
+  global.fetch = async (url, init = {}) => {
+    const agencyId = Object.values(AGENCY_CONFIGS).find((config) => config.staticFeedUrl === String(url))?.id;
+    userAgents.set(agencyId, init.headers?.['User-Agent']);
+    return new Response(archive(agencyId === 'siferry' ? siFerrySourceFiles() : currentAgencyFiles(agencyId)));
+  };
+
+  try {
+    assert.equal(await refreshGtfsSnapshot('siferry'), 'published');
+    assert.equal(await refreshGtfsSnapshot('lirr'), 'published');
+    assert.match(userAgents.get('siferry'), /^Mozilla\/5\.0 \(Windows NT 10\.0; Win64; x64\) AppleWebKit\/537\.36/);
+    assert.equal(userAgents.get('lirr'), 'Pathly-GTFS-Refresh/1.0');
+
+    const manifest = JSON.parse(fakeBucket.objects.get('gtfs/v1/siferry/current.json').data.toString('utf8'));
+    const published = extractGtfsArchive(fakeBucket.objects.get(manifest.archiveObject).data, { semanticValidation: false });
+    assert.match(published.files.get('trips.txt').toString('utf8'), /dailystgeorge0800,Whitehall Ferry Terminal,0,/);
+    // The same source again is the same snapshot.
+    assert.equal(await refreshGtfsSnapshot('siferry'), 'unchanged');
+  } finally {
+    global.fetch = originalFetch;
+  }
 });

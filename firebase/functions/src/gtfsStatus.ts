@@ -1,3 +1,5 @@
+import { logger } from 'firebase-functions';
+
 import { agencyConfig, type AgencyId } from './gtfsAgencies';
 import { fetchFeedEntities } from './gtfsRealtime';
 import { loadAgencyStaticData } from './gtfsStaticData';
@@ -39,6 +41,25 @@ export type GtfsRouteStatus = {
 };
 
 /**
+ * A route's live feeds, or none when its agency doesn't know which feed carries it (a subway
+ * route missing from the feed map): the route then shows its timetable, untracked, instead of
+ * failing outright.
+ */
+function liveFeedRequests(agencyId: AgencyId, routeId: string) {
+  try {
+    return agencyConfig(agencyId).feedRequestsForRoute(routeId);
+  } catch (error) {
+    logger.warn('No live feed for route; showing its timetable', {
+      agencyId,
+      event: 'gtfs_route_feed_unknown',
+      reason: error instanceof Error ? error.message : String(error),
+      routeId,
+    });
+    return [];
+  }
+}
+
+/**
  * Live trip updates and vehicle positions for one route on any configured agency (stop
  * names/coordinates resolved via that agency's static GTFS data, delays from its real-time
  * feed) — the same logic regardless of agency; only the feed request(s) and static data
@@ -59,7 +80,7 @@ export async function getRouteStatus(agencyId: AgencyId, routeId: string): Promi
   // A live feed whose key isn't set (MTA Bus Time before its secret exists) isn't asked at all:
   // the route then shows its timetable, untracked, as when a feed is down.
   const keyMissing = config.liveFeedSecret !== undefined && !process.env[config.liveFeedSecret];
-  const feedRequests = keyMissing ? [] : config.feedRequestsForRoute(routeId);
+  const feedRequests = keyMissing ? [] : liveFeedRequests(agencyId, routeId);
   const entityLists = await Promise.all(feedRequests.map((request) => fetchFeedEntities(request.url, request.headers)));
   const entities = entityLists.flat();
   const trips: GtfsTripStatus[] = [];

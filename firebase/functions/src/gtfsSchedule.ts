@@ -7,6 +7,12 @@ export type DirectionPrediction = {
   live: boolean;
   /** This specific trip's real LIRR peak/off-peak classification — null for agencies without fare tiers (e.g. subway's flat fare) or if it couldn't be resolved. */
   peakOffpeak: boolean | null;
+  /**
+   * How many minutes behind (negative: ahead of) its timetable a tracked trip is running at this
+   * stop: the feed's own delay, or else its live time against trips.txt where the agency's live
+   * trip_ids match the timetable's. Null for a timetable departure, or when it can't be told.
+   */
+  delayMinutes: number | null;
 };
 export type StopPredictions = {
   towardDirection1: readonly DirectionPrediction[];
@@ -50,7 +56,14 @@ function serviceDayAt(utcDate: Date): ServiceDay {
   return { dateKey, dayOfWeek: utcDate.getUTCDay() };
 }
 
-type Entry = { tripId: string; minutes: number; peakOffpeak: boolean | null };
+type Entry = { tripId: string; minutes: number; peakOffpeak: boolean | null; delayMinutes: number | null };
+/** A tracked trip at the asked-for stop, before its delay is resolved. */
+type LiveEntry = Entry & { stopId: string; atMs: number };
+
+/** Beyond this, a live time and a timetable time are taken to belong to different runs of the trip. */
+const MAX_PLAUSIBLE_DELAY_MINUTES = 180;
+
+const feedDelayMinutes = (delaySeconds: number | null) => (delaySeconds == null ? null : Math.round(delaySeconds / 60));
 
 /**
  * Upcoming departures for one station, by direction — works the same way for any configured
@@ -79,24 +92,26 @@ export async function getStopPredictions(
 ): Promise<StopPredictions> {
   const config = agencyConfig(agencyId);
   const now = Date.now();
-  const direction1Live: Entry[] = [];
-  const direction0Live: Entry[] = [];
+  const direction1Live: LiveEntry[] = [];
+  const direction0Live: LiveEntry[] = [];
 
   for (const trip of trips) {
     if (config.directionalStops) {
       const stop = trip.stops.find((candidate) => candidate.stopId === direction1StopId || candidate.stopId === direction0StopId);
       if (!stop?.scheduledTime) continue;
-      const minutes = Math.round((new Date(stop.scheduledTime).getTime() - now) / 60_000);
+      const atMs = new Date(stop.scheduledTime).getTime();
+      const minutes = Math.round((atMs - now) / 60_000);
       if (minutes < 0) continue;
       // Terminals can serve both directions from one stop_id; the trip's own direction decides then.
       const isDirection1 = direction1StopId === direction0StopId ? trip.directionId === 1 : stop.stopId === direction1StopId;
-      (isDirection1 ? direction1Live : direction0Live).push({ tripId: trip.tripId, minutes, peakOffpeak: trip.peakOffpeak });
+      (isDirection1 ? direction1Live : direction0Live).push({ tripId: trip.tripId, minutes, peakOffpeak: trip.peakOffpeak, delayMinutes: feedDelayMinutes(stop.delaySeconds), stopId: stop.stopId, atMs });
     } else {
       const stop = trip.stops.find((candidate) => candidate.stopId === direction1StopId);
       if (!stop?.scheduledTime) continue;
-      const minutes = Math.round((new Date(stop.scheduledTime).getTime() - now) / 60_000);
+      const atMs = new Date(stop.scheduledTime).getTime();
+      const minutes = Math.round((atMs - now) / 60_000);
       if (minutes < 0) continue;
-      (trip.directionId === 1 ? direction1Live : direction0Live).push({ tripId: trip.tripId, minutes, peakOffpeak: trip.peakOffpeak });
+      (trip.directionId === 1 ? direction1Live : direction0Live).push({ tripId: trip.tripId, minutes, peakOffpeak: trip.peakOffpeak, delayMinutes: feedDelayMinutes(stop.delaySeconds), stopId: stop.stopId, atMs });
     }
   }
 
@@ -107,8 +122,27 @@ export async function getStopPredictions(
   const direction0Static: Entry[] = [];
   const seenTripIds = new Set([...direction1Live, ...direction0Live].map((entry) => entry.tripId));
   const { tripsById } = loadAgencyStaticData(agencyId);
-  const { byStop } = await loadRouteStopTimes(agencyId, routeId);
+  const { byStop, byTrip } = await loadRouteStopTimes(agencyId, routeId);
+  // A shuttle's trip ends at the other terminal: arriving there isn't a departure from it.
+  const endsTripHere = (stopTime: { tripId: string; stopSequence: number }) => config.terminalShuttle === true
+    && (byTrip.get(stopTime.tripId) ?? []).every((other) => other.stopSequence <= stopTime.stopSequence);
   const nowParts = easternNowParts();
+
+  // A tracked trip the feed gives no delay for is compared with its own timetable time at the stop,
+  // when the live trip_ids are the timetable's. The trip may have started yesterday (a time past
+  // 24:00:00), so the nearer of today's and yesterday's service day is taken.
+  if (config.realtimeTripIdsMatchStatic) {
+    const midnightMs = now - nowParts.secondsSinceMidnight * 1000;
+    for (const entry of [...direction1Live, ...direction0Live]) {
+      if (entry.delayMinutes !== null) continue;
+      const stopTime = (byStop.get(entry.stopId) ?? []).find((candidate) => candidate.tripId === entry.tripId);
+      if (!stopTime) continue;
+      const scheduledSeconds = gtfsTimeToSeconds(stopTime.departureTime || stopTime.arrivalTime);
+      const delays = [0, 1].map((daysBack) => Math.round((entry.atMs - (midnightMs + (scheduledSeconds - daysBack * 86_400) * 1000)) / 60_000));
+      const delay = delays.reduce((best, candidate) => (Math.abs(candidate) < Math.abs(best) ? candidate : best));
+      if (Math.abs(delay) <= MAX_PLAUSIBLE_DELAY_MINUTES) entry.delayMinutes = delay;
+    }
+  }
   // Directional-stop agencies have one stop_id per direction; otherwise one shared stop_id
   // (direction1StopId === direction0StopId) and the trip's direction_id decides.
   const stopIds = config.directionalStops ? [...new Set([direction1StopId, direction0StopId])] : [direction1StopId];
@@ -119,6 +153,7 @@ export async function getStopPredictions(
         if (config.realtimeTripIdsMatchStatic && seenTripIds.has(stopTime.tripId)) continue;
         const trip = tripsById.get(stopTime.tripId);
         if (!trip || trip.routeId !== routeId) continue;
+        if (endsTripHere(stopTime)) continue;
         if (!isServiceRunningOn(agencyId, trip.serviceId, day.dateKey, day.dayOfWeek)) continue;
 
         const eventSeconds = gtfsTimeToSeconds(stopTime.departureTime || stopTime.arrivalTime) + dayOffsetSeconds;
@@ -126,7 +161,7 @@ export async function getStopPredictions(
         if (minutes < 0) continue;
 
         const isDirection1 = config.directionalStops && direction1StopId !== direction0StopId ? stopId === direction1StopId : trip.directionId === 1;
-        (isDirection1 ? direction1Static : direction0Static).push({ tripId: stopTime.tripId, minutes, peakOffpeak: trip.peakOffpeak });
+        (isDirection1 ? direction1Static : direction0Static).push({ tripId: stopTime.tripId, minutes, peakOffpeak: trip.peakOffpeak, delayMinutes: null });
       }
     }
   };
@@ -143,8 +178,8 @@ export async function getStopPredictions(
     const lastLive = Math.max(-1, ...live.map((entry) => entry.minutes));
     const padding = config.realtimeTripIdsMatchStatic ? staticEntries : staticEntries.filter((entry) => entry.minutes > lastLive);
     const merged: DirectionPrediction[] = [
-      ...live.map((entry) => ({ minutes: entry.minutes, live: true, peakOffpeak: entry.peakOffpeak })),
-      ...padding.map((entry) => ({ minutes: entry.minutes, live: false, peakOffpeak: entry.peakOffpeak })),
+      ...live.map((entry) => ({ minutes: entry.minutes, live: true, peakOffpeak: entry.peakOffpeak, delayMinutes: entry.delayMinutes })),
+      ...padding.map((entry) => ({ minutes: entry.minutes, live: false, peakOffpeak: entry.peakOffpeak, delayMinutes: null })),
     ];
     merged.sort((a, b) => a.minutes - b.minutes);
     return merged.slice(0, limit);

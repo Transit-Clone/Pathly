@@ -7,6 +7,7 @@ import { useTransitLive } from '../data/TransitLiveContext';
 import { fetchRouteGeometry, type RouteGeometry } from '../data/routeGeometry';
 import { STATION_TRANSFERS, type StationTransfer, type TransferMode } from '../data/stationTransfers';
 import { departureDisplay, directionDestination, formatClockTime, scheduleStopsFromNow, stopsForDirection, type RouteDetail, type RoutePrediction } from '../data/transit';
+import { LATE_THRESHOLD_MINUTES, routeNotices } from '../data/routeNotices';
 import { useWalkingPath } from '../data/walkingPath';
 import { transferColor } from '../data/routeColors';
 import type { Coordinates } from '../hooks/useCurrentLocation';
@@ -142,6 +143,7 @@ const OWN_TRANSFER_KIND: Record<NonNullable<RouteDetail['liveSource']>['agencyId
   si: { agency: 'MTA Bus', mode: 'bus' },
   busco: { agency: 'MTA Bus', mode: 'bus' },
   nycferry: { agency: 'NYC Ferry', mode: 'ferry' },
+  siferry: { agency: 'Staten Island Ferry', mode: 'ferry' },
 };
 
 /** One connecting line, in its agency's color; subway bullets are round. */
@@ -401,7 +403,12 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
   const liveStopsResult = liveStopsFor(route, activeDirectionIndex, activeDirection, geometryStatus, nowMinutes, leadMinutes);
 
   const vehicleIcon = transitModeForAgency(route.agency);
-  const hasDelay = !route.alert.startsWith('No delays');
+  // Delays on the shown direction's tracked departures, then MTA alerts, under the time cards.
+  const notices = routeNotices(route, activePredictions, vehicleIcon);
+  const hasDelays = notices.some((notice) => notice.kind === 'delay');
+  // The stop list follows the selected departure, so its chip says whether that one is late.
+  const selectedPrediction = activePredictions[selectedPredictionIndex] ?? activePredictions[0];
+  const selectedDelay = selectedPrediction?.live && (selectedPrediction.delayMinutes ?? 0) >= LATE_THRESHOLD_MINUTES ? selectedPrediction.delayMinutes! : null;
 
   // Only ever rendered below for a route with no `liveSource` — every entry in the static demo
   // catalog has real values here; a dynamically-discovered route always has a `liveSource`
@@ -632,20 +639,29 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
         </ScrollView>
       )}
 
-      {/* Only routes with an advisory get an alert row; "No delays" needs no dropdown. */}
-      {hasDelay ? (
+      {/* Only a route with a delay or an alert gets this row; "No delays" needs no dropdown. */}
+      {notices.length > 0 ? (
         <>
           <PressableScale accessibilityLabel="Service alerts" accessibilityRole="button" accessibilityState={{ expanded: alertsOpen }} onPress={() => {
             ease();
             setAlertsOpen((value) => !value);
           }} style={styles.alertButton} testID="service-alerts">
-            <Icon color={colors.warning} filled={true} name="alert" size={18} style={styles.alertIcon} /><Text style={styles.alertText}>Service alerts</Text><Text style={[styles.alertStatus, { color: colors.warning }]}>Advisory</Text><Icon color={colors.mutedInk} name={alertsOpen ? 'collapse' : 'expand'} size={18} style={styles.chevron} />
+            <Icon color={colors.warning} filled={true} name="alert" size={18} style={styles.alertIcon} /><Text style={styles.alertText}>{hasDelays ? 'Delays and alerts' : 'Service alerts'}</Text><Text style={[styles.alertStatus, { color: colors.warning }]}>{hasDelays ? 'Delayed' : notices.length > 1 ? `${notices.length} advisories` : 'Advisory'}</Text><Icon color={colors.mutedInk} name={alertsOpen ? 'collapse' : 'expand'} size={18} style={styles.chevron} />
           </PressableScale>
-          {alertsOpen ? <Text style={styles.alertBody}>{route.alert}</Text> : null}
+          {alertsOpen ? (
+            <View style={styles.alertList} testID="service-alerts-list">
+              {notices.map((notice, index) => (
+                <View key={`${notice.kind}-${index}`} style={index > 0 ? styles.alertItemSpaced : undefined}>
+                  <Text style={[styles.alertBody, notice.detail ? styles.alertTitle : null]}>{notice.title}</Text>
+                  {notice.detail ? <Text style={styles.alertBody}>{notice.detail}</Text> : null}
+                </View>
+              ))}
+            </View>
+          ) : null}
         </>
       ) : null}
 
-      <View style={styles.timelineHeading}><Text style={styles.timelineTitle}>Route stops</Text><View style={styles.onTimeChip}><View style={styles.onTimeDot} /><Text style={styles.onTimeText}>On time</Text></View></View>
+      <View style={styles.timelineHeading}><Text style={styles.timelineTitle}>Route stops</Text><View style={[styles.onTimeChip, selectedDelay !== null && styles.lateChip]} testID="route-stops-status"><View style={[styles.onTimeDot, selectedDelay !== null && styles.lateDot]} /><Text style={[styles.onTimeText, selectedDelay !== null && styles.lateText]}>{selectedDelay !== null ? `${selectedDelay} min late` : 'On time'}</Text></View></View>
       <View accessibilityLabel="Stops for the next departure">
         {liveStopsResult.status === 'loading' ? (
           <StopListSkeleton color={route.color} />
@@ -908,6 +924,19 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     color: colors.mutedInk,
     ...typography.metadata,
   },
+  alertList: {
+    paddingBottom: 4,
+  },
+  alertItemSpaced: {
+    marginTop: 6,
+    paddingTop: 2,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  alertTitle: {
+    color: colors.ink,
+    fontFamily: fontFamilies.bold,
+  },
   timelineHeading: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -937,6 +966,15 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     color: colors.success,
     fontFamily: fontFamilies.extraBold,
     fontSize: 10,
+  },
+  lateChip: {
+    backgroundColor: colors.amberSoft,
+  },
+  lateDot: {
+    backgroundColor: colors.warning,
+  },
+  lateText: {
+    color: colors.warning,
   },
   stopRow: {
     minHeight: 74,

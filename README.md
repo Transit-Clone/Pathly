@@ -1,8 +1,15 @@
 # Pathly
 
-Pathly is a mobile transportation app built for riders in the New York City and Long Island area and inspired by existing apps like Transit, Citymapper, and Google Maps. Like other transit apps, Pathly will allow users to search for transit routes, view nearby stops, compare routes, and navigate to their destinations using real-time and scheduled transportation data.
+Pathly is a mobile transportation app for riders in New York City and Long Island, inspired by Transit, Citymapper, and Google Maps. Riders can search for transit routes, view nearby stops, compare routes, and navigate to their destinations using real-time and scheduled transit data.
 
-Currently, this repository contains a very minimal prototype. The **design document** for M2 is located in `docs/Design.ipynb`.
+The app is a React Native / Expo client (`mobile/`) backed by Firebase Cloud Functions (`firebase/functions/`). It covers the LIRR, the subway, MTA city buses (all five boroughs and MTA Bus Company), NICE Bus, Suffolk County Transit, NYC Ferry, and the Staten Island Ferry.
+
+Project documents are in `docs/`:
+
+- `Design(M3).ipynb`: the current (M3) design document
+- `Design.ipynb`: the original M2 design
+- `Proposal.ipynb`: the project proposal
+- `Testing-Plan.md`: the testing plan
 
 ## Requirements
 
@@ -23,31 +30,56 @@ nvm use
 npm ci
 ```
 
-If you do not use `nvm`, install the Node version listed in `.nvmrc` by your preferred method. Use `npm install` when intentionally changing dependencies; use `npm ci` for a reproducible install from the committed lockfile.
+If you don't use `nvm`, install the Node version listed in `.nvmrc` some other way. Use `npm ci` for a reproducible install from the committed lockfile. Use `npm install` only when you are intentionally changing dependencies.
 
-## Run in a browser
+## Local configuration
+
+The app needs Firebase and Google Maps client settings before it can load live data:
+
+1. Copy `mobile/.env.example` to `mobile/.env`.
+2. Fill in the Firebase web app config (`EXPO_PUBLIC_FIREBASE_*`) and the platform-restricted Maps keys (`GOOGLE_MAPS_ANDROID_API_KEY`, `GOOGLE_MAPS_IOS_API_KEY`, `EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY`, `EXPO_PUBLIC_GOOGLE_MAPS_WEB_MAP_ID`).
+3. Optionally set `EXPO_PUBLIC_ADMIN_EMAILS` (comma-separated). These accounts see the admin tools in the app. The default is `admin@gmail.com`. The backend has its own list, `ADMIN_EMAILS`, in `firebase/functions/.env.<project-id>`.
+4. Restart the Expo dev server after editing `.env`.
+
+`EXPO_PUBLIC_` values are bundled into the app, so treat them as public and rely on each key's API and app restrictions. Never put backend credentials (the server Maps key, Swiftly, MTA Bus Time) in `mobile/.env`. Git ignores both `.env` and `.secret.local`.
+
+### Destination search (Google Places)
+
+Destination search uses Google Places Autocomplete (Places API (New)). Without a key, search still opens and shows recent places, but typed queries show "Place search is unavailable."
+
+1. In the Google Cloud project that holds the Maps keys, enable **Places API (New)** under **APIs & Services → Library**.
+2. Create an API key, or reuse the web Maps key. Under **API restrictions**, restrict it to Places API (New). For web, also add an **HTTP referrers** restriction for your dev and production origins.
+3. Add the key to `mobile/.env`:
+
+   ```sh
+   EXPO_PUBLIC_GOOGLE_PLACES_API_KEY=your-key
+   ```
+
+   If this variable isn't set, the app falls back to `EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY`.
+
+## Running the app
+
+Run every command from the repository root. Stop the dev server with `Ctrl+C`.
+
+### Web
 
 ```sh
 npm run dev:web
 ```
 
-This starts Expo's web development server. Open the local URL shown in the terminal.
+Open the local URL shown in the terminal.
 
-## Run in the iOS Simulator
+### iOS Simulator
 
-Xcode 27 manages simulators through **Device Hub**:
-
-1. Open **Xcode → Open Developer Tool → Device Hub**.
+1. In Xcode 27, open **Xcode → Open Developer Tool → Device Hub**.
 2. Start an iPhone simulator with the installed iOS runtime.
-3. From the repository root, run `npm run dev:ios`.
+3. Run:
 
-Expo will open Pathly in the running simulator.
+   ```sh
+   npm run dev:ios
+   ```
 
-## Run on Android
-
-### Physical Android phone
-
-Install Expo Go from Google Play, put the phone and development computer on the same Wi-Fi network, then follow the physical-device instructions below.
+Expo opens Pathly in the running simulator.
 
 ### Android emulator
 
@@ -57,204 +89,50 @@ Install Android Studio, create and start an Android Virtual Device, then run:
 npm run dev:android
 ```
 
-The live-transit branch requires Firebase client configuration. See **Security and local configuration** below.
-
-## Run on a physical iPhone or Android phone
+### Physical iPhone or Android phone
 
 1. Install Expo Go on the phone.
-2. On iPhone, create a free Expo account and sign into the same account in Expo Go and the Expo CLI (`npx expo login`).
-3. Connect the phone and development computer to the same Wi-Fi network.
-4. Run `npm run dev` from the repository root.
-5. When the QR code appears, scan it with the iPhone Camera app or with **Scan QR code** in Expo Go on Android.
+2. On iPhone, create a free Expo account and sign in to it in both Expo Go and the Expo CLI (`npx expo login`).
+3. Connect the phone and the computer to the same Wi-Fi network.
+4. Run `npm run dev`.
+5. When the QR code appears, scan it with the iPhone Camera app, or with **Scan QR code** in Expo Go on Android.
 
-Keep Expo running while using the app. If the device cannot load the project, confirm both devices are on the same network, allow incoming Node connections through the computer's firewall, or use Expo's tunnel option from the interactive terminal.
-
-## Destination search (Google Places)
-
-Destination search uses Google Places Autocomplete (Places API (New)). Without a key, search still opens and shows recent places, but typed queries show "Place search is unavailable."
-
-1. In the Google Cloud project that holds the Maps keys, enable **Places API (New)** under **APIs & Services → Library**.
-2. Create an API key (or reuse the web Maps key) and restrict it under **API restrictions** to Places API (New). For web, also add an **HTTP referrers** restriction for your dev and production origins.
-3. Add the key to `mobile/.env`:
-
-   ```sh
-   EXPO_PUBLIC_GOOGLE_PLACES_API_KEY=your-key
-   ```
-
-   If this variable is not set, the app falls back to `EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY`. Restart the Expo dev server after editing `.env`.
-
-`EXPO_PUBLIC_` values are bundled into the app, so treat this key as public and rely on its restrictions.
+If the phone can't load the project, check that both devices are on the same network and that the computer's firewall allows incoming Node connections. You can also switch to Expo's tunnel option from the interactive terminal.
 
 ## Commands
 
-| Command               | Purpose                                   |
-| --------------------- | ----------------------------------------- |
-| `npm start`           | Alias for `npm run dev`                   |
-| `npm run dev`         | Start the Expo development server         |
-| `npm run dev:web`     | Start the web app                         |
-| `npm run dev:ios`     | Open the iOS Simulator app                |
-| `npm run dev:android` | Open the Android app                      |
-| `npm run lint`        | Lint the mobile workspace                 |
-| `npm test`            | Run mobile and Functions tests            |
-| `npm run typecheck`   | Type-check the mobile workspace           |
-| `npm run build`       | Create Android, iOS, and web Expo exports |
-| `npm run functions:test` | Build and test Cloud Functions         |
-| `npm run deploy:backend` | Deploy Storage rules and Functions     |
+| Command                    | Purpose                                                       |
+| -------------------------- | ------------------------------------------------------------- |
+| `npm start` / `npm run dev` | Start the Expo development server (QR code for Expo Go)      |
+| `npm run dev:web`          | Start the web app                                             |
+| `npm run dev:ios`          | Start Expo and open the iOS Simulator                         |
+| `npm run dev:android`      | Start Expo and open the Android emulator                      |
+| `npm run lint`             | Lint the mobile workspace                                     |
+| `npm run typecheck`        | Type-check the mobile workspace                               |
+| `npm test`                 | Run the mobile tests, then the Functions tests                |
+| `npm run build`            | Export the Android, iOS, and web bundles to `mobile/dist`     |
+| `npm run functions:build`  | Compile the Cloud Functions                                   |
+| `npm run functions:test`   | Build the timetable indexes and run the Functions tests       |
+| `npm run functions:shell`  | Open the Firebase Functions shell                             |
+| `npm run deploy:functions` | Deploy Cloud Functions only                                   |
+| `npm run deploy:backend`   | Deploy Storage rules and Cloud Functions                      |
 
-Stop development processes with `Ctrl+C`.
+These commands run in `firebase/functions` (`npm --prefix firebase/functions run <script>` from the root):
 
-## Transit timetable indexes (Cloud Functions)
+| Command                 | Purpose                                                                 |
+| ----------------------- | ----------------------------------------------------------------------- |
+| `build:gtfs`            | Build the per-route timetable indexes (add `-- --force` to rebuild all) |
+| `build:walking`         | Build the walking-graph tiles from an OpenStreetMap extract             |
+| `serve`                 | Build the indexes and start the local Functions emulator                |
+| `logs`                  | Show deployed Functions logs                                            |
 
-The Functions read each agency's static GTFS feed from `firebase/functions/static_data/`. Scanning the full
-`stop_times.txt` files on every cold start made the first nearby search take about 18 seconds, so a build step
-prepares small per-route stop-times and route-geometry files and a stop-to-routes index under
-`static_data/<agency>/derived/` (generated, not committed):
+## Backend
 
-```sh
-npm --prefix firebase/functions run build:gtfs
-```
+The Cloud Functions in `firebase/functions/` serve live departures, trip plans, and nearby stops. Two generated data sets aren't committed:
 
-- Deploys run it automatically (`firebase.json` predeploy) and stop if any agency's index is missing or out of
-  date. The raw `stop_times.txt` files are not uploaded.
-- Re-run it after replacing any agency's static feed. Unchanged agencies are skipped; add `-- --force` to
-  rebuild everything.
-- Without the index (for example on a fresh checkout), the Functions still work locally by scanning the CSVs,
-  just more slowly. `npm --prefix firebase/functions test` builds it and checks it matches the CSVs.
-- The daily static GTFS refresh (below) builds the same files for each snapshot it publishes, so deployed
-  instances keep using them after a newer feed replaces the bundled one.
+- **Timetable indexes.** Build them with `npm --prefix firebase/functions run build:gtfs`. Tests and deploys build them automatically. Without them, the Functions still work locally, just more slowly.
+- **Walking-graph tiles.** Build them from an OpenStreetMap extract with `build:walking`. Nearby uses them to find the closest stop on foot, and deploys fail without them.
 
-## Trip planning (Google Routes API)
+Backend credentials live in Firebase Secret Manager, never in `mobile/.env`. For the local emulator, copy `firebase/functions/.secret.local.example` to `firebase/functions/.secret.local`.
 
-Route Results gets real transit itineraries from the `planTrip` Cloud Function. It calls the Google
-Routes API (`computeRoutes` in transit mode, with alternatives), using the same `GOOGLE_MAPS_API_KEY`
-secret as the other backend proxies, so the key never ships in the app.
-
-- **Enable the API:** in the Google Cloud console for `pathly-b7f0f`, open **APIs & Services → Library**,
-  find **Routes API**, and select **Enable**. If the server key has API restrictions (**APIs & Services →
-  Credentials** → the key → **API restrictions**), add **Routes API** to the allowed list.
-- **Cost:** transit requests bill as **Routes: Compute Routes Essentials**, which includes 10,000 free requests
-  per month (then $5 per 1,000). Each plan is one request, and the app keeps plans for 2 minutes and
-  limits each rider to 20 plans per minute.
-- **Cap it:** so a bug can't run past the free tier, lower the Routes API's per-day request quota in
-  **Google Maps Platform → Quotas**: select **Routes API**, check the per-day quota, choose **Edit**, and
-  enter a value such as 300 (about 9,000 a month).
-- **Fares:** Google returns fares for NYC subway and bus trips only. For trips involving the LIRR, NICE, or
-  Suffolk County Transit, `firebase/functions/src/tripFares.ts` estimates the fare from the agencies'
-  published 2026 fares (the LIRR zone chart, flat bus fares, and transfer rules), and the app labels it
-  as an estimate ("~$18.25"). Update those tables when fares change.
-- If planning fails, the function logs `trip_planning_unavailable` with Google's status (for example
-  `PERMISSION_DENIED` when the API isn't enabled or the key isn't allowed to call it).
-
-## Security and local configuration
-
-Copy `mobile/.env.example` to `mobile/.env` and fill in the Firebase and platform-restricted
-Maps client settings. Both `.env` and `.secret.local` are ignored by Git. Do not put the
-backend Google Maps or Swiftly credentials in the mobile bundle.
-
-Production Functions read backend credentials from Firebase Secret Manager:
-
-```sh
-firebase functions:secrets:set GOOGLE_MAPS_API_KEY
-firebase functions:secrets:set SWIFTLY_API_KEY
-```
-
-For the local Functions emulator only, copy `firebase/functions/.secret.local.example` to
-`firebase/functions/.secret.local`. Keep provider quotas and billing alerts enabled; the
-deployed per-user limiter uses an atomic Firestore transaction so cold starts and horizontal
-scaling cannot multiply a user's limit. A bounded in-process bucket rejects obvious bursts
-before that shared check.
-
-Do not create or share Firebase Admin service-account JSON keys for routine development.
-Cloud Functions uses dedicated managed runtime identities; developers should use
-`firebase login` for the CLI and user Application Default Credentials where ADC is actually
-required.
-
-### Static GTFS refresh
-
-The deployed backend refreshes the official LIRR, subway, NICE Bus, Suffolk County Transit, MTA
-city bus (five boroughs and MTA Bus Company), and NYC Ferry static GTFS feeds every day at 04:00
-`America/New_York`. A successful run validates the full
-feed, uploads an immutable ZIP to `gtfs/v1/<agency>/versions/<archive-sha256>.zip`, then switches
-`gtfs/v1/<agency>/current.json` with a Cloud Storage generation precondition. Invalid, expired,
-rolled-back, or incompatible feeds leave the last published snapshot untouched. Repacked ZIPs
-whose runtime CSVs are unchanged only advance the trusted source watermark; they do not force
-instances to rehydrate. Each snapshot also gets a prepared-index archive at
-`gtfs/v1/<agency>/derived/<version>-v<format>.zip` (the timetable indexes above, built from that
-snapshot); a snapshot without a current one gains it on the next run, without a new version. If
-it can't be built or verified, the snapshot is still published and instances scan its raw files
-(`gtfs_snapshot_derived_failed` / `gtfs_snapshot_derived_unavailable`).
-
-The city bus and ferry agencies are too big to copy into every instance, so their prepared
-timetable is split: a small core archive (indexes plus `route-files.json`) and one object per
-route under `gtfs/v1/<agency>/derived/<version>/<format>/`, which instances fetch and verify the
-first time a route is needed. These agencies have no bundled copy; each is skipped until its first
-snapshot is published.
-
-Each publication deletes the version from two publications back (its ZIP, prepared archive, and
-route files) once the version it replaced has been current for a day; the two live versions are
-never touched. Deletion is by name from the manifests, so the writer needs no list permission
-(`gtfs_snapshot_retired`, or `gtfs_snapshot_retire_failed` with the reason). Callables check the
-manifest at most once every five minutes, hydrate a verified version into ephemeral `/tmp`,
-and retain the last good version for that warm instance. A cold instance falls back to the
-GTFS files bundled with the deployment if Storage is unavailable.
-
-Production setup for the `pathly-b7f0f` project:
-
-1. Keep the project on the Blaze plan, initialize Firestore and the default Firebase Storage
-   bucket, and keep Storage Public Access Prevention enabled. Client rules deny access to GTFS
-   objects and to the `_pathlyCallableRateLimits` collection; only Admin SDK identities use them.
-2. Create `pathly-callable-runtime@pathly-b7f0f.iam.gserviceaccount.com` and
-   `pathly-gtfs-writer@pathly-b7f0f.iam.gserviceaccount.com`. Do not create JSON keys for either.
-3. On the Storage bucket, grant the callable identity **Storage Object Viewer** and the writer
-   identity **Storage Object User**, with IAM Conditions restricting both grants to object names
-   under `gtfs/v1/`. At the project level, grant the callable identity **Cloud Datastore User**
-   for the shared limiter and Secret Manager access to the declared Maps/Swiftly secrets. Give
-   the deployer `iam.serviceAccounts.actAs` on both identities. Do not give the default compute
-   identity broad bucket write access; remove any temporary grant only after this deployment is
-   verified.
-4. Enable Firestore TTL for collection group `_pathlyCallableRateLimits`, field `expiresAt`.
-   Rate-limit documents contain only hashes and expire 24 hours after their last successful use.
-5. Enable the Cloud Scheduler API. The Functions deployment manages the
-   `firebase-schedule-refreshGtfsStaticData-us-central1` job; do not edit or delete it by hand.
-6. Run `npx --yes firebase-tools@15.32.1 login`, then `npm run deploy:backend`. The repository
-   scripts pin a Firebase CLI version that supports the Node 24 Functions runtime.
-
-After the first deploy, manually run the managed Scheduler job once. Confirm that all four
-`current.json` files and their referenced ZIPs exist, and that logs contain four
-`gtfs_snapshot_published` (or `gtfs_snapshot_unchanged`) events with no
-`gtfs_refresh_failed`. After a deploy that changes the prepared-index format, run the job once
-the same way (Cloud Scheduler console → the job → **Force run**) and confirm a
-`gtfs_snapshot_derived_backfilled` event per agency:
-
-```sh
-npx --yes firebase-tools@15.32.1 functions:log --only refreshGtfsStaticData
-```
- Run it a second time and confirm all four are unchanged. Then wait up
-to five minutes, invoke the authenticated nearby-transit flow, and confirm a
-`gtfs_snapshot_hydrated` event (with `prepared: true`) for each agency. Alert on
-`gtfs_refresh_failed`, `gtfs_snapshot_fallback`, `gtfs_snapshot_derived_failed`, and
-`gtfs_service_expiring`; also alert if no complete refresh
-succeeds (`gtfs_refresh_completed`) within 26 hours. The scheduler retains immutable ZIP
-history rather than deleting archives concurrently with publication; this makes content
-rollback and A-to-B-to-A reuse safe. Do not apply a blanket lifecycle rule that could remove an
-archive referenced by a live manifest. If manual cleanup is ever needed, pause the scheduler
-first and preserve at least every current and previous archive reference.
-
-### App Check rollout
-
-For web, create a score-based reCAPTCHA Enterprise key restricted to the production domains,
-register it against the Firebase web app under App Check, and set its public site key as
-`EXPO_PUBLIC_FIREBASE_APPCHECK_RECAPTCHA_ENTERPRISE_SITE_KEY`. Register the generated localhost
-debug token privately in Firebase Console. Native iOS/Android currently need a custom
-native provider before enforcement: register both native Firebase apps, configure
-App Attest/DeviceCheck and Play Integrity, and use private debug tokens in development builds.
-Because native currently calls Functions through the Firebase JavaScript SDK, the native token
-must then be bridged through a JS SDK `CustomProvider`, or native Functions calls must migrate to
-RNFirebase. Merely registering providers in Firebase Console is not enough.
-
-All callable Functions already require Firebase Authentication and contain deploy-ready App
-Check enforcement. `geocodeAddress` enforces it immediately because it is billable and has no
-current client caller. The active transit callables keep `enforceTransitAppCheck=false` in
-`firebase/functions/src/index.ts` while rollout metrics are monitored. After released web and
-native builds show valid App Check traffic, flip that version-controlled value to `true` and
-redeploy.
+For deploying or operating the backend, see [docs/backend.md](docs/backend.md). It covers secrets, the walking-tile build, the Routes API, the daily GTFS refresh, production setup, and App Check.

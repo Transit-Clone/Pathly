@@ -313,7 +313,7 @@ async function streamStopTimesForRoutes(agencyId: AgencyId, routeIds: ReadonlySe
   const path = join(dataDirFor(agencyId), 'stop_times.txt');
   if (!existsSync(path)) return byRoute;
 
-  const parser = createReadStream(path).pipe(parse({ columns: true }));
+  const parser = createReadStream(path).pipe(parse({ bom: true, columns: true }));
   for await (const row of parser as AsyncIterable<StopTimeRow>) {
     const routeId = routeOfTrip.get(row.trip_id);
     if (!routeId) continue;
@@ -362,7 +362,7 @@ function loadAgencyStopIndexes(agencyId: AgencyId): Promise<AgencyStopIndexes> {
     const stopCountsByRoute = new Map<string, RouteStopCounts>();
     const path = join(dataDirFor(agencyId), 'stop_times.txt');
     if (existsSync(path)) {
-      const parser = createReadStream(path).pipe(parse({ columns: true }));
+      const parser = createReadStream(path).pipe(parse({ bom: true, columns: true }));
       for await (const row of parser as AsyncIterable<StopTimeRow>) {
         const trip = tripsById.get(row.trip_id);
         if (!trip) continue;

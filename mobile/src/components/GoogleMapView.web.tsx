@@ -6,7 +6,7 @@ import { GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_SCRIPT_ID } from '../data/googleMaps
 import { googleMapStyle } from '../data/mapStyle';
 import { SERVICE_AREA_BOUNDS } from '../data/serviceArea';
 import { addressAfterName } from '../data/placesSearch';
-import { SAVED_PIN, savedPinSvgUrl } from '../data/savedPlacePin';
+import { metersPerPixelAtZoom, SAVED_PIN, savedPinSvgUrl, stackSavedPins } from '../data/savedPlacePin';
 import { locationPoint, savedPlaceName, type SavedLocation } from '../data/userData';
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { useTheme } from '../theme/AppSettings';
@@ -143,6 +143,16 @@ export function GoogleMapView({ initialCamera, location, onCameraChange, onLongP
   const [mountRecenterRequest] = useState(recenterRequest);
   const [restoredCenter] = useState(() => (initialCamera ? { lat: initialCamera.latitude, lng: initialCamera.longitude } : null));
   const [initialZoom] = useState(() => initialCamera?.zoom ?? ZOOM);
+  // Followed so saved-place pins can stack once zooming out would make them collide.
+  const [zoom, setZoom] = useState(initialZoom);
+  const savedPins = useMemo(() => {
+    const placed = savedLocations.flatMap((saved) => {
+      const point = locationPoint(saved.address);
+      return point ? [{ saved, point }] : [];
+    });
+    const stacks = stackSavedPins(placed.map(({ point }) => point), metersPerPixelAtZoom(zoom, placed[0]?.point.latitude ?? 0));
+    return placed.map((pin, index) => ({ ...pin, ...stacks[index]! }));
+  }, [savedLocations, zoom]);
   const center = useMemo(
     () => (recenterRequest === mountRecenterRequest && restoredCenter ? restoredCenter : { ...position }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the request only; `position` is read at request time
@@ -198,14 +208,16 @@ export function GoogleMapView({ initialCamera, location, onCameraChange, onLongP
             if (visibleCenter) onUserMoveEnd?.(visibleCenter);
           }}
           onLoad={setMap}
+          onZoomChanged={() => {
+            const next = map?.getZoom();
+            if (next !== undefined) setZoom(next);
+          }}
           onUnmount={() => setMap(null)}
           options={mapOptions}
           zoom={initialZoom}
         >
           <Rectangle bounds={SERVICE_AREA_BOUNDS} options={serviceAreaOutlineOptions} />
-          {savedLocations.map((saved) => {
-            const point = locationPoint(saved.address);
-            if (!point) return null;
+          {savedPins.map(({ saved, position: pinPosition, leader }) => {
             const name = savedPlaceName(saved.address);
             const address = addressAfterName(name, saved.address.streetAddress);
             const markerLabel = address
@@ -221,13 +233,14 @@ export function GoogleMapView({ initialCamera, location, onCameraChange, onLongP
                   anchor: new google.maps.Point(SAVED_PIN.size / 2, SAVED_PIN.size + SAVED_PIN.point),
                   labelOrigin: new google.maps.Point(SAVED_PIN.size / 2, SAVED_PIN.size / 2),
                 }}
-                label={pinLabel(savedLocationIcon(saved.address))}
+                // Only a stack's top pin shows its icon: the map draws every label above every pin.
+                label={leader ? pinLabel(savedLocationIcon(saved.address)) : undefined}
                 key={saved.id}
                 onClick={() => onSavedLocationPress?.(saved)}
                 options={{ optimized: false }}
-                position={{ lat: point.latitude, lng: point.longitude }}
+                position={{ lat: pinPosition.latitude, lng: pinPosition.longitude }}
                 title={markerLabel}
-                zIndex={2}
+                zIndex={leader ? 2 : 1}
               />
             );
           })}

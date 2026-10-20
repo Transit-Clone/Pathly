@@ -11,6 +11,7 @@ import { AGENCY_CONFIGS, type AgencyId } from './gtfsAgencies';
 import { getStopPredictions } from './gtfsSchedule';
 import { refreshAllGtfsSnapshots } from './gtfsSnapshots';
 import { isAgencyAvailable, loadAgencyStaticData, loadGlobalStopRouteIndex, prepareAgencyStaticData } from './gtfsStaticData';
+import { getRouteAlerts } from './gtfsAlerts';
 import { getRouteStatus } from './gtfsStatus';
 import { isInServiceArea } from './serviceArea';
 import { lookupStations, searchStops, type StationLookup } from './stopSearch';
@@ -180,14 +181,15 @@ async function routeLiveStatus(data: RouteLiveStatusRequest) {
   // feed) rather than by a separate prior call, so a route needs one round trip, not two. Each
   // direction falls back to the given stop id if it can't be resolved.
   const hasLocation = location !== null;
-  const [status, nearestStop] = await Promise.all([
+  const [status, nearestStop, alerts] = await Promise.all([
     getRouteStatus(agencyId, routeId),
     location ? getNearestStopForRoute(agencyId, routeId, location.lat, location.lon).catch(() => null) : Promise.resolve(null),
+    getRouteAlerts(agencyId, routeId),
   ]);
   direction1StopId = nearestStop?.direction1?.stopId ?? direction1StopId;
   direction0StopId = nearestStop?.direction0?.stopId ?? direction0StopId;
   const stopPredictions = await getStopPredictions(agencyId, routeId, direction1StopId, direction0StopId, status.trips);
-  return { ...status, stopPredictions, ...(hasLocation ? { nearestStop } : {}) };
+  return { ...status, stopPredictions, alerts, ...(hasLocation ? { nearestStop } : {}) };
 }
 
 /** The most routes one batch may ask for (a screenful of cards with room to spare). */

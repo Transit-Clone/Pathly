@@ -2,7 +2,7 @@
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { callable } from '../lib/firebase';
 import type { NearestRouteStop } from './nearestRouteStop';
-import type { LiveSource } from './transit';
+import type { LiveSource, ServiceAlert } from './transit';
 
 export type RouteLiveVehicle = {
   tripId: string;
@@ -18,6 +18,8 @@ export type DirectionPrediction = {
   live: boolean;
   /** This specific trip's real LIRR peak/off-peak classification — null for agencies without fare tiers (e.g. subway's flat fare) or if it couldn't be resolved. */
   peakOffpeak: boolean | null;
+  /** Minutes a tracked trip runs behind its timetable; absent from functions deployed before it was added. */
+  delayMinutes?: number | null;
 };
 
 type StopPredictions = {
@@ -31,6 +33,8 @@ type RouteLiveStatusResponse = {
   /** `timestamp` is epoch seconds; absent from functions deployed before it was added. */
   vehicles: { tripId: string; directionId: number; lat: number; lon: number; timestamp?: number | null }[];
   stopPredictions: StopPredictions;
+  /** Absent from functions deployed before service alerts were added. */
+  alerts?: ServiceAlert[];
 };
 
 export type RouteLiveData = {
@@ -43,6 +47,8 @@ export type RouteLiveData = {
     towardDirection0: readonly DirectionPrediction[];
   };
   vehicles: readonly RouteLiveVehicle[];
+  /** MTA service alerts in effect on the route (empty when there are none, or the agency isn't covered). */
+  alerts?: readonly ServiceAlert[];
   /** When this data was fetched (epoch ms), so countdowns can be aged between polls. */
   fetchedAt: number;
   /**
@@ -142,6 +148,7 @@ function toRouteLiveData(data: RouteLiveStatusResponse & { nearestStop?: Nearest
       towardDirection1: data.stopPredictions.towardDirection1,
       towardDirection0: data.stopPredictions.towardDirection0,
     },
+    alerts: data.alerts ?? [],
     vehicles: data.vehicles.map((vehicle) => ({
       tripId: vehicle.tripId,
       directionId: vehicle.directionId,

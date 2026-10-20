@@ -22,7 +22,7 @@ export function gtfsTimeToSeconds(hms: string): number {
 export function readCsv<T>(dataDir: string, filename: string): T[] {
   const path = join(dataDir, filename);
   if (!existsSync(path)) return [];
-  return parseSync(readFileSync(path, 'utf-8'), { columns: true }) as T[];
+  return parseSync(readFileSync(path, 'utf-8'), { bom: true, columns: true }) as T[];
 }
 
 type RouteRow = { route_id: string; route_short_name: string; route_long_name: string; route_color: string };

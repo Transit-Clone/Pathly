@@ -57,7 +57,7 @@ export async function buildDerivedData(agencyId: AgencyId, dataDir: string, outD
   };
   const stopTimesPath = join(dataDir, 'stop_times.txt');
   if (existsSync(stopTimesPath)) {
-    const parser = createReadStream(stopTimesPath).pipe(parse({ columns: true }));
+    const parser = createReadStream(stopTimesPath).pipe(parse({ bom: true, columns: true }));
     for await (const row of parser as AsyncIterable<StopTimeRow>) {
       const trip = tripsById.get(row.trip_id);
       if (!trip) continue;

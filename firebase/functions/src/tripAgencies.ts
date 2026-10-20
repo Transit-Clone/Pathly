@@ -25,6 +25,8 @@ export function agencyIdsForStep(step: Pick<TransitStep, 'agency' | 'mode'>): Ag
   if ((name === NYCT_AGENCY && step.mode === 'bus') || isMtaBusCompany(name)) return [...MTA_BUS_AGENCY_IDS];
   if (name === NICE_AGENCY) return ['nice'];
   if (isSuffolk(name)) return ['suffolk'];
-  if (name === NYC_FERRY_AGENCY || step.mode === 'ferry') return ['nycferry'];
+  if (name === NYC_FERRY_AGENCY) return ['nycferry'];
+  // Any other ferry: NYC Ferry, or NYC DOT's Staten Island Ferry.
+  if (step.mode === 'ferry') return ['nycferry', 'siferry'];
   return [];
 }

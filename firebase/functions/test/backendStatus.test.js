@@ -39,6 +39,12 @@ test('reports one entry per agency with snapshot age and live feed health', asyn
   assert.deepEqual(agencies.map((agency) => agency.agencyId), Object.keys(AGENCY_CONFIGS));
   for (const agency of agencies) {
     assert.equal(agency.ageHours, 12);
+    assert.equal(agency.lastRefresh.ok, true);
+    // The Staten Island Ferry publishes no live feed: timetable only.
+    if (agency.agencyId === 'siferry') {
+      assert.deepEqual(agency.live, { configured: false });
+      continue;
+    }
     assert.equal(agency.live.configured, true);
     assert.equal(agency.live.ok, true);
     assert.equal(agency.lastRefresh.ok, true);

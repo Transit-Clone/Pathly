@@ -1,4 +1,8 @@
-# Enroute navigation demo
+# Test Plan (STILL WRITING)
+
+When agents code, they write tests alongside it. However, these tests tend to take the "happy path" instead of simulating real edge cases and error-prone scenarios. They provide the illusion of correctness.  As such, manual testing is needed to ensure that proper functionality.  
+
+
 
 This runbook exercises Pathly's foreground navigation MVP on one native target and on web. It uses the admin checkpoint controls, but those controls feed the same persisted mock-location source and progress engine as a real location fix. No source-code or device-storage editing is required.
 
@@ -10,10 +14,10 @@ Run the full checklist separately on each target. Active trips and Recents are s
 2. Use an existing Firebase Authentication account whose email is in `EXPO_PUBLIC_ADMIN_EMAILS`. When that variable is absent, the development default is `admin@gmail.com`. You need the account's real password; the email setting only reveals admin UI and does not create an account.
 3. Start one target:
 
-   | Target | Start command | Relaunch during the test |
-   | --- | --- | --- |
-   | Web | `npm run dev:web` | Reload the page |
-   | iOS Simulator | Start a simulator, then `npm run dev:ios` | Terminate and reopen Pathly, or reload the app |
+   | Target                  | Start command                                | Relaunch during the test                        |
+   | ----------------------- | -------------------------------------------- | ----------------------------------------------- |
+   | Web                     | `npm run dev:web`                            | Reload the page                                 |
+   | iOS Simulator           | Start a simulator, then `npm run dev:ios`    | Terminate and reopen Pathly, or reload the app  |
    | Android emulator/device | Start/connect it, then `npm run dev:android` | Force-stop and reopen Pathly, or reload the app |
 
 4. Sign in with the admin account. Open **Profile → Admin tools** and confirm the Admin tools page is present. If it is absent, stop here and fix the admin account configuration.
@@ -128,17 +132,17 @@ To demonstrate both successful Retry and End, create recovery again after the re
 
 ## Troubleshooting
 
-| Symptom | What to check |
-| --- | --- |
-| Admin tools or checkpoint controls are missing | The signed-in email must match `EXPO_PUBLIC_ADMIN_EMAILS` (case-insensitive). Restart Expo after changing environment variables. Checkpoint controls appear only during an active trip. |
-| Typed destination search is unavailable | Configure `EXPO_PUBLIC_GOOGLE_PLACES_API_KEY` (or the documented Maps fallback key), enable Places API (New), then restart Expo. |
-| Route Results fails or is empty | Confirm the user is signed in, the deployed `planTrip` Function is reachable, Routes API is enabled for the backend key, and the selected mock date has service. Try the peak-weekday preset again. |
-| Restore opens recovery while online | The provider did not return the exact saved itinerary, or the request failed. Retry online. Do not start a similar result as though it were the same trip; either keep the reference for later or end it. |
-| Guidance does not advance | Confirm the mock marker reached a later checkpoint. Poor/stale/unmatched real fixes intentionally keep the last confirmed progress. Use **Reset** before replaying the checkpoint sequence from the beginning. |
-| **Previous** moves the marker but not the instruction | This is expected. Progress is monotonic unless the admin explicitly taps **Reset**. |
-| Native app cannot reopen while offline | Expo Go may need Metro over the local network. Use an installed development build, emulator network controls that preserve LAN access, or test the forced-offline recovery on web. |
-| Recent opens different times or lines | This is expected. Recents store only a lightweight summary and endpoints; opening one requests current route options. |
-| A native and web run do not share state | This is expected for the MVP. Active trips and Recents are local per user and per device/browser profile. |
+| Symptom                                               | What to check                                                                                                                                                                                                  |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Admin tools or checkpoint controls are missing        | The signed-in email must match `EXPO_PUBLIC_ADMIN_EMAILS` (case-insensitive). Restart Expo after changing environment variables. Checkpoint controls appear only during an active trip.                        |
+| Typed destination search is unavailable               | Configure `EXPO_PUBLIC_GOOGLE_PLACES_API_KEY` (or the documented Maps fallback key), enable Places API (New), then restart Expo.                                                                               |
+| Route Results fails or is empty                       | Confirm the user is signed in, the deployed `planTrip` Function is reachable, Routes API is enabled for the backend key, and the selected mock date has service. Try the peak-weekday preset again.            |
+| Restore opens recovery while online                   | The provider did not return the exact saved itinerary, or the request failed. Retry online. Do not start a similar result as though it were the same trip; either keep the reference for later or end it.      |
+| Guidance does not advance                             | Confirm the mock marker reached a later checkpoint. Poor/stale/unmatched real fixes intentionally keep the last confirmed progress. Use **Reset** before replaying the checkpoint sequence from the beginning. |
+| **Previous** moves the marker but not the instruction | This is expected. Progress is monotonic unless the admin explicitly taps **Reset**.                                                                                                                            |
+| Native app cannot reopen while offline                | Expo Go may need Metro over the local network. Use an installed development build, emulator network controls that preserve LAN access, or test the forced-offline recovery on web.                             |
+| Recent opens different times or lines                 | This is expected. Recents store only a lightweight summary and endpoints; opening one requests current route options.                                                                                          |
+| A native and web run do not share state               | This is expected for the MVP. Active trips and Recents are local per user and per device/browser profile.                                                                                                      |
 
 ## MVP boundaries to state during the demo
 

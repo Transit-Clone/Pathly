@@ -29,7 +29,7 @@ const MIN_QUERY_LENGTH = 2;
 const AGENCY_MODES: Record<AgencyId, StopSuggestion['mode']> = {
   lirr: 'rail', subway: 'subway', nice: 'bus', suffolk: 'bus',
   bx: 'bus', bk: 'bus', mn: 'bus', qn: 'bus', si: 'bus', busco: 'bus',
-  nycferry: 'ferry',
+  nycferry: 'ferry', siferry: 'ferry',
 };
 
 const WORD_FORMS: Record<string, string> = { street: 'st', avenue: 'av', ave: 'av', road: 'rd', boulevard: 'blvd', place: 'pl', parkway: 'pkwy', square: 'sq', station: 'sta' };
