@@ -69,6 +69,17 @@ Destination search uses Google Places Autocomplete (Places API (New)). Without a
 
 Run every command from the repository root. Stop the dev server with `Ctrl+C`.
 
+Don't run `npx expo start` from the root. The Expo app lives in `mobile/`, so Expo fails at the root with `Unable to resolve "../../App"` and leaves a stray root `tsconfig.json`. Use `npm start` instead.
+
+`npm start`, `npm run dev`, `npm run dev:ios`, and `npm run dev:android` all run [`scripts/start.mjs`](scripts/start.mjs). Before starting Expo, it:
+
+1. Deletes a stray root `tsconfig.json`, if there is one.
+2. Runs `npm install` if `node_modules` is missing or older than any `package.json` or `package-lock.json`.
+3. Runs `expo install --check` and warns about packages that don't match the Expo SDK. It doesn't change `package.json`. To fix the versions, run `cd mobile && npx expo install --fix`.
+4. Starts Expo from `mobile/` in Expo Go mode. The workspace depends on `expo-dev-client`, which would otherwise make Expo default to development-build mode.
+
+Options after `--` are passed to `expo start`, for example `npm start -- --clear` to clear the Metro cache. If you've installed a custom development build, use `npm start -- --dev-client`.
+
 ### Web
 
 ```sh
@@ -105,13 +116,15 @@ npm run dev:android
 4. Run `npm run dev`.
 5. When the QR code appears, scan it with the iPhone Camera app, or with **Scan QR code** in Expo Go on Android.
 
+Before scanning, check that the terminal shows `› Using Expo Go`. If the iPhone Camera says **No usable data found**, the server is in development-build mode. Stop it and restart it with `npm start`, not with `npx expo start` from `mobile/`.
+
 If the phone can't load the project, check that both devices are on the same network and that the computer's firewall allows incoming Node connections. You can also switch to Expo's tunnel option from the interactive terminal.
 
 ## Commands
 
 | Command                     | Purpose                                                   |
 | --------------------------- | --------------------------------------------------------- |
-| `npm start` / `npm run dev` | Start the Expo development server (QR code for Expo Go)   |
+| `npm start` / `npm run dev` | Check dependencies, then start Expo (QR code for Expo Go) |
 | `npm run dev:web`           | Start the web app                                         |
 | `npm run dev:ios`           | Start Expo and open the iOS Simulator                     |
 | `npm run dev:android`       | Start Expo and open the Android emulator                  |

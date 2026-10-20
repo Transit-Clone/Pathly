@@ -14,11 +14,11 @@
   },
   "packageManager": "npm@11.6.0",
   "scripts": {
-    "start": "npm run dev",
-    "dev": "npm run dev --workspace @pathly/mobile",
+    "start": "node scripts/start.mjs",
+    "dev": "node scripts/start.mjs",
     "dev:web": "npm run web --workspace @pathly/mobile",
-    "dev:ios": "npm run ios --workspace @pathly/mobile",
-    "dev:android": "npm run android --workspace @pathly/mobile",
+    "dev:ios": "node scripts/start.mjs --ios",
+    "dev:android": "node scripts/start.mjs --android",
     "lint": "npm run lint --workspace @pathly/mobile",
     "test": "npm run test --workspace @pathly/mobile && npm run test --workspace functions",
     "build": "npm run build --workspace @pathly/mobile",
@@ -31,5 +31,10 @@
   },
   "devDependencies": {
     "@fission-ai/openspec": "^1.13.2"
+  },
+  "allowScripts": {
+    "@firebase/util@1.15.3": true,
+    "protobufjs@7.6.6": true,
+    "unrs-resolver@1.12.2": true
   }
 }
