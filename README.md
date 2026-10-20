@@ -67,6 +67,16 @@ Destination search uses Google Places Autocomplete (Places API (New)). Without a
 
 ## Running the app
 
+> [!TIP]
+> **Quick start:** run `npm start` from the repository root. When the dev server is ready, press a key in the terminal:
+>
+> - `w`: open in a web browser
+> - `i`: open in the iOS Simulator
+> - `a`: open in the Android emulator
+> - or scan the QR code with a phone that has Expo Go
+>
+> Press `?` to see all commands. The sections below cover each option in detail.
+
 Run every command from the repository root. Stop the dev server with `Ctrl+C`.
 
 Don't run `npx expo start` from the root. The Expo app lives in `mobile/`, so Expo fails at the root with `Unable to resolve "../../App"` and leaves a stray root `tsconfig.json`. Use `npm start` instead.
