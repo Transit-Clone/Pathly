@@ -9,15 +9,17 @@ The app is a React Native + Expo client (`mobile/`) backed by Firebase Cloud Fun
 
 Project documents are in `docs/`:
 
-- `M3 Design.ipynb`: the current (M3) design document
+- `M3 Design.ipynb`: the current M3 design document
 - `M2 Design.ipynb`: the original M2 design
 - `Proposal.ipynb`: the project proposal
 - `TestPlan.ipynb`: the testing plan
 
-<img src="mobile/assets/home-screen.png" width="200">
-<img src="mobile/assets/route-view.png" width="200">
-<img src="mobile/assets/route-results.png" width="200">
-<img src="mobile/assets/trip-details.png" width="200">
+<p align="center">
+   <img src="mobile/assets/home-screen.png" width="24%">
+   <img src="mobile/assets/route-view.png" width="24%">
+   <img src="mobile/assets/route-results.png" width="24%">
+   <img src="mobile/assets/trip-details.png" width="24%">
+</p>
 
 ## Requirements
 
