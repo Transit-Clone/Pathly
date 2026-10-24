@@ -60,3 +60,20 @@ export function withAlpha(color: string, alpha: number): string {
   if (!/^#[0-9a-f]{6}$/i.test(color)) return color;
   return `${color}${Math.round(alpha * 255).toString(16).padStart(2, '0').toUpperCase()}`;
 }
+
+/**
+ * Where the rider's stop sits in a route's stop list. The nearest-stop lookup names a platform
+ * (subway "127N"), while route geometry lists stations ("127"), so an exact id match alone misses
+ * every subway stop and the map fell back to the whole line. Tries the exact id, then the station
+ * the platform belongs to, then the stop's name. -1 when none match.
+ */
+export function focusStopIndex(stops: readonly { stopId?: string; name: string }[], stopId: string | undefined, stopName?: string): number {
+  if (stopId) {
+    const exact = stops.findIndex((stop) => stop.stopId === stopId);
+    if (exact >= 0) return exact;
+    const station = stopId.replace(/[NS]$/, '');
+    const parent = station !== stopId ? stops.findIndex((stop) => stop.stopId === station) : -1;
+    if (parent >= 0) return parent;
+  }
+  return stopName ? stops.findIndex((stop) => stop.name === stopName) : -1;
+}

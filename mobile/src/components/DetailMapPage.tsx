@@ -1,9 +1,10 @@
-import { useState, type ReactNode } from 'react';
-import { Animated, Platform, StyleSheet, useWindowDimensions, View, type StyleProp, type ViewStyle } from 'react-native';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Animated, Platform, StyleSheet, useWindowDimensions, View, type NativeScrollEvent, type NativeSyntheticEvent, type ScrollView, type StyleProp, type ViewStyle } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useThemedStyles } from '../theme/AppSettings';
+import { useAppSettings, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
+import { SHEET_AT_REST_TOLERANCE, SheetHandle } from './SheetHandle';
 
 const CONTROL_ROW_HEIGHT = 48;
 const ACTION_HEIGHT = 60;
@@ -17,6 +18,8 @@ type DetailMapPageProps = {
   controls: ReactNode;
   /** When true, controls sit on the map and scroll away with it instead of staying fixed. */
   controlsScrollWithMap?: boolean;
+  /** Shows the home screen's grip on the sheet: tapping it expands or collapses the sheet. */
+  handle?: { accessibilityHint: string; accessibilityLabel: string; testID: string };
   /**
    * When true, the uncovered map area takes pan/zoom gestures directly: the scroll view and its
    * content wrapper pass touches through outside the content sheet, which still scrolls the page.
@@ -43,6 +46,7 @@ export function DetailMapPage({
   contentTestID,
   controls,
   controlsScrollWithMap = false,
+  handle,
   interactiveMap = false,
   map,
   mapHeight,
@@ -54,7 +58,27 @@ export function DetailMapPage({
   const styles = useThemedStyles(createStyles);
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const { reducedMotionActive } = useAppSettings();
   const [scrollY] = useState(() => new Animated.Value(0));
+  const scrollRef = useRef<ScrollView>(null);
+  const scrollOffset = useRef(0);
+  useEffect(() => {
+    const id = scrollY.addListener(({ value }) => {
+      scrollOffset.current = value;
+    });
+    return () => scrollY.removeListener(id);
+  }, [scrollY]);
+  // A native-driven Animated.Value doesn't report back to JS, so the settled offset comes from
+  // the scroll-end events.
+  const recordScrollEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    scrollOffset.current = event.nativeEvent.contentOffset.y;
+  };
+  // Expanded = the sheet's top edge just below the status bar, as on the home screen.
+  const toggleExpanded = () => {
+    const target = scrollOffset.current <= SHEET_AT_REST_TOLERANCE ? Math.max(0, mapHeight - insets.top) : 0;
+    scrollOffset.current = target;
+    scrollRef.current?.scrollTo({ y: target, animated: !reducedMotionActive });
+  };
   const restingTop = mapHeight - ACTION_HEIGHT - ACTION_GAP;
   const stickyTop = Math.min(restingTop, insets.top + 8 + CONTROL_ROW_HEIGHT + 12);
   const actionTop = scrollY.interpolate({
@@ -80,11 +104,14 @@ export function DetailMapPage({
         <Animated.ScrollView
           bounces={false}
           contentContainerStyle={interactiveMap ? styles.passThrough : undefined}
+          onMomentumScrollEnd={recordScrollEnd}
           onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
             useNativeDriver: Platform.OS !== 'web',
           })}
+          onScrollEndDrag={recordScrollEnd}
           overScrollMode="never"
           pointerEvents={interactiveMap ? 'box-none' : 'auto'}
+          ref={scrollRef}
           scrollEventThrottle={16}
           showsVerticalScrollIndicator={false}
           style={styles.scroll}
@@ -97,7 +124,8 @@ export function DetailMapPage({
               </View>
             ) : null}
           </View>
-          <SafeAreaView edges={['bottom']} style={[styles.sheet, { minHeight: height }, contentStyle]} testID={contentTestID}>
+          <SafeAreaView edges={['bottom']} style={[styles.sheet, { minHeight: height }, contentStyle, handle && styles.sheetWithHandle]} testID={contentTestID}>
+            {handle ? <SheetHandle {...handle} onPress={toggleExpanded} /> : null}
             {children}
           </SafeAreaView>
         </Animated.ScrollView>
@@ -138,6 +166,8 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     shadowRadius: 16,
     elevation: 12,
   },
+  // The grip takes the place of the sheet's top padding.
+  sheetWithHandle: { paddingTop: 0 },
   header: {
     position: 'absolute',
     top: 0,

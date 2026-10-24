@@ -5,7 +5,7 @@ import { routes } from '../data/transit';
 import { formatDurationMinutes } from '../data/tripPlanning';
 
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
-import { useLayoutEase } from '../theme/motion';
+import { PopOnActivate, useLayoutEase } from '../theme/motion';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -243,7 +243,7 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
     <View pointerEvents="box-none" style={styles.topBar}>
       <MapControl label={backLabel} onPress={onBack} testID={`${testPrefix}-back`}><Icon name="back" size={26} /></MapControl>
       <View style={styles.mapActions}>
-        <MapControl label={isFavorite ? 'Remove destination from saved' : 'Save destination'} onPress={onToggleFavorite} selected={isFavorite} testID={`${testPrefix}-favorite`}><Icon color={isFavorite ? colors.warning : colors.primary} filled={isFavorite} name="favorite" size={24} /></MapControl>
+        <MapControl label={isFavorite ? 'Remove destination from saved' : 'Save destination'} onPress={onToggleFavorite} selected={isFavorite} testID={`${testPrefix}-favorite`}><PopOnActivate active={isFavorite}><Icon color={isFavorite ? colors.highlightInk : colors.primary} filled={isFavorite} name="favorite" size={24} /></PopOnActivate></MapControl>
         <MapControl label="Center trip map on current location" onPress={() => {
           setIsLocationCentered(true);
           onCenterOnLocation?.();

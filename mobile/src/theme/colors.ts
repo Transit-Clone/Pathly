@@ -28,6 +28,15 @@ export const lightColors = {
   amber: '#F97316',
   amberSoft: '#FFF0E6',
   routeGreen: '#13795B',
+  /**
+   * Pathly's warm accent, used sparingly for delight only: saved stars, arrival, and Support.
+   * `highlight` is a fill (with `onHighlight` text); `highlightInk` is its icon color on surfaces.
+   * Never used for transit lines, alerts, or anything a rider has to read quickly.
+   */
+  highlight: '#FFC23D',
+  onHighlight: '#3D2A00',
+  highlightSoft: '#FFF4D6',
+  highlightInk: '#B86E00',
   shadow: '#16324F',
   scrim: 'rgba(22, 50, 79, 0.32)',
   locationHalo: 'rgba(167, 216, 255, 0.46)',
@@ -73,6 +82,10 @@ export const darkColors: Palette = {
   amber: '#FB923C',
   amberSoft: '#35210F',
   routeGreen: '#2FAE83',
+  highlight: '#FFC94D',
+  onHighlight: '#2A1D00',
+  highlightSoft: '#3A2D0E',
+  highlightInk: '#FFC94D',
   shadow: '#000000',
   scrim: 'rgba(0, 0, 0, 0.6)',
   locationHalo: 'rgba(91, 155, 248, 0.32)',
@@ -110,6 +123,7 @@ export const highContrastLightColors: Palette = {
   amber: '#B54708',
   warning: '#B54708',
   routeGreen: '#0B5C44',
+  highlightInk: '#8A5200',
   mapLabel: '#2F3B4A',
 };
 

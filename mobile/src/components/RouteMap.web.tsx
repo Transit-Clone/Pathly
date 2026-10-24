@@ -5,7 +5,7 @@ import { StyleSheet, View } from 'react-native';
 import { GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_SCRIPT_ID } from '../data/googleMapsLoaderConfig';
 import { formatAge, visibleTrains } from '../data/liveTrains';
 import { googleMapStyle } from '../data/mapStyle';
-import { bearingToNextStop, splitIndexAtStop } from '../data/routeDirection';
+import { bearingToNextStop, focusStopIndex, splitIndexAtStop } from '../data/routeDirection';
 import { stopRevealZoom } from '../data/stopDeclutter';
 import type { RouteLiveVehicle } from '../data/transitLive';
 import type { Coordinates } from '../hooks/useCurrentLocation';
@@ -83,6 +83,8 @@ type RouteMapProps = {
   directionId?: number;
   /** Stop to open zoomed on and emphasize (the rider's nearest), matched by stopId. */
   focusStopId?: string;
+  /** Matches the rider's stop by name when its id isn't in `stops` (see focusStopIndex). */
+  focusStopName?: string;
   /** Vehicle label (train vs bus). */
   mode?: TransitMode;
   /** Called when the rider drags the map, so the location button can drop its selected state. */
@@ -99,7 +101,7 @@ type RouteMapProps = {
 };
 
 /** Real route map: actual stop positions, the real line, and live vehicles — for any route with a live feed. */
-export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusStopId, mode = 'rail', onUserPan, path, showRouteRequest = 0, stops, testID = 'route-map', userLocation, vehicles, walkPath }: RouteMapProps) {
+export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusStopId, focusStopName, mode = 'rail', onUserPan, path, showRouteRequest = 0, stops, testID = 'route-map', userLocation, vehicles, walkPath }: RouteMapProps) {
   const { isLoaded } = useJsApiLoader({
     id: GOOGLE_MAPS_SCRIPT_ID,
     googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY ?? '',
@@ -122,7 +124,7 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
   const now = useNow(1000);
   const shownVehicles = visibleTrains(vehicles, directionId, now);
   const vehicleLabel = mode === 'bus' ? 'Bus' : 'Train';
-  const focusStop = focusStopId ? stops.find((stop) => stop.stopId === focusStopId) : undefined;
+  const focusStop = stops[focusStopIndex(stops, focusStopId, focusStopName)];
 
   // Split at the rider's stop: faint behind it, full strength ahead, with an arrow toward the next stop.
   const line = useMemo(() => {

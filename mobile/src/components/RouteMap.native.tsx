@@ -4,7 +4,7 @@ import MapView, { Marker, Polyline, PROVIDER_GOOGLE, type Region } from 'react-n
 
 import { formatAge, visibleTrains } from '../data/liveTrains';
 import { googleMapStyle } from '../data/mapStyle';
-import { bearingToNextStop, splitIndexAtStop, withAlpha } from '../data/routeDirection';
+import { bearingToNextStop, focusStopIndex, splitIndexAtStop, withAlpha } from '../data/routeDirection';
 import { stopRevealZoom, zoomForRegion } from '../data/stopDeclutter';
 import type { RouteLiveVehicle } from '../data/transitLive';
 import type { Coordinates } from '../hooks/useCurrentLocation';
@@ -51,6 +51,8 @@ type RouteMapProps = {
   directionId?: number;
   /** Stop to open zoomed on and emphasize (the rider's nearest), matched by stopId. */
   focusStopId?: string;
+  /** Matches the rider's stop by name when its id isn't in `stops` (see focusStopIndex). */
+  focusStopName?: string;
   /** Vehicle glyph and label (train vs bus). */
   mode?: TransitMode;
   /** Called when the rider drags the map, so the location button can drop its selected state. */
@@ -87,7 +89,7 @@ function regionFor(stops: readonly GeometryStop[], focusStop: GeometryStop | und
 }
 
 /** Real route map: actual stop positions, the real line, and live vehicles — for any route with a live feed. */
-export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusStopId, mode = 'rail', onUserPan, path, showRouteRequest = 0, stops, testID = 'route-map', userLocation, vehicles, walkPath }: RouteMapProps) {
+export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusStopId, focusStopName, mode = 'rail', onUserPan, path, showRouteRequest = 0, stops, testID = 'route-map', userLocation, vehicles, walkPath }: RouteMapProps) {
   const mapRef = useRef<MapView>(null);
   // Places hidden, and recolored in the dark theme (see mapStyle.ts).
   const { colors, isDark } = useTheme();
@@ -96,7 +98,7 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
   // True from a location-button press until the rider pans (or asks for the whole route): keeps
   // following fresh GPS fixes.
   const followRider = useRef(false);
-  const focusStop = focusStopId ? stops.find((stop) => stop.stopId === focusStopId) : undefined;
+  const focusStop = stops[focusStopIndex(stops, focusStopId, focusStopName)];
   const [initialRegion] = useState(() => regionFor(stops, focusStop));
   // Custom-view stop markers must render at least once with tracking on (Android otherwise can
   // draw them blank), then stop tracking so static dots aren't re-rasterized every frame.

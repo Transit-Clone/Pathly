@@ -20,6 +20,7 @@ import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings
 import type { Palette } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { Icon, type IconName } from './Icon';
+import { Mascot, type MascotPose } from './Mascot';
 import { PressableScale } from './PressableScale';
 import { badgeLabel, RouteBadge, type TransitMode } from './RouteBadge';
 import { SavedPlacesStrip } from './SavedPlacesStrip';
@@ -157,14 +158,17 @@ function SearchResultRow({ onPress, onRemove, place, recent = false, resolving =
 type MessageProps = {
   body: string;
   children?: ReactNode;
+  /** Which mascot sits above the message. */
+  pose?: MascotPose;
   title: string;
 };
 
 /** Centered empty/error/unavailable state, announced to assistive technology. */
-function Message({ body, children, title }: MessageProps) {
+function Message({ body, children, pose = 'thinking', title }: MessageProps) {
   const styles = useThemedStyles(createStyles);
   return (
     <View accessibilityLiveRegion="polite" style={styles.message} testID="search-message">
+      <Mascot pose={pose} size={64} style={styles.messageMascot} />
       <Text style={styles.messageTitle}>{title}</Text>
       <Text style={styles.messageBody}>{body}</Text>
       {children}
@@ -256,13 +260,14 @@ export function SearchView({ initialQuery = '', near, onAddSavedPlace, onCancel,
       return (
         <Message
           body="Place search is not set up for this build yet. Clear the search to pick a recent place."
+          pose="worried"
           title="Place search is unavailable"
         />
       );
     }
     if (status === 'error') {
       return (
-        <Message body="Check your connection and try again." title="Couldn't load places">
+        <Message body="Check your connection and try again." pose="worried" title="Couldn't load places">
           <PressableScale accessibilityRole="button" onPress={retry} style={styles.retryButton} testID="search-retry">
             <Text style={styles.retryText}>Retry</Text>
           </PressableScale>
@@ -543,6 +548,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     paddingTop: 48,
     paddingHorizontal: 36,
   },
+  messageMascot: { marginBottom: 12 },
   messageTitle: {
     color: colors.ink,
     ...typography.sectionHeading,

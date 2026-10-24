@@ -40,6 +40,7 @@ import { ScreenTransition } from '../theme/motion';
 import type { Palette } from '../theme/colors';
 import { fontFamilies } from '../theme/typography';
 import { ConfirmDialog } from './ConfirmDialog';
+import { Mascot } from './Mascot';
 import { CurrentLocationButton } from './CurrentLocationButton';
 import { DeparturesView } from './DeparturesView';
 import { EnrouteNavigationView, EnrouteRecoveryView, type EnrouteLocationState } from './EnrouteNavigationView';
@@ -150,7 +151,6 @@ function DeparturesScreen({ directionIndex, onBack, route }: { directionIndex: n
 
 export function HomeScreen() {
   const styles = useThemedStyles(createStyles);
-  const { colors } = useTheme();
   // `null` means startup has not chosen a screen yet. Once UID-scoped hydration resolves, a
   // restored trip opens directly; every user navigation then records an explicit view choice.
   const [requestedView, setActiveView] = useState<ActiveView | null>(null);
@@ -186,7 +186,7 @@ export function HomeScreen() {
   ), [requestedView, trip.status]);
   const [savedLocations, setSavedLocations] = useState<readonly SavedLocation[]>([]);
   const { height } = useWindowDimensions();
-  const { location, mocked: locationMocked, navigationFix, navigationStale, refresh: refreshLocation, status: locationStatus } = useCurrentLocation();
+  const { location, mocked: locationMocked, navigationFix, navigationStale, refresh: refreshLocation, status: locationStatus } = useCurrentLocation(trip.active != null);
   const { isAdmin, mockLocation, overlays, setMockLocation } = useDebug();
   const resumeGuidance = useMemo(
     () => (trip.active ? guidanceForNavigation(trip.active.plan, trip.active.cursor) : null),
@@ -543,7 +543,7 @@ export function HomeScreen() {
   if (trip.status === 'hydrating') {
     return screen(
       <View accessibilityLabel="Restoring your trips" style={styles.hydration} testID="active-trip-hydration">
-        <ActivityIndicator color={colors.primary} size="large" />
+        <Mascot motion="bob" pose="thinking" size={72} />
         <Text style={styles.hydrationText}>Restoring your trips…</Text>
       </View>,
     );

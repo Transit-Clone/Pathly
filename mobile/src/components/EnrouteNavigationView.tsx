@@ -10,6 +10,7 @@ import {
   type NavigationFix,
   type NormalizedNavigationPlan,
 } from '../data/enrouteNavigation';
+import { useSupportPrompt } from '../data/supportPrompt';
 import { navigationMapProgress } from '../data/tripMap';
 import { badgeMode, formatDurationMinutes, formatTripClock, tripMinutes } from '../data/tripPlanning';
 import { useClock } from '../hooks/useClock';
@@ -19,8 +20,10 @@ import { fontFamilies, typography } from '../theme/typography';
 import { ConfirmDialog } from './ConfirmDialog';
 import { DetailMapPage } from './DetailMapPage';
 import { Icon } from './Icon';
+import { Mascot } from './Mascot';
 import { PressableScale } from './PressableScale';
 import { RouteBadge } from './RouteBadge';
+import { SupportCard } from './SupportCard';
 import { TripMap } from './TripMap';
 
 const MAP_HEIGHT = 390;
@@ -122,6 +125,7 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
   const currentStep = session.itinerary.steps[cursor.stepIndex];
   const currentTransitStep = currentStep?.kind === 'transit' ? currentStep : null;
   const [confirmingEnd, setConfirmingEnd] = useState(false);
+  const supportPrompt = useSupportPrompt(session.sessionId, guidance.phase === 'arrived');
   const [centerRequest, setCenterRequest] = useState(1);
   const [following, setFollowing] = useState(true);
   const [demoIndex, setDemoIndex] = useState(Math.max(0, cursor.checkpointOrdinal));
@@ -228,7 +232,9 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
                 size="large"
                 textColor={guidance.line.textColor}
               />
-            ) : <View style={styles.walkIcon}><Icon color={colors.ink} filled={true} name={guidance.phase === 'arrived' ? 'ok' : 'travel'} size={24} /></View>}
+            ) : guidance.phase === 'arrived' ? (
+              <Mascot motion="pop" pose="celebrate" size={52} testID="enroute-arrived-mascot" />
+            ) : <View style={styles.walkIcon}><Icon color={colors.ink} filled={true} name="travel" size={24} /></View>}
             <View style={styles.currentCopy}>
               <Text style={styles.currentAction} testID="enroute-current-action">{guidance.currentAction}</Text>
               {guidance.headsign ? <Text style={styles.headsign}>{guidance.headsign}</Text> : null}
@@ -252,6 +258,8 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
             </View>
           ) : null}
         </View>
+
+        {supportPrompt.visible ? <SupportCard onDismiss={supportPrompt.dismiss} onDonate={supportPrompt.donate} /> : null}
 
         <View style={styles.tripSummary}>
           <Text style={styles.summaryLabel}>ACTIVE TRIP</Text>

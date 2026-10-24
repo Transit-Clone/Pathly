@@ -9,6 +9,7 @@ import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
 import { Icon } from './Icon';
 import { LiveSignal } from './LiveSignal';
+import { Mascot } from './Mascot';
 import { PressableScale } from './PressableScale';
 import { RouteBadge } from './RouteBadge';
 import { DepartureListSkeleton } from './Skeleton';
@@ -91,10 +92,12 @@ export function DeparturesView({ directionIndex, onBack, route }: DeparturesView
           <DepartureListSkeleton />
         ) : state.status === 'error' ? (
           <View style={styles.message} testID="departures-unavailable">
+            <Mascot pose="worried" size={64} />
             <Text style={styles.messageText}>Departures unavailable right now.</Text>
           </View>
         ) : state.departures.length === 0 ? (
           <View style={styles.message} testID="departures-empty">
+            <Mascot pose="sleepy" size={64} />
             <Text style={styles.messageText}>No more departures today.</Text>
           </View>
         ) : (

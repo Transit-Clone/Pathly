@@ -6,13 +6,14 @@ import { useDebug } from '../debug/DebugContext';
 import { useTransitLive } from '../data/TransitLiveContext';
 import { fetchRouteGeometry, type RouteGeometry } from '../data/routeGeometry';
 import { STATION_TRANSFERS, type StationTransfer, type TransferMode } from '../data/stationTransfers';
-import { departureDisplay, directionDestination, formatClockTime, scheduleStopsFromNow, stopsForDirection, type RouteDetail, type RoutePrediction } from '../data/transit';
+import { departureDisplay, directionDestination, nearerDirectionIndex, formatClockTime, scheduleStopsFromNow, stopsForDirection, type RouteDetail, type RoutePrediction } from '../data/transit';
 import { LATE_THRESHOLD_MINUTES, routeNotices } from '../data/routeNotices';
+import { focusStopIndex } from '../data/routeDirection';
 import { useWalkingPath } from '../data/walkingPath';
 import { transferColor } from '../data/routeColors';
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
-import { useLayoutEase } from '../theme/motion';
+import { PopOnActivate, useLayoutEase } from '../theme/motion';
 import type { Palette } from '../theme/colors';
 import { readableColor } from '../theme/contrast';
 import { fontFamilies, typography } from '../theme/typography';
@@ -20,6 +21,7 @@ import { DetailMapPage } from './DetailMapPage';
 import { Icon } from './Icon';
 import { LIVE_SIGNAL_WIDTH, LiveSignal } from './LiveSignal';
 import { MapBackdrop } from './MapBackdrop';
+import { Mascot } from './Mascot';
 import { RouteMap } from './RouteMap';
 import { pointAlong, routeFocus, RouteLines, VehicleMarker, type MapLeg } from './RouteMapOverlay';
 import { badgeLabel, RouteBadge, transitModeForAgency } from './RouteBadge';
@@ -100,7 +102,7 @@ function liveStopsFor(
   // Starts at the rider's nearest stop (reached in `leadMinutes`) and runs to the end of the
   // line in this direction; stops behind the rider are dropped.
   const { stops } = geometryStatus.geometry;
-  const anchorIndex = Math.max(0, activeDirection.stopId ? stops.findIndex((stop) => stop.stopId === activeDirection.stopId) : 0);
+  const anchorIndex = Math.max(0, focusStopIndex(stops, activeDirection.stopId, activeDirection.stopName));
   const anchor = nowMinutes + leadMinutes - (stops[anchorIndex]?.offsetMinutes ?? 0);
   return { status: 'ready', stops: stops.slice(anchorIndex).map((stop) => ({ name: stop.name, stopId: stop.stopId, time: formatClockTime(anchor + stop.offsetMinutes) })) };
 }
@@ -245,7 +247,6 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
   const vehicles = liveStatus.status === 'loaded' ? liveStatus.data.vehicles : [];
   const [isLocationCentered, setIsLocationCentered] = useState(false);
   // Bumped on each location-button press; the live map re-centers on the rider whenever it changes.
-  // Bumped on each location-button press; the live map re-centers on the rider whenever it changes.
   const [centerOnUserRequest, setCenterOnUserRequest] = useState(0);
   // Bumped by the crosshair (route-overview) button: the map frames the whole route.
   const [showRouteRequest, setShowRouteRequest] = useState(0);
@@ -288,9 +289,15 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
   // A caller-chosen direction counts as already selected, so it isn't overridden.
   const [hasAutoSelectedDirection, setHasAutoSelectedDirection] = useState(initialDirectionIndex !== undefined);
   const directionScrollRef = useRef<ScrollView>(null);
+  // The exception is a rider clearly at one end of the line (the ferry terminals): the boat leaving
+  // from the far side is never the one they want, however soon it goes.
   if (!hasAutoSelectedDirection) {
     const [first, second] = route.directions;
-    if (first.live && second.live && !first.unavailable && !second.unavailable) {
+    const nearer = nearerDirectionIndex(route.directions);
+    if (nearer !== null) {
+      setHasAutoSelectedDirection(true);
+      setActiveDirectionIndex(nearer);
+    } else if (first.live && second.live && !first.unavailable && !second.unavailable) {
       setHasAutoSelectedDirection(true);
       if (second.minutes < first.minutes) setActiveDirectionIndex(1);
     }
@@ -460,6 +467,7 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
         color={route.color}
         directionId={geometryDirectionId}
         focusStopId={activeDirection.stopId}
+        focusStopName={activeDirection.stopName}
         mode={vehicleIcon}
         onUserPan={() => {
           setIsLocationCentered(false);
@@ -481,6 +489,7 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
     <MapSkeleton />
   ) : (
     <View style={styles.mapFallback} testID="route-map-fallback">
+      <Mascot pose="worried" size={56} />
       <Text style={styles.mapFallbackText}>Map unavailable</Text>
     </View>
   );
@@ -500,7 +509,7 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
           setIsLocationCentered(false);
           setShowRouteRequest((count) => count + 1);
         }} style={[styles.iconButton, isRouteShown && styles.selectedButton]} testID="route-overview"><Icon filled={isRouteShown} name="crosshair" /></PressableScale>
-        <PressableScale accessibilityLabel={isFavorite ? 'Remove route from saved' : 'Save route'} accessibilityRole="button" accessibilityState={{ selected: isFavorite }} onPress={onToggleFavorite} style={[styles.iconButton, isFavorite && styles.selectedButton]} testID="route-favorite"><Icon color={isFavorite ? colors.warning : colors.primary} filled={isFavorite} name="favorite" /></PressableScale>
+        <PressableScale accessibilityLabel={isFavorite ? 'Remove route from saved' : 'Save route'} accessibilityRole="button" accessibilityState={{ selected: isFavorite }} onPress={onToggleFavorite} style={[styles.iconButton, isFavorite && styles.savedButton]} testID="route-favorite"><PopOnActivate active={isFavorite}><Icon color={isFavorite ? colors.highlightInk : colors.primary} filled={isFavorite} name="favorite" /></PopOnActivate></PressableScale>
       </View>
     </View>
   );
@@ -513,6 +522,7 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
       contentStyle={styles.content}
       contentTestID="route-detail-content"
       controls={controls}
+      handle={{ accessibilityHint: 'Expands or collapses the route details.', accessibilityLabel: 'Route details handle', testID: 'route-sheet-handle' }}
       map={map}
       mapHeight={mapHeight}
       mapTestID="route-detail-map"
@@ -577,6 +587,7 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
       ) : activePredictions.length === 0 ? (
         <View style={styles.predictions}>
           <View accessible={true} style={styles.predictionsEmpty} testID="route-predictions-empty">
+            {route.liveStatus === 'error' ? <Mascot pose="worried" size={40} /> : null}
             <Text style={styles.predictionsEmptyText}>{predictionsEmptyMessage(route)}</Text>
           </View>
         </View>
@@ -683,9 +694,7 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
             // "Departs" (no "nearest to you" claim), for the few routes with no real geometry
             // at all — so there's always exactly one highlight and the wording never claims a
             // match that isn't real.
-            const nearestMatchIndex = liveStops.findIndex((stop) => (
-              activeDirection.stopId ? stop.stopId === activeDirection.stopId : stop.name === activeDirection.stopName
-            ));
+            const nearestMatchIndex = focusStopIndex(liveStops, activeDirection.stopId, activeDirection.stopName);
             return liveStops.map((stop, index) => {
               const isFirst = index === 0;
               const isLast = index === liveStops.length - 1;
@@ -757,6 +766,9 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     shadowOpacity: 0.14,
     shadowRadius: 8,
     elevation: 4,
+  },
+  savedButton: {
+    backgroundColor: colors.highlightSoft,
   },
   selectedButton: {
     backgroundColor: colors.blueSoft,

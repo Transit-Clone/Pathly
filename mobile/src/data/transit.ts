@@ -21,9 +21,26 @@ export type TransitDirection = {
   stopName: string;
   /** The real nearest stop's own id (matches a RouteGeometry stop's `stopId`) — set alongside `stopName` once a `liveSource` route's nearest-stop lookup resolves, so callers can match it against real route geometry by id rather than by display name. Absent for routes with no `liveSource`, or before the first successful lookup. */
   stopId?: string;
+  /** Straight-line meters from the rider to `stopId`, when the backend reported it. */
+  distanceMeters?: number;
   /** True when this route has a `liveSource` but real data hasn't loaded (or failed to) — `minutes`/`live` are stale placeholders in that case and shouldn't be shown; UI should show a loading/unavailable state instead. Absent for routes with no `liveSource` (always-static, `minutes` is legitimate illustrative data). */
   unavailable?: boolean;
 };
+
+/**
+ * Beyond this gap between the two directions' stops, the rider is clearly at one end of the line
+ * (a Staten Island Ferry terminal, say), so the direction leaving from the near end comes first.
+ * Smaller gaps are just the two sides of one street or station.
+ */
+const DIRECTION_STOPS_APART_METERS = 800;
+
+/** The index of the direction whose stop is clearly nearer the rider, or null when neither is. */
+export function nearerDirectionIndex(directions: readonly TransitDirection[]): 0 | 1 | null {
+  const [first, second] = directions;
+  if (first?.distanceMeters == null || second?.distanceMeters == null) return null;
+  if (Math.abs(first.distanceMeters - second.distanceMeters) < DIRECTION_STOPS_APART_METERS) return null;
+  return first.distanceMeters < second.distanceMeters ? 0 : 1;
+}
 
 export type RoutePrediction = {
   live: boolean;

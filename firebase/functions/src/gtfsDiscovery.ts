@@ -71,8 +71,11 @@ export async function getRouteGeometry(agencyId: AgencyId, routeId: string, dire
   );
 }
 
-/** One direction's stop. `walkMeters` is the walk there along the street graph, or null when it fell back to straight line. */
-export type RouteDirectionStop = { stopId: string; name: string; headsign: string | null; walkMeters: number | null };
+/**
+ * One direction's stop. `distanceMeters` is straight line from the rider; `walkMeters` is the walk
+ * there along the street graph, or null when it fell back to straight line.
+ */
+export type RouteDirectionStop = { stopId: string; name: string; headsign: string | null; distanceMeters: number; walkMeters: number | null };
 
 export type NearestRouteStop = {
   /** Smallest straight-line distance to direction1's/direction0's stop — "how far is the nearest thing on this route", for display and the Nearby radius. */
@@ -175,7 +178,7 @@ export async function getNearestStopForRoute(agencyId: AgencyId, routeId: string
   const departureStops = agencyConfig(agencyId).terminalShuttle ? await departureStopsByDirection(agencyId, routeId) : null;
 
   const MIN_SERVICE_FRACTION = 0.1;
-  const nearestInDirection = (directionId: 0 | 1): (RouteDirectionStop & { distanceMeters: number }) | null => {
+  const nearestInDirection = (directionId: 0 | 1): RouteDirectionStop | null => {
     const tripCounts = tripCountByDirectionAndStop[directionId];
     const maxTripCount = Math.max(0, ...tripCounts.values());
     const candidates: CandidateStop[] = [];
@@ -189,7 +192,7 @@ export async function getNearestStopForRoute(agencyId: AgencyId, routeId: string
     candidates.sort((a, b) => a.distanceMeters - b.distanceMeters);
     const picked = pickWalkingNearest(candidates, lat, lon);
     if (!picked) return null;
-    const nearest = { stopId: picked.stop.stopId, name: picked.stop.name, distanceMeters: picked.stop.distanceMeters, walkMeters: picked.walkMeters };
+    const nearest = { stopId: picked.stop.stopId, name: picked.stop.name, distanceMeters: Math.round(picked.stop.distanceMeters), walkMeters: picked.walkMeters };
     let headsign: string | null = null;
     for (const trip of tripsById.values()) {
       if (trip.routeId === routeId && trip.directionId === directionId) {
@@ -204,13 +207,10 @@ export async function getNearestStopForRoute(agencyId: AgencyId, routeId: string
   const direction0 = nearestInDirection(0);
   if (!direction1 && !direction0) return null;
 
-  const withoutDistance = (stop: typeof direction1): RouteDirectionStop | null => (
-    stop ? { stopId: stop.stopId, name: stop.name, headsign: stop.headsign, walkMeters: stop.walkMeters } : null
-  );
   return {
     distanceMeters: Math.min(direction1?.distanceMeters ?? Infinity, direction0?.distanceMeters ?? Infinity),
-    direction1: withoutDistance(direction1),
-    direction0: withoutDistance(direction0),
+    direction1,
+    direction0,
   };
 }
 

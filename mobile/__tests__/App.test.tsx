@@ -2196,7 +2196,8 @@ describe('Pathly prototype navigation', () => {
     fireEvent.press(await screen.findByTestId(`route-card-${PJ_CARD}-primary`));
 
     const routeScroll = screen.getByTestId('route-detail-scroll');
-    expect(screen.queryByTestId('route-sheet-handle')).toBeNull();
+    // The same grip as Home's sheet: tapping it expands the sheet, tapping again collapses it.
+    expect(screen.getByTestId('route-sheet-handle')).toBeTruthy();
     expect(screen.queryByTestId('route-sheet-anchor')).toBeNull();
     expect(routeScroll.props.bounces).toBe(false);
     expect(routeScroll.props.overScrollMode).toBe('never');

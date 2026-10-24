@@ -34,6 +34,14 @@ const WATCH_OPTIONS = {
   timeInterval: 10_000,
   distanceInterval: 25,
 };
+// During a trip, checkpoints are 45 m apart for walking and each needs two agreeing fixes:
+// Balanced fixes (often 100 m+ from Wi-Fi/cell on Android) and a 25 m / 10 s cadence left
+// navigation lagging a block or more behind, or stuck on "poor accuracy".
+const NAVIGATION_WATCH_OPTIONS = {
+  accuracy: Location.Accuracy.BestForNavigation,
+  timeInterval: 3_000,
+  distanceInterval: 5,
+};
 
 /**
  * - 'loading': permission hasn't resolved yet, or it's granted and the first fix hasn't landed.
@@ -52,7 +60,7 @@ export type LocationStatus = 'loading' | 'located' | 'unavailable';
  * retained when a later refresh fails so maps can show it as stale while navigation rejects it
  * using its timestamp/status.
  */
-export function useCurrentLocation() {
+export function useCurrentLocation(navigating = false) {
   const [realFix, setRealFix] = useState<NavigationFix | null>(null);
   const [status, setStatus] = useState<LocationStatus>('loading');
   const latestFixAtRef = useRef(Number.NEGATIVE_INFINITY);
@@ -131,7 +139,7 @@ export function useCurrentLocation() {
       if (cancelled) return;
 
       try {
-        const nextSubscription = await Location.watchPositionAsync(WATCH_OPTIONS, (position) => {
+        const nextSubscription = await Location.watchPositionAsync(navigating ? NAVIGATION_WATCH_OPTIONS : WATCH_OPTIONS, (position) => {
           if (cancelled) return;
           acceptRealFix(navigationFixFromPosition(position));
         });
@@ -147,7 +155,7 @@ export function useCurrentLocation() {
       cancelled = true;
       subscription?.remove();
     };
-  }, [acceptRealFix, mocked]);
+  }, [acceptRealFix, mocked, navigating]);
 
   // Foreground-only navigation can miss movement while the app is suspended. Ask for one fresh
   // position on every background/inactive -> active transition; the existing watch continues.

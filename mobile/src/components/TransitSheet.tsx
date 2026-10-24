@@ -12,12 +12,13 @@ import { useAppSettings, useTheme, useThemedStyles } from '../theme/AppSettings'
 import { useLayoutEase, useNativeDriver } from '../theme/motion';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
-import { Icon } from './Icon';
 import { AddSavedPlaceCard, SavedLocationCard } from './SavedLocationCard';
+import { Mascot } from './Mascot';
 import { NearbySkeleton } from './Skeleton';
 import { TransitCard } from './TransitCard';
 import { PressableScale } from './PressableScale';
 import { RecentTripCard } from './RecentTripCard';
+import { SHEET_AT_REST_TOLERANCE, SheetHandle } from './SheetHandle';
 
 export type TransitTabId = 'nearby' | 'recents' | 'favorites';
 
@@ -55,9 +56,6 @@ const TAB_GAP = 4;
 const TRANSIT_CARD_HEIGHT = 104;
 // Expanded = sheet scrolled up to just below the fixed search header (HomeScreen's 80pt top inset).
 const EXPANDED_TOP = 80;
-const DRAG_HANDLE_HEIGHT = 24;
-// Any scroll beyond this counts as "moved off rest", so a handle tap collapses instead of expanding.
-const AT_REST_TOLERANCE = 8;
 
 /** How long after a scroll or layout change the visible cards are recomputed. */
 const VISIBILITY_THROTTLE_MS = 150;
@@ -118,9 +116,6 @@ export function TransitSheet({
     Animated.spring(indicatorX, { toValue, speed: 18, bounciness: 4, useNativeDriver }).start();
   }, [activeIndex, indicatorX, reducedMotionActive, tabWidth]);
 
-  // The handle sits inside the page scroll, so dragging it on native already scrolls the
-  // sheet up and down like the rest of the page; tapping it (and clicking on web, where mouse
-  // drags don't scroll) jumps between the resting and expanded positions.
   const pageScrollRef = useRef<ScrollView>(null);
   const scrollOffset = useRef(0);
   const expandedOffset = Math.max(0, mapHeight - EXPANDED_TOP);
@@ -209,7 +204,7 @@ export function TransitSheet({
   }, [scheduleVisible]);
 
   const toggleExpanded = () => {
-    const target = scrollOffset.current <= AT_REST_TOLERANCE ? expandedOffset : 0;
+    const target = scrollOffset.current <= SHEET_AT_REST_TOLERANCE ? expandedOffset : 0;
     // Recorded up front: the scrollY listener can't be relied on for natively driven scroll
     // values, and on short lists the page stops short of `target` anyway (still off rest).
     scrollOffset.current = target;
@@ -245,16 +240,12 @@ export function TransitSheet({
         style={styles.sheet}
         testID="transit-sheet"
       >
-        <PressableScale
+        <SheetHandle
           accessibilityHint="Expands or collapses the transit list."
           accessibilityLabel="Transit list handle"
-          accessibilityRole="button"
           onPress={toggleExpanded}
-          style={styles.dragHandle}
           testID="transit-sheet-handle"
-        >
-          <View style={styles.dragHandleGrip} />
-        </PressableScale>
+        />
         <View accessibilityRole="tablist" onLayout={(event) => setTabsWidth(event.nativeEvent.layout.width)} style={styles.tabs}>
           <Animated.View pointerEvents="none" style={[styles.tabIndicator, { width: tabWidth, transform: [{ translateX: indicatorX }] }]} testID="tab-indicator" />
           {tabs.map((tab) => {
@@ -308,6 +299,7 @@ export function TransitSheet({
                 {nearbyStatus === 'loading' && nearbyCards.length === 0 ? <NearbySkeleton /> : null}
                 {nearbyStatus !== 'loading' && (nearbyStatus !== 'loaded' || nearbyCards.length === 0) ? (
                   <View accessible={true} style={styles.nearbyEmpty} testID="nearby-routes-empty">
+                    <Mascot pose={nearbyStatus === 'error' ? 'worried' : 'thinking'} size={52} />
                     <Text style={styles.nearbyEmptyText}>
                       {nearbyStatus === 'error' ? 'Could not check for nearby transit right now.' : 'No other nearby transit found.'}
                     </Text>
@@ -333,7 +325,7 @@ export function TransitSheet({
               </View>
             ) : (
               <View style={[styles.tabContent, styles.emptyState, { minHeight: tabContentMinHeight }]} testID="recents-route-content">
-                <View style={styles.emptyIcon}><Icon name="recent" size={30} /></View>
+                <Mascot pose="sleepy" size={64} />
                 <Text style={styles.emptyTitle}>No recent trips yet</Text>
                 <Text style={styles.emptyBody}>Trips you take will show up here.</Text>
               </View>
@@ -372,7 +364,7 @@ export function TransitSheet({
               </View>
             ) : (
               <View style={[styles.tabContent, styles.emptyState, { minHeight: tabContentMinHeight }]} testID="favorites-route-content">
-                <View style={styles.emptyIcon}><Icon name="favorite" size={30} /></View>
+                <Mascot pose="happy" size={64} />
                 <Text style={styles.emptyTitle}>No favorites yet</Text>
                 <Text style={styles.emptyBody}>Tap the star on a route, or save a place like home or work.</Text>
                 {onAddSavedPlace ? <View style={styles.emptyAction}><AddSavedPlaceCard onPress={onAddSavedPlace} /></View> : null}
@@ -430,17 +422,6 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   // minHeight is applied inline per-render (tabContentMinHeight varies with how many nearby
   // routes are currently found) rather than baked in here.
   tabContent: {},
-  dragHandle: {
-    height: DRAG_HANDLE_HEIGHT,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dragHandleGrip: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.border,
-  },
   cardStack: { gap: 0 },
   nearbyEmpty: { alignItems: 'center', paddingVertical: 20, paddingHorizontal: 20, gap: 8 },
   nearbyRefreshing: { paddingVertical: 8 },
@@ -454,7 +435,6 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     paddingVertical: 20,
   },
   emptyAction: { alignSelf: 'stretch', marginTop: 16 },
-  emptyIcon: { width: 60, height: 60, alignItems: 'center', justifyContent: 'center', borderRadius: 30, backgroundColor: colors.blueSoft },
   emptyTitle: { marginTop: 8, color: colors.ink, ...typography.sectionHeading, fontSize: 16 },
   emptyBody: {
     marginTop: 7,

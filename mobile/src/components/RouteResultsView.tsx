@@ -34,6 +34,7 @@ import { CurrentLocationButton } from './CurrentLocationButton';
 import { Icon, type IconName } from './Icon';
 import { LeaveTimeSheet } from './LeaveTimeSheet';
 import { PlannedTripDetailView } from './PlannedTripDetailView';
+import { Mascot } from './Mascot';
 import { PressableScale } from './PressableScale';
 import { RouteBadge, type TransitMode } from './RouteBadge';
 import { ItinerarySkeleton } from './Skeleton';
@@ -485,6 +486,7 @@ export function RouteResultsView({
             {plan.status === 'loading' ? <ItinerarySkeleton /> : null}
             {plan.status === 'problem' && problem ? (
               <View accessibilityLiveRegion="polite" style={styles.emptyResults} testID={`results-${plan.problem}`}>
+                <Mascot pose={plan.problem === 'unavailable' ? 'worried' : 'thinking'} size={64} />
                 <Text style={styles.emptyTitle}>{problem.title}</Text>
                 <Text style={styles.emptyBody}>{problem.body}</Text>
                 {problem.action ? (
@@ -501,6 +503,7 @@ export function RouteResultsView({
             ) : null}
             {plan.status === 'loaded' && planned.length === 0 ? (
               <View accessibilityLiveRegion="polite" style={styles.emptyResults} testID="results-none">
+                <Mascot pose="thinking" size={64} />
                 <Text style={styles.emptyTitle}>No transit trips found</Text>
                 <Text style={styles.emptyBody}>{`There's no transit for this trip at ${tripTime.mode === 'now' ? 'this time' : 'the time you picked'}.`}</Text>
                 <PressableScale accessibilityRole="button" onPress={() => setTimeSheetOpen(true)} style={styles.resetButton} testID="results-change-time">

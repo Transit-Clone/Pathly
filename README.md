@@ -1,8 +1,5 @@
 # Pathly
 
-<!-- <img src="mobile/assets/pathly-logo.png" width="200"> -->
-<!-- <img src="mobile/assets/home-screen.png" width="200"> -->
-
 Pathly is a mobile transportation app for riders in New York City and Long Island, inspired by Transit, Citymapper, and Google Maps. Riders can search for transit routes, view nearby stops, compare routes, and navigate to their destinations using real-time and scheduled transit data.
 
 The app is a React Native + Expo client (`mobile/`) backed by Firebase Cloud Functions (`firebase/functions/`). It covers the LIRR, the subway, MTA city buses (all five boroughs and MTA Bus Company), NICE Bus, Suffolk County Transit, NYC Ferry, and the Staten Island Ferry.

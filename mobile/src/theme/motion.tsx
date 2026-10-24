@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Animated, Easing, LayoutAnimation, Platform, StyleSheet } from 'react-native';
 
 import { useAppSettings } from './AppSettings';
@@ -38,3 +38,23 @@ export function ScreenTransition({ children }: { children: ReactNode }) {
 const styles = StyleSheet.create({
   fill: { flex: 1 },
 });
+
+/**
+ * Gives its child a quick spring "pop" each time `active` turns true (not on first render) —
+ * the little reward when a route or place is starred. Still under reduced motion.
+ */
+export function PopOnActivate({ active, children }: { active: boolean; children: ReactNode }) {
+  const { reducedMotionActive } = useAppSettings();
+  const [scale] = useState(() => new Animated.Value(1));
+  const wasActive = useRef(active);
+
+  useEffect(() => {
+    const turnedOn = active && !wasActive.current;
+    wasActive.current = active;
+    if (!turnedOn || reducedMotionActive) return;
+    scale.setValue(0.6);
+    Animated.spring(scale, { toValue: 1, speed: 14, bounciness: 16, useNativeDriver }).start();
+  }, [active, reducedMotionActive, scale]);
+
+  return <Animated.View style={{ transform: [{ scale }] }}>{children}</Animated.View>;
+}

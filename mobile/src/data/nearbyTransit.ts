@@ -2,9 +2,9 @@
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { callable } from '../lib/firebase';
 import { whenWarm } from './backendWarmup';
-import type { LiveSource, RouteDetail, TransitDirection } from './transit';
+import { nearerDirectionIndex, type LiveSource, type RouteDetail, type TransitDirection } from './transit';
 
-type DiscoveredDirection = { stopId: string; name: string; headsign: string | null } | null;
+type DiscoveredDirection = { stopId: string; name: string; headsign: string | null; distanceMeters?: number } | null;
 
 export type DiscoveredRoute = {
   agencyId: LiveSource['agencyId'];
@@ -93,23 +93,29 @@ export function discoveredRouteToRouteDetail(discovered: DiscoveredRoute): Route
     minutes: 0,
     stopName: primary?.name ?? other?.name ?? 'Unknown stop',
     stopId: primary?.stopId,
+    distanceMeters: primary?.distanceMeters,
     unavailable: true,
   });
+  // Direction 1 comes first unless the rider is clearly at direction 0's end of the line — on the
+  // Staten Island Ferry, the St. George side has to lead with the boat leaving St. George.
+  const byDirectionId: [TransitDirection, TransitDirection] = [directionFor(direction1, direction0), directionFor(direction0, direction1)];
+  const direction1Index = nearerDirectionIndex(byDirectionId) === 1 ? 1 : 0;
+  const lead = direction1Index === 0 ? direction1 ?? direction0 : direction0;
 
   return {
     agency: discovered.agencyDisplayName,
     alert: 'No delays reported on this route.',
     color: discovered.color,
-    destination: direction1?.headsign ?? direction0?.headsign ?? discovered.routeName,
-    direction: direction1?.headsign ?? direction0?.headsign ?? discovered.routeName,
-    directions: [directionFor(direction1, direction0), directionFor(direction0, direction1)],
+    destination: lead?.headsign ?? discovered.routeName,
+    direction: lead?.headsign ?? discovered.routeName,
+    directions: direction1Index === 0 ? byDirectionId : [byDirectionId[1], byDirectionId[0]],
     id: `${discovered.agencyId}:${discovered.routeId}`,
     liveSource: {
       agencyId: discovered.agencyId,
       routeId: discovered.routeId,
       direction1StopId: direction1?.stopId ?? fallbackStopId,
       direction0StopId: direction0?.stopId ?? fallbackStopId,
-      direction1Index: 0,
+      direction1Index,
     },
     predictions: [],
     routeName: discovered.routeName,
