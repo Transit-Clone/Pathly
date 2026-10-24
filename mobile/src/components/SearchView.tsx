@@ -12,8 +12,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '../auth/AuthContext';
+import { searchTransitRoutes, type DiscoveredRoute } from '../data/nearbyTransit';
 import { addressAfterName, fetchPlaceDetails, type PlaceKind, type SearchPlace } from '../data/placesSearch';
 import { locationToPlace, recordSearch, removeSearch, subscribeToSearches, type SavedLocation } from '../data/userData';
+import { SERVICE_AREA_FALLBACK } from '../data/serviceArea';
 import { normalizeStopName } from '../data/stopSearch';
 import { usePlacesSearch } from '../hooks/usePlacesSearch';
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
@@ -22,10 +24,47 @@ import { typography } from '../theme/typography';
 import { Icon, type IconName } from './Icon';
 import { Mascot, type MascotPose } from './Mascot';
 import { PressableScale } from './PressableScale';
-import { badgeLabel, RouteBadge, type TransitMode } from './RouteBadge';
+import { badgeLabel, RouteBadge, transitModeForAgency, type TransitMode } from './RouteBadge';
 import { SavedPlacesStrip } from './SavedPlacesStrip';
 
 const MAX_RECENT_SEARCHES = 8;
+/** Line names are short ("1", "B46", "Port Jefferson"); longer queries are addresses. */
+const MAX_LINE_QUERY_LENGTH = 24;
+const LINE_SEARCH_DEBOUNCE_MS = 250;
+
+/**
+ * Transit lines whose name matches the query, for opening a whole line in route view. Empty
+ * while the query is blank or too long to be a line name, and when the search fails (place
+ * results still show).
+ */
+function useLineSearch(query: string, near: { latitude: number; longitude: number } | null | undefined, enabled: boolean): readonly DiscoveredRoute[] {
+  const [result, setResult] = useState<{ query: string; lines: readonly DiscoveredRoute[] }>({ query: '', lines: [] });
+  const trimmed = query.trim();
+  const searchable = enabled && trimmed.length > 0 && trimmed.length <= MAX_LINE_QUERY_LENGTH;
+  // Each line opens at its stops nearest the rider; without a fix, nearest the service area's center.
+  const { latitude, longitude } = near ?? SERVICE_AREA_FALLBACK;
+  useEffect(() => {
+    if (!searchable) return undefined;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      searchTransitRoutes(trimmed, { latitude, longitude }).then(
+        (lines) => {
+          if (!cancelled) setResult({ query: trimmed, lines });
+        },
+        () => {
+          if (!cancelled) setResult({ query: trimmed, lines: [] });
+        },
+      );
+    }, LINE_SEARCH_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // Searched from where the rider was when they typed; a GPS update alone doesn't search again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchable, trimmed]);
+  return searchable && result.query === trimmed ? result.lines : [];
+}
 /** Recent searches shown above the results while typing. */
 const MAX_MATCHING_RECENTS = 3;
 
@@ -71,6 +110,10 @@ export type SearchViewProps = {
   savedPlaces?: readonly SavedLocation[];
   /** When set, the saved places row offers Set home, Set work, and Add. */
   onAddSavedPlace?: (label?: 'Home' | 'Work') => void;
+  /** When set, matching transit lines ("1", "B46") are offered above places and open the whole line. */
+  onSelectLine?: (line: DiscoveredRoute) => void;
+  /** When set, "Choose on map" leads the empty search, for dropping a pin anywhere. */
+  onChooseOnMap?: () => void;
   placeholder?: string;
 };
 
@@ -155,6 +198,30 @@ function SearchResultRow({ onPress, onRemove, place, recent = false, resolving =
   );
 }
 
+/** A transit line result: its badge, its name, and whose it is. */
+function LineResultRow({ line, onPress }: { line: DiscoveredRoute; onPress: () => void }) {
+  const styles = useThemedStyles(createStyles);
+  const label = badgeLabel({ agency: line.agencyDisplayName, shortName: line.shortName });
+  return (
+    <PressableScale
+      accessibilityHint="Shows this line's stops and departures"
+      accessibilityLabel={`${line.agencyDisplayName} ${label}, ${line.routeName}`}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={styles.resultRow}
+      testID={`search-line-${line.agencyId}-${line.routeId}`}
+    >
+      <View style={styles.lineBadge}>
+        <RouteBadge agency={line.agencyDisplayName} color={line.color} mode={transitModeForAgency(line.agencyDisplayName)} shortName={label} size="small" />
+      </View>
+      <View style={styles.resultCopy}>
+        <Text numberOfLines={1} style={styles.resultTitle}>{line.routeName || label}</Text>
+        <Text numberOfLines={1} style={styles.resultSubtitle}>{`${line.agencyDisplayName} · Line`}</Text>
+      </View>
+    </PressableScale>
+  );
+}
+
 type MessageProps = {
   body: string;
   children?: ReactNode;
@@ -177,7 +244,7 @@ function Message({ body, children, pose = 'thinking', title }: MessageProps) {
 }
 
 /** Full-screen destination search: search field pinned on top, a flat result list below. */
-export function SearchView({ initialQuery = '', near, onAddSavedPlace, onCancel, onSelect, onSelectCurrentLocation, placeholder = 'Where to?', savedPlaces = [] }: SearchViewProps) {
+export function SearchView({ initialQuery = '', near, onAddSavedPlace, onCancel, onChooseOnMap, onSelect, onSelectCurrentLocation, onSelectLine, placeholder = 'Where to?', savedPlaces = [] }: SearchViewProps) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
   const [query, setQuery] = useState(initialQuery);
@@ -202,6 +269,7 @@ export function SearchView({ initialQuery = '', near, onAddSavedPlace, onCancel,
   };
   const { endSession, getSessionToken, retry, status, suggestions } = usePlacesSearch(query, near);
   const isSearching = status !== 'idle';
+  const lines = useLineSearch(query, near, onSelectLine != null);
   // While typing, recent searches that match come first, as in Google Maps.
   const matchingRecents = isSearching ? recentPlaces.filter((place) => recentMatches(place, query)).slice(0, MAX_MATCHING_RECENTS) : [];
   const recentIds = new Set(matchingRecents.map((place) => place.id));
@@ -282,7 +350,7 @@ export function SearchView({ initialQuery = '', near, onAddSavedPlace, onCancel,
       );
     }
     if (results.length === 0) {
-      return matchingRecents.length > 0 ? null : <Message body="Try a street address, a business, or a station name." title="No places found" />;
+      return matchingRecents.length > 0 || lines.length > 0 ? null : <Message body="Try a street address, a business, or a station name." title="No places found" />;
     }
     return results.map((place) => (
       <SearchResultRow
@@ -344,7 +412,28 @@ export function SearchView({ initialQuery = '', near, onAddSavedPlace, onCancel,
               <Text style={styles.cancelText}>Cancel</Text>
             </PressableScale>
           </View>
-          {/* Saved places lead the page, under the search field, until the rider starts typing. */}
+          {/* "Choose on map" then saved places lead the page, under the search field, until the rider starts typing. */}
+          {!isSearching && onChooseOnMap ? (
+            <PressableScale
+              accessibilityHint="Move the map to drop a pin anywhere"
+              accessibilityLabel="Choose on map"
+              accessibilityRole="button"
+              onPress={() => {
+                if (resolvingId) return;
+                endSession();
+                onChooseOnMap();
+              }}
+              style={[styles.resultRow, styles.chooseOnMapRow]}
+              testID="search-choose-on-map"
+            >
+              <View style={styles.resultIcon}>
+                <Icon color={colors.primary} name="map" size={20} />
+              </View>
+              <View style={[styles.resultCopy, styles.chooseOnMapCopy]}>
+                <Text numberOfLines={1} style={styles.resultTitle}>Choose on map</Text>
+              </View>
+            </PressableScale>
+          ) : null}
           {!isSearching ? <SavedPlacesStrip onAdd={onAddSavedPlace} onSelect={(saved) => selectRecent(locationToPlace(saved.address))} places={savedPlaces} /> : null}
         </SafeAreaView>
 
@@ -384,6 +473,18 @@ export function SearchView({ initialQuery = '', near, onAddSavedPlace, onCancel,
 
           {isSearching ? (
             <>
+              {lines.length > 0 ? (
+                <View testID="search-lines">
+                  <Text accessibilityRole="header" style={styles.heading}>Lines</Text>
+                  {lines.map((line) => (
+                    <LineResultRow key={`${line.agencyId}:${line.routeId}`} line={line} onPress={() => {
+                      endSession();
+                      onSelectLine?.(line);
+                    }} />
+                  ))}
+                  <Text accessibilityRole="header" style={styles.heading}>Places</Text>
+                </View>
+              ) : null}
               {matchingRecents.map((place) => (
                 <SearchResultRow key={`recent-${place.id}`} onPress={() => selectRecent(place)} place={place} recent={true} />
               ))}
@@ -504,6 +605,10 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     justifyContent: 'center',
     marginHorizontal: 8,
   },
+  // Its line runs the full width, like the one under the saved places strip.
+  chooseOnMapRow: { minHeight: 56, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  chooseOnMapCopy: { borderBottomWidth: 0 },
+  lineBadge: { width: 40, alignItems: 'center' },
   resultIcon: {
     width: 40,
     height: 40,

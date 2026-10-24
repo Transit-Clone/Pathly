@@ -81,7 +81,7 @@ describe('Settings', () => {
     it('saves toggles per rider and says alerts are not sent yet', async () => {
       const screen = renderSettings();
       await openPage(screen, 'notifications');
-      expect(screen.getByTestId('notifications-not-sent')).toHaveTextContent(/doesn't send push alerts yet/);
+      expect(screen.getByTestId('notifications-not-sent')).toHaveTextContent(/push notifications in the Android and iOS app/);
       fireEvent(screen.getByTestId('toggle-service-alerts'), 'valueChange', false);
       await waitFor(async () => expect(JSON.parse((await AsyncStorage.getItem(preferencesKey(UID)))!).notifications.serviceAlerts).toBe(false));
       screen.unmount();

@@ -15,6 +15,7 @@ import {
   formatTripClock,
   lineBadge,
   nextOccurrence,
+  distinctRouteItineraries,
   orderItineraries,
   transitSteps,
   tripMinutes,
@@ -30,11 +31,11 @@ import { ThemedStatusBar, useAppSettings, useTheme, useThemedStyles } from '../t
 import { ScreenTransition, useLayoutEase } from '../theme/motion';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
-import { CurrentLocationButton } from './CurrentLocationButton';
 import { Icon, type IconName } from './Icon';
 import { LeaveTimeSheet } from './LeaveTimeSheet';
 import { PlannedTripDetailView } from './PlannedTripDetailView';
 import { Mascot } from './Mascot';
+import { MapControlButton } from './MapControlButton';
 import { PressableScale } from './PressableScale';
 import { RouteBadge, type TransitMode } from './RouteBadge';
 import { ItinerarySkeleton } from './Skeleton';
@@ -237,7 +238,7 @@ export function RouteResultsView({
     const byMode = filterItinerariesByMode(planned, enabledModes);
     const withinWalk = filterItinerariesByWalk(byMode, maxWalkMinutes);
     return {
-      visibleItineraries: orderItineraries(withinWalk ?? byMode, preference),
+      visibleItineraries: distinctRouteItineraries(orderItineraries(withinWalk ?? byMode, preference)),
       // Every trip walks longer than the rider's limit, so all of them show with a note.
       walkLimitMissed: maxWalkMinutes !== null && withinWalk === null && byMode.length > 0,
     };
@@ -308,15 +309,7 @@ export function RouteResultsView({
 
         <SafeAreaView edges={['top']} onLayout={(event) => setTripCardBottom(event.nativeEvent.layout.y + event.nativeEvent.layout.height)} style={styles.topOverlay}>
           <View style={styles.tripRow}>
-            <PressableScale
-              accessibilityLabel="Back to destination search"
-              accessibilityRole="button"
-              onPress={onBack}
-              style={styles.backButton}
-              testID="results-back"
-            >
-              <Icon name="back" size={26} />
-            </PressableScale>
+            <MapControlButton accessibilityLabel="Back to destination search" icon="back" onPress={onBack} style={styles.backButton} testID="results-back" />
 
             <View style={styles.criteriaCard}>
               <View style={styles.endpointStack}>
@@ -362,8 +355,11 @@ export function RouteResultsView({
           </View>
         </SafeAreaView>
 
-        <View style={styles.mapLocation}>
-          <CurrentLocationButton
+        {/* Locate, just above the resting sheet. */}
+        <View pointerEvents="box-none" style={[styles.mapLocation, { bottom: height - restTop + 14 }]}>
+          <MapControlButton
+            accessibilityLabel="Center on current location"
+            icon="locate"
             onPress={() => {
               setCenterRequest((count) => count + 1);
               setCentered(true);
@@ -614,7 +610,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   screen: { width: '100%', maxWidth: 540, flex: 1, overflow: 'hidden', backgroundColor: colors.canvas },
   topOverlay: { zIndex: 4 },
   tripRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingTop: 8, paddingHorizontal: 12 },
-  backButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', marginTop: 18, borderRadius: 22, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.14, shadowRadius: 8, elevation: 4 },
+  backButton: { marginTop: 17 },
   criteriaCard: { minWidth: 0, flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 14, paddingRight: 9, paddingVertical: 8, borderRadius: 20, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.16, shadowRadius: 12, elevation: 6 },
   endpointStack: { minWidth: 0, flex: 1 },
   endpointRow: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 11 },
@@ -627,7 +623,8 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   },
   endpointInput: { minWidth: 0, flex: 1, paddingVertical: 7, color: colors.ink, ...typography.bodyStrong, fontSize: 14 },
   swapButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19, backgroundColor: colors.blueSoft },
-  mapLocation: { position: 'absolute', top: '35%', right: 16, zIndex: 2 },
+  // Sits just above the resting sheet; `bottom` is set from the screen height.
+  mapLocation: { position: 'absolute', right: 16, zIndex: 2, gap: 10 },
   resultsSheetInner: { flex: 1 },
   dragHandle: { height: 24, alignItems: 'center', justifyContent: 'center' },
   dragHandleGrip: { width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border },

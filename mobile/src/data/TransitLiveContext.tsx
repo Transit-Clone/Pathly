@@ -178,8 +178,10 @@ export function TransitLiveProvider({
         return next;
       });
     };
+    // A line opened at a particular stop resolves its stops from there, not from the rider.
+    const pointFor = (route: RouteDetail) => route.liveSource!.anchor ?? at;
     const fetchEach = (routes: readonly RouteDetail[]) => {
-      for (const route of routes) void loadRoute(route, at).then((result) => apply(route, result));
+      for (const route of routes) void loadRoute(route, pointFor(route)).then((result) => apply(route, result));
     };
 
     for (const route of routesToFetch) lastFetchedAt.current.set(route.id, Date.now());
@@ -189,21 +191,24 @@ export function TransitLiveProvider({
     }
     const byAgency = new Map<string, RouteDetail[]>();
     for (const route of routesToFetch) {
-      const agencyRoutes = byAgency.get(route.liveSource!.agencyId);
+      const { agencyId, anchor } = route.liveSource!;
+      const key = anchor ? `${agencyId}@${anchor.latitude},${anchor.longitude}` : agencyId;
+      const agencyRoutes = byAgency.get(key);
       if (agencyRoutes) agencyRoutes.push(route);
-      else byAgency.set(route.liveSource!.agencyId, [route]);
+      else byAgency.set(key, [route]);
     }
     const chunks = [...byAgency.values()].flatMap((agencyRoutes) => Array.from(
       { length: Math.ceil(agencyRoutes.length / MAX_BATCH_ROUTES) },
       (_, index) => agencyRoutes.slice(index * MAX_BATCH_ROUTES, (index + 1) * MAX_BATCH_ROUTES),
     ));
     for (const chunk of chunks) {
-      void fetchRoutesLiveData(chunk.map((route) => route.liveSource!), at).then(
+      const chunkAt = pointFor(chunk[0]!);
+      void fetchRoutesLiveData(chunk.map((route) => route.liveSource!), chunkAt).then(
         (results) => chunk.forEach((route, index) => {
           const data = results[index];
           if (!data) apply(route, { status: 'error' });
           // A backend answering without in-call nearest stops: that route takes the per-route path.
-          else if (data.nearestStop === undefined) void loadRoute(route, at).then((result) => apply(route, result));
+          else if (data.nearestStop === undefined) void loadRoute(route, chunkAt).then((result) => apply(route, result));
           else apply(route, { status: 'loaded', data, nearestStop: data.nearestStop });
         }),
         (error: unknown) => {

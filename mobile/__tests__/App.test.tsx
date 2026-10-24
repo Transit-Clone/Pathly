@@ -12,6 +12,7 @@ import { RouteDetailView } from '../src/components/RouteDetailView';
 import { AppSettingsProvider } from '../src/theme/AppSettings';
 import { autocompletePlaces, fetchPlaceDetails, getPlacesApiKey } from '../src/data/placesSearch';
 import { SERVICE_AREA_FALLBACK } from '../src/data/serviceArea';
+import { clearRouteTransfersCache } from '../src/data/routeGeometry';
 import { STATION_TRANSFERS } from '../src/data/stationTransfers';
 import { TransitLiveProvider } from '../src/data/TransitLiveContext';
 import { routeById, routes } from '../src/data/transit';
@@ -249,6 +250,38 @@ describe('Pathly prototype navigation', () => {
     expect(screen.queryByTestId('search-match-count')).toBeNull();
     expect(screen.queryByTestId('map-backdrop', { includeHiddenElements: true })).toBeNull();
     expect(screen.queryByLabelText(/^Map result/)).toBeNull();
+  });
+
+  it('leads the empty search with Choose on map, which plans to the dropped pin', async () => {
+    const screen = await renderHome();
+    fireEvent.press(screen.getByTestId('search-trigger'));
+    fireEvent.press(screen.getByTestId('search-choose-on-map'));
+    expect(screen.getByTestId('map-picker')).toBeTruthy();
+    // Back returns to the search, still empty.
+    fireEvent.press(screen.getByTestId('map-picker-back'));
+    expect(screen.getByTestId('search-choose-on-map')).toBeTruthy();
+
+    fireEvent.press(screen.getByTestId('search-choose-on-map'));
+    // The pin is named by the address under it once the map rests.
+    await screen.findByText('100 Nicolls Rd');
+    expect(screen.getByText('Stony Brook, NY 11794')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('map-picker-set'));
+    await screen.findByTestId('route-results-view');
+    expect(screen.getAllByText('100 Nicolls Rd').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Dropped pin')).toBeNull();
+  });
+
+  it('finds transit lines by name and opens the whole line, with Back returning to search', async () => {
+    const screen = await renderHome();
+    fireEvent.press(screen.getByTestId('search-trigger'));
+    expect(screen.queryByTestId('search-lines')).toBeNull();
+    fireEvent.changeText(screen.getByTestId('search-input'), 'port');
+    fireEvent.press(await screen.findByTestId('search-line-lirr-10'));
+    await screen.findByTestId('route-map', { includeHiddenElements: true });
+    // The whole line: it starts at its first station, Port Jefferson, not the stop nearest the rider.
+    await screen.findByLabelText(/^Port Jefferson, (nearest to you, )?departs /);
+    fireEvent.press(screen.getByTestId('route-back'));
+    expect(await screen.findByTestId('search-view')).toBeTruthy();
   });
 
   it('shows Google place suggestions with a pin icon, bold name, and address', async () => {
@@ -611,7 +644,8 @@ describe('Pathly prototype navigation', () => {
 
   it('orders by lowest fare with unknown fares last, and labels estimates', async () => {
     const priced = (itinerary: typeof LIRR_TRIP, cents: number) => ({ ...itinerary, fare: { text: `$${(cents / 100).toFixed(2)}`, cents, currency: 'USD', estimated: true } });
-    const unpriced = { ...LIRR_TRIP, id: 'unpricedtrip' };
+    // Another line: the same route at another time would fold into LIRR_TRIP's card.
+    const unpriced = { ...LIRR_TRIP, id: 'unpricedtrip', steps: LIRR_TRIP.steps.map((step) => (step.kind === 'transit' ? { ...step, line: { ...step.line, name: 'Other line', shortName: 'X' } } : step)) };
     planTripMock().mockResolvedValue({ data: { itineraries: [unpriced, priced(LIRR_TRIP, 2150), priced(BUS_TRIP, 1825)] } });
     try {
       const screen = await openResults();
@@ -1054,9 +1088,8 @@ describe('Pathly prototype navigation', () => {
     const second = legs[0]!.stops![1]!;
     expect(maps.mockAnimateCamera).toHaveBeenCalledWith(expect.objectContaining({ center: { latitude: second.location.lat, longitude: second.location.lng } }), expect.anything());
     expect(within(screen.getByTestId('trip-map-stop-label', hidden)).getByText(`${second.name} · ${formatTripClock(second.time)}`, hidden)).toBeTruthy();
-    // Once moved, the whole trip is one tap away.
-    fireEvent.press(screen.getByTestId('search-trip-route-map-reframe'));
-    expect(screen.queryByTestId('search-trip-route-map-reframe')).toBeNull();
+    // No Fit button: the map has only Save and Locate.
+    expect(screen.queryByLabelText('Show the whole trip')).toBeNull();
   });
 
   it('lets the uncovered trip maps take gestures while the page and controls keep working', async () => {
@@ -1798,6 +1831,39 @@ describe('Pathly prototype navigation', () => {
       await act(async () => {}); // settle the route's geometry fetch
     });
 
+    it("opens a tapped stop's sheet with only its transfers, not this line's times", async () => {
+      const screen = await openPortJefferson();
+      const live = callable('getRouteLiveStatus');
+      live.mockClear();
+      fireEvent.press(screen.getByTestId('stop-row-0'));
+      expect(await screen.findByTestId('transfers-sheet')).toBeTruthy();
+      expect(screen.queryByText(/times from this stop/)).toBeNull();
+      // Nothing re-anchors the line at the tapped stop.
+      expect(live.mock.calls.some(([request]) => request.lat === 40.89)).toBe(false);
+      fireEvent.press(screen.getByTestId('transfers-sheet-close'));
+      await waitFor(() => expect(screen.queryByTestId('transfers-sheet')).toBeNull());
+    });
+
+    it("opens a transfer badge's line from the stop's sheet", async () => {
+      const transfers = callable('getRouteTransfers');
+      const describeLine = callable('describeTransitRoute');
+      transfers.mockImplementationOnce(() => Promise.resolve({
+        data: { transfers: { '1': [{ agencyId: 'suffolk', agencyDisplayName: 'Suffolk County Transit', routeId: '51', shortName: '51', color: '#0454A2' }] } },
+      }));
+      const screen = await openPortJefferson();
+      // The row's badge is a label; tapping the stop opens its sheet, where badges are buttons.
+      await screen.findByTestId('route-transfer-Stony Brook-51');
+      expect(screen.queryByLabelText('Open Suffolk County Transit 51 at Stony Brook')).toBeNull();
+      fireEvent.press(screen.getByTestId('stop-row-0'));
+      fireEvent.press(await screen.findByLabelText('Open Suffolk County Transit 51 at Stony Brook'));
+      await waitFor(() => expect(describeLine).toHaveBeenCalledWith(expect.objectContaining({ agencyId: 'suffolk', routeId: '51', lat: 40.89, lon: expect.closeTo(-73.09, 6) })));
+      // The mock describes the PJ Branch, so the page that opens is a fresh copy, and Back returns.
+      await waitFor(() => expect(screen.queryByTestId('transfers-sheet')).toBeNull());
+      fireEvent.press(screen.getByTestId('route-back'));
+      await screen.findByTestId('route-transfer-Stony Brook-51');
+      clearRouteTransfersCache();
+    });
+
     it('lists route stops by name and time only, with a filled Scheduled pill', async () => {
       const screen = await openPortJefferson();
       for (const caption of ['Departs', 'Scheduled stop', 'Final stop', 'Nearest to you']) {
@@ -1971,34 +2037,11 @@ describe('Pathly prototype navigation', () => {
       await act(async () => {}); // settle the location refresh
     });
 
-    it('frames the whole route from the crosshair button', async () => {
-      const { mockFitToCoordinates } = jest.requireMock('react-native-maps') as { mockFitToCoordinates: jest.Mock };
+    it('has no Fit route button, only Save and Locate', async () => {
       const screen = await openPortJefferson();
-      const map = () => screen.getByTestId('route-map', hidden);
-      const overview = () => screen.getByTestId('route-overview');
-      expect(screen.getByLabelText('Show the whole route')).toBeTruthy();
-
-      const permissionRequests = (Location.requestForegroundPermissionsAsync as jest.Mock).mock.calls.length;
-      mockFitToCoordinates.mockClear();
-      fireEvent.press(overview());
-      // Every point of the selected direction's line, padded clear of the controls.
-      const lineLength = screen.getByTestId('route-line', hidden).props.coordinates.length + screen.getByTestId('route-line-behind', hidden).props.coordinates.length - 1;
-      expect(mockFitToCoordinates).toHaveBeenCalledTimes(1);
-      expect(mockFitToCoordinates.mock.calls[0][0]).toHaveLength(lineLength);
-      expect(mockFitToCoordinates.mock.calls[0][1]).toEqual(expect.objectContaining({ animated: true, edgePadding: expect.any(Object) }));
-      // About the route, not the rider: no location refresh.
-      expect((Location.requestForegroundPermissionsAsync as jest.Mock).mock.calls.length).toBe(permissionRequests);
-      expect(overview().props.accessibilityState).toEqual({ selected: true });
-
-      // The two buttons are exclusive: centering on the rider deselects the overview, and back.
-      fireEvent.press(screen.getByTestId('route-location'));
-      expect(overview().props.accessibilityState).toEqual({ selected: false });
-      fireEvent.press(overview());
-      expect(screen.getByTestId('route-location').props.accessibilityState).toEqual({ selected: false });
-
-      fireEvent(map(), 'panDrag');
-      expect(overview().props.accessibilityState).toEqual({ selected: false });
-      await act(async () => {}); // settle the location refresh
+      expect(screen.queryByTestId('route-overview')).toBeNull();
+      expect(screen.getByTestId('route-favorite')).toBeTruthy();
+      expect(screen.getByTestId('route-location')).toBeTruthy();
     });
 
     it('shows three fixed-width tiles with clock times for long waits and faint scheduled tiles', async () => {

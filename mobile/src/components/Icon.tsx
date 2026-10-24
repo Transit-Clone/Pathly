@@ -35,6 +35,7 @@ const glyphs = {
   help: ['help-circle-outline', 'help-circle'],
   home: ['home-outline', 'home'],
   locate: ['navigate-outline', 'navigate'],
+  map: ['map-outline', 'map'],
   medical: ['medkit-outline', 'medkit'],
   modes: ['layers-outline', 'layers'],
   ok: ['checkmark-circle-outline', 'checkmark-circle'],

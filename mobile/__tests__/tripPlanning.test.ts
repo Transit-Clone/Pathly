@@ -13,6 +13,7 @@ import {
   filterItinerariesByMode,
   formatTripClock,
   nextOccurrence,
+  distinctRouteItineraries,
   orderItineraries,
   planTrip,
   planTripForResume,
@@ -238,6 +239,11 @@ describe('ordering and filtering', () => {
     expect(ordered.map((i) => i.id)).toEqual(['cheap', busLirr.id, lirr.id]);
     const strolling: Itinerary = { ...lirr, id: 'strolling', steps: [{ kind: 'walk', durationSeconds: 1800, distanceMeters: 2400, toName: 'Stop', path: [] }, ...lirr.steps] };
     expect(orderItineraries([strolling, lirr], 'walking').map((i) => i.id)).toEqual([lirr.id, 'strolling']);
+  });
+
+  it('keeps one trip per line sequence, the first in order', () => {
+    const later = { ...lirr, id: 'later', departureTime: '2030-01-01T00:00:00Z' };
+    expect(distinctRouteItineraries([lirr, busLirr, later]).map((i) => i.id)).toEqual([lirr.id, busLirr.id]);
   });
 
   it('hides an itinerary that uses an excluded mode', () => {

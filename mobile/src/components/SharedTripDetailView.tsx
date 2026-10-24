@@ -5,7 +5,7 @@ import { routes } from '../data/transit';
 import { formatDurationMinutes } from '../data/tripPlanning';
 
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
-import { PopOnActivate, useLayoutEase } from '../theme/motion';
+import { useLayoutEase } from '../theme/motion';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -14,6 +14,7 @@ import { Icon } from './Icon';
 import { MapBackdrop } from './MapBackdrop';
 import { RouteBadge, type TransitMode } from './RouteBadge';
 import { DestinationPin, orientLegs, routeFocus, RouteLines, type MapLeg } from './RouteMapOverlay';
+import { MapControlButton } from './MapControlButton';
 import { PressableScale } from './PressableScale';
 
 const MAP_HEIGHT = 360;
@@ -102,15 +103,6 @@ type SharedTripDetailViewProps = {
   testPrefix: 'search-trip' | 'recent-trip';
   tone?: 'planned' | 'recent';
 };
-
-function MapControl({ children, label, onPress, selected, testID }: { children: ReactNode; label: string; onPress: () => void; selected?: boolean; testID: string }) {
-  const styles = useThemedStyles(createStyles);
-  return (
-    <PressableScale accessibilityLabel={label} accessibilityRole="button" accessibilityState={selected === undefined ? undefined : { selected }} onPress={onPress} style={[styles.roundButton, selected && styles.selectedControl]} testID={testID}>
-      {children}
-    </PressableScale>
-  );
-}
 
 /** Walking gets a card of its own; a transfer between legs adds the wait for the next one. */
 function WalkCard({ testID, waitMinutes, walk }: { testID: string; waitMinutes?: number; walk: TripDetailWalk }) {
@@ -241,13 +233,13 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
 
   const controls = (
     <View pointerEvents="box-none" style={styles.topBar}>
-      <MapControl label={backLabel} onPress={onBack} testID={`${testPrefix}-back`}><Icon name="back" size={26} /></MapControl>
+      <MapControlButton accessibilityLabel={backLabel} icon="back" onPress={onBack} testID={`${testPrefix}-back`} />
       <View style={styles.mapActions}>
-        <MapControl label={isFavorite ? 'Remove destination from saved' : 'Save destination'} onPress={onToggleFavorite} selected={isFavorite} testID={`${testPrefix}-favorite`}><PopOnActivate active={isFavorite}><Icon color={isFavorite ? colors.highlightInk : colors.primary} filled={isFavorite} name="favorite" size={24} /></PopOnActivate></MapControl>
-        <MapControl label="Center trip map on current location" onPress={() => {
+        <MapControlButton accessibilityLabel={isFavorite ? 'Remove destination from saved' : 'Save destination'} icon="favorite" onPress={onToggleFavorite} selected={isFavorite} testID={`${testPrefix}-favorite`} variant="save" />
+        <MapControlButton accessibilityLabel="Center trip map on current location" icon="locate" onPress={() => {
           setIsLocationCentered(true);
           onCenterOnLocation?.();
-        }} selected={locationSelected ?? isLocationCentered} testID={`${testPrefix}-location`}><Icon filled={locationSelected ?? isLocationCentered} name="locate" /></MapControl>
+        }} selected={locationSelected ?? isLocationCentered} testID={`${testPrefix}-location`} />
       </View>
     </View>
   );
@@ -506,7 +498,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   viaDot: { zIndex: 1, width: 10, height: 10, borderRadius: 5 },
   viaName: { flex: 1, color: colors.ink, ...typography.body, fontSize: 14 },
   viaTime: { color: colors.mutedInk, ...typography.metadata, fontVariant: ['tabular-nums'] },
-  topBar: { flexDirection: 'row', justifyContent: 'space-between', paddingTop: 8, paddingHorizontal: 14 }, mapActions: { flexDirection: 'row', gap: 10 }, roundButton: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 24, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.18, shadowRadius: 10, elevation: 5 }, selectedControl: { backgroundColor: colors.blueSoft },
+  topBar: { flexDirection: 'row', justifyContent: 'space-between', paddingTop: 8, paddingHorizontal: 14 }, mapActions: { gap: 10 },
   goButton: { minWidth: 104, height: 60, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 18, borderWidth: 3, borderColor: colors.blueSoft, borderRadius: 30, backgroundColor: colors.primary, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.28, shadowRadius: 10, elevation: 9 }, endTripAction: { borderColor: '#992D38', backgroundColor: colors.red }, goButtonPressed: { opacity: 0.88, transform: [{ scale: 0.97 }] }, goButtonText: { color: colors.onPrimary, fontFamily: fontFamilies.extraBold, fontSize: 18 },
   content: { padding: 16, paddingTop: 20, paddingBottom: 28, backgroundColor: colors.surfaceMuted }, summaryHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }, summaryHeaderLargeText: { flexDirection: 'column', alignItems: 'stretch' }, modeStrip: { minWidth: 0, flex: 1, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', rowGap: 6, paddingTop: 4 }, modeStripLargeText: { flexGrow: 0 }, modeItem: { flexDirection: 'row', alignItems: 'center' }, modeArrow: { marginHorizontal: 3 }, primaryMetrics: { minWidth: 0, flexShrink: 0, flexDirection: 'row', alignItems: 'baseline', justifyContent: 'flex-end', gap: 14 }, primaryMetricsLargeText: { alignSelf: 'stretch', flexShrink: 1, justifyContent: 'space-between' }, fare: { color: colors.primary, fontFamily: fontFamilies.extraBold, fontSize: 13 }, metricValue: { color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 10 }, minutes: { flexShrink: 1, fontSize: 25, lineHeight: 27, textAlign: 'right' },
   timeCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18, padding: 16, borderWidth: 1, borderColor: colors.border, borderRadius: 18, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.08, shadowRadius: 9, elevation: 2 }, timeLabel: { color: colors.primary, ...typography.label, fontSize: 12 }, timeValue: { marginTop: 2, color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 20, lineHeight: 25 }, arriveTime: { alignItems: 'flex-end' },

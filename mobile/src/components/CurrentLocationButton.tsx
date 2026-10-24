@@ -4,6 +4,7 @@ import { ActivityIndicator, StyleSheet } from 'react-native';
 import { useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { Icon } from './Icon';
+import { MAP_CONTROL_SIZE } from './MapControlButton';
 import { PressableScale } from './PressableScale';
 
 type CurrentLocationButtonProps = {
@@ -39,18 +40,19 @@ export function CurrentLocationButton({ loading = false, onPress, selected, test
 }
 
 const createStyles = (colors: Palette) => StyleSheet.create({
+  // MapControlButton's size and shadow, so every map's Locate looks the same.
   button: {
-    width: 48,
-    height: 48,
+    width: MAP_CONTROL_SIZE,
+    height: MAP_CONTROL_SIZE,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 24,
+    borderRadius: MAP_CONTROL_SIZE / 2,
     backgroundColor: colors.surface,
     shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.18,
-    shadowRadius: 10,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.14,
+    shadowRadius: 8,
+    elevation: 4,
   },
   selected: {
     backgroundColor: colors.blueSoft,

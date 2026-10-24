@@ -33,6 +33,29 @@ service cloud.firestore {
         && transit.routes is list && transit.routes.size() <= 30;
     }
 
+    function isValidSavedStop(stop) {
+      return stop == null || (stop is map
+        && stop.keys().hasOnly(['stopId', 'name', 'headsign'])
+        && stop.stopId is string && stop.stopId.size() <= 64
+        && stop.name is string && stop.name.size() <= 200
+        && (!('headsign' in stop) || stop.headsign == null || (stop.headsign is string && stop.headsign.size() <= 200)));
+    }
+
+    function isValidSavedRoute(route) {
+      return route.keys().hasAll(['agencyId', 'routeId', 'agencyName', 'routeName', 'shortName', 'color', 'alerts', 'dateSaved'])
+        && route.keys().hasOnly(['agencyId', 'routeId', 'agencyName', 'routeName', 'shortName', 'color', 'alerts', 'dateSaved', 'direction1', 'direction0'])
+        && route.agencyId is string && route.agencyId.size() <= 32
+        && route.routeId is string && route.routeId.size() <= 128
+        && route.agencyName is string && route.agencyName.size() <= 100
+        && route.routeName is string && route.routeName.size() <= 200
+        && route.shortName is string && route.shortName.size() <= 64
+        && route.color is string && route.color.size() <= 16
+        && route.alerts in ['all', 'peak', 'off']
+        && route.dateSaved is timestamp
+        && (!('direction1' in route) || isValidSavedStop(route.direction1))
+        && (!('direction0' in route) || isValidSavedStop(route.direction0));
+    }
+
     // An { address, <dateField> } history entry whose date is the server's write time.
     function isValidEntry(dateField) {
       let data = request.resource.data;
@@ -58,6 +81,12 @@ service cloud.firestore {
       match /savedLocations/{entryId} {
         allow read, delete: if isOwner(uid);
         allow create, update: if isOwner(uid) && isValidEntry('dateSaved');
+      }
+
+      // A saved transit line and its alert setting (mobile/src/data/savedRoutes.ts's SavedRoute).
+      match /savedRoutes/{routeKey} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid) && isValidSavedRoute(request.resource.data);
       }
     }
 

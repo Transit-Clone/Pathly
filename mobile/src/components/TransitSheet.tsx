@@ -315,10 +315,8 @@ export function TransitSheet({
                     key={trip.sessionId}
                     destination={trip.destination.label}
                     endedAt={trip.endedAt}
-                    lines={trip.lines.map((line) => line.shortName ?? line.name)}
                     onOpen={() => onOpenRecentTrip(trip)}
                     origin={trip.origin.label}
-                    outcome={trip.outcome}
                     testID={`recent-trip-${trip.sessionId}`}
                   />
                 ))}

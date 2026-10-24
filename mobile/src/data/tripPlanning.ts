@@ -446,6 +446,21 @@ export function filterItinerariesByMode(itineraries: readonly Itinerary[], modes
   return itineraries.filter((itinerary) => itinerary.steps.every((step) => step.kind !== 'transit' || step.mode === 'other' || modes.includes(step.mode)));
 }
 
+/**
+ * One trip per route: Google often returns the same lines at several departure times (six "take
+ * the 51" trips). Keeps each line sequence's first trip in the given order; the later departures
+ * stay a tap away in that trip's departure picker.
+ */
+export function distinctRouteItineraries(itineraries: readonly Itinerary[]): Itinerary[] {
+  const seen = new Set<string>();
+  return itineraries.filter((itinerary) => {
+    const key = transitSteps(itinerary).map((step) => `${step.agency.name}|${step.line.shortName || step.line.name}`).join('>') || 'walk';
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export function transitSteps(itinerary: Itinerary): TransitStep[] {
   return itinerary.steps.filter((step): step is TransitStep => step.kind === 'transit');
 }

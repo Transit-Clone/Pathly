@@ -45,6 +45,17 @@ jest.mock('firebase/auth', () => ({
 // A tiny in-memory Firestore: refs are just paths, writes notify listeners synchronously (like
 // Firestore's local-write latency compensation), and collections list newest write first.
 // jest.setupAfterEnv.js empties it before each test.
+// Native notifications: permission is never granted in tests, so nothing is shown or registered.
+jest.mock('expo-notifications', () => ({
+  AndroidImportance: { HIGH: 4 },
+  getExpoPushTokenAsync: jest.fn(() => Promise.resolve({ data: 'ExponentPushToken[test]' })),
+  getPermissionsAsync: jest.fn(() => Promise.resolve({ granted: false, canAskAgain: false })),
+  requestPermissionsAsync: jest.fn(() => Promise.resolve({ granted: false, canAskAgain: false })),
+  scheduleNotificationAsync: jest.fn(() => Promise.resolve('notification')),
+  setNotificationChannelAsync: jest.fn(() => Promise.resolve(null)),
+  setNotificationHandler: jest.fn(),
+}));
+
 jest.mock('firebase/firestore', () => {
   const mockDocs = new Map();
   const mockListeners = new Set();
@@ -89,6 +100,7 @@ jest.mock('firebase/firestore', () => {
         },
       });
     }),
+    arrayUnion: jest.fn((...values) => values),
     serverTimestamp: jest.fn(() => null),
     setDoc: jest.fn((docRef, data, options) => {
       const merged = options?.merge ? { ...mockDocs.get(docRef.path), ...data } : data;
@@ -146,6 +158,27 @@ jest.mock('firebase/functions', () => {
         },
       }));
     }
+    // Line search finds the Port Jefferson Branch by "port"; anything else matches nothing.
+    if (name === 'searchTransitRoutes' || name === 'describeTransitRoute') {
+      const pj = mockRouteById.ronkonkoma;
+      const line = {
+        agencyId: pj.liveSource.agencyId,
+        agencyDisplayName: pj.agency,
+        routeId: pj.liveSource.routeId,
+        routeName: pj.routeName,
+        shortName: pj.shortName,
+        color: pj.color,
+        distanceMeters: 500,
+        direction1: { stopId: pj.liveSource.direction1StopId, name: pj.directions[0].stopName, headsign: pj.directions[0].direction },
+        direction0: { stopId: pj.liveSource.direction0StopId, name: pj.directions[1].stopName, headsign: pj.directions[1].direction },
+      };
+      if (name === 'describeTransitRoute') return jest.fn(() => Promise.resolve({ data: { route: line } }));
+      return jest.fn((request) => Promise.resolve({ data: { routes: /port/i.test(request?.query ?? '') ? [line] : [] } }));
+    }
+    // No transfer badges from the backend unless a test says otherwise (the PJ Branch's generated ones still show).
+    if (name === 'getRouteTransfers') return jest.fn(() => Promise.resolve({ data: { transfers: {} } }));
+    // "Choose on map" names its pin by the address there.
+    if (name === 'reverseGeocode') return jest.fn(() => Promise.resolve({ data: { address: { placeId: 'pin-place', title: '100 Nicolls Rd', subtitle: 'Stony Brook, NY 11794' } } }));
     if (name === 'getRouteGeometry') {
       return jest.fn((request) => {
         if (request?.routeId === '10') {

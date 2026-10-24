@@ -2,9 +2,9 @@
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { callable } from '../lib/firebase';
 import { whenWarm } from './backendWarmup';
-import { nearerDirectionIndex, type LiveSource, type RouteDetail, type TransitDirection } from './transit';
+import { preferredDirectionIndex, type LiveSource, type RouteDetail, type TransitDirection } from './transit';
 
-type DiscoveredDirection = { stopId: string; name: string; headsign: string | null; distanceMeters?: number } | null;
+type DiscoveredDirection = { stopId: string; name: string; headsign: string | null; distanceMeters?: number; stopsAhead?: number | null } | null;
 
 export type DiscoveredRoute = {
   agencyId: LiveSource['agencyId'];
@@ -94,12 +94,13 @@ export function discoveredRouteToRouteDetail(discovered: DiscoveredRoute): Route
     stopName: primary?.name ?? other?.name ?? 'Unknown stop',
     stopId: primary?.stopId,
     distanceMeters: primary?.distanceMeters,
+    stopsAhead: primary?.stopsAhead ?? undefined,
     unavailable: true,
   });
-  // Direction 1 comes first unless the rider is clearly at direction 0's end of the line — on the
-  // Staten Island Ferry, the St. George side has to lead with the boat leaving St. George.
+  // Direction 1 comes first unless direction 0 is clearly the one to ride: on the Staten Island
+  // Ferry's St. George side, or at the end of a line (see preferredDirectionIndex).
   const byDirectionId: [TransitDirection, TransitDirection] = [directionFor(direction1, direction0), directionFor(direction0, direction1)];
-  const direction1Index = nearerDirectionIndex(byDirectionId) === 1 ? 1 : 0;
+  const direction1Index = preferredDirectionIndex(byDirectionId) === 1 ? 1 : 0;
   const lead = direction1Index === 0 ? direction1 ?? direction0 : direction0;
 
   return {
@@ -120,5 +121,34 @@ export function discoveredRouteToRouteDetail(discovered: DiscoveredRoute): Route
     predictions: [],
     routeName: discovered.routeName,
     shortName: discovered.shortName,
+  };
+}
+
+const searchTransitRoutesCallable = callable<{ query: string; lat: number; lon: number }, { routes: DiscoveredRoute[] }>('searchTransitRoutes');
+const describeTransitRouteCallable = callable<{ agencyId: string; routeId: string; lat: number; lon: number }, { route: DiscoveredRoute }>('describeTransitRoute');
+
+/** Lines whose name matches a search ("1", "B46", "Port Jefferson"), best match first, at their stops nearest `near`. */
+export async function searchTransitRoutes(query: string, near: Coordinates): Promise<readonly DiscoveredRoute[]> {
+  const { data } = await searchTransitRoutesCallable({ query, lat: near.latitude, lon: near.longitude });
+  return data.routes;
+}
+
+/**
+ * One line opened at a particular stop (a stop row or transfer badge in route view): its route
+ * view stays on the stop nearest `at`, wherever the rider is. Its id carries the point, so the
+ * same line at two stations is two route views (and two live entries), each with its own times.
+ */
+export async function fetchRouteAtStop(agencyId: LiveSource['agencyId'], routeId: string, at: Coordinates): Promise<RouteDetail> {
+  const { data } = await describeTransitRouteCallable({ agencyId, routeId, lat: at.latitude, lon: at.longitude });
+  return routeDetailAt(data.route, at);
+}
+
+/** `discoveredRouteToRouteDetail`, pinned to the stops nearest `at` rather than the rider. */
+export function routeDetailAt(discovered: DiscoveredRoute, at: Coordinates): RouteDetail {
+  const route = discoveredRouteToRouteDetail(discovered);
+  return {
+    ...route,
+    id: `${route.id}@${at.latitude.toFixed(5)},${at.longitude.toFixed(5)}`,
+    liveSource: { ...route.liveSource!, anchor: at },
   };
 }

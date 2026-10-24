@@ -9,24 +9,24 @@ import { PressableScale } from './PressableScale';
 type RecentTripCardProps = {
   destination: string;
   endedAt: number;
-  lines: readonly string[];
   onOpen: () => void;
   origin: string;
-  outcome: 'arrived' | 'ended-early';
   testID: string;
 };
 
 const completedTime = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
-/** A provider-light completed trip; opening it always requests a fresh route. */
-export function RecentTripCard({ destination, endedAt, lines, onOpen, origin, outcome, testID }: RecentTripCardProps) {
+/**
+ * A provider-light completed trip; opening it always requests a fresh route. Just where and when:
+ * how the trip ended, and its lines ("LIRR · LIRR"), told riders nothing they'd act on.
+ */
+export function RecentTripCard({ destination, endedAt, onOpen, origin, testID }: RecentTripCardProps) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
-  const status = outcome === 'arrived' ? 'Arrived' : 'Ended early';
   return (
     <PressableScale
       accessibilityHint="Plans this trip again with current routes"
-      accessibilityLabel={`${status} trip from ${origin} to ${destination}, ${completedTime.format(endedAt)}`}
+      accessibilityLabel={`Trip from ${origin} to ${destination}, ${completedTime.format(endedAt)}`}
       accessibilityRole="button"
       onPress={onOpen}
       style={styles.card}
@@ -36,11 +36,7 @@ export function RecentTripCard({ destination, endedAt, lines, onOpen, origin, ou
       <View style={styles.copy}>
         <Text numberOfLines={1} style={styles.destination}>{destination}</Text>
         <Text numberOfLines={1} style={styles.origin}>{`From ${origin}`}</Text>
-        <View style={styles.metaRow}>
-          <Text style={[styles.status, outcome === 'ended-early' && styles.endedEarly]}>{status}</Text>
-          <Text style={styles.meta}>{completedTime.format(endedAt)}</Text>
-          {lines.length > 0 ? <Text numberOfLines={1} style={styles.lines}>{lines.join(' · ')}</Text> : null}
-        </View>
+        <Text style={styles.meta}>{completedTime.format(endedAt)}</Text>
       </View>
       <Icon color={colors.mutedInk} name="forward" size={17} />
     </PressableScale>
@@ -63,9 +59,5 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   copy: { flex: 1, minWidth: 0 },
   destination: { color: colors.ink, ...typography.bodyStrong, fontSize: 16 },
   origin: { marginTop: 1, color: colors.mutedInk, ...typography.metadata },
-  metaRow: { marginTop: 5, flexDirection: 'row', alignItems: 'center', gap: 7 },
-  status: { color: colors.success, ...typography.label, letterSpacing: 0.2 },
-  endedEarly: { color: colors.warning },
-  meta: { color: colors.mutedInk, ...typography.metadata },
-  lines: { flex: 1, color: colors.primary, ...typography.metadata },
+  meta: { marginTop: 5, color: colors.mutedInk, ...typography.metadata },
 });

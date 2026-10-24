@@ -7,7 +7,10 @@ import { applyRouteLive } from '../data/applyRouteLive';
 import { NEARBY_CACHE_KEY, readCache, writeCache } from '../data/deviceCache';
 import { guidanceForNavigation, type TripEndpointReference } from '../data/enrouteNavigation';
 import type { RecentTripV1 } from '../data/navigationStorage';
-import { discoveredRouteToRouteDetail, fetchNearbyTransit, filterOutPinnedDuplicates, type DiscoveredRoute } from '../data/nearbyTransit';
+import { discoveredRouteToRouteDetail, fetchNearbyTransit, fetchRouteAtStop, filterOutPinnedDuplicates, type DiscoveredRoute } from '../data/nearbyTransit';
+import type { LineTransfer } from '../data/routeGeometry';
+import { removeSavedRoute, saveRoute, savedRouteFrom, savedRouteToRouteDetail, setRouteAlerts, subscribeToSavedRoutes, type RouteAlertSetting, type SavedRoute } from '../data/savedRoutes';
+import { registerForRouteAlerts } from '../lib/notifications';
 import type { SearchPlace } from '../data/placesSearch';
 import { TransitLiveProvider, useTransitLive } from '../data/TransitLiveContext';
 import { riderLocation, type Itinerary, type ResumePlanRequest } from '../data/tripPlanning';
@@ -35,7 +38,7 @@ import { pinnedSpotLabel } from '../debug/presets';
 import { useCurrentLocation, type Coordinates } from '../hooks/useCurrentLocation';
 import { useActiveTrip } from '../hooks/useActiveTrip';
 import { useNow } from '../hooks/useNow';
-import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
+import { ThemedStatusBar, useThemedStyles } from '../theme/AppSettings';
 import { ScreenTransition } from '../theme/motion';
 import type { Palette } from '../theme/colors';
 import { fontFamilies } from '../theme/typography';
@@ -48,7 +51,9 @@ import { GoogleMapView, type HomeMapCamera } from './GoogleMapView';
 import { PressableScale } from './PressableScale';
 import { ProfileView } from './ProfileView';
 import { useUserPreferences } from '../data/userPreferences';
-import { RouteDetailView } from './RouteDetailView';
+import { MapPickerView } from './MapPickerView';
+import { RouteAlertsPrompt } from './RouteAlertsPrompt';
+import { RouteDetailView, type TappedStop } from './RouteDetailView';
 import { SavePlaceSheet, type SavePlaceRequest } from './SavePlaceSheet';
 import { ResumeTripCard } from './ResumeTripCard';
 import { CURRENT_LOCATION_LABEL, initialResultsCriteria, RouteResultsView, type ResultsCriteria } from './RouteResultsView';
@@ -76,11 +81,14 @@ type ResultsViewState = { name: 'results'; criteria: ResultsCriteria; returnTo: 
 type ActiveView =
   | { name: 'home' }
   // `editing`: changing one endpoint of an open Route Results, which this search returns to.
-  | { name: 'search'; editing?: { field: 'origin' | 'destination'; results: ResultsViewState }; pickMockLocation?: boolean; pickSavedPlace?: SavedPlacePick }
+  // `pickOnMap`: "Choose on map" is open over this search, and its pin is chosen like a result.
+  | { name: 'search'; editing?: { field: 'origin' | 'destination'; results: ResultsViewState }; pickMockLocation?: boolean; pickSavedPlace?: SavedPlacePick; pickOnMap?: boolean }
   // `route` is the snapshot opened, so the page never depends on the route still being nearby.
-  | { name: 'route'; routeId: string; route: RouteDetail; directionIndex?: number }
+  // `previous`: where Back goes (search, or the route a stop or transfer was tapped on); else Home.
+  // `wholeRoute`: the whole line, opened from search rather than at a stop.
+  | { name: 'route'; routeId: string; route: RouteDetail; directionIndex?: number; previous?: ActiveView; wholeRoute?: boolean }
   // "More departures" for one direction of an opened route; back returns to that route and direction.
-  | { name: 'departures'; routeId: string; route: RouteDetail; directionIndex: number }
+  | { name: 'departures'; routeId: string; route: RouteDetail; directionIndex: number; previous?: ActiveView; wholeRoute?: boolean }
   | ResultsViewState
   | { name: 'enroute' }
   | { name: 'profile'; route?: 'places' }
@@ -115,6 +123,8 @@ type RouteDetailScreenProps = {
   isFavorite: boolean;
   onBack: () => void;
   onOpenDepartures: (directionIndex: number) => void;
+  onOpenTransfer: (transfer: LineTransfer, stop: TappedStop) => void;
+  wholeRoute?: boolean;
   onRefreshLocation: () => void;
   onToggleFavorite: () => void;
   route: RouteDetail;
@@ -123,7 +133,7 @@ type RouteDetailScreenProps = {
 };
 
 /** Reads live transit data itself — must render under TransitLiveProvider, which HomeScreen itself can't consume. */
-function RouteDetailScreen({ initialDirectionIndex, isFavorite, location, locationKnown, onBack, onOpenDepartures, onRefreshLocation, onToggleFavorite, route }: RouteDetailScreenProps) {
+function RouteDetailScreen({ initialDirectionIndex, isFavorite, location, locationKnown, onBack, onOpenDepartures, onOpenTransfer, onRefreshLocation, onToggleFavorite, route, wholeRoute }: RouteDetailScreenProps) {
   const live = useTransitLive(route.id);
   // Re-applies live data every 30 s so countdowns age and past departures drop between polls.
   const now = useNow(30_000);
@@ -135,9 +145,11 @@ function RouteDetailScreen({ initialDirectionIndex, isFavorite, location, locati
       locationKnown={locationKnown}
       onBack={onBack}
       onOpenDepartures={onOpenDepartures}
+      onOpenTransfer={onOpenTransfer}
       onRefreshLocation={onRefreshLocation}
       onToggleFavorite={onToggleFavorite}
       route={applyRouteLive(route, live, now)}
+      wholeRoute={wholeRoute}
     />
   );
 }
@@ -159,12 +171,23 @@ export function HomeScreen() {
   const [tripTime, setTripTime] = useState<TripTimeChoice>({ mode: 'now' });
   const [arrivedDestination, setArrivedDestination] = useState<string | null>(null);
   const [tripStartFailed, setTripStartFailed] = useState(false);
-  // One "Save" star replaces pin + favorite: saved routes lead Nearby and fill Favorites -> Routes.
-  // Nothing is saved by default.
-  const [savedRouteIds, setSavedRouteIds] = useState<readonly string[]>([]);
   // A trip's star saves its destination to the account (Firestore), listed under Favorites -> Places.
   const { user } = useAuth();
   const uid = user?.uid;
+  // One "Save" star replaces pin + favorite: saved routes lead Nearby and fill Favorites -> Routes.
+  // Real lines are saved to the account (with their alert setting), so they show anywhere and
+  // the backend can push their alerts; the demo catalog's illustrative routes stay on this device.
+  // Nothing is saved by default.
+  const [accountRoutes, setAccountRoutes] = useState<readonly SavedRoute[]>([]);
+  const [localSavedRouteIds, setLocalSavedRouteIds] = useState<readonly string[]>([]);
+  useEffect(() => {
+    if (!uid) return undefined;
+    return subscribeToSavedRoutes(uid, setAccountRoutes);
+  }, [uid]);
+  const savedRouteIds = useMemo(() => [...accountRoutes.map((route) => route.id), ...localSavedRouteIds], [accountRoutes, localSavedRouteIds]);
+  const accountRouteDetails = useMemo(() => new Map(accountRoutes.map((route) => [route.id, savedRouteToRouteDetail(route)])), [accountRoutes]);
+  // Right after saving a line: "When should we alert you?" (null when closed).
+  const [alertsPrompt, setAlertsPrompt] = useState<{ id: string; name: string } | null>(null);
   // New searches start from the rider's travel preferences; a ref keeps the open callbacks stable.
   const travelPreferences = useUserPreferences().preferences.travel;
   const travelPreferencesRef = useRef(travelPreferences);
@@ -285,9 +308,9 @@ export function HomeScreen() {
   // the exact same real line as one that's currently pinned (so it isn't shown twice) — a
   // pure filter over `allDiscoveredRoutes`, re-evaluated on save/unsave without a network call.
   const nearbyRoutes = useMemo(() => {
-    const savedRoutes = savedRouteIds.map((id) => routes.find((route) => route.id === id)).filter((route): route is RouteDetail => route != null);
+    const savedRoutes = savedRouteIds.map((id) => routes.find((route) => route.id === id) ?? accountRouteDetails.get(id)).filter((route): route is RouteDetail => route != null);
     return filterOutPinnedDuplicates(allDiscoveredRoutes, savedRoutes);
-  }, [allDiscoveredRoutes, savedRouteIds]);
+  }, [accountRouteDetails, allDiscoveredRoutes, savedRouteIds]);
 
   // Resolves either kind of id a card/pin/favorite can hold: the demo catalog's own (routeById)
   // or a dynamically-discovered one — so opening, pinning, or favoriting works the same way
@@ -295,14 +318,57 @@ export function HomeScreen() {
   // the pin-filtered `nearbyRoutes` — a just-pinned route must stay resolvable by id even
   // though it's no longer shown in the Nearby section itself.
   const findRoute = useCallback(
-    (routeId: string): RouteDetail | undefined => routes.find((route) => route.id === routeId) ?? allDiscoveredRoutes.find((route) => route.id === routeId),
-    [allDiscoveredRoutes],
+    (routeId: string): RouteDetail | undefined => routes.find((route) => route.id === routeId)
+      ?? allDiscoveredRoutes.find((route) => route.id === routeId)
+      // A saved line far from here still opens, from what was saved with it.
+      ?? accountRouteDetails.get(routeId),
+    [accountRouteDetails, allDiscoveredRoutes],
   );
+
+  // The id a route is saved under: its real line ("lirr:10"), whichever stop or card it was
+  // opened from; a demo route without live data keeps its own.
+  const savedIdFor = (route: RouteDetail) => (route.liveSource ? `${route.liveSource.agencyId}:${route.liveSource.routeId}` : route.id);
+  const toggleSavedRoute = useCallback((route: RouteDetail) => {
+    const id = route.liveSource ? `${route.liveSource.agencyId}:${route.liveSource.routeId}` : route.id;
+    const saved = route.liveSource && uid ? savedRouteFrom(route, 'off') : null;
+    if (!saved || !uid) {
+      setLocalSavedRouteIds((current) => toggleItem(current, id));
+      return;
+    }
+    // The listener shows the change; a rejected write leaves the star as it was.
+    if (accountRoutes.some((existing) => existing.id === id)) {
+      removeSavedRoute(uid, id).catch(() => undefined);
+      return;
+    }
+    saveRoute(uid, saved).catch(() => undefined);
+    setAlertsPrompt({ id, name: route.shortName && route.shortName !== route.routeName ? `${route.shortName} · ${route.routeName}` : route.routeName });
+  }, [accountRoutes, uid]);
+  const chooseRouteAlerts = useCallback((setting: RouteAlertSetting) => {
+    const prompt = alertsPrompt;
+    setAlertsPrompt(null);
+    if (!prompt || !uid || setting === 'off') return;
+    setRouteAlerts(uid, prompt.id, setting).catch(() => undefined);
+    void registerForRouteAlerts(uid);
+  }, [alertsPrompt, uid]);
 
   const openRoute = useCallback((routeId: string) => {
     const route = findRoute(routeId);
     if (route) setActiveView({ name: 'route', routeId, route });
   }, [findRoute]);
+
+  // A line opened from search: the whole line, Back returns to the search.
+  const openSearchedLine = useCallback((line: DiscoveredRoute) => {
+    const route = discoveredRouteToRouteDetail(line);
+    setActiveView({ name: 'route', routeId: route.id, route, wholeRoute: true, previous: { name: 'search' } });
+  }, []);
+  // A transfer badge: that line, at the stop it was tapped on. Opens once its stops are known;
+  // ignored if the rider has left this page meanwhile.
+  const openTransfer = useCallback((from: Extract<ActiveView, { name: 'route' }>, transfer: LineTransfer, stop: TappedStop) => {
+    void fetchRouteAtStop(transfer.agencyId, transfer.routeId, { latitude: stop.lat, longitude: stop.lon }).then(
+      (route) => setActiveView((current) => (current === from ? { name: 'route', routeId: route.id, route, previous: from } : current)),
+      () => undefined,
+    );
+  }, []);
 
   const mapHeight = Math.max(
     MINIMUM_MAP_HEIGHT,
@@ -467,6 +533,11 @@ export function HomeScreen() {
   }, [activeDestinationLabel, activeSessionId, advanceTrip, fixAccuracy, fixCapturedAt, fixLatitude, fixLongitude, fixSource, mockFixKey, navigationFix]);
 
   const closeCurrentView = useCallback(() => {
+    if (activeView.name === 'search' && activeView.pickOnMap) {
+      setActiveView({ ...activeView, pickOnMap: false });
+      return;
+    }
+
     if (activeView.name === 'admin') {
       setActiveView({ name: 'profile' });
       return;
@@ -495,8 +566,13 @@ export function HomeScreen() {
     }
 
     if (activeView.name === 'departures') {
-      const { directionIndex, route, routeId } = activeView;
-      setActiveView({ name: 'route', routeId, route, directionIndex });
+      const { directionIndex, previous, route, routeId, wholeRoute } = activeView;
+      setActiveView({ name: 'route', routeId, route, directionIndex, previous, wholeRoute });
+      return;
+    }
+
+    if (activeView.name === 'route' && activeView.previous) {
+      setActiveView(activeView.previous);
       return;
     }
 
@@ -527,6 +603,7 @@ export function HomeScreen() {
     <TransitLiveProvider activeRouteIds={activeLiveRouteIds} extraRoutes={liveRoutes} location={nearbyPoint}>
       <ScreenTransition key={transitionKey}>{node}</ScreenTransition>
       {savePlaceSheet}
+      <RouteAlertsPrompt onChoose={chooseRouteAlerts} routeName={alertsPrompt?.name ?? null} />
     </TransitLiveProvider>
   );
 
@@ -598,6 +675,19 @@ export function HomeScreen() {
     }
   }
 
+  if (activeView.name === 'search' && activeView.pickOnMap) {
+    const search = activeView;
+    const pick = (place: SearchPlace) => {
+      if (search.editing) {
+        const { field, results } = search.editing;
+        setActiveView({ ...results, criteria: { ...results.criteria, [field]: place.title, [field === 'origin' ? 'originPlace' : 'destinationPlace']: place } });
+      } else {
+        showRouteResults(place);
+      }
+    };
+    return screen(<MapPickerView location={riderLocation(location, locationStatus) ?? location} onCancel={closeCurrentView} onPick={pick} />);
+  }
+
   if (activeView.name === 'search' && activeView.pickMockLocation) {
     // Admin: any searchable place becomes the mock location.
     return screen(
@@ -645,6 +735,7 @@ export function HomeScreen() {
           near={riderLocation(location, locationStatus)}
           initialQuery={current === CURRENT_LOCATION_LABEL ? '' : current}
           onCancel={() => setActiveView(results)}
+          onChooseOnMap={() => setActiveView({ ...activeView, pickOnMap: true })}
           onSelect={(place) => choose(place.title, place)}
           onSelectCurrentLocation={field === 'origin' ? () => choose(CURRENT_LOCATION_LABEL) : undefined}
           savedPlaces={savedLocations}
@@ -656,27 +747,32 @@ export function HomeScreen() {
         near={riderLocation(location, locationStatus)}
         onAddSavedPlace={uid ? (label) => addSavedPlace('search', label) : undefined}
         onCancel={showHome}
+        onChooseOnMap={() => setActiveView({ name: 'search', pickOnMap: true })}
         onSelect={showRouteResults}
+        onSelectLine={openSearchedLine}
         savedPlaces={savedLocations}
       />
     );
   }
 
   if (activeView.name === 'route') {
-    const { routeId } = activeView;
+    const routeView = activeView;
+    const { previous, routeId, wholeRoute } = activeView;
     // Prefer the freshest copy, but keep the opened snapshot if the route has since dropped out
     // of the nearby list (the rider moved), so the page stays open.
     const route = findRoute(routeId) ?? activeView.route;
     return screen(
       <RouteDetailScreen
         initialDirectionIndex={activeView.directionIndex}
-        isFavorite={savedRouteIds.includes(routeId)}
-        onBack={showHome}
-        onOpenDepartures={(directionIndex) => setActiveView({ name: 'departures', routeId, route, directionIndex })}
+        isFavorite={savedRouteIds.includes(savedIdFor(route))}
+        onBack={closeCurrentView}
+        onOpenDepartures={(directionIndex) => setActiveView({ name: 'departures', routeId, route, directionIndex, previous, wholeRoute })}
+        onOpenTransfer={(transfer, stop) => openTransfer(routeView, transfer, stop)}
+        wholeRoute={wholeRoute}
         onRefreshLocation={() => void refreshLocation()}
         location={location}
         locationKnown={locationStatus === 'located'}
-        onToggleFavorite={() => setSavedRouteIds((current) => toggleItem(current, routeId))}
+        onToggleFavorite={() => toggleSavedRoute(route)}
         route={route}
       />
     );

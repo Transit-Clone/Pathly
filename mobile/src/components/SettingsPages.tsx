@@ -12,7 +12,9 @@ import {
   shareUserData,
   updateDisplayName,
 } from '../data/accountData';
+import { ROUTE_ALERT_OPTIONS, setRouteAlerts, setRouteAlertsPaused, subscribeToSavedRoutes, type SavedRoute } from '../data/savedRoutes';
 import { ALL_TRANSIT_MODES, useUserPreferences, WALK_LIMIT_OPTIONS } from '../data/userPreferences';
+import { registerForRouteAlerts } from '../lib/notifications';
 import { useAppSettings, useTheme, useThemedStyles, type TextSize } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
@@ -126,9 +128,28 @@ export function NotificationSettings({ onFeedback }: PageProps) {
   const { profile } = useStyles();
   const { preferences, updatePreferences } = useUserPreferences();
   const { notifications } = preferences;
+  const { user } = useAuth();
+  const uid = user?.uid;
+  // Each saved line's own alert setting, stored with it on the account (the backend reads it).
+  const [savedRoutes, setSavedRoutes] = useState<readonly SavedRoute[]>([]);
+  useEffect(() => {
+    if (!uid) return undefined;
+    return subscribeToSavedRoutes(uid, setSavedRoutes);
+  }, [uid]);
   const set = (key: keyof typeof notifications, value: boolean) => {
     updatePreferences({ notifications: { [key]: value } });
+    if (uid && (key === 'enabled' || key === 'serviceAlerts')) {
+      const next = { ...notifications, [key]: value };
+      setRouteAlertsPaused(uid, !(next.enabled && next.serviceAlerts)).catch(() => undefined);
+    }
     onFeedback('Notification preferences saved');
+  };
+  const setLineAlerts = (route: SavedRoute, label: string) => {
+    const option = ROUTE_ALERT_OPTIONS.find((candidate) => candidate.label === label);
+    if (!uid || !option) return;
+    setRouteAlerts(uid, route.id, option.value).catch(() => undefined);
+    if (option.value !== 'off') void registerForRouteAlerts(uid);
+    onFeedback(`${route.shortName || route.routeName} alerts: ${option.label}`);
   };
   return (
     <>
@@ -138,12 +159,27 @@ export function NotificationSettings({ onFeedback }: PageProps) {
         {notifications.enabled ? (
           <>
             <ToggleRow detail="Changes and delays on saved routes" label="Service alerts" onChange={(value) => set('serviceAlerts', value)} testID="toggle-service-alerts" value={notifications.serviceAlerts} />
-            <ToggleRow detail="Leave-time and transfer reminders" label="Trip reminders" onChange={(value) => set('tripReminders', value)} testID="toggle-trip-reminders" value={notifications.tripReminders} />
+            <ToggleRow detail="A nudge on GO when you need to hurry to make your ride" label="Trip reminders" onChange={(value) => set('tripReminders', value)} testID="toggle-trip-reminders" value={notifications.tripReminders} />
             <ToggleRow detail="Major incidents near your trip" label="Disruption updates" onChange={(value) => set('disruptions', value)} testID="toggle-disruptions" value={notifications.disruptions} />
           </>
         ) : null}
       </Card>
-      <Text style={profile.note} testID="notifications-not-sent">Pathly doesn&apos;t send push alerts yet. Your choices are saved to this device and will apply when alerts arrive.</Text>
+      <Text style={profile.sectionLabel}>SAVED LINES</Text>
+      <Card>
+        {savedRoutes.length === 0 ? (
+          <SettingRow detail="Star a line in route view to get its service alerts" label="No saved lines yet" testID="notifications-no-saved-lines" />
+        ) : savedRoutes.map((route) => (
+          <ChoiceRow
+            key={route.id}
+            label={route.shortName && route.shortName !== route.routeName ? `${route.shortName} · ${route.routeName}` : route.routeName}
+            onSelect={(label) => setLineAlerts(route, label)}
+            options={ROUTE_ALERT_OPTIONS.map((option) => option.label)}
+            selected={ROUTE_ALERT_OPTIONS.find((option) => option.value === route.alerts)?.label ?? 'Off'}
+            testPrefix={`line-alerts-${route.id}`}
+          />
+        ))}
+      </Card>
+      <Text style={profile.note} testID="notifications-not-sent">{"Peak times are weekdays 6–10 AM and 4–8 PM. Line alerts arrive as push notifications in the Android and iOS app; the web app doesn't receive them."}</Text>
     </>
   );
 }

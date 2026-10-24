@@ -73,9 +73,11 @@ export async function getRouteGeometry(agencyId: AgencyId, routeId: string, dire
 
 /**
  * One direction's stop. `distanceMeters` is straight line from the rider; `walkMeters` is the walk
- * there along the street graph, or null when it fell back to straight line.
+ * there along the street graph, or null when it fell back to straight line. `stopsAhead` is how
+ * many stops this direction still has after this one (0 at the end of the line), null when the
+ * route's stop sequence couldn't be read.
  */
-export type RouteDirectionStop = { stopId: string; name: string; headsign: string | null; distanceMeters: number; walkMeters: number | null };
+export type RouteDirectionStop = { stopId: string; name: string; headsign: string | null; distanceMeters: number; walkMeters: number | null; stopsAhead: number | null };
 
 export type NearestRouteStop = {
   /** Smallest straight-line distance to direction1's/direction0's stop — "how far is the nearest thing on this route", for display and the Nearby radius. */
@@ -200,11 +202,24 @@ export async function getNearestStopForRoute(agencyId: AgencyId, routeId: string
         break;
       }
     }
-    return { ...nearest, headsign };
+    return { ...nearest, headsign, stopsAhead: null };
   };
 
-  const direction1 = nearestInDirection(1);
-  const direction0 = nearestInDirection(0);
+  // Where each stop sits along its direction, so riders at the end of a line can be shown the
+  // direction they can actually ride. Directional platforms (subway "127N") are listed by station.
+  const withStopsAhead = async (directionId: 0 | 1, stop: RouteDirectionStop | null): Promise<RouteDirectionStop | null> => {
+    if (!stop) return null;
+    try {
+      const geometry = await getRouteGeometry(agencyId, routeId, directionId);
+      if (!geometry) return stop;
+      const station = stopsById.get(stop.stopId)?.parentStation ?? null;
+      const index = geometry.stops.findIndex((candidate) => candidate.stopId === stop.stopId || candidate.stopId === station);
+      return index < 0 ? stop : { ...stop, stopsAhead: geometry.stops.length - 1 - index };
+    } catch {
+      return stop;
+    }
+  };
+  const [direction1, direction0] = await Promise.all([withStopsAhead(1, nearestInDirection(1)), withStopsAhead(0, nearestInDirection(0))]);
   if (!direction1 && !direction0) return null;
 
   return {
@@ -227,6 +242,149 @@ export type DiscoveredRoute = {
   direction1: RouteDirectionStop | null;
   direction0: RouteDirectionStop | null;
 };
+
+/** One route as Nearby lists it, with each direction's stop nearest (lat, lon). Null for an unknown route or one with no usable stop. */
+export async function describeRoute(agencyId: AgencyId, routeId: string, lat: number, lon: number): Promise<DiscoveredRoute | null> {
+  const route = loadAgencyStaticData(agencyId).routesById.get(routeId);
+  if (!route) return null;
+  const nearest = await getNearestStopForRoute(agencyId, routeId, lat, lon);
+  if (!nearest) return null;
+  return {
+    agencyId,
+    agencyDisplayName: agencyConfig(agencyId).displayName,
+    routeId,
+    routeName: route.name,
+    shortName: route.shortName,
+    color: displayRouteColor(agencyId, route),
+    distanceMeters: nearest.distanceMeters,
+    direction1: nearest.direction1,
+    direction0: nearest.direction0,
+  };
+}
+
+const MAX_ROUTE_RESULTS = 12;
+// Words a rider might search a line by besides its own names: its mode ("ferry", "bus", "train").
+const MODE_WORDS: Record<AgencyId, string> = { subway: 'subway train', lirr: 'rail train', nycferry: 'ferry boat', siferry: 'ferry boat', nice: 'bus', suffolk: 'bus', bx: 'bus', bk: 'bus', mn: 'bus', qn: 'bus', si: 'bus', busco: 'bus' };
+// Rail, subway and ferry lines come before buses: they're what people search for by name.
+const MODE_RANK: Record<AgencyId, number> = { subway: 0, lirr: 0, nycferry: 1, siferry: 1, nice: 2, suffolk: 2, bx: 2, bk: 2, mn: 2, qn: 2, si: 2, busco: 2 };
+const routeSearchText = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+/**
+ * Lines whose name matches a search ("1", "b46", "port jefferson"), best first: an exact short
+ * name, then (from two characters typed) a short name starting with the query, then lines where
+ * each typed word starts a word of the long name, agency or mode ("astoria", "ferry", "staten
+ * island ferry"). Each is described as Nearby would, at its stops nearest (lat, lon).
+ */
+export async function searchRoutes(query: string, lat: number, lon: number): Promise<DiscoveredRoute[]> {
+  const typed = routeSearchText(query);
+  if (!typed) return [];
+  const words = typed.split(' ');
+  const matches: { agencyId: AgencyId; routeId: string; score: number; shortName: string }[] = [];
+  for (const agencyId of availableAgencyIds()) {
+    const agencyWords = routeSearchText(`${agencyConfig(agencyId).displayName} ${MODE_WORDS[agencyId]}`).split(' ');
+    for (const route of loadAgencyStaticData(agencyId).routesById.values()) {
+      const short = routeSearchText(route.shortName);
+      const longWords = [...routeSearchText(route.name).split(' '), ...agencyWords];
+      const score = short === typed ? 3
+        : typed.length >= 2 && short.startsWith(typed) && short.length - typed.length <= 2 ? 2
+        : typed.length >= 3 && words.every((word) => longWords.some((part) => part.startsWith(word))) ? 1
+        : 0;
+      if (score > 0) matches.push({ agencyId, routeId: route.routeId, score, shortName: route.shortName });
+    }
+  }
+  matches.sort((a, b) => b.score - a.score
+    || MODE_RANK[a.agencyId] - MODE_RANK[b.agencyId]
+    || a.shortName.length - b.shortName.length
+    || a.shortName.localeCompare(b.shortName, undefined, { numeric: true }));
+  const described = await Promise.all(matches.slice(0, MAX_ROUTE_RESULTS).map((match) => describeRoute(match.agencyId, match.routeId, lat, lon)));
+  return described.filter((route): route is DiscoveredRoute => route !== null);
+}
+
+/** Another line calling at (or a short walk from) a stop: a transfer badge in route view. */
+export type StopTransfer = { agencyId: AgencyId; agencyDisplayName: string; routeId: string; shortName: string; color: string };
+
+// Station transfers (subway to LIRR at Jamaica) span a bigger complex than a bus stop pair does.
+const STATION_AGENCIES = new Set<AgencyId>(['subway', 'lirr', 'nycferry', 'siferry']);
+const STATION_TRANSFER_METERS = 250;
+const STOP_TRANSFER_METERS = 120;
+const GRID_DEGREES = 0.005;
+
+type GridStop = { lat: number; lon: number; routeIds: Set<string> };
+const gridCache = new Map<AgencyId, Promise<Map<string, GridStop[]>>>();
+const transferCache = new Map<string, Promise<Record<string, StopTransfer[]>>>();
+const gridKey = (row: number, col: number) => `${row}:${col}`;
+
+/** An agency's served stops on a coarse lat/lon grid, so "what's within 250 m" reads a few cells. */
+function stopGrid(agencyId: AgencyId): Promise<Map<string, GridStop[]>> {
+  const cached = gridCache.get(agencyId);
+  if (cached) return cached;
+  const promise = loadGlobalStopRouteIndex(agencyId).then((routeIdsByStop) => {
+    const { stopsById } = loadAgencyStaticData(agencyId);
+    const grid = new Map<string, GridStop[]>();
+    for (const [stopId, routeIds] of routeIdsByStop) {
+      const stop = stopsById.get(stopId);
+      if (!stop) continue;
+      const key = gridKey(Math.floor(stop.lat / GRID_DEGREES), Math.floor(stop.lon / GRID_DEGREES));
+      const cell = grid.get(key) ?? [];
+      cell.push({ lat: stop.lat, lon: stop.lon, routeIds });
+      grid.set(key, cell);
+    }
+    return grid;
+  });
+  gridCache.set(agencyId, promise);
+  return promise;
+}
+
+async function routesNear(agencyId: AgencyId, lat: number, lon: number, radius: number): Promise<Set<string>> {
+  const grid = await stopGrid(agencyId);
+  const row = Math.floor(lat / GRID_DEGREES);
+  const col = Math.floor(lon / GRID_DEGREES);
+  const routeIds = new Set<string>();
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dc = -1; dc <= 1; dc++) {
+      for (const stop of grid.get(gridKey(row + dr, col + dc)) ?? []) {
+        if (haversineMeters(lat, lon, stop.lat, stop.lon) <= radius) stop.routeIds.forEach((id) => routeIds.add(id));
+      }
+    }
+  }
+  return routeIds;
+}
+
+/**
+ * For each stop of a route's direction, the other lines a rider can change to there: the agency's
+ * other routes at that station and any agency's lines a short walk away. Rail, subway and ferry
+ * first, then buses, each in name order. Cached per route and direction for the instance.
+ */
+export function getRouteTransfers(agencyId: AgencyId, routeId: string, directionId: 0 | 1): Promise<Record<string, StopTransfer[]>> {
+  const cacheKey = `${agencyId}:${routeId}:${directionId}`;
+  const cached = transferCache.get(cacheKey);
+  if (cached) return cached;
+  const promise = (async () => {
+    const result: Record<string, StopTransfer[]> = {};
+    const geometry = await getRouteGeometry(agencyId, routeId, directionId);
+    if (!geometry) return result;
+    const agencies = availableAgencyIds();
+    for (const stop of geometry.stops) {
+      const transfers: StopTransfer[] = [];
+      for (const other of agencies) {
+        const radius = STATION_AGENCIES.has(agencyId) || STATION_AGENCIES.has(other) ? STATION_TRANSFER_METERS : STOP_TRANSFER_METERS;
+        const { routesById } = loadAgencyStaticData(other);
+        for (const id of await routesNear(other, stop.lat, stop.lon, radius)) {
+          if (other === agencyId && id === routeId) continue;
+          const route = routesById.get(id);
+          if (!route) continue;
+          transfers.push({ agencyId: other, agencyDisplayName: agencyConfig(other).displayName, routeId: id, shortName: route.shortName, color: displayRouteColor(other, route) });
+        }
+      }
+      transfers.sort((a, b) => MODE_RANK[a.agencyId] - MODE_RANK[b.agencyId] || a.shortName.localeCompare(b.shortName, undefined, { numeric: true }));
+      if (transfers.length > 0) result[stop.stopId] = transfers;
+    }
+    return result;
+  })();
+  transferCache.set(cacheKey, promise);
+  promise.catch(() => transferCache.delete(cacheKey));
+  return promise;
+}
 
 // "Nearest" isn't the same as "nearby" — findNearestStops always returns the N closest stops
 // in that agency's whole system, even if that's 50 miles away somewhere with no real transit
@@ -303,23 +461,7 @@ export async function findNearbyTransit(lat: number, lon: number, limit = MAX_NE
   // `${agencyId}:${routeId}` -> resolved route (null if it has no usable stop), across passes.
   const resolved = new Map<string, DiscoveredRoute | null>();
 
-  const resolveRoute = async (agencyId: AgencyId, routeId: string): Promise<DiscoveredRoute | null> => {
-    const route = loadAgencyStaticData(agencyId).routesById.get(routeId);
-    if (!route) return null;
-    const nearest = await getNearestStopForRoute(agencyId, routeId, lat, lon);
-    if (!nearest) return null;
-    return {
-      agencyId,
-      agencyDisplayName: agencyConfig(agencyId).displayName,
-      routeId,
-      routeName: route.name,
-      shortName: route.shortName,
-      color: displayRouteColor(agencyId, route),
-      distanceMeters: nearest.distanceMeters,
-      direction1: nearest.direction1,
-      direction0: nearest.direction0,
-    };
-  };
+  const resolveRoute = (agencyId: AgencyId, routeId: string) => describeRoute(agencyId, routeId, lat, lon);
 
   const resolvedWithin = (multiplier: number) => [...resolved.values()].filter((route): route is DiscoveredRoute => (
     route !== null && route.distanceMeters <= Math.min(baseRadius(route.agencyId) * multiplier, capRadius(route.agencyId))

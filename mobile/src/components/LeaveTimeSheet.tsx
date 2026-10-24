@@ -119,7 +119,11 @@ export function LeaveTimeSheet({ onCancel, onConfirm, value }: LeaveTimeSheetPro
 
 const createStyles = (colors: Palette) => StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: colors.scrim },
+  // The app's column width, so on a wide (web) window it's a sheet rather than a full-width bar.
   sheet: {
+    width: '100%',
+    maxWidth: 540,
+    alignSelf: 'center',
     paddingHorizontal: 18,
     paddingBottom: 16,
     borderTopLeftRadius: 26,

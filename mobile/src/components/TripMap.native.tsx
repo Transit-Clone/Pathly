@@ -9,8 +9,6 @@ import { useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies } from '../theme/typography';
 import { CurrentLocationMarker } from './CurrentLocationMarker';
-import { Icon } from './Icon';
-import { PressableScale } from './PressableScale';
 
 const FIT_PADDING = { top: 90, right: 40, bottom: 60, left: 40 };
 const TRANSIT_WIDTH = 6;
@@ -39,7 +37,6 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
   const coordinatesKey = useMemo(() => coordinates.map((point) => `${point.latitude},${point.longitude}`).join(';'), [coordinates]);
   const hasNavigationProgress = navigationProgress != null;
   const [selected, setSelected] = useState<number | null>(null);
-  const [moved, setMoved] = useState(false);
   const [mapReady, setMapReady] = useState(false);
   const [internalFollow, setInternalFollow] = useState(() => navigationProgress != null);
   const following = followUser ?? internalFollow;
@@ -71,7 +68,6 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
   const onRegionChangeComplete = (region: Region, details?: { isGesture?: boolean }) => {
     setZoom(zoomForRegion(region.longitudeDelta, mapWidth || windowWidth));
     if (interactive && details?.isGesture) {
-      setMoved(true);
       setFollowing(false);
       onUserPan?.();
     }
@@ -132,7 +128,6 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
   if (focusStop && focusStop.key !== handledFocusKey) {
     setHandledFocusKey(focusStop.key);
     setSelected(stopIndexAt(stops, focusStop.point));
-    setMoved(true);
   }
   useEffect(() => {
     if (!focusStop) return;
@@ -144,7 +139,6 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
   if (centerOnUserRequest !== handledCenterRequest) {
     setHandledCenterRequest(centerOnUserRequest);
     if (navigationProgress && followUser === undefined) setInternalFollow(true);
-    if (userLocation) setMoved(true);
   }
   const centerRequestForEffect = useRef(centerOnUserRequest);
   useEffect(() => {
@@ -166,7 +160,6 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
           setMapReady(true);
         }}
         onPanDrag={interactive ? () => {
-          setMoved(true);
           setFollowing(false);
           onUserPan?.();
         } : undefined}
@@ -248,22 +241,6 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
           </Marker>
         ) : null}
       </MapView>
-      {interactive && moved ? (
-        <PressableScale
-          accessibilityLabel="Show the whole trip"
-          accessibilityRole="button"
-          onPress={() => {
-            setMoved(false);
-            setSelected(null);
-            setFollowing(false);
-            frame();
-          }}
-          style={[styles.reframe, { top: padding.top, right: 14 }]}
-          testID={`${testID}-reframe`}
-        >
-          <Icon color={colors.primary} name="fit" size={22} />
-        </PressableScale>
-      ) : null}
     </View>
   );
 }
@@ -274,6 +251,5 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   viaDot: { width: 9, height: 9, borderWidth: 2, borderColor: '#FFFFFF', borderRadius: 5 },
   label: { maxWidth: 240, paddingVertical: 6, paddingHorizontal: 10, borderRadius: 12, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 6, elevation: 4 },
   labelText: { color: colors.ink, fontFamily: fontFamilies.bold, fontSize: 13 },
-  reframe: { position: 'absolute', width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.18, shadowRadius: 8, elevation: 5 },
   staleLocation: { opacity: 0.45 },
 });

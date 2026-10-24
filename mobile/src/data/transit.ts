@@ -23,6 +23,8 @@ export type TransitDirection = {
   stopId?: string;
   /** Straight-line meters from the rider to `stopId`, when the backend reported it. */
   distanceMeters?: number;
+  /** Stops this direction still serves after `stopId` (0 at the end of the line), when known. */
+  stopsAhead?: number;
   /** True when this route has a `liveSource` but real data hasn't loaded (or failed to) — `minutes`/`live` are stale placeholders in that case and shouldn't be shown; UI should show a loading/unavailable state instead. Absent for routes with no `liveSource` (always-static, `minutes` is legitimate illustrative data). */
   unavailable?: boolean;
 };
@@ -33,13 +35,27 @@ export type TransitDirection = {
  * Smaller gaps are just the two sides of one street or station.
  */
 const DIRECTION_STOPS_APART_METERS = 800;
+/** A direction this close to its last stop is one the rider is unlikely to board. */
+const NEAR_LINE_END_FRACTION = 0.25;
+const NEAR_LINE_END_STOPS = 2;
 
-/** The index of the direction whose stop is clearly nearer the rider, or null when neither is. */
-export function nearerDirectionIndex(directions: readonly TransitDirection[]): 0 | 1 | null {
+/**
+ * Which direction a card or route page should open on, or null to keep the usual order:
+ * - the one leaving from the clearly nearer stop (ferry terminals), else
+ * - the one with the line still ahead, when the other is at or near its last stop — at Whitehall
+ *   St, the 1 heading uptown rather than the one stop left to South Ferry.
+ */
+export function preferredDirectionIndex(directions: readonly TransitDirection[]): 0 | 1 | null {
   const [first, second] = directions;
-  if (first?.distanceMeters == null || second?.distanceMeters == null) return null;
-  if (Math.abs(first.distanceMeters - second.distanceMeters) < DIRECTION_STOPS_APART_METERS) return null;
-  return first.distanceMeters < second.distanceMeters ? 0 : 1;
+  if (!first || !second) return null;
+  if (first.distanceMeters != null && second.distanceMeters != null && Math.abs(first.distanceMeters - second.distanceMeters) >= DIRECTION_STOPS_APART_METERS) {
+    return first.distanceMeters < second.distanceMeters ? 0 : 1;
+  }
+  if (first.stopsAhead == null || second.stopsAhead == null) return null;
+  const nearEnd = (ahead: number, other: number) => ahead < other && ahead <= Math.max(NEAR_LINE_END_STOPS, (ahead + other) * NEAR_LINE_END_FRACTION);
+  if (nearEnd(first.stopsAhead, second.stopsAhead)) return 1;
+  if (nearEnd(second.stopsAhead, first.stopsAhead)) return 0;
+  return null;
 }
 
 export type RoutePrediction = {
@@ -116,6 +132,11 @@ export type LiveSource = {
   direction0StopId: string;
   /** Which `directions` index is GTFS direction_id 1 (the other index is implicitly direction_id 0). */
   direction1Index: 0 | 1;
+  /**
+   * A fixed point to resolve the nearest stop from instead of the rider's location: set when a
+   * line is opened from a stop in route view (a stop row or transfer badge), so it stays at that stop.
+   */
+  anchor?: { latitude: number; longitude: number };
 };
 
 export type RouteDetail = {

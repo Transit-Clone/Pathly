@@ -4,16 +4,16 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useDebug } from '../debug/DebugContext';
 import { useTransitLive } from '../data/TransitLiveContext';
-import { fetchRouteGeometry, type RouteGeometry } from '../data/routeGeometry';
+import { fetchRouteGeometry, fetchRouteTransfers, type LineTransfer, type RouteGeometry } from '../data/routeGeometry';
 import { STATION_TRANSFERS, type StationTransfer, type TransferMode } from '../data/stationTransfers';
-import { departureDisplay, directionDestination, nearerDirectionIndex, formatClockTime, scheduleStopsFromNow, stopsForDirection, type RouteDetail, type RoutePrediction } from '../data/transit';
+import { departureDisplay, directionDestination, preferredDirectionIndex, formatClockTime, scheduleStopsFromNow, stopsForDirection, type RouteDetail, type RoutePrediction } from '../data/transit';
 import { LATE_THRESHOLD_MINUTES, routeNotices } from '../data/routeNotices';
 import { focusStopIndex } from '../data/routeDirection';
 import { useWalkingPath } from '../data/walkingPath';
 import { transferColor } from '../data/routeColors';
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
-import { PopOnActivate, useLayoutEase } from '../theme/motion';
+import { useLayoutEase } from '../theme/motion';
 import type { Palette } from '../theme/colors';
 import { readableColor } from '../theme/contrast';
 import { fontFamilies, typography } from '../theme/typography';
@@ -25,6 +25,7 @@ import { Mascot } from './Mascot';
 import { RouteMap } from './RouteMap';
 import { pointAlong, routeFocus, RouteLines, VehicleMarker, type MapLeg } from './RouteMapOverlay';
 import { badgeLabel, RouteBadge, transitModeForAgency } from './RouteBadge';
+import { MapControlButton } from './MapControlButton';
 import { PressableScale } from './PressableScale';
 import { MapSkeleton, PredictionTilesSkeleton, StopListSkeleton } from './Skeleton';
 
@@ -40,8 +41,17 @@ type RouteDetailViewProps = {
   onOpenDepartures?: (directionIndex: number) => void;
   onRefreshLocation?: () => void;
   onToggleFavorite: () => void;
+  /** Opens a transfer badge's line at the stop it was tapped on. */
+  onOpenTransfer?: (transfer: LineTransfer, stop: TappedStop) => void;
   route: RouteDetail;
+  /**
+   * The whole line, not one stop's view of it (opened from search): every stop is listed, the map
+   * frames the full route, and no part of the line is shown as already passed.
+   */
+  wholeRoute?: boolean;
 };
+
+export type TappedStop = { name: string; stopId?: string; lat: number; lon: number; directionIndex: number };
 
 export function predictionsForDirection(route: RouteDetail, directionIndex: number): readonly RoutePrediction[] {
   if (directionIndex === 0) return route.predictions;
@@ -68,7 +78,7 @@ function predictionsEmptyMessage(route: RouteDetail): string | null {
   return 'No upcoming departures right now.';
 }
 
-type LiveStop = { name: string; time: string; stopId?: string };
+type LiveStop = { name: string; time: string; stopId?: string; lat?: number; lon?: number };
 type LiveStopsResult =
   | { status: 'ready'; stops: readonly LiveStop[] }
   | { status: 'loading' }
@@ -93,6 +103,7 @@ function liveStopsFor(
   geometryStatus: { status: 'loading' | 'error' } | { status: 'loaded'; geometry: RouteGeometry },
   nowMinutes: number,
   leadMinutes: number,
+  wholeRoute = false,
 ): LiveStopsResult {
   if (!route.liveSource) {
     return { status: 'ready', stops: scheduleStopsFromNow(stopsForDirection(route, activeDirectionIndex), nowMinutes, leadMinutes, activeDirection.stopName) };
@@ -100,11 +111,15 @@ function liveStopsFor(
   if (geometryStatus.status !== 'loaded') return geometryStatus;
 
   // Starts at the rider's nearest stop (reached in `leadMinutes`) and runs to the end of the
-  // line in this direction; stops behind the rider are dropped.
+  // line in this direction; stops behind the rider are dropped, unless the whole line is open.
+  // Either way the times are the selected trip's, timed from that stop.
   const { stops } = geometryStatus.geometry;
   const anchorIndex = Math.max(0, focusStopIndex(stops, activeDirection.stopId, activeDirection.stopName));
   const anchor = nowMinutes + leadMinutes - (stops[anchorIndex]?.offsetMinutes ?? 0);
-  return { status: 'ready', stops: stops.slice(anchorIndex).map((stop) => ({ name: stop.name, stopId: stop.stopId, time: formatClockTime(anchor + stop.offsetMinutes) })) };
+  return {
+    status: 'ready',
+    stops: stops.slice(wholeRoute ? 0 : anchorIndex).map((stop) => ({ name: stop.name, stopId: stop.stopId, lat: stop.lat, lon: stop.lon, time: formatClockTime(anchor + stop.offsetMinutes) })),
+  };
 }
 
 const MAX_TRANSFER_CHIPS = 8;
@@ -124,7 +139,9 @@ const isWeb = Platform.OS === 'web';
  * Transfers are generated for the Port Jefferson Branch's stations only
  * (scripts/generate_station_transfers.py), keyed by station name.
  */
-function transfersFor(route: RouteDetail, stopName: string): readonly StationTransfer[] {
+function transfersFor(route: RouteDetail, stop: LiveStop, live: Readonly<Record<string, readonly LineTransfer[]>> | null): readonly (StationTransfer | LineTransfer)[] {
+  if (live) return stop.stopId ? live[stop.stopId] ?? [] : [];
+  const stopName = stop.name;
   if (route.liveSource?.agencyId !== 'lirr' || route.liveSource.routeId !== '10') return [];
   // Only connections to a different agency or mode: on an LIRR route, other LIRR branches at the
   // same station aren't a meaningful "transfer" to call out.
@@ -148,32 +165,43 @@ const OWN_TRANSFER_KIND: Record<NonNullable<RouteDetail['liveSource']>['agencyId
   siferry: { agency: 'Staten Island Ferry', mode: 'ferry' },
 };
 
-/** One connecting line, in its agency's color; subway bullets are round. */
-function TransferChip({ testID, transfer }: { testID: string; transfer: StationTransfer }) {
+const isLineTransfer = (transfer: StationTransfer | LineTransfer): transfer is LineTransfer => 'routeId' in transfer;
+
+/** One connecting line, in its agency's color; subway bullets are round. Tapping one opens that line. */
+function TransferChip({ onOpen, stopName, testID, transfer }: { onOpen?: (transfer: LineTransfer) => void; stopName: string; testID: string; transfer: StationTransfer | LineTransfer }) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
   const color = transferColor(transfer);
   // Recolored buses are white-on-color, like every bus badge; rail keeps its own text color.
   const textColor = color && color !== transfer.color ? colors.white : transfer.textColor ?? colors.white;
-  return (
-    <View
-      style={[styles.transferChip, transfer.mode === 'subway' && styles.subwayChip, { backgroundColor: color ?? colors.surfaceMuted }]}
-      testID={testID}
-    >
-      <Text numberOfLines={1} style={[styles.transferText, { color: color ? textColor : colors.ink }]}>{transfer.name}</Text>
-    </View>
-  );
+  const chipStyle = [styles.transferChip, transfer.mode === 'subway' && styles.subwayChip, { backgroundColor: color ?? colors.surfaceMuted }];
+  const label = <Text numberOfLines={1} style={[styles.transferText, { color: color ? textColor : colors.ink }]}>{transfer.name}</Text>;
+  if (onOpen && isLineTransfer(transfer)) {
+    return (
+      <PressableScale
+        accessibilityLabel={`Open ${transfer.agency} ${transfer.name} at ${stopName}`}
+        accessibilityRole="button"
+        hitSlop={4}
+        onPress={() => onOpen(transfer)}
+        style={chipStyle}
+        testID={testID}
+      >
+        {label}
+      </PressableScale>
+    );
+  }
+  return <View style={chipStyle} testID={testID}>{label}</View>;
 }
 
 /** Connecting lines at a station: rail, then subway (circles), then bus. `+N` opens the full list. */
-function TransferChips({ onShowAll, stopName, transfers }: { onShowAll: () => void; stopName: string; transfers: readonly StationTransfer[] }) {
+function TransferChips({ onOpen, onShowAll, stopName, transfers }: { onOpen?: (transfer: LineTransfer) => void; onShowAll: () => void; stopName: string; transfers: readonly (StationTransfer | LineTransfer)[] }) {
   const styles = useThemedStyles(createStyles);
   const shown = transfers.slice(0, MAX_TRANSFER_CHIPS);
   const hidden = transfers.length - shown.length;
   return (
     <View style={styles.transfers} testID={`stop-transfers-${stopName}`}>
       {shown.map((transfer) => (
-        <TransferChip key={`${transfer.agency}-${transfer.name}`} testID={`route-transfer-${stopName}-${transfer.name}`} transfer={transfer} />
+        <TransferChip key={`${transfer.agency}-${transfer.name}`} onOpen={onOpen} stopName={stopName} testID={`route-transfer-${stopName}-${transfer.name}`} transfer={transfer} />
       ))}
       {hidden > 0 ? (
         <PressableScale
@@ -198,8 +226,15 @@ const TRANSFER_MODE_HEADINGS: readonly { mode: TransferMode; title: string }[] =
   { mode: 'ferry', title: 'Ferry' },
 ];
 
-/** Every transfer at one station, grouped by mode — opened from a row's `+N`. */
-function TransfersSheet({ onClose, sheet }: { onClose: () => void; sheet: { stopName: string; transfers: readonly StationTransfer[] } | null }) {
+/**
+ * A stop's sheet, opened by tapping its row (or its `+N`): every line to change to there, grouped
+ * by mode. Tapping a line opens its route view at this stop.
+ */
+function TransfersSheet({ onClose, onOpen, sheet }: {
+  onClose: () => void;
+  onOpen?: (transfer: LineTransfer) => void;
+  sheet: { stopName: string; transfers: readonly (StationTransfer | LineTransfer)[] } | null;
+}) {
   const styles = useThemedStyles(createStyles);
   return (
     <Modal animationType="slide" onRequestClose={onClose} transparent={true} visible={sheet != null}>
@@ -219,7 +254,7 @@ function TransfersSheet({ onClose, sheet }: { onClose: () => void; sheet: { stop
                   <Text style={styles.transfersSheetHeading}>{title}</Text>
                   <View style={styles.transfers}>
                     {ofMode.map((transfer) => (
-                      <TransferChip key={`${transfer.agency}-${transfer.name}`} testID={`transfers-sheet-chip-${transfer.name}`} transfer={transfer} />
+                      <TransferChip key={`${transfer.agency}-${transfer.name}`} onOpen={onOpen} stopName={sheet.stopName} testID={`transfers-sheet-chip-${transfer.name}`} transfer={transfer} />
                     ))}
                   </View>
                 </View>
@@ -232,7 +267,7 @@ function TransfersSheet({ onClose, sheet }: { onClose: () => void; sheet: { stop
   );
 }
 
-export function RouteDetailView({ initialDirectionIndex, isFavorite, location, locationKnown = false, onBack, onOpenDepartures, onRefreshLocation, onToggleFavorite, route }: RouteDetailViewProps) {
+export function RouteDetailView({ initialDirectionIndex, isFavorite, location, locationKnown = false, onBack, onOpenDepartures, onOpenTransfer, onRefreshLocation, onToggleFavorite, route, wholeRoute = false }: RouteDetailViewProps) {
   const styles = useThemedStyles(createStyles);
   const { colors, isDark } = useTheme();
   // Route colors stay exact on fills; text and icons are lightened in dark mode to stay readable.
@@ -240,7 +275,7 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
   const { height, width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [alertsOpen, setAlertsOpen] = useState(false);
-  const [transfersSheet, setTransfersSheet] = useState<{ stopName: string; transfers: readonly StationTransfer[] } | null>(null);
+  const [transfersSheet, setTransfersSheet] = useState<{ stop: LiveStop; transfers: readonly (StationTransfer | LineTransfer)[] } | null>(null);
   const ease = useLayoutEase();
   const liveStatus = useTransitLive(route.id);
   const debug = useDebug();
@@ -248,9 +283,6 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
   const [isLocationCentered, setIsLocationCentered] = useState(false);
   // Bumped on each location-button press; the live map re-centers on the rider whenever it changes.
   const [centerOnUserRequest, setCenterOnUserRequest] = useState(0);
-  // Bumped by the crosshair (route-overview) button: the map frames the whole route.
-  const [showRouteRequest, setShowRouteRequest] = useState(0);
-  const [isRouteShown, setIsRouteShown] = useState(false);
   const [activeDirectionIndex, setActiveDirectionIndex] = useState(initialDirectionIndex ?? 0);
   const mapHeight = Math.max(280, Math.min(390, height * 0.58));
   const pageWidth = Math.min(width, 540) - 36;
@@ -289,14 +321,14 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
   // A caller-chosen direction counts as already selected, so it isn't overridden.
   const [hasAutoSelectedDirection, setHasAutoSelectedDirection] = useState(initialDirectionIndex !== undefined);
   const directionScrollRef = useRef<ScrollView>(null);
-  // The exception is a rider clearly at one end of the line (the ferry terminals): the boat leaving
-  // from the far side is never the one they want, however soon it goes.
+  // The exception is a rider clearly at one end of the line (a ferry terminal, the 1 at South
+  // Ferry): the direction that's nearly over is never the one they want, however soon it goes.
   if (!hasAutoSelectedDirection) {
     const [first, second] = route.directions;
-    const nearer = nearerDirectionIndex(route.directions);
-    if (nearer !== null) {
+    const preferred = preferredDirectionIndex(route.directions);
+    if (preferred !== null) {
       setHasAutoSelectedDirection(true);
-      setActiveDirectionIndex(nearer);
+      setActiveDirectionIndex(preferred);
     } else if (first.live && second.live && !first.unavailable && !second.unavailable) {
       setHasAutoSelectedDirection(true);
       if (second.minutes < first.minutes) setActiveDirectionIndex(1);
@@ -397,6 +429,22 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed on the stable primitive IDs, not the liveSource object (see comment above)
   }, [liveSourceAgencyId, liveSourceRouteId, geometryDirectionId]);
 
+  // Other lines at each stop, from every agency's data; arrives after the stop list. Null until then.
+  const transfersKey = `${liveSourceAgencyId}:${liveSourceRouteId}:${geometryDirectionId}`;
+  const [loadedTransfers, setLoadedTransfers] = useState<{ key: string; transfers: Readonly<Record<string, readonly LineTransfer[]>> } | null>(null);
+  const lineTransfers = loadedTransfers?.key === transfersKey ? loadedTransfers.transfers : null;
+  useEffect(() => {
+    if (!route.liveSource || geometryDirectionId === undefined) return undefined;
+    let cancelled = false;
+    void fetchRouteTransfers(route.liveSource, geometryDirectionId).then((transfers) => {
+      if (!cancelled && Object.keys(transfers).length > 0) setLoadedTransfers({ key: transfersKey, transfers });
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the stable ids, as above
+  }, [liveSourceAgencyId, liveSourceRouteId, geometryDirectionId]);
+
   // Anchored to the actual current time (not a fixed baked-in schedule) so "Route stops"
   // reads like a real transit app — the rider's actual nearest stop (activeDirection.stopId,
   // which tracks their real location, not always the route's origin terminal) is reached in as
@@ -407,7 +455,18 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
   const nowMinutes = now.getHours() * 60 + now.getMinutes();
   const activePredictions = predictionsForDirection(route, activeDirectionIndex);
   const leadMinutes = (activePredictions[selectedPredictionIndex] ?? activePredictions[0])?.minutes ?? 0;
-  const liveStopsResult = liveStopsFor(route, activeDirectionIndex, activeDirection, geometryStatus, nowMinutes, leadMinutes);
+  const liveStopsResult = liveStopsFor(route, activeDirectionIndex, activeDirection, geometryStatus, nowMinutes, leadMinutes, wholeRoute);
+  const tappedStop = (stop: LiveStop): TappedStop | null => (
+    stop.lat != null && stop.lon != null ? { name: stop.name, stopId: stop.stopId, lat: stop.lat, lon: stop.lon, directionIndex: activeDirectionIndex } : null
+  );
+  const openTransfer = (stop: LiveStop) => (onOpenTransfer
+    ? (transfer: LineTransfer) => {
+      const at = tappedStop(stop);
+      if (!at) return;
+      setTransfersSheet(null);
+      onOpenTransfer(transfer, at);
+    }
+    : undefined);
 
   const vehicleIcon = transitModeForAgency(route.agency);
   // Delays on the shown direction's tracked departures, then MTA alerts, under the time cards.
@@ -463,16 +522,12 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
     <>
       <RouteMap
         centerOnUserRequest={centerOnUserRequest}
-        showRouteRequest={showRouteRequest}
         color={route.color}
         directionId={geometryDirectionId}
-        focusStopId={activeDirection.stopId}
-        focusStopName={activeDirection.stopName}
+        focusStopId={wholeRoute ? undefined : activeDirection.stopId}
+        focusStopName={wholeRoute ? undefined : activeDirection.stopName}
         mode={vehicleIcon}
-        onUserPan={() => {
-          setIsLocationCentered(false);
-          setIsRouteShown(false);
-        }}
+        onUserPan={() => setIsLocationCentered(false)}
         // The agency's real track/street shape for this direction, served with the stop list.
         path={geometryStatus.geometry.path}
         stops={geometryStatus.geometry.stops}
@@ -496,20 +551,15 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
 
   const controls = (
     <View pointerEvents="box-none" style={styles.topBar}>
-      <PressableScale accessibilityLabel="Back" accessibilityRole="button" onPress={onBack} style={styles.iconButton} testID="route-back"><Icon name="back" size={26} /></PressableScale>
+      <MapControlButton accessibilityLabel="Back" icon="back" onPress={onBack} testID="route-back" />
+      {/* Every map page's order: Save, then Locate. */}
       <View style={styles.topActions}>
-        <PressableScale accessibilityLabel="Show current location" accessibilityRole="button" accessibilityState={{ selected: isLocationCentered }} onPress={() => {
+        <MapControlButton accessibilityLabel={isFavorite ? 'Remove route from saved' : 'Save route'} icon="favorite" onPress={onToggleFavorite} selected={isFavorite} testID="route-favorite" variant="save" />
+        <MapControlButton accessibilityLabel="Show current location" icon="locate" onPress={() => {
           setIsLocationCentered(true);
-          setIsRouteShown(false);
           onRefreshLocation?.();
           setCenterOnUserRequest((count) => count + 1);
-        }} style={[styles.iconButton, isLocationCentered && styles.selectedButton]} testID="route-location"><Icon filled={isLocationCentered} name="locate" /></PressableScale>
-        <PressableScale accessibilityLabel="Show the whole route" accessibilityRole="button" accessibilityState={{ selected: isRouteShown }} onPress={() => {
-          setIsRouteShown(true);
-          setIsLocationCentered(false);
-          setShowRouteRequest((count) => count + 1);
-        }} style={[styles.iconButton, isRouteShown && styles.selectedButton]} testID="route-overview"><Icon filled={isRouteShown} name="crosshair" /></PressableScale>
-        <PressableScale accessibilityLabel={isFavorite ? 'Remove route from saved' : 'Save route'} accessibilityRole="button" accessibilityState={{ selected: isFavorite }} onPress={onToggleFavorite} style={[styles.iconButton, isFavorite && styles.savedButton]} testID="route-favorite"><PopOnActivate active={isFavorite}><Icon color={isFavorite ? colors.highlightInk : colors.primary} filled={isFavorite} name="favorite" /></PopOnActivate></PressableScale>
+        }} selected={isLocationCentered} testID="route-location" />
       </View>
     </View>
   );
@@ -700,25 +750,40 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
               const isLast = index === liveStops.length - 1;
               const isNearestMatch = index === nearestMatchIndex;
               const isHighlighted = nearestMatchIndex >= 0 ? isNearestMatch : isFirst;
-              const transfers = transfersFor(route, stop.name);
+              const transfers = transfersFor(route, stop, lineTransfers);
+              const canOpen = transfers.length > 0;
               const transferLabel = transfers.length > 0 ? `, transfers: ${transfers.map((transfer) => transfer.name).join(', ')}` : '';
               // Rows show only the stop name and time (plus transfers); "nearest to you" and
               // departs/arrives stay in the accessibility label.
               return (
-                <View key={`${stop.stopId ?? stop.name}-${index}`} accessibilityLabel={`${stop.name}, ${isNearestMatch ? 'nearest to you, ' : ''}${isFirst ? 'departs' : 'arrives'} ${stop.time}${transferLabel}`} accessible={true} style={styles.stopRow}>
+                <PressableScale
+                  key={`${stop.stopId ?? stop.name}-${index}`}
+                  accessibilityHint={canOpen ? 'Shows the lines to change to here' : undefined}
+                  accessibilityLabel={`${stop.name}, ${isNearestMatch ? 'nearest to you, ' : ''}${isFirst ? 'departs' : 'arrives'} ${stop.time}${transferLabel}`}
+                  accessibilityRole={canOpen ? 'button' : undefined}
+                  disabled={!canOpen}
+                  onPress={canOpen ? () => setTransfersSheet({ stop, transfers }) : undefined}
+                  pressedScale={0.99}
+                  style={styles.stopRow}
+                  testID={`stop-row-${index}`}
+                >
                   <View style={styles.timelineRail}>{!isFirst ? <View style={[styles.rail, styles.railTop, { backgroundColor: route.color }]} /> : null}<View style={[styles.stopDot, { borderColor: route.color }, isHighlighted && { backgroundColor: route.color }]} />{!isLast ? <View style={[styles.rail, styles.railBottom, { backgroundColor: route.color }]} /> : null}</View>
                   {/* One divider spans the name and the time, not just the name. */}
                   <View style={styles.stopBody} testID={`stop-row-body-${stop.name}`}>
-                    <View style={styles.stopCopy}><Text style={styles.stopName}>{stop.name}</Text>{debug.overlays.ids && stop.stopId ? <Text selectable={true} style={styles.debugNote} testID={`stop-debug-id-${stop.stopId}`}>{`stop ${stop.stopId}`}</Text> : null}{transfers.length > 0 ? <TransferChips onShowAll={() => setTransfersSheet({ stopName: stop.name, transfers })} stopName={stop.name} transfers={transfers} /> : null}</View>
+                    <View style={styles.stopCopy}><Text style={styles.stopName}>{stop.name}</Text>{debug.overlays.ids && stop.stopId ? <Text selectable={true} style={styles.debugNote} testID={`stop-debug-id-${stop.stopId}`}>{`stop ${stop.stopId}`}</Text> : null}{transfers.length > 0 ? <TransferChips onShowAll={() => setTransfersSheet({ stop, transfers })} stopName={stop.name} transfers={transfers} /> : null}</View>
                     <Text style={styles.stopTime}>{stop.time}</Text>
                   </View>
-                </View>
+                </PressableScale>
               );
             });
           })()
         )}
       </View>
-      <TransfersSheet onClose={() => setTransfersSheet(null)} sheet={transfersSheet} />
+      <TransfersSheet
+        onClose={() => setTransfersSheet(null)}
+        onOpen={transfersSheet ? openTransfer(transfersSheet.stop) : undefined}
+        sheet={transfersSheet ? { stopName: transfersSheet.stop.name, transfers: transfersSheet.transfers } : null}
+      />
     </DetailMapPage>
   );
 }
@@ -752,26 +817,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     paddingTop: 8,
   },
   topActions: {
-    gap: 9,
-  },
-  iconButton: {
-    width: 46,
-    height: 46,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 23,
-    backgroundColor: colors.surface,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.14,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  savedButton: {
-    backgroundColor: colors.highlightSoft,
-  },
-  selectedButton: {
-    backgroundColor: colors.blueSoft,
+    gap: 10,
   },
   content: {
     paddingHorizontal: 18,

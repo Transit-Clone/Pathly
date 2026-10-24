@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -10,10 +10,13 @@ import {
   type NavigationFix,
   type NormalizedNavigationPlan,
 } from '../data/enrouteNavigation';
+import { hurryUpFor, hurryUpMessage } from '../data/hurryUp';
 import { useSupportPrompt } from '../data/supportPrompt';
+import { useUserPreferences } from '../data/userPreferences';
 import { navigationMapProgress } from '../data/tripMap';
 import { badgeMode, formatDurationMinutes, formatTripClock, tripMinutes } from '../data/tripPlanning';
 import { useClock } from '../hooks/useClock';
+import { notifyNow } from '../lib/notifications';
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
@@ -21,6 +24,7 @@ import { ConfirmDialog } from './ConfirmDialog';
 import { DetailMapPage } from './DetailMapPage';
 import { Icon } from './Icon';
 import { Mascot } from './Mascot';
+import { MapControlButton } from './MapControlButton';
 import { PressableScale } from './PressableScale';
 import { RouteBadge } from './RouteBadge';
 import { SupportCard } from './SupportCard';
@@ -53,22 +57,6 @@ type EnrouteRecoveryViewProps = {
   onEnd: () => void;
   onRetry: () => void;
 };
-
-function RoundControl({ children, label, onPress, selected, testID }: { children: ReactNode; label: string; onPress: () => void; selected?: boolean; testID: string }) {
-  const styles = useThemedStyles(createStyles);
-  return (
-    <PressableScale
-      accessibilityLabel={label}
-      accessibilityRole="button"
-      accessibilityState={selected === undefined ? undefined : { selected }}
-      onPress={onPress}
-      style={[styles.roundButton, selected && styles.selectedControl]}
-      testID={testID}
-    >
-      {children}
-    </PressableScale>
-  );
-}
 
 const locationCopy: Record<Exclude<EnrouteLocationState, 'located'>, string> = {
   loading: 'Updating your location…',
@@ -130,6 +118,21 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
   const [following, setFollowing] = useState(true);
   const [demoIndex, setDemoIndex] = useState(Math.max(0, cursor.checkpointOrdinal));
   const userLocation = fix ? fix.point : null;
+  // Walking to a stop with too little time to spare: a banner here, and once per stop a
+  // notification, so it reaches a rider who has put the phone away.
+  const { notifications: notificationPrefs } = useUserPreferences().preferences;
+  const hurryAlertsOn = notificationPrefs.enabled && notificationPrefs.tripReminders;
+  const hurry = fix && locationState === 'located' ? hurryUpFor(plan, cursor, fix.point, now) : null;
+  const hurryCopy = hurry ? hurryUpMessage(hurry) : null;
+  const nudgedKeys = useRef(new Set<string>());
+  const hurryKey = hurry?.key;
+  useEffect(() => {
+    if (!hurryKey || !hurryCopy || !hurryAlertsOn || nudgedKeys.current.has(hurryKey)) return;
+    nudgedKeys.current.add(hurryKey);
+    void notifyNow(hurryCopy.title, hurryCopy.body);
+    // Once per boarding: the copy's changing minutes don't nudge again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hurryAlertsOn, hurryKey]);
   const routeColor = guidance.line?.color ?? colors.primary;
   const arrivalContext = relativeTimeCopy(guidance.arrivalTime, now);
   const departureContext = guidance.departureTime ? relativeTimeCopy(guidance.departureTime, now) : null;
@@ -154,18 +157,17 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
 
   const controls = (
     <View pointerEvents="box-none" style={styles.topBar}>
-      <RoundControl label="Back to Home; navigation will stay active" onPress={onBack} testID="enroute-back"><Icon name="back" size={26} /></RoundControl>
-      <RoundControl
-        label="Follow current location"
+      <MapControlButton accessibilityLabel="Back to Home; navigation will stay active" icon="back" onPress={onBack} testID="enroute-back" />
+      <MapControlButton
+        accessibilityLabel="Follow current location"
+        icon="locate"
         onPress={() => {
           setFollowing(true);
           setCenterRequest((value) => value + 1);
         }}
         selected={following}
         testID="enroute-location"
-      >
-        <Icon filled={following} name="locate" size={23} />
-      </RoundControl>
+      />
     </View>
   );
 
@@ -249,6 +251,15 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
               <Text style={styles.nextLabel}>NEXT</Text>
               <Text style={styles.nextAction} testID="enroute-next-action">{guidance.nextAction}</Text>
               {guidance.remainingStops !== null ? <Text style={styles.remaining} testID="enroute-remaining-stops">{`${guidance.remainingStops} ${guidance.remainingStops === 1 ? 'stop' : 'stops'} remaining`}</Text> : null}
+            </View>
+          ) : null}
+          {hurryCopy ? (
+            <View accessibilityLiveRegion="assertive" style={styles.hurryNotice} testID="enroute-hurry-up">
+              <Icon color={colors.highlightInk} filled={true} name="travel" size={20} />
+              <View style={styles.hurryCopy}>
+                <Text style={styles.hurryTitle}>{hurryCopy.title}</Text>
+                <Text style={styles.locationNoticeText}>{hurryCopy.body}</Text>
+              </View>
             </View>
           ) : null}
           {locationState !== 'located' ? (
@@ -335,7 +346,7 @@ export function EnrouteRecoveryView({ destination, loading = false, onBack, onEn
     <View style={styles.recoveryViewport} testID="enroute-recovery-view">
       <ThemedStatusBar />
       <SafeAreaView edges={['top', 'bottom']} style={styles.recoverySafeArea}>
-        <RoundControl label="Back to Home; trip recovery will stay available" onPress={onBack} testID="enroute-recovery-back"><Icon name="back" size={26} /></RoundControl>
+        <MapControlButton accessibilityLabel="Back to Home; trip recovery will stay available" icon="back" onPress={onBack} testID="enroute-recovery-back" />
         <View accessibilityLiveRegion="polite" style={styles.recoveryCard}>
           <View style={styles.recoveryIcon}><Icon color={colors.warning} name="alert" size={30} /></View>
           <Text style={styles.recoveryEyebrow}>TRIP RECOVERY</Text>
@@ -388,8 +399,6 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   recoveryEnd: { minHeight: 44, alignItems: 'center', justifyContent: 'center', marginTop: 8, paddingHorizontal: 20 },
   recoveryEndText: { color: colors.red, ...typography.bodyStrong },
   topBar: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 8, paddingHorizontal: 16 },
-  roundButton: { width: 46, height: 46, alignItems: 'center', justifyContent: 'center', borderRadius: 23, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.16, shadowRadius: 8, elevation: 5 },
-  selectedControl: { backgroundColor: colors.blueSoft },
   endButton: { minWidth: 104, height: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 18, borderRadius: 26, backgroundColor: colors.red, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 7 },
   endText: { color: colors.onPrimary, fontFamily: fontFamilies.extraBold, fontSize: 16, letterSpacing: 0.7 },
   guidanceCard: { padding: 18, borderWidth: 1, borderColor: colors.border, borderRadius: 22, backgroundColor: colors.surface },
@@ -408,6 +417,9 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   remaining: { marginTop: 2, color: colors.primary, ...typography.metadata },
   locationNotice: { marginTop: 13, flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, borderRadius: 13, backgroundColor: colors.amberSoft },
   locationNoticeText: { flex: 1, color: colors.ink, ...typography.metadata },
+  hurryNotice: { marginTop: 13, flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 13, backgroundColor: colors.highlightSoft },
+  hurryCopy: { flex: 1, gap: 2 },
+  hurryTitle: { color: colors.ink, ...typography.bodyStrong },
   tripSummary: { marginTop: 14, padding: 17, borderRadius: 20, backgroundColor: colors.surfaceMuted },
   summaryLabel: { color: colors.mutedInk, ...typography.label },
   summaryDestination: { marginTop: 2, color: colors.ink, ...typography.sectionHeading, fontSize: 18 },
