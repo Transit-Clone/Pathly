@@ -11,7 +11,7 @@ import { describeTransitLine, discoveredRouteToRouteDetail, fetchNearbyTransit, 
 import type { IndexedLine } from '../data/lineIndex';
 import { SERVICE_AREA_FALLBACK } from '../data/serviceArea';
 import type { LineTransfer } from '../data/routeGeometry';
-import { removeSavedRoute, saveRoute, savedRouteFrom, savedRouteToRouteDetail, setRouteAlerts, subscribeToSavedRoutes, type AlertHours, type RouteAlertSetting, type SavedRoute } from '../data/savedRoutes';
+import { removeSavedRoute, saveRoute, savedRouteFrom, savedRouteToRouteDetail, setRouteAlerts, setRouteFavorite, subscribeToSavedRoutes, type AlertHours, type RouteAlertSetting, type SavedRoute } from '../data/savedRoutes';
 import { registerForRouteAlerts } from '../lib/notifications';
 import { EMPTY_LINE_LAYERS, lineLayerRouteKey, loadMapLines, readLineLayerChoice, writeLineLayerChoice, type LineLayerChoice, type LineLayerRoute, type MapLine } from '../data/lineLayers';
 import type { SearchPlace } from '../data/placesSearch';
@@ -122,11 +122,6 @@ function placeForTripEndpoint(endpoint: TripEndpointReference): SearchPlace {
     };
 }
 
-/** A line's name in the alerts sheet: "S76 · Oakwood - Port Richmond", or just its name. */
-function routeAlertsName(route: RouteDetail): string {
-  return route.shortName && route.shortName !== route.routeName ? `${route.shortName} · ${route.routeName}` : route.routeName;
-}
-
 function toggleItem<T>(items: readonly T[], item: T): T[] {
   return items.includes(item) ? items.filter((value) => value !== item) : [...items, item];
 }
@@ -199,10 +194,11 @@ export function HomeScreen() {
     if (!uid) return undefined;
     return subscribeToSavedRoutes(uid, setAccountRoutes);
   }, [uid]);
-  const savedRouteIds = useMemo(() => [...accountRoutes.map((route) => route.id), ...localSavedRouteIds], [accountRoutes, localSavedRouteIds]);
+  // Starred lines only; a line kept just for its alerts isn't a favorite.
+  const savedRouteIds = useMemo(() => [...accountRoutes.filter((route) => route.favorite).map((route) => route.id), ...localSavedRouteIds], [accountRoutes, localSavedRouteIds]);
   const accountRouteDetails = useMemo(() => new Map(accountRoutes.map((route) => [route.id, savedRouteToRouteDetail(route)])), [accountRoutes]);
   // Right after saving a line: "When should we alert you?" (null when closed).
-  const [alertsPrompt, setAlertsPrompt] = useState<(RouteAlertsRequest & { id: string }) | null>(null);
+  const [alertsPrompt, setAlertsPrompt] = useState<(RouteAlertsRequest & { route: RouteDetail }) | null>(null);
   // New searches start from the rider's travel preferences; a ref keeps the open callbacks stable.
   const travelPreferences = useUserPreferences().preferences.travel;
   const travelPreferencesRef = useRef(travelPreferences);
@@ -398,6 +394,8 @@ export function HomeScreen() {
   // The id a route is saved under: its real line ("lirr:10"), whichever stop or card it was
   // opened from; a demo route without live data keeps its own.
   const savedIdFor = (route: RouteDetail) => (route.liveSource ? `${route.liveSource.agencyId}:${route.liveSource.routeId}` : route.id);
+  // A line's star and its alerts are separate: each can be on without the other. Both live on the
+  // line's one record, which goes away once neither is on.
   const toggleSavedRoute = useCallback((route: RouteDetail) => {
     const id = route.liveSource ? `${route.liveSource.agencyId}:${route.liveSource.routeId}` : route.id;
     const saved = route.liveSource && uid ? savedRouteFrom(route, 'off') : null;
@@ -406,29 +404,37 @@ export function HomeScreen() {
       return;
     }
     // The listener shows the change; a rejected write leaves the star as it was.
-    if (accountRoutes.some((existing) => existing.id === id)) {
-      removeSavedRoute(uid, id).catch(() => undefined);
-      return;
-    }
-    saveRoute(uid, saved).catch(() => undefined);
-    // Saved with alerts off ("Never"), the sheet's default; Done changes it.
-    setAlertsPrompt({ id, name: routeAlertsName(route), setting: 'off', isNew: true });
+    const existing = accountRoutes.find((entry) => entry.id === id);
+    if (!existing) saveRoute(uid, saved).catch(() => undefined);
+    else if (!existing.favorite) setRouteFavorite(uid, id, true).catch(() => undefined);
+    else if (existing.alerts === 'off') removeSavedRoute(uid, id).catch(() => undefined);
+    else setRouteFavorite(uid, id, false).catch(() => undefined);
   }, [accountRoutes, uid]);
   const chooseRouteAlerts = useCallback((setting: RouteAlertSetting, hours?: AlertHours) => {
     const prompt = alertsPrompt;
     setAlertsPrompt(null);
     if (!prompt || !uid) return;
     if (setting === prompt.setting && setting !== 'custom') return;
-    setRouteAlerts(uid, prompt.id, setting, hours).catch(() => undefined);
+    const existing = accountRoutes.find((entry) => entry.id === prompt.id);
+    if (existing) {
+      // Alerts off on a line that isn't starred: nothing left to keep.
+      if (setting === 'off' && !existing.favorite) removeSavedRoute(uid, prompt.id).catch(() => undefined);
+      else setRouteAlerts(uid, prompt.id, setting, hours).catch(() => undefined);
+    } else {
+      const record = savedRouteFrom(prompt.route, setting, false);
+      if (record) saveRoute(uid, { ...record, ...(setting === 'custom' && hours ? { alertHours: hours } : {}) }).catch(() => undefined);
+    }
     if (setting !== 'off') void registerForRouteAlerts(uid);
-  }, [alertsPrompt, uid]);
-  // Route view's bell: the saved line's alert setting, to change.
+  }, [accountRoutes, alertsPrompt, uid]);
+  // Route view's bell: the line's alert setting, to change, starred or not.
   const routeAlertsFor = (route: RouteDetail) => {
-    const saved = accountRoutes.find((entry) => entry.id === savedIdFor(route));
-    if (!saved || !uid) return undefined;
+    if (!route.liveSource || !uid) return undefined;
+    const id = savedIdFor(route);
+    const saved = accountRoutes.find((entry) => entry.id === id);
+    const setting = saved?.alerts ?? 'off';
     return {
-      on: saved.alerts !== 'off',
-      onOpen: () => setAlertsPrompt({ id: saved.id, name: routeAlertsName(route), setting: saved.alerts, hours: saved.alertHours, isNew: false }),
+      on: setting !== 'off',
+      onOpen: () => setAlertsPrompt({ id, route, setting, hours: saved?.alertHours }),
     };
   };
 
@@ -1099,7 +1105,15 @@ export function HomeScreen() {
         />
         {savePlaceSheet}
         <LineLayersSheet choice={lineChoice} lines={layerCandidates} onChange={changeLineChoice} onClose={() => setLayersOpen(false)} visible={layersOpen} />
-        <SavedPlaceDetailsSheet onClose={() => setMapPlaces([])} onGo={goToSavedPlaceFromMap} places={mapPlaces} />
+        <SavedPlaceDetailsSheet
+          onClose={() => setMapPlaces([])}
+          onEdit={uid ? (place) => {
+            setMapPlaces([]);
+            editSavedPlace(place);
+          } : undefined}
+          onGo={goToSavedPlaceFromMap}
+          places={mapPlaces}
+        />
         <ConfirmDialog
           body={`${arrivedDestination ?? 'Your destination'} has been added to Recents.`}
           cancelLabel="Stay on Home"

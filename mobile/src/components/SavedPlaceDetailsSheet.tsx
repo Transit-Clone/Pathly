@@ -15,14 +15,17 @@ type SavedPlaceDetailsSheetProps = {
   places: readonly SavedLocation[];
   onClose: () => void;
   onGo: (place: SavedLocation) => void;
+  /** Opens the place's name, list, icon and color to change; left out, there's no Edit button. */
+  onEdit?: (place: SavedLocation) => void;
 };
 
 /**
- * What a saved place's map marker opens: its name, list and address, and Go to plan a trip there.
+ * What a saved place's map marker opens: its name, list and address, Edit to restyle it, and Go to
+ * plan a trip there.
  * Tapping a marker never starts a trip by itself, so a stray tap (or a tap on a stack of markers)
  * costs nothing; a stack lists every place in it, each with its own Go.
  */
-export function SavedPlaceDetailsSheet({ onClose, onGo, places }: SavedPlaceDetailsSheetProps) {
+export function SavedPlaceDetailsSheet({ onClose, onEdit, onGo, places }: SavedPlaceDetailsSheetProps) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
   const stacked = places.length > 1;
@@ -48,6 +51,19 @@ export function SavedPlaceDetailsSheet({ onClose, onGo, places }: SavedPlaceDeta
                     {group ? <Text numberOfLines={1} style={[styles.group, { color }]}>{group}</Text> : null}
                     {subtitle ? <Text numberOfLines={2} style={styles.address}>{subtitle}</Text> : null}
                   </View>
+                  {onEdit ? (
+                    <PressableScale
+                      accessibilityHint="Change its name, list, icon or color"
+                      accessibilityLabel={`Edit ${title}`}
+                      accessibilityRole="button"
+                      hitSlop={6}
+                      onPress={() => onEdit(place)}
+                      style={styles.edit}
+                      testID={`saved-place-details-edit-${place.id}`}
+                    >
+                      <Icon color={colors.ink} name="edit" size={20} />
+                    </PressableScale>
+                  ) : null}
                   <PressableScale
                     accessibilityHint="Plans a trip to this saved place"
                     accessibilityLabel={`Go to ${title}`}
@@ -81,6 +97,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   name: { color: colors.ink, ...typography.bodyStrong, fontSize: 16 },
   group: { marginTop: 1, fontFamily: fontFamilies.bold, fontSize: 12 },
   address: { marginTop: 1, color: colors.mutedInk, ...typography.metadata, fontSize: 13 },
+  edit: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 20, backgroundColor: colors.surfaceMuted },
   go: { minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, borderRadius: 20, backgroundColor: colors.primary },
   goText: { color: colors.onPrimary, fontFamily: fontFamilies.extraBold, fontSize: 15 },
 });

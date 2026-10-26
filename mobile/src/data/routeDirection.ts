@@ -41,6 +41,26 @@ function projectOnPath(path: readonly LatLon[], point: LatLon, from = 0, to = pa
 }
 
 /**
+ * The live vehicle on its way to the rider's stop: of `vehicles` running along `behind` (the line
+ * leading up to the stop, ending at it), the one with the least of it left to cover. Null when none
+ * is on that stretch (within `maxOffMeters` of it: GPS and the drawn line don't match exactly).
+ */
+export function approachingVehicle<T extends LatLon>(behind: readonly LatLon[], vehicles: readonly T[], maxOffMeters = 250): T | null {
+  if (behind.length < 2) return null;
+  // Distance along `behind` to its end (the stop) from the start of each segment.
+  const toEnd: number[] = new Array(behind.length).fill(0);
+  for (let index = behind.length - 2; index >= 0; index -= 1) toEnd[index] = toEnd[index + 1]! + distanceMeters(behind[index]!, behind[index + 1]!);
+  let best: { vehicle: T; left: number } | null = null;
+  for (const vehicle of vehicles) {
+    const projection = projectOnPath(behind, vehicle);
+    if (projection.distance > maxOffMeters) continue;
+    const left = toEnd[projection.segment + 1]! + distanceMeters(projection.point, behind[projection.segment + 1]!);
+    if (!best || left < best.left) best = { vehicle, left };
+  }
+  return best?.vehicle ?? null;
+}
+
+/**
  * `path` cut at the stop `stops[stopIndex]`: the part behind the rider and the part ahead, both
  * ending exactly at the spot on the line nearest the stop. Paths can have points kilometers apart
  * (the 1 train's shape runs 7 km without one), so cutting at the nearest point instead moved the
@@ -65,19 +85,33 @@ export function splitPathAtStop(path: readonly LatLon[], stops: readonly LatLon[
   return { behind: [...before, cut.point], ahead: [cut.point, ...after] };
 }
 
-/** How far either side of the arrow's spot the line must run straight, so the arrow never meets it. */
-const ARROW_HALF_SPAN_METERS = 70;
-/** Candidate spots are tried this far apart along the line ahead. */
-const ARROW_STEP_METERS = 20;
+// The arrow is drawn at a fixed size on screen (DirectionArrow.tsx), so where it can go is worked
+// out in screen pixels and converted to meters for the map's current zoom. In meters alone, zooming
+// out would let a bend in the line curl into it.
+/** How far either side of the arrow's spot (px) the line must run straight: the arrow's length plus room. */
+const ARROW_HALF_SPAN_PX = 24;
+/** The most the line may stray (px) toward the arrow across that span and still clear it. */
+const ARROW_MAX_STRAY_PX = 6;
+/** Where to look along the line ahead (px from the rider's stop), and how far apart to try. */
+const ARROW_FROM_PX = 30;
+const ARROW_TO_PX = 160;
+const ARROW_STEP_PX = 6;
+
+/** Meters per screen pixel at a web-map zoom level and latitude. */
+export function metersPerPixel(zoom: number, lat: number): number {
+  return (156543.03392 * Math.cos((lat * Math.PI) / 180)) / 2 ** zoom;
+}
 
 /**
- * Where to draw the direction arrow beside a line: the straightest stretch of `ahead` (the line
- * from the rider's stop onward) between `fromMeters` and `toMeters` along it, preferring spots near
- * the stop. A straight stretch matters: drawn beside a bend, the line curls into the arrow. Null when
- * there's no line ahead to point along.
+ * Where to draw the direction arrow beside a line at the map's current scale: the straightest
+ * stretch of `ahead` (the line from the rider's stop onward) a little way past the stop, preferring
+ * spots near it. Drawn beside a bend, the line would curl into the arrow, so null when no stretch is
+ * straight enough at this zoom (and when there's no line ahead to point along).
  */
-export function directionArrowAt(ahead: readonly LatLon[], fromMeters = 90, toMeters = 450): { point: LatLon; bearing: number } | null {
+export function directionArrowAt(ahead: readonly LatLon[], metersPerPx = 3): { point: LatLon; bearing: number } | null {
   if (ahead.length < 2) return null;
+  const halfSpan = ARROW_HALF_SPAN_PX * metersPerPx;
+  const fromMeters = ARROW_FROM_PX * metersPerPx;
   let total = 0;
   for (let index = 1; index < ahead.length; index += 1) total += distanceMeters(ahead[index - 1]!, ahead[index]!);
   if (total < 1) return null;
@@ -95,27 +129,25 @@ export function directionArrowAt(ahead: readonly LatLon[], fromMeters = 90, toMe
     }
     return ahead[ahead.length - 1]!;
   };
-  // A short line: its middle, pointing along it end to end.
-  if (total < fromMeters + ARROW_HALF_SPAN_METERS) {
-    const first = ahead[0]!;
-    const last = ahead[ahead.length - 1]!;
-    return { point: along(total / 2), bearing: bearingDegrees(first, last) };
-  }
+  // A line too short on screen for the arrow beside it: nothing to point along.
+  if (total < 2 * halfSpan) return null;
+  const first = Math.min(fromMeters, total / 2);
+  const last = Math.min(ARROW_TO_PX * metersPerPx, total - halfSpan);
   let best: { point: LatLon; bearing: number; cost: number } | null = null;
-  for (let at = fromMeters; at <= Math.min(toMeters, total - ARROW_HALF_SPAN_METERS); at += ARROW_STEP_METERS) {
-    const start = along(at - ARROW_HALF_SPAN_METERS);
-    const end = along(at + ARROW_HALF_SPAN_METERS);
-    // How far the line strays from the straight chord across the arrow's span (meters).
+  for (let at = Math.max(first, halfSpan); at <= last; at += ARROW_STEP_PX * metersPerPx) {
+    const start = along(at - halfSpan);
+    const end = along(at + halfSpan);
+    // How far the line strays from the straight chord across the arrow's span.
     let stray = 0;
-    for (let offset = -ARROW_HALF_SPAN_METERS; offset <= ARROW_HALF_SPAN_METERS; offset += 10) {
-      stray = Math.max(stray, distanceToChordMeters(along(at + offset), start, end));
+    for (let step = -4; step <= 4; step += 1) {
+      stray = Math.max(stray, distanceToChordMeters(along(at + (step / 4) * halfSpan), start, end));
     }
+    if (stray > ARROW_MAX_STRAY_PX * metersPerPx) continue;
     // A little stray is worth a spot nearer the stop.
-    const cost = stray + (at - fromMeters) * 0.02;
+    const cost = stray / metersPerPx + (at - first) / metersPerPx * 0.02;
     if (!best || cost < best.cost) best = { point: along(at), bearing: bearingDegrees(start, end), cost };
   }
-  if (!best) return null;
-  return { point: best.point, bearing: best.bearing };
+  return best ? { point: best.point, bearing: best.bearing } : null;
 }
 
 /** A point's distance from the straight line through `a` and `b`, in meters (flat-earth, fine at this scale). */

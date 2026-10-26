@@ -47,7 +47,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: MAP_CONTROL_SIZE / 2,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.mapControl,
     shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.14,

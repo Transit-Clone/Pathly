@@ -15,6 +15,7 @@ import { useTheme } from '../theme/AppSettings';
 import { iconGlyph, type IconName } from './Icon';
 import { savedLocationIcon } from './SavedPlacesStrip';
 import { HeadingBeamMarker } from './HeadingBeamMarker';
+import { centerOffsetFrom, glideMapTo } from './webMapGlide';
 
 const ZOOM = 14;
 const MIN_ZOOM = 9;
@@ -142,10 +143,8 @@ export function GoogleMapView({ initialCamera, lines = [], location, onCameraCha
   // The rider's dot follows every GPS update.
   const position = useMemo(() => ({ lat: location.latitude, lng: location.longitude }), [location]);
   // The camera only follows a recenter request (the first GPS fix and the location button), so a
-  // rider who has panned away isn't pulled back by routine GPS updates. A new object per request,
-  // even at identical coordinates, since @react-google-maps/api only calls map.setCenter() when
-  // the center prop's identity changes.
-  // A rebuilt map (returning from a route) opens on its saved camera until the next request.
+  // rider who has panned away isn't pulled back by routine GPS updates. A rebuilt map (returning
+  // from a route) opens on its saved camera until the next request.
   const [mountRecenterRequest] = useState(recenterRequest);
   const [restoredCenter] = useState(() => (initialCamera ? { lat: initialCamera.latitude, lng: initialCamera.longitude } : null));
   const [initialZoom] = useState(() => initialCamera?.zoom ?? ZOOM);
@@ -165,19 +164,25 @@ export function GoogleMapView({ initialCamera, lines = [], location, onCameraCha
     const stacks = stackSavedPins(placed.map(({ point }) => point), metersPerPixelAtZoom(zoom, placed[0]?.point.latitude ?? 0));
     return placed.map((pin, index) => ({ ...pin, ...stacks[index]! }));
   }, [savedLocations, zoom]);
-  const center = useMemo(
-    () => (recenterRequest === mountRecenterRequest && restoredCenter ? restoredCenter : { ...position }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the request only; `position` is read at request time
-    [recenterRequest],
-  );
+  // Where the map opens; recentering after that moves the live map (below) instead.
+  const [center] = useState(() => restoredCenter ?? { ...position });
 
-
-  // Runs after GoogleMap (a child) applies the new `center`, so the offset is re-applied on every
-  // recenter. A restored camera is a raw map center that already includes it.
+  // The rider shows in the middle of the map below the floating header, not the whole map's middle.
+  // A restored camera is a raw map center that already includes this.
   const topInset = padding?.top ?? 0;
   useEffect(() => {
-    if (map && topInset && center !== restoredCenter) map.panBy(0, -topInset / 2);
-  }, [map, center, restoredCenter, topInset]);
+    if (map && topInset && !restoredCenter) map.panBy(0, -topInset / 2);
+  }, [map, restoredCenter, topInset]);
+
+  // A recenter glides to the rider and, from far out, zooms back in a level at a time, so it
+  // animates rather than jumping.
+  const handledRecenterRequest = useRef(mountRecenterRequest);
+  useEffect(() => {
+    if (!map || recenterRequest === handledRecenterRequest.current) return undefined;
+    handledRecenterRequest.current = recenterRequest;
+    return glideMapTo(map, (zoom) => centerOffsetFrom(map, position, zoom, { x: 0, y: topInset / 2 }), Math.max(map.getZoom() ?? ZOOM, ZOOM));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the request; `position` is read at request time
+  }, [map, recenterRequest]);
 
   return (
     <View
@@ -261,7 +266,7 @@ export function GoogleMapView({ initialCamera, lines = [], location, onCameraCha
           {/* The rider's blue "you are here" dot, following every GPS update. */}
           <Marker
             clickable={false}
-            icon={{ path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: '#4285F4', fillOpacity: 1, strokeColor: colors.ring, strokeWeight: 2 }}
+            icon={{ path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: '#4285F4', fillOpacity: 1, strokeColor: '#FFFFFF', strokeWeight: 2 }}
             position={position}
             title="Your location"
             zIndex={3}

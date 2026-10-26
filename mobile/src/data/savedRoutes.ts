@@ -30,6 +30,26 @@ export function formatAlertTime(minutes: number): string {
   return `${hour % 12 || 12}:${String(minute).padStart(2, '0')} ${hour < 12 ? 'AM' : 'PM'}`;
 }
 
+/**
+ * A typed time of day as minutes after midnight: "7", "7:30", "730", "7:30 pm", "7pm", "19:30".
+ * A bare hour from 1 to 11 without am/pm is read as morning. Null when it isn't a time.
+ */
+export function parseAlertTime(text: string): number | null {
+  const match = /^\s*(\d{1,2})(?::?(\d{2}))?\s*(a|am|p|pm)?\.?\s*$/i.exec(text.replace(/\./g, ''));
+  if (!match) return null;
+  let hour = Number(match[1]);
+  const minute = match[2] ? Number(match[2]) : 0;
+  const meridiem = match[3]?.toLowerCase().startsWith('p') ? 'pm' : match[3] ? 'am' : null;
+  if (minute > 59) return null;
+  if (meridiem) {
+    if (hour < 1 || hour > 12) return null;
+    hour = (hour % 12) + (meridiem === 'pm' ? 12 : 0);
+  } else if (hour > 23) {
+    return null;
+  }
+  return hour * 60 + minute;
+}
+
 /** A line's alert setting in a few words: "All times", "7:00 AM – 7:00 PM", "Never". */
 export function describeRouteAlerts(setting: RouteAlertSetting, hours?: AlertHours): string {
   if (setting === 'all') return 'All times';
@@ -56,6 +76,11 @@ export type SavedRoute = {
   routeName: string;
   shortName: string;
   color: string;
+  /**
+   * Starred, so it shows in Favorites and on the home sheet. A line can have alerts without being
+   * starred (and a star without alerts); records saved before this field existed were all starred.
+   */
+  favorite: boolean;
   alerts: RouteAlertSetting;
   /** The daily window for 'custom' alerts. */
   alertHours?: AlertHours;
@@ -69,7 +94,7 @@ const MAX_SAVED_ROUTES = 50;
 const routeKey = (id: string) => id.replace(/\//g, '_');
 
 /** The saved line a route view stands for, its stop picked from either direction. */
-export function savedRouteFrom(route: RouteDetail, alerts: RouteAlertSetting): SavedRoute | null {
+export function savedRouteFrom(route: RouteDetail, alerts: RouteAlertSetting, favorite = true): SavedRoute | null {
   const source = route.liveSource;
   if (!source) return null;
   const direction1 = route.directions[source.direction1Index];
@@ -85,6 +110,7 @@ export function savedRouteFrom(route: RouteDetail, alerts: RouteAlertSetting): S
     routeName: route.routeName,
     shortName: route.shortName,
     color: route.color,
+    favorite,
     alerts,
     direction1: stop(direction1, direction1?.stopId ?? source.direction1StopId),
     direction0: stop(direction0, direction0?.stopId ?? source.direction0StopId),
@@ -116,6 +142,11 @@ export function removeSavedRoute(uid: string, id: string) {
   return deleteDoc(doc(db, 'users', uid, SAVED_ROUTES, routeKey(id)));
 }
 
+/** Stars or unstars a line that already has a record (for its alerts, or an earlier star). */
+export function setRouteFavorite(uid: string, id: string, favorite: boolean) {
+  return setDoc(doc(db, 'users', uid, SAVED_ROUTES, routeKey(id)), { favorite }, { merge: true });
+}
+
 export function setRouteAlerts(uid: string, id: string, alerts: RouteAlertSetting, alertHours?: AlertHours) {
   return setDoc(doc(db, 'users', uid, SAVED_ROUTES, routeKey(id)), { alerts, ...(alerts === 'custom' ? { alertHours: alertHours ?? DEFAULT_ALERT_HOURS } : {}) }, { merge: true });
 }
@@ -125,13 +156,13 @@ export function setRouteAlertsPaused(uid: string, paused: boolean) {
   return setDoc(doc(db, 'users', uid), { routeAlertsPaused: paused }, { merge: true });
 }
 
-/** The rider's saved lines, oldest first (the order they were saved in). */
+/** The rider's lines with a record (starred, or with alerts), oldest first (the order they were saved in). */
 export function subscribeToSavedRoutes(uid: string, onChange: (routes: SavedRoute[]) => void): Unsubscribe {
   return onSnapshot(
     query(collection(db, 'users', uid, SAVED_ROUTES), orderBy('dateSaved', 'asc'), limit(MAX_SAVED_ROUTES)),
     (snapshot) => onChange(snapshot.docs.map((entry) => {
-      const data = entry.data() as Omit<SavedRoute, 'id'>;
-      return { ...data, id: `${data.agencyId}:${data.routeId}` };
+      const data = entry.data() as Omit<SavedRoute, 'id' | 'favorite'> & { favorite?: boolean };
+      return { ...data, favorite: data.favorite ?? true, id: `${data.agencyId}:${data.routeId}` };
     })),
     // Offline/permission errors leave the list as it was.
     () => undefined,

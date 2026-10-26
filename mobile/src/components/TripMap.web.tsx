@@ -11,6 +11,7 @@ import type { Palette } from '../theme/colors';
 import { fontFamilies } from '../theme/typography';
 import { CurrentLocationMarker } from './CurrentLocationMarker';
 import { HeadingBeamMarker } from './HeadingBeamMarker';
+import { centerOffsetFrom, glideMapTo } from './webMapGlide';
 
 const containerStyle = { width: '100%', height: '100%' };
 const baseMapOptions = { disableDefaultUI: true, keyboardShortcuts: false, clickableIcons: false };
@@ -86,6 +87,18 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
     setZoom(loaded.getZoom() ?? 0);
   }, []);
 
+  // Centers a point in the part of the map that isn't covered (by the results sheet, the header),
+  // not in the whole map: panTo alone would leave it under the sheet, below what's visible.
+  const glideCancel = useRef<(() => void) | null>(null);
+  const centerInView = useCallback((point: google.maps.LatLngLiteral, zoom: number) => {
+    if (!map) return;
+    glideCancel.current?.();
+    const offset = { x: (padding.left - padding.right) / 2, y: (padding.top - padding.bottom) / 2 };
+    // Glides there, a zoom level at a time, rather than jumping.
+    glideCancel.current = glideMapTo(map, (step) => centerOffsetFrom(map, point, step, offset), zoom);
+  }, [map, padding.bottom, padding.left, padding.right, padding.top]);
+  useEffect(() => () => glideCancel.current?.(), []);
+
   const cameraLocation = followLocation === undefined ? userLocation : followLocation;
   const userLatitude = cameraLocation?.lat;
   const userLongitude = cameraLocation?.lng;
@@ -108,9 +121,8 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
       });
       return;
     }
-    map.panTo(rider);
-    if ((map.getZoom() ?? 0) < FOCUS_ZOOM) map.setZoom(FOCUS_ZOOM);
-  }, [followLatitude, followLongitude, map, padding.bottom, padding.left, padding.right, padding.top, userLatitude, userLongitude]);
+    centerInView(rider, Math.max(map.getZoom() ?? 0, FOCUS_ZOOM));
+  }, [centerInView, followLatitude, followLongitude, map, padding.bottom, padding.left, padding.right, padding.top, userLatitude, userLongitude]);
 
   useEffect(() => {
     if (!hasNavigationProgress || !following || userLatitude === undefined || userLongitude === undefined) return;
@@ -126,9 +138,8 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
   useEffect(() => {
     if (!map || !focusStop) return;
     programmaticCamera.current = true;
-    map.panTo(focusStop.point);
-    map.setZoom(FOCUS_ZOOM);
-  }, [map, focusStop]);
+    centerInView(focusStop.point, FOCUS_ZOOM);
+  }, [centerInView, map, focusStop]);
 
   // The location button: centered on the rider, with the re-frame button offered to come back.
   const [handledCenterRequest, setHandledCenterRequest] = useState(centerOnUserRequest);
@@ -145,10 +156,9 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
     if (navigationProgress && userLatitude !== undefined && userLongitude !== undefined) followCamera();
     else {
       programmaticCamera.current = true;
-      map.panTo(userLocation);
-      if ((map.getZoom() ?? 0) < FOCUS_ZOOM) map.setZoom(FOCUS_ZOOM);
+      centerInView(userLocation, Math.max(map.getZoom() ?? 0, FOCUS_ZOOM));
     }
-  }, [centerOnUserRequest, followCamera, map, navigationProgress, onFollowModeChange, userLatitude, userLocation, userLongitude]);
+  }, [centerInView, centerOnUserRequest, followCamera, map, navigationProgress, onFollowModeChange, userLatitude, userLocation, userLongitude]);
 
   if (!isLoaded) return <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.mapLand }]} testID={testID} />;
 
@@ -215,9 +225,9 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
             icon={{
               path: google.maps.SymbolPath.CIRCLE,
               scale: stop.kind === 'via' ? 3.5 : 6,
-              fillColor: stop.kind === 'start' ? colors.success : stop.kind === 'end' ? colors.primary : '#FFFFFF',
+              fillColor: stop.kind === 'start' ? colors.tripStart : stop.kind === 'end' ? colors.primary : '#FFFFFF',
               fillOpacity: 'state' in stop && stop.state === 'completed' ? 0.48 : 1,
-              strokeColor: stop.kind === 'stop' || stop.kind === 'via' ? themedRouteColor(stop.color ?? colors.primary, isDark) : '#FFFFFF',
+              strokeColor: stop.kind === 'stop' || stop.kind === 'via' ? themedRouteColor(stop.color ?? colors.primary, isDark) : stop.kind === 'start' ? colors.ring : '#FFFFFF',
               strokeOpacity: 'state' in stop && stop.state === 'completed' ? 0.48 : 1,
               strokeWeight: stop.kind === 'via' ? 2 : 3,
             }}

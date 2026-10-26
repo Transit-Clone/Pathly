@@ -296,7 +296,7 @@ describe('Settings', () => {
       const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
       const screen = renderSettings();
       await openPage(screen, 'help');
-      expect(screen.getByText('Walking distances use map data © OpenStreetMap contributors')).toBeTruthy();
+      expect(screen.getByText('Map data © OpenStreetMap')).toBeTruthy();
       await act(async () => {
         fireEvent.press(screen.getByTestId('help-osm'));
       });

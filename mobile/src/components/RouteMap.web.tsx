@@ -5,7 +5,7 @@ import { StyleSheet, View } from 'react-native';
 import { GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_SCRIPT_ID } from '../data/googleMapsLoaderConfig';
 import { formatAge, visibleTrains } from '../data/liveTrains';
 import { googleMapStyle } from '../data/mapStyle';
-import { directionArrowAt, focusStopIndex, splitPathAtStop } from '../data/routeDirection';
+import { approachingVehicle, directionArrowAt, focusStopIndex, metersPerPixel, splitPathAtStop } from '../data/routeDirection';
 import { stopRevealZoom } from '../data/stopDeclutter';
 import type { RouteLiveVehicle } from '../data/transitLive';
 import type { Coordinates } from '../hooks/useCurrentLocation';
@@ -15,6 +15,7 @@ import type { TransitMode } from './RouteBadge';
 import { HeadingBeamMarker } from './HeadingBeamMarker';
 import { Glide } from '../hooks/useGlide';
 import { DIRECTION_ARROW_BOX, DirectionArrow } from './DirectionArrow';
+import { cameraToFit, glideMapTo } from './webMapGlide';
 
 type GeometryStop = { stopId?: string; name: string; lat: number; lon: number };
 
@@ -131,10 +132,17 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
     const points = path ?? stops;
     const toPath = (part: readonly { lat: number; lon: number }[]) => part.map((point) => ({ lat: point.lat, lng: point.lon }));
     const focusIndex = focusStop ? stops.indexOf(focusStop) : -1;
-    if (focusIndex < 0) return { behind: [], ahead: toPath(points), focusIndex, arrow: null };
+    if (focusIndex < 0) return { behind: [], ahead: toPath(points), aheadPoints: [], behindPoints: [], focusIndex };
     const { behind, ahead } = splitPathAtStop(points, stops, focusIndex);
-    return { behind: toPath(behind), ahead: toPath(ahead), focusIndex, arrow: directionArrowAt(ahead) };
+    return { behind: toPath(behind), ahead: toPath(ahead), aheadPoints: ahead, behindPoints: behind, focusIndex };
   }, [focusStop, path, stops]);
+  // Placed once, for the zoom the map opens at, so zooming never moves it. Zoomed out well past that,
+  // the line's bends would reach it, so it's hidden there instead.
+  const arrowZoom = FOCUS_ZOOM;
+  const arrow = useMemo(() => {
+    const start = line.aheadPoints[0];
+    return start ? directionArrowAt(line.aheadPoints, metersPerPixel(arrowZoom, start.lat)) : null;
+  }, [arrowZoom, line.aheadPoints]);
   const polylineOptions = useMemo(() => ({ strokeColor: color, strokeWeight: LINE_WIDTH, zIndex: 1 }), [color]);
   const behindPolylineOptions = useMemo(() => ({ strokeColor: color, strokeOpacity: BEHIND_LINE_OPACITY, strokeWeight: LINE_WIDTH, zIndex: 0 }), [color]);
 
@@ -153,13 +161,40 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot camera setup on load
   }, [stops]);
 
+  // Set once the map has framed an approaching vehicle (below).
+  const framedVehicle = useRef(false);
   // The nearest stop often resolves after the page opens; follow it until the rider drags.
   useEffect(() => {
-    if (!map || !focusStop || riderMovedMap.current) return;
+    if (!map || !focusStop || riderMovedMap.current || framedVehicle.current) return;
     map.panTo({ lat: focusStop.lat, lng: focusStop.lon });
     if ((map.getZoom() ?? 0) < FOCUS_ZOOM) map.setZoom(FOCUS_ZOOM);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the stop's identity, not the stops array
   }, [map, focusStop?.stopId]);
+
+  // Once a live vehicle shows up on its way to the rider's stop, the map glides out (once) to show
+  // the stop, the vehicle, and the rider together, unless the rider has moved the map already.
+  const glideCancel = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    if (framedVehicle.current || riderMovedMap.current || !map || !focusStop) return;
+    const vehicle = approachingVehicle(line.behindPoints, shownVehicles);
+    if (!vehicle) return;
+    framedVehicle.current = true;
+    const points = [
+      { lat: focusStop.lat, lng: focusStop.lon },
+      { lat: vehicle.lat, lng: vehicle.lon },
+      ...(userLocation ? [{ lat: userLocation.latitude, lng: userLocation.longitude }] : []),
+    ];
+    const camera = cameraToFit(map, points, ROUTE_FIT_PADDING, FOCUS_ZOOM + 3);
+    if (camera) {
+      glideCancel.current = glideMapTo(map, camera.centerAt, camera.zoom);
+      return;
+    }
+    const bounds = new google.maps.LatLngBounds();
+    for (const point of points) bounds.extend(point);
+    map.fitBounds(bounds, ROUTE_FIT_PADDING);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-checked as vehicles report; the rest is read then
+  }, [map, focusStop?.stopId, vehicles]);
+  useEffect(() => () => glideCancel.current?.(), []);
 
   useEffect(() => {
     if (centerOnUserRequest === 0) return;
@@ -167,10 +202,11 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
     riderMovedMap.current = true; // the nearest-stop focus must not pull the map back
   }, [centerOnUserRequest]);
 
+  // Glides there (zooming back in a level at a time from far out) rather than jumping.
   useEffect(() => {
-    if (!followRider.current || !map || !userLocation) return;
-    map.panTo({ lat: userLocation.latitude, lng: userLocation.longitude });
-    if ((map.getZoom() ?? 0) < FOCUS_ZOOM) map.setZoom(FOCUS_ZOOM);
+    if (!followRider.current || !map || !userLocation) return undefined;
+    const rider = { lat: userLocation.latitude, lng: userLocation.longitude };
+    return glideMapTo(map, () => rider, Math.max(map.getZoom() ?? 0, FOCUS_ZOOM));
   }, [centerOnUserRequest, map, userLocation]);
 
   // The route-overview button frames the whole line in this direction (every stop), clear of the
@@ -261,16 +297,16 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
             // Same blue "you are here" dot as the home map.
             <Marker
               clickable={false}
-              icon={{ path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: '#4285F4', fillOpacity: 1, strokeColor: colors.ring, strokeWeight: 2 }}
+              icon={{ path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: '#4285F4', fillOpacity: 1, strokeColor: '#FFFFFF', strokeWeight: 2 }}
               position={{ lat: userLocation.latitude, lng: userLocation.longitude }}
               title="Your location"
               zIndex={3}
             />
           ) : null}
-          {line.arrow ? (
+          {arrow && (zoom || FOCUS_ZOOM) >= arrowZoom - 1 ? (
             // Which way the line runs, beside it just past the rider's stop (web maps stay north-up).
-            <OverlayViewF getPixelPositionOffset={arrowOffset} mapPaneName={OVERLAY_LAYER} position={{ lat: line.arrow.point.lat, lng: line.arrow.point.lon }}>
-              <View pointerEvents="none" style={{ width: DIRECTION_ARROW_BOX, height: DIRECTION_ARROW_BOX, transform: [{ rotate: `${line.arrow.bearing}deg` }] }} testID="route-direction-arrow">
+            <OverlayViewF getPixelPositionOffset={arrowOffset} mapPaneName={OVERLAY_LAYER} position={{ lat: arrow.point.lat, lng: arrow.point.lon }}>
+              <View pointerEvents="none" style={{ width: DIRECTION_ARROW_BOX, height: DIRECTION_ARROW_BOX, transform: [{ rotate: `${arrow.bearing}deg` }] }} testID="route-direction-arrow">
                 <DirectionArrow color={color} />
               </View>
             </OverlayViewF>

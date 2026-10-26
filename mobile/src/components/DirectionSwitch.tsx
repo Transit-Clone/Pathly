@@ -31,8 +31,7 @@ function textOn(color: string, light: string, dark: string): string {
 
 /**
  * A line's two directions as one wide oval: each half names a destination, and the knob, in the
- * line's color, springs under the chosen one with a little stretch on the way. Tap a side or swipe
- * across the switch.
+ * line's color, glides under the chosen one. Tap a side or swipe across the switch.
  */
 export function DirectionSwitch({ activeIndex, color, labels, onChange }: DirectionSwitchProps) {
   const styles = useThemedStyles(createStyles);
@@ -40,7 +39,6 @@ export function DirectionSwitch({ activeIndex, color, labels, onChange }: Direct
   const { reducedMotionActive } = useAppSettings();
   const [width, setWidth] = useState(0);
   const [position] = useState(() => new Animated.Value(activeIndex));
-  const [stretch] = useState(() => new Animated.Value(0));
   const half = Math.max(0, (width - PADDING * 2) / 2);
 
   useEffect(() => {
@@ -48,15 +46,9 @@ export function DirectionSwitch({ activeIndex, color, labels, onChange }: Direct
       position.setValue(activeIndex);
       return;
     }
-    Animated.parallel([
-      Animated.spring(position, { toValue: activeIndex, friction: 7, tension: 110, useNativeDriver: true }),
-      // Stretches as it leaves, then settles back.
-      Animated.sequence([
-        Animated.timing(stretch, { toValue: 1, duration: 120, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-        Animated.spring(stretch, { toValue: 0, friction: 4, tension: 140, useNativeDriver: true }),
-      ]),
-    ]).start();
-  }, [activeIndex, position, reducedMotionActive, stretch]);
+    // One smooth glide, no overshoot.
+    Animated.timing(position, { toValue: activeIndex, duration: 260, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }).start();
+  }, [activeIndex, position, reducedMotionActive]);
 
   // A horizontal swipe anywhere on the switch picks the side it points to.
   const swipe = useMemo(() => PanResponder.create({
@@ -67,8 +59,6 @@ export function DirectionSwitch({ activeIndex, color, labels, onChange }: Direct
   }), [onChange]);
 
   const translateX = position.interpolate({ inputRange: [0, 1], outputRange: [0, half], extrapolate: 'clamp' });
-  const scaleX = stretch.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] });
-  const scaleY = stretch.interpolate({ inputRange: [0, 1], outputRange: [1, 0.9] });
   const selectedText = textOn(color, colors.white, '#111111');
 
   return (
@@ -79,7 +69,7 @@ export function DirectionSwitch({ activeIndex, color, labels, onChange }: Direct
       style={styles.track}
       testID="route-direction-switch"
     >
-      {half > 0 ? <Animated.View pointerEvents="none" style={[styles.knob, { width: half, backgroundColor: color, transform: [{ translateX }, { scaleX }, { scaleY }] }]} /> : null}
+      {half > 0 ? <Animated.View pointerEvents="none" style={[styles.knob, { width: half, backgroundColor: color, transform: [{ translateX }] }]} /> : null}
       {labels.map((label, index) => {
         const selected = index === activeIndex;
         return (

@@ -4,7 +4,7 @@ import MapView, { Marker, Polyline, PROVIDER_GOOGLE, type Region } from 'react-n
 
 import { formatAge, visibleTrains } from '../data/liveTrains';
 import { googleMapStyle } from '../data/mapStyle';
-import { directionArrowAt, focusStopIndex, splitPathAtStop, withAlpha } from '../data/routeDirection';
+import { approachingVehicle, directionArrowAt, focusStopIndex, metersPerPixel, splitPathAtStop, withAlpha } from '../data/routeDirection';
 import { stopRevealZoom, zoomForRegion } from '../data/stopDeclutter';
 import type { RouteLiveVehicle } from '../data/transitLive';
 import type { Coordinates } from '../hooks/useCurrentLocation';
@@ -134,19 +134,43 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
     const points = path ?? stops;
     const toCoordinates = (part: readonly { lat: number; lon: number }[]) => part.map((point) => ({ latitude: point.lat, longitude: point.lon }));
     const focusIndex = focusStop ? stops.indexOf(focusStop) : -1;
-    if (focusIndex < 0) return { behind: [], ahead: toCoordinates(points), arrow: null };
+    if (focusIndex < 0) return { behind: [], ahead: toCoordinates(points), aheadPoints: [], behindPoints: [] };
     const { behind, ahead } = splitPathAtStop(points, stops, focusIndex);
-    return { behind: toCoordinates(behind), ahead: toCoordinates(ahead), arrow: directionArrowAt(ahead) };
+    return { behind: toCoordinates(behind), ahead: toCoordinates(ahead), aheadPoints: ahead, behindPoints: behind };
   }, [focusStop, path, stops]);
+  // Placed once, for the zoom the map opens at, so zooming never moves it. Zoomed out well past that,
+  // the line's bends would reach it, so it's hidden there instead.
+  const [arrowZoom] = useState(() => Math.round(zoom));
+  const arrow = useMemo(() => {
+    const start = line.aheadPoints[0];
+    return start && arrowZoom > 0 ? directionArrowAt(line.aheadPoints, metersPerPixel(arrowZoom, start.lat)) : null;
+  }, [arrowZoom, line.aheadPoints]);
   const vehicleLabel = mode === 'bus' ? 'Bus' : 'Train';
   const vehicleIcon = mode === 'bus' ? 'bus' : mode === 'subway' ? 'subway' : 'rail';
 
+  // Set once the map has framed an approaching vehicle (below).
+  const framedVehicle = useRef(false);
   // The nearest stop often resolves after the page opens; follow it until the rider pans.
   useEffect(() => {
-    if (!focusStop || riderMovedMap.current) return;
+    if (!focusStop || riderMovedMap.current || framedVehicle.current) return;
     mapRef.current?.animateToRegion(regionFor(stops, focusStop), FOCUS_ANIMATION_MS);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the stop's identity, not the stops array
   }, [focusStop?.stopId]);
+
+  // Once a live vehicle shows up on its way to the rider's stop, the map glides out (once) to show
+  // the stop, the vehicle, and the rider together, unless the rider has moved the map already.
+  useEffect(() => {
+    if (framedVehicle.current || riderMovedMap.current || !focusStop) return;
+    const vehicle = approachingVehicle(line.behindPoints, shownVehicles);
+    if (!vehicle) return;
+    framedVehicle.current = true;
+    mapRef.current?.fitToCoordinates([
+      { latitude: focusStop.lat, longitude: focusStop.lon },
+      { latitude: vehicle.lat, longitude: vehicle.lon },
+      ...(userLocation ? [userLocation] : []),
+    ], { edgePadding: ROUTE_FIT_PADDING, animated: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-checked as vehicles report; the rest is read then
+  }, [focusStop?.stopId, vehicles]);
 
   useEffect(() => {
     if (centerOnUserRequest === 0) return;
@@ -226,13 +250,13 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
           </Marker>
         );
       })}
-      {line.arrow ? (
+      {arrow && zoom >= arrowZoom - 1 ? (
         // Which way the line runs, beside it just past the rider's stop. Flat, so it turns with the map.
         <Marker
           anchor={{ x: 0.5, y: 0.5 }}
-          coordinate={{ latitude: line.arrow.point.lat, longitude: line.arrow.point.lon }}
+          coordinate={{ latitude: arrow.point.lat, longitude: arrow.point.lon }}
           flat={true}
-          rotation={line.arrow.bearing}
+          rotation={arrow.bearing}
           tappable={false}
           testID="route-direction-arrow"
           tracksViewChanges={tracksArrowView}

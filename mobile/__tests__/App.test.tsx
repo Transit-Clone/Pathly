@@ -413,7 +413,7 @@ describe('Pathly prototype navigation', () => {
 
       // Typing again: the matching recent comes first (once), above stops and Google places.
       fireEvent.changeText(screen.getByTestId('search-input'), 'jamaica');
-      expect(within(screen.getAllByTestId(/^search-result-[^r]/)[0]!).getByText('Recent · LIRR station', hidden)).toBeTruthy();
+      expect(within(screen.getAllByTestId(/^search-result-[^r]/)[0]!).getByText('LIRR station', hidden)).toBeTruthy();
       await waitFor(() => expect(screen.getByTestId('search-result-g-jamaica-ave')).toBeTruthy());
       expect(screen.getAllByTestId('search-result-stop:lirr:15')).toHaveLength(1);
       // A non-matching query leaves recents out.
@@ -1099,7 +1099,7 @@ describe('Pathly prototype navigation', () => {
     fireEvent.press(screen.getByTestId('search-trip-stops-toggle-0'));
     fireEvent.press(screen.getByTestId('search-trip-stop-0-1'));
     const second = legs[0]!.stops![1]!;
-    expect(maps.mockAnimateCamera).toHaveBeenCalledWith(expect.objectContaining({ center: { latitude: second.location.lat, longitude: second.location.lng } }), expect.anything());
+    expect(maps.mockAnimateCamera).toHaveBeenCalledWith(expect.objectContaining({ center: { latitude: expect.closeTo(second.location.lat, 2), longitude: second.location.lng } }), expect.anything());
     expect(within(screen.getByTestId('trip-map-stop-label', hidden)).getByText(`${second.name} · ${formatTripClock(second.time)}`, hidden)).toBeTruthy();
     // No Fit button: the map has only Save and Locate.
     expect(screen.queryByLabelText('Show the whole trip')).toBeNull();
@@ -2076,7 +2076,10 @@ describe('Pathly prototype navigation', () => {
         const tiles = [0, 1, 2].map((index) => StyleSheet.flatten(screen.getByTestId(`route-prediction-0-${index}`).props.style));
         const widths = new Set(tiles.map((tile) => tile.width));
         expect(widths.size).toBe(1);
-        expect(tiles[0]!.borderWidth).toBe(3);
+        // Filled with the route color, no outline: solid for the picked tile, light for the rest.
+        expect(tiles[0]!.borderWidth).toBeUndefined();
+        expect(tiles[0]!.backgroundColor).toBe(routeById.ronkonkoma.color);
+        expect(tiles[2]!.backgroundColor).toMatch(new RegExp(`^${routeById.ronkonkoma.color}[0-9A-F]{2}$`, 'i'));
         expect(tiles[0]!.opacity ?? 1).toBe(1);
         expect(tiles[1]!.opacity).toBe(0.45);
         // A direction with a single departure keeps the same fixed width rather than filling the row.

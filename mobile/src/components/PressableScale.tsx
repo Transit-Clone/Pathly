@@ -37,10 +37,14 @@ export const PressableScale = forwardRef<View, PressableScaleProps>(function Pre
   const flatOpacity = StyleSheet.flatten(style)?.opacity;
   const baseOpacity = typeof flatOpacity === 'number' ? flatOpacity : 1;
   const opacity = progress.interpolate({ inputRange: [0, 1], outputRange: [baseOpacity, baseOpacity * 0.78] });
+  // A web tap-or-drag control (onPressIn/onPressOut, no onPress): react-native-web drops a click
+  // released inside its 50ms press delay without calling either, so quick taps did nothing.
+  const webPressDelay = Platform.OS === 'web' && rest.onPress == null ? { delayPressIn: 0 } : null;
 
   return (
     <AnimatedPressable
       {...rest}
+      {...webPressDelay}
       ref={ref}
       disabled={disabled}
       onPressIn={(event: GestureResponderEvent) => {

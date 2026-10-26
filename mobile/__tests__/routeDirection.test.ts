@@ -1,4 +1,4 @@
-import { bearingDegrees, directionArrowAt, splitPathAtStop, withAlpha } from '../src/data/routeDirection';
+import { approachingVehicle, bearingDegrees, directionArrowAt, splitPathAtStop, withAlpha } from '../src/data/routeDirection';
 
 // A straight east-west line along 40.9°N: 21 points about 84 m apart.
 const line = Array.from({ length: 21 }, (_, index) => ({ lat: 40.9, lon: -73.2 + index * 0.001 }));
@@ -16,6 +16,18 @@ describe('route direction helpers', () => {
     expect(Math.abs(arrow.bearing)).toBeLessThan(2);
     expect(directionArrowAt(line)!.bearing).toBeCloseTo(90, 0);
     expect(directionArrowAt([line[0]!])).toBeNull();
+  });
+
+  it('picks the vehicle with the least line left before the stop', () => {
+    // The line leading up to a stop at its east end (line[10]).
+    const behind = line.slice(0, 11);
+    const far = { id: 'far', lat: 40.9, lon: -73.2 };
+    const near = { id: 'near', lat: 40.9001, lon: -73.193 };
+    const past = { id: 'past', lat: 40.9, lon: -73.185 };
+    const offLine = { id: 'off', lat: 40.95, lon: -73.192 };
+    expect(approachingVehicle(behind, [far, near, past, offLine])?.id).toBe('near');
+    expect(approachingVehicle(behind, [past, offLine])).toBeNull();
+    expect(approachingVehicle([line[0]!], [near])).toBeNull();
   });
 
   it('splits a straight path at the stop', () => {

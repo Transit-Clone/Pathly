@@ -62,7 +62,7 @@ function SavedPlacesSettings({ locations, onAdd, onEdit }: SavedPlacesSettingsPr
       <Card>
         {missing.map((label) => (
           <PressableScale accessibilityHint={`Searches for your ${label.toLowerCase()} address`} accessibilityLabel={`Set ${label.toLowerCase()}`} accessibilityRole="button" key={label} onPress={() => onAdd(label)} style={styles.settingRow} testID={`saved-set-${label.toLowerCase()}`}>
-            <View style={styles.rowIcon}><Icon name={label === 'Home' ? 'home' : 'work'} size={19} /></View>
+            <View style={styles.rowIcon}><Icon filled={true} name={label === 'Home' ? 'home' : 'work'} size={19} /></View>
             <View style={styles.rowCopy}><Text style={styles.settingText}>{label}</Text><Text style={styles.settingDetail}>Set location</Text></View>
             <Icon color={colors.mutedInk} name="forward" size={20} />
           </PressableScale>
@@ -81,16 +81,16 @@ function SavedPlacesSettings({ locations, onAdd, onEdit }: SavedPlacesSettingsPr
 }
 type SettingsRoute = 'hub' | 'appearance' | 'account' | 'notifications' | 'accessibility' | 'privacy' | 'travel' | 'places' | 'maps' | 'help';
 
-const routes: readonly { id: Exclude<SettingsRoute, 'hub'>; title: string; subtitle: string; icon: IconName; group: 'ACCOUNT' | 'PREFERENCES' | 'SUPPORT' }[] = [
-  { id: 'account', title: 'Account details', subtitle: 'Name, email, and password', icon: 'person', group: 'ACCOUNT' },
-  { id: 'notifications', title: 'Notifications', subtitle: 'Trips, arrivals, and service alerts', icon: 'bell', group: 'ACCOUNT' },
-  { id: 'appearance', title: 'Appearance', subtitle: 'Light, dark, or match your device', icon: 'appearance', group: 'PREFERENCES' },
-  { id: 'accessibility', title: 'Accessibility', subtitle: 'Text size, contrast, motion, and step-free', icon: 'accessibility', group: 'PREFERENCES' },
-  { id: 'privacy', title: 'Privacy', subtitle: 'Location, your data, and account deletion', icon: 'privacy', group: 'PREFERENCES' },
-  { id: 'travel', title: 'Travel preferences', subtitle: 'Modes, walking, and transfers', icon: 'travel', group: 'PREFERENCES' },
-  { id: 'places', title: 'Saved places', subtitle: 'Home, work, and frequent destinations', icon: 'place', group: 'PREFERENCES' },
-  { id: 'maps', title: 'Official maps', subtitle: 'MTA subway, bus, and LIRR maps, saved for offline', icon: 'map', group: 'SUPPORT' },
-  { id: 'help', title: 'Help & About', subtitle: 'FAQs, support, policies, and app version', icon: 'help', group: 'SUPPORT' },
+const routes: readonly { id: Exclude<SettingsRoute, 'hub'>; title: string; icon: IconName; group: 'ACCOUNT' | 'PREFERENCES' | 'SUPPORT' }[] = [
+  { id: 'account', title: 'Account details', icon: 'person', group: 'ACCOUNT' },
+  { id: 'notifications', title: 'Notifications', icon: 'bell', group: 'ACCOUNT' },
+  { id: 'appearance', title: 'Appearance', icon: 'appearance', group: 'PREFERENCES' },
+  { id: 'accessibility', title: 'Accessibility', icon: 'accessibility', group: 'PREFERENCES' },
+  { id: 'privacy', title: 'Privacy', icon: 'privacy', group: 'PREFERENCES' },
+  { id: 'travel', title: 'Travel preferences', icon: 'travel', group: 'PREFERENCES' },
+  { id: 'places', title: 'Saved places', icon: 'place', group: 'PREFERENCES' },
+  { id: 'maps', title: 'Official maps', icon: 'map', group: 'SUPPORT' },
+  { id: 'help', title: 'Help & About', icon: 'help', group: 'SUPPORT' },
 ];
 
 export function Header({ onBack, testID = 'settings-back', title }: { onBack: () => void; testID?: string; title: string }) {
@@ -166,9 +166,9 @@ export function ProfileView({ initialRoute, onBack, onOpenAdminTools, savedPlace
         <Header onBack={onBack} testID="profile-back" title="Profile & Settings" />
         <ScrollView contentContainerStyle={styles.pageContent} showsVerticalScrollIndicator={false}>
           <View style={styles.accountCard}><View style={styles.avatar}><Icon color={colors.onPrimary} filled={true} name="person" size={28} /></View><View><Text style={styles.name}>{user?.displayName || 'Pathly Rider'}</Text><Text style={styles.guest}>{user?.email ?? 'Signed in'}</Text></View></View>
-          {(['ACCOUNT', 'PREFERENCES', 'SUPPORT'] as const).map((group) => <View key={group}><Text style={styles.sectionLabel}>{group}</Text><Card>{routes.filter((item) => item.group === group).map((item) => <PressableScale accessibilityLabel={item.title} accessibilityRole="button" key={item.id} onPress={() => openRoute(item.id)} style={styles.settingRow} testID={`settings-row-${item.id}`}><View style={styles.rowIcon}><Icon name={item.icon} size={19} /></View><View style={styles.rowCopy}><Text style={styles.settingText}>{item.title}</Text><Text style={styles.settingDetail}>{item.subtitle}</Text></View><Icon color={colors.mutedInk} name="forward" size={20} /></PressableScale>)}</Card></View>)}
+          {(['ACCOUNT', 'PREFERENCES', 'SUPPORT'] as const).map((group) => <View key={group}><Text style={styles.sectionLabel}>{group}</Text><Card>{routes.filter((item) => item.group === group).map((item) => <PressableScale accessibilityLabel={item.title} accessibilityRole="button" key={item.id} onPress={() => openRoute(item.id)} style={styles.settingRow} testID={`settings-row-${item.id}`}><View style={styles.rowIcon}><Icon filled={true} name={item.icon} size={19} /></View><View style={styles.rowCopy}><Text style={styles.settingText}>{item.title}</Text></View><Icon color={colors.mutedInk} name="forward" size={20} /></PressableScale>)}</Card></View>)}
           {DONATION_URL ? <View style={styles.supportCard}><Card><PressableScale accessibilityHint="Opens Pathly's donation page" accessibilityLabel="Support Pathly" accessibilityRole="link" onPress={openDonationPage} style={styles.settingRow} testID="settings-row-support"><View style={[styles.rowIcon, styles.supportIcon]}><Icon color={colors.highlightInk} filled={true} name="heart" size={19} /></View><View style={styles.rowCopy}><Text style={styles.settingText}>Support Pathly</Text><Text style={styles.settingDetail}>{STUDENT_DISCLAIMER}</Text></View><Icon color={colors.mutedInk} name="forward" size={20} /></PressableScale></Card></View> : null}
-          {onOpenAdminTools ? <View><Text style={styles.sectionLabel}>ADMIN</Text><Card><PressableScale accessibilityLabel="Admin tools" accessibilityRole="button" onPress={onOpenAdminTools} style={styles.settingRow} testID="settings-row-admin"><View style={styles.rowIcon}><Icon name="crosshair" size={19} /></View><View style={styles.rowCopy}><Text style={styles.settingText}>Admin tools</Text><Text style={styles.settingDetail}>Mock location and time, backend status, requests</Text></View><Icon color={colors.mutedInk} name="forward" size={20} /></PressableScale></Card></View> : null}
+          {onOpenAdminTools ? <View><Text style={styles.sectionLabel}>ADMIN</Text><Card><PressableScale accessibilityLabel="Admin tools" accessibilityRole="button" onPress={onOpenAdminTools} style={styles.settingRow} testID="settings-row-admin"><View style={styles.rowIcon}><Icon filled={true} name="crosshair" size={19} /></View><View style={styles.rowCopy}><Text style={styles.settingText}>Admin tools</Text></View><Icon color={colors.mutedInk} name="forward" size={20} /></PressableScale></Card></View> : null}
           <PressableScale accessibilityRole="button" onPress={() => { void signOutUser(); }} style={styles.signOut} testID="sign-out"><Text style={styles.signOutText}>Sign out</Text></PressableScale>
           {feedback ? <Text accessibilityLiveRegion="polite" style={styles.feedback}>{feedback}</Text> : null}
         </ScrollView>

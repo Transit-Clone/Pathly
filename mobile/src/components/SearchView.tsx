@@ -196,7 +196,7 @@ function SearchResultRow({ onPress, onRemove, place, recent = false, resolving =
         {/* A stop: its lines, then what it is; a place: the address that completes its name. */}
         <Text numberOfLines={1} style={styles.resultSubtitle}>
           {/* A recent stop shows its mode icon, so its row says it's recent in words. */}
-          {savedLines ? ['Saved', saved?.address.group, savedLines.subtitle].filter(Boolean).join(' · ') : transitKind ? (recent ? `Recent · ${stopKindText(place)}` : stopKindText(place)) : addressAfterName(place.title, place.subtitle)}
+          {savedLines ? ['Saved', saved?.address.group, savedLines.subtitle].filter(Boolean).join(' · ') : transitKind ? stopKindText(place) : addressAfterName(place.title, place.subtitle)}
         </Text>
       </View>
     </PressableScale>

@@ -46,6 +46,10 @@ export const lightColors = {
   white: '#FFFFFF',
   /** The outline around pins, badges and map dots: white on the light map, black on the dark one. */
   ring: '#FFFFFF',
+  /** Where a trip starts, on its map: gray, so it never reads as the rider's blue location dot. */
+  tripStart: '#9AA0A6',
+  /** Round buttons floating on the map (locate, layers): lighter than the dark map in dark mode. */
+  mapControl: '#FFFFFF',
   mapLand: '#EFEBE3',
   mapRoad: '#FFFFFF',
   mapRoadMajor: '#FFFFFF',
@@ -98,6 +102,8 @@ export const darkColors: Palette = {
   locationHalo: 'rgba(91, 155, 248, 0.32)',
   white: '#FFFFFF',
   ring: '#000000',
+  tripStart: '#8A9099',
+  mapControl: '#3A3D43',
   mapLand: '#1D1F22',
   mapRoad: '#34373C',
   mapRoadMajor: '#45494F',

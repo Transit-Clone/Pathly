@@ -11,6 +11,7 @@ jest.mock('@react-google-maps/api', () => {
   const { View: MockView } = require('react-native');
   const mockMap = {
     fitBounds: jest.fn(),
+    getProjection: jest.fn(() => undefined),
     getZoom: jest.fn(() => 14),
     panTo: jest.fn(),
     setZoom: jest.fn(),
@@ -221,7 +222,8 @@ describe('native active TripMap', () => {
 
     expect(onFollowModeChange).toHaveBeenLastCalledWith(true);
     expect(maps.mockAnimateCamera).toHaveBeenCalledWith(
-      { center: { latitude: rawLocation.lat, longitude: rawLocation.lng }, zoom: 15 },
+      // Just south of the rider, so they sit in the middle of the map's uncovered part.
+      { center: { latitude: expect.closeTo(rawLocation.lat, 2), longitude: rawLocation.lng }, zoom: 15 },
       { duration: 350 },
     );
     expect(maps.mockFitToCoordinates).not.toHaveBeenCalled();
@@ -374,7 +376,8 @@ describe('web active TripMap', () => {
     );
     await waitFor(() => expect(mockMap.panTo).toHaveBeenCalledWith(rawLocation));
     expect(onFollowModeChange).toHaveBeenLastCalledWith(true);
-    expect(mockMap.setZoom).toHaveBeenCalledWith(15);
+    // It glides: the zoom steps in a level after the pan starts, rather than jumping with it.
+    await waitFor(() => expect(mockMap.setZoom).toHaveBeenCalledWith(15));
     expect(mockMap.fitBounds).not.toHaveBeenCalled();
 
     mockMap.panTo.mockClear();

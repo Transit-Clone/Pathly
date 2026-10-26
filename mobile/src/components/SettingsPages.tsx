@@ -115,7 +115,7 @@ export function AccountSettings({ onFeedback }: PageProps) {
       </Card>
       <Text style={profile.sectionLabel}>SECURITY</Text>
       <Card>
-        <SettingRow detail={resetSentTo ? `Reset link sent to ${resetSentTo}` : 'Email me a link to choose a new password'} label="Password" onPress={() => void resetPassword()} testID="account-password" />
+        <SettingRow detail={resetSentTo ? `Reset link sent to ${resetSentTo}` : undefined} label="Reset password" onPress={() => void resetPassword()} testID="account-password" />
       </Card>
     </>
   );
@@ -158,16 +158,16 @@ export function NotificationSettings({ onFeedback }: PageProps) {
         <ToggleRow label="Allow notifications" onChange={(value) => set('enabled', value)} testID="toggle-notifications" value={notifications.enabled} />
         {notifications.enabled ? (
           <>
-            <ToggleRow detail="Changes and delays on saved routes" label="Service alerts" onChange={(value) => set('serviceAlerts', value)} testID="toggle-service-alerts" value={notifications.serviceAlerts} />
-            <ToggleRow detail="A nudge on GO when you need to hurry to make your ride" label="Trip reminders" onChange={(value) => set('tripReminders', value)} testID="toggle-trip-reminders" value={notifications.tripReminders} />
-            <ToggleRow detail="Major incidents near your trip" label="Disruption updates" onChange={(value) => set('disruptions', value)} testID="toggle-disruptions" value={notifications.disruptions} />
+            <ToggleRow label="Service alerts" onChange={(value) => set('serviceAlerts', value)} testID="toggle-service-alerts" value={notifications.serviceAlerts} />
+            <ToggleRow label="Trip reminders" onChange={(value) => set('tripReminders', value)} testID="toggle-trip-reminders" value={notifications.tripReminders} />
+            <ToggleRow label="Disruption updates" onChange={(value) => set('disruptions', value)} testID="toggle-disruptions" value={notifications.disruptions} />
           </>
         ) : null}
       </Card>
       <Text style={profile.sectionLabel}>SAVED LINES</Text>
       <Card>
         {savedRoutes.length === 0 ? (
-          <SettingRow detail="Star a line in route view to get its service alerts" label="No saved lines yet" testID="notifications-no-saved-lines" />
+          <SettingRow label="No saved lines yet" testID="notifications-no-saved-lines" />
         ) : savedRoutes.map((route) => (
           <ChoiceRow
             key={route.id}
@@ -213,9 +213,9 @@ export function AccessibilitySettings({ onFeedback }: PageProps) {
           selected={textSizeOptions.find((item) => item.value === textSize)?.label ?? 'Default'}
           testPrefix="text-size"
         />
-        <ToggleRow detail="Stop pulsing live signals and other animation" label="Reduce motion" onChange={(value) => { setReducedMotion(value); onFeedback(value ? 'Motion reduced' : 'Motion restored'); }} testID="toggle-reduced-motion" value={reducedMotion} />
-        <ToggleRow detail="Darker text and stronger borders and colors" label="High contrast" onChange={(value) => { setHighContrast(value); onFeedback(value ? 'High contrast on' : 'High contrast off'); }} testID="toggle-high-contrast" value={highContrast} />
-        <ToggleRow detail="Mark step-free subway and LIRR stations in route view" label="Step-free routes" onChange={(value) => { updatePreferences({ stepFree: value }); onFeedback('Step-free preference saved'); }} testID="toggle-step-free" value={preferences.stepFree} />
+        <ToggleRow label="Reduce motion" onChange={(value) => { setReducedMotion(value); onFeedback(value ? 'Motion reduced' : 'Motion restored'); }} testID="toggle-reduced-motion" value={reducedMotion} />
+        <ToggleRow label="High contrast" onChange={(value) => { setHighContrast(value); onFeedback(value ? 'High contrast on' : 'High contrast off'); }} testID="toggle-high-contrast" value={highContrast} />
+        <ToggleRow label="Step-free routes" onChange={(value) => { updatePreferences({ stepFree: value }); onFeedback('Step-free preference saved'); }} testID="toggle-step-free" value={preferences.stepFree} />
       </Card>
       <Text style={profile.note} testID="step-free-note">Station access comes from the MTA and can change when an elevator is out. Every bus and ferry is step-free. Google&apos;s transit planner doesn&apos;t report step-free access, so trips aren&apos;t filtered for it yet.</Text>
     </>
@@ -263,8 +263,8 @@ export function TravelSettings({ onFeedback }: PageProps) {
             })}
           </View>
         </View>
-        <ToggleRow detail="Off asks for trips with less walking" label="Allow walking" onChange={(value) => { updatePreferences({ travel: { allowWalking: value } }); onFeedback('Travel preferences saved'); }} testID="toggle-walking" value={travel.allowWalking} />
-        <ToggleRow detail="Start results sorted by fewest transfers" label="Fewer transfers" onChange={(value) => { updatePreferences({ travel: { fewerTransfers: value } }); onFeedback('Travel preferences saved'); }} testID="toggle-fewer-transfers" value={travel.fewerTransfers} />
+        <ToggleRow label="Allow walking" onChange={(value) => { updatePreferences({ travel: { allowWalking: value } }); onFeedback('Travel preferences saved'); }} testID="toggle-walking" value={travel.allowWalking} />
+        <ToggleRow label="Fewer transfers" onChange={(value) => { updatePreferences({ travel: { fewerTransfers: value } }); onFeedback('Travel preferences saved'); }} testID="toggle-fewer-transfers" value={travel.fewerTransfers} />
         <SettingRow detail={walkLimitLabel(travel.maxWalkMinutes)} label="Maximum walking time" onPress={() => setPickingLimit((open) => !open)} testID="walking-limit" />
         {pickingLimit ? (
           <View style={[profile.choices, page.limitChoices]} testID="walking-limit-picker">
@@ -393,9 +393,9 @@ export function PrivacySettings({ onFeedback }: PageProps) {
       <Text style={profile.intro}>Control location access and the data Pathly keeps for your account.</Text>
       <Card>
         <SettingRow detail={permissionDetail[permission.status]} label="Location access" onPress={permission.status === 'unknown' ? undefined : () => void changeLocation()} testID="privacy-location" />
-        <ToggleRow detail="Pathly doesn't collect usage analytics yet; this saves your choice for when it does" label="Share usage analytics" onChange={(value) => { updatePreferences({ analytics: value }); onFeedback('Analytics preference saved'); }} testID="toggle-analytics" value={preferences.analytics} />
-        <SettingRow detail={exporting ? 'Preparing your data…' : 'Searches, recent destinations, and saved places as JSON'} label="Download your data" onPress={() => void download()} testID="privacy-download" />
-        <SettingRow detail="Permanently remove your account and its data" label="Delete account" onPress={() => { setDeleteOpen((open) => !open); setDeleteError(''); }} testID="privacy-delete" />
+        <ToggleRow label="Share usage analytics" onChange={(value) => { updatePreferences({ analytics: value }); onFeedback('Analytics preference saved'); }} testID="toggle-analytics" value={preferences.analytics} />
+        <SettingRow detail={exporting ? 'Preparing your data…' : undefined} label="Download your data" onPress={() => void download()} testID="privacy-download" />
+        <SettingRow label="Delete account" onPress={() => { setDeleteOpen((open) => !open); setDeleteError(''); }} testID="privacy-delete" />
       </Card>
       {deleteOpen ? (
         <View style={page.dangerCard} testID="delete-account-panel">
@@ -487,15 +487,15 @@ export function HelpSettings({ onFeedback }: PageProps) {
     <>
       <Text style={profile.intro}>Answers, support, and the policies behind Pathly.</Text>
       <Card>
-        <SettingRow detail="Trip planning, live times, and saved places" label="Frequently asked questions" onPress={() => toggle('faq')} testID="help-faq" />
+        <SettingRow label="Frequently asked questions" onPress={() => toggle('faq')} testID="help-faq" />
         {open === 'faq' ? <View style={page.doc} testID="help-faq-content">{FAQ.map((item) => <View key={item.q} style={page.docItem}><Text style={page.docHeading}>{item.q}</Text><Text style={page.docBody}>{item.a}</Text></View>)}</View> : null}
-        <SettingRow detail={SUPPORT_EMAIL ? `Email ${SUPPORT_EMAIL}` : 'Report a problem on GitHub'} label="Contact support" onPress={() => void contact()} testID="help-contact" />
-        <SettingRow detail="What Pathly keeps and why" label="Privacy policy" onPress={() => toggle('privacy')} testID="help-privacy" />
+        <SettingRow label="Contact support" onPress={() => void contact()} testID="help-contact" />
+        <SettingRow label="Privacy policy" onPress={() => toggle('privacy')} testID="help-privacy" />
         {open === 'privacy' ? <View style={page.doc} testID="help-privacy-content">{PRIVACY.map((line) => <Text key={line} style={[page.docBody, page.docItem]}>{line}</Text>)}</View> : null}
         <SettingRow label="Terms of use" onPress={() => toggle('terms')} testID="help-terms" />
         {open === 'terms' ? <View style={page.doc} testID="help-terms-content">{TERMS.map((line) => <Text key={line} style={[page.docBody, page.docItem]}>{line}</Text>)}</View> : null}
         {/* Nearby's walking distances come from OpenStreetMap, whose license (ODbL) requires this credit. */}
-        <SettingRow detail="Walking distances use map data © OpenStreetMap contributors" label="Map data" onPress={() => void openOsmCopyright()} testID="help-osm" />
+        <SettingRow label="Map data © OpenStreetMap" onPress={() => void openOsmCopyright()} testID="help-osm" />
       </Card>
     </>
   );

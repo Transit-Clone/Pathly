@@ -2,8 +2,11 @@ import Svg, { Path } from 'react-native-svg';
 
 /** The arrow's square, in px; its center is the spot on the line, and the arrow sits off to one side. */
 export const DIRECTION_ARROW_BOX = 72;
-/** How far right of the line (facing the way it runs) the arrow is drawn: clear of a thick line. */
-const SIDE_OFFSET = 20;
+/**
+ * How far right of the line (facing the way it runs) the arrow is drawn: clear of the 8 px line
+ * even where it strays a little toward the arrow (routeDirection.ts allows up to 6 px).
+ */
+const SIDE_OFFSET = 22;
 const HALF = DIRECTION_ARROW_BOX / 2;
 const X = HALF + SIDE_OFFSET;
 /** Half the arrow's length, tail to tip. */

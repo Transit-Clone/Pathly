@@ -54,13 +54,14 @@ service cloud.firestore {
 
     function isValidSavedRoute(route) {
       return route.keys().hasAll(['agencyId', 'routeId', 'agencyName', 'routeName', 'shortName', 'color', 'alerts', 'dateSaved'])
-        && route.keys().hasOnly(['agencyId', 'routeId', 'agencyName', 'routeName', 'shortName', 'color', 'alerts', 'alertHours', 'dateSaved', 'direction1', 'direction0'])
+        && route.keys().hasOnly(['agencyId', 'routeId', 'agencyName', 'routeName', 'shortName', 'color', 'favorite', 'alerts', 'alertHours', 'dateSaved', 'direction1', 'direction0'])
         && route.agencyId is string && route.agencyId.size() <= 32
         && route.routeId is string && route.routeId.size() <= 128
         && route.agencyName is string && route.agencyName.size() <= 100
         && route.routeName is string && route.routeName.size() <= 200
         && route.shortName is string && route.shortName.size() <= 64
         && route.color is string && route.color.size() <= 16
+        && (!('favorite' in route) || route.favorite is bool)
         && route.alerts in ['all', 'peak', 'custom', 'off']
         && (!('alertHours' in route) || isValidAlertHours(route.alertHours))
         && route.dateSaved is timestamp
