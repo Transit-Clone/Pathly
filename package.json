@@ -27,7 +27,9 @@
     "functions:test": "npm run test --workspace functions",
     "functions:shell": "npm run shell --workspace functions",
     "deploy:backend": "npm run build --workspace functions && npx --yes firebase-tools@15.32.1 deploy --only storage,functions",
-    "deploy:functions": "npm run build --workspace functions && npx --yes firebase-tools@15.32.1 deploy --only functions"
+    "deploy:functions": "npm run build --workspace functions && npx --yes firebase-tools@15.32.1 deploy --only functions",
+    "build:web": "npm run build:web --workspace @pathly/mobile",
+    "deploy:web": "npm run build:web && npx --yes firebase-tools@15.32.1 deploy --only hosting"
   },
   "devDependencies": {
     "@fission-ai/openspec": "^1.13.2"

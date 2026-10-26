@@ -149,6 +149,7 @@ If the phone can't load the project, check that both devices are on the same net
 | `npm run functions:shell`   | Open the Firebase Functions shell                         |
 | `npm run deploy:functions`  | Deploy Cloud Functions only                               |
 | `npm run deploy:backend`    | Deploy Storage rules and Cloud Functions                  |
+| `npm run deploy:web`        | Build the web app and deploy it to Firebase Hosting       |
 
 These commands run in `firebase/functions` (`npm --prefix firebase/functions run <script>` from the root):
 
@@ -158,6 +159,18 @@ These commands run in `firebase/functions` (`npm --prefix firebase/functions run
 | `build:walking` | Build the walking-graph tiles from an OpenStreetMap extract             |
 | `serve`         | Build the indexes and start the local Functions emulator                |
 | `logs`          | Show deployed Functions logs                                            |
+
+## Web deployment
+
+The web build is hosted on Firebase Hosting at **https://pathly.web.app**. Open it in a browser on any phone or computer to test the app without running a local dev server.
+
+To publish your latest changes, run:
+
+```sh
+npm run deploy:web
+```
+
+This exports the web bundle to `mobile/dist` and deploys only Hosting. It doesn't change Cloud Functions, Firestore, or Storage. You need to be signed in to the Firebase CLI (`npx firebase-tools login`) with access to the `pathly-b7f0f` project. The `EXPO_PUBLIC_` values in your local `mobile/.env` are built into the bundle, so deploy from a machine that has the full config.
 
 ## Backend
 
