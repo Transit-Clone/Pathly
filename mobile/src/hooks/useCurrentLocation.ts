@@ -1,6 +1,6 @@
 import * as Location from 'expo-location';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, type AppStateStatus } from 'react-native';
+import { AppState, Platform, type AppStateStatus } from 'react-native';
 
 import { NAVIGATION_THRESHOLDS, type NavigationFix } from '../data/enrouteNavigation';
 import { SERVICE_AREA_FALLBACK } from '../data/serviceArea';
@@ -19,9 +19,25 @@ function navigationFixFromPosition(position: Location.LocationObject): Navigatio
   };
 }
 
+/**
+ * expo-location's web permission check relies on `navigator.permissions`, which older Safari and
+ * some in-app browsers lack, so the browser prompt would never appear. Asking for a position
+ * directly still shows the prompt there; a refusal then surfaces as a position error.
+ */
+async function requestPermission(): Promise<Location.PermissionStatus> {
+  try {
+    return (await Location.requestForegroundPermissionsAsync()).status;
+  } catch (error) {
+    if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.geolocation) {
+      return Location.PermissionStatus.GRANTED;
+    }
+    throw error;
+  }
+}
+
 async function fetchCurrentFix(): Promise<NavigationFix | null> {
   try {
-    const { status } = await Location.requestForegroundPermissionsAsync();
+    const status = await requestPermission();
     if (status !== 'granted') return null;
     return navigationFixFromPosition(await Location.getCurrentPositionAsync({}));
   } catch {
@@ -116,7 +132,7 @@ export function useCurrentLocation(navigating = false) {
     (async () => {
       let permissionStatus: Location.PermissionStatus;
       try {
-        ({ status: permissionStatus } = await Location.requestForegroundPermissionsAsync());
+        permissionStatus = await requestPermission();
       } catch {
         if (!cancelled) setStatus('unavailable');
         return;
