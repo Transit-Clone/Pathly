@@ -4,18 +4,21 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_SCRIPT_ID } from '../data/googleMapsLoaderConfig';
 import { googleMapStyle } from '../data/mapStyle';
+import { themedRouteColor } from '../data/routeColors';
 import { stopIndexAt, tripMapPoints, viaRevealZooms, type TripMapProps, type TripMapStop } from '../data/tripMap';
 import { useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies } from '../theme/typography';
 import { CurrentLocationMarker } from './CurrentLocationMarker';
+import { HeadingBeamMarker } from './HeadingBeamMarker';
 
 const containerStyle = { width: '100%', height: '100%' };
 const baseMapOptions = { disableDefaultUI: true, keyboardShortcuts: false, clickableIcons: false };
 const FALLBACK_CENTER = { lat: 40.75, lng: -73.95 };
 const FIT_PADDING = { top: 90, right: 40, bottom: 60, left: 40 };
 const TRANSIT_WIDTH = 6;
-const WALK_DOT_SCALE = 2.5;
+// Walks are plain round gray dots, which read from far out over any street.
+const WALK_DOT_SCALE = 3.5;
 const FOCUS_ZOOM = 15;
 
 type ProgressState = 'completed' | 'current' | 'upcoming';
@@ -151,7 +154,7 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
 
   const selectedStop = selected !== null ? stops[selected] : undefined;
   // Walking: a row of dots instead of a solid line.
-  const walkIcons = [{ icon: { path: google.maps.SymbolPath.CIRCLE, scale: WALK_DOT_SCALE, fillColor: colors.mutedInk, fillOpacity: 1, strokeOpacity: 0 }, offset: '0', repeat: '10px' }];
+  const walkIcons = [{ icon: { path: google.maps.SymbolPath.CIRCLE, scale: WALK_DOT_SCALE, fillColor: colors.mutedInk, fillOpacity: 1, strokeWeight: 0 }, offset: '0', repeat: '13px' }];
   return (
     <View style={StyleSheet.absoluteFill} testID={testID}>
       <GoogleMap
@@ -184,9 +187,9 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
             ...walkIcons[0],
             icon: {
               ...walkIcons[0]!.icon,
-              fillColor: completed ? colors.mutedInk : leg.color ?? colors.mutedInk,
+              fillColor: colors.mutedInk,
               fillOpacity: completed ? 0.45 : 1,
-              scale: current ? 3.25 : completed ? 2 : WALK_DOT_SCALE,
+              scale: current ? 4.25 : completed ? 2.5 : WALK_DOT_SCALE,
             },
           }] : undefined;
           return (
@@ -195,7 +198,7 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
               options={leg.walk
                 ? { strokeOpacity: 0, icons: progressWalkIcons, zIndex: current ? 3 : 1, clickable: false }
                 : {
-                  strokeColor: completed ? colors.mutedInk : leg.color ?? colors.primary,
+                  strokeColor: completed ? colors.mutedInk : themedRouteColor(leg.color ?? colors.primary, isDark),
                   strokeOpacity: completed ? 0.45 : 1,
                   strokeWeight: completed ? 4 : current ? 8 : TRANSIT_WIDTH,
                   zIndex: current ? 3 : 2,
@@ -214,7 +217,7 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
               scale: stop.kind === 'via' ? 3.5 : 6,
               fillColor: stop.kind === 'start' ? colors.success : stop.kind === 'end' ? colors.primary : '#FFFFFF',
               fillOpacity: 'state' in stop && stop.state === 'completed' ? 0.48 : 1,
-              strokeColor: stop.kind === 'stop' || stop.kind === 'via' ? stop.color ?? colors.primary : '#FFFFFF',
+              strokeColor: stop.kind === 'stop' || stop.kind === 'via' ? themedRouteColor(stop.color ?? colors.primary, isDark) : '#FFFFFF',
               strokeOpacity: 'state' in stop && stop.state === 'completed' ? 0.48 : 1,
               strokeWeight: stop.kind === 'via' ? 2 : 3,
             }}
@@ -224,6 +227,7 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
             zIndex={stop.kind === 'via' ? 2 : 3}
           />
         )))}
+        {userLocation ? <HeadingBeamMarker coordinate={{ latitude: userLocation.lat, longitude: userLocation.lng }} /> : null}
         {userLocation ? (
           <OverlayViewF getPixelPositionOffset={locationOffset} mapPaneName={FLOAT_PANE} position={userLocation}>
             <View pointerEvents="none" style={userLocationStale ? styles.staleLocation : undefined} testID={`${testID}-user-location`}>

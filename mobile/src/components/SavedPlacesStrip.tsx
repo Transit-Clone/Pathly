@@ -8,6 +8,7 @@ import type { Palette } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { Icon, type IconName } from './Icon';
 import { PressableScale } from './PressableScale';
+import { SavedPlaceBadge } from './SavedPlaceBadge';
 
 /** Matches the search page's content width. */
 const MAX_PAGE_WIDTH = 540;
@@ -44,6 +45,8 @@ export function savedLocationIcon(location: Location): IconName {
 type StripCard = {
   key: string;
   icon: IconName;
+  /** A saved place, drawn with its own badge (color and icon). */
+  location?: Location;
   title: string;
   subtitle: string;
   label: string;
@@ -75,6 +78,7 @@ export function SavedPlacesStrip({ onAdd, onSelect, places }: SavedPlacesStripPr
     return {
       key: place.id,
       icon: savedLocationIcon(place.address),
+      location: place.address,
       title,
       subtitle,
       label: subtitle ? `${title}, ${subtitle}` : title,
@@ -157,9 +161,13 @@ export function SavedPlacesStrip({ onAdd, onSelect, places }: SavedPlacesStripPr
           style={[styles.card, card.muted && styles.cardMuted, { width: cardWidth }]}
           testID={card.testID}
         >
-          <View style={styles.icon}>
-            <Icon color={colors.primary} filled={!card.muted} name={card.icon} size={18} />
-          </View>
+          {card.location ? (
+            <SavedPlaceBadge icon={card.icon} location={card.location} size={38} />
+          ) : (
+            <View style={styles.icon}>
+              <Icon color={colors.primary} filled={!card.muted} name={card.icon} size={18} />
+            </View>
+          )}
           <View style={styles.copy}>
             <Text numberOfLines={1} style={styles.name}>{card.title}</Text>
             {card.subtitle ? <Text numberOfLines={1} style={styles.address}>{card.subtitle}</Text> : null}

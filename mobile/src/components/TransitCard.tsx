@@ -12,10 +12,12 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 
+import { useRouteColor } from '../data/routeColors';
 import { departureDisplay, directionDestination, type RouteDetail, type TransitDirection } from '../data/transit';
 import { useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { typography } from '../theme/typography';
+import { FitText } from './FitText';
 import { Icon } from './Icon';
 import { LIVE_SIGNAL_WIDTH, LiveSignal } from './LiveSignal';
 import { PressableScale } from './PressableScale';
@@ -52,10 +54,10 @@ function PageBody({ index, item, route, styles }: {
   return (
     <>
       <View style={styles.copy}>
-        <Text numberOfLines={2} style={styles.routeName} testID={`transit-${route.id}-title`}>
+        <FitText style={styles.routeName} testID={`transit-${route.id}-title`}>
           {route.shortName || route.routeName}
-        </Text>
-        <Text numberOfLines={1} style={styles.direction}>{directionDestination(item.direction)}</Text>
+        </FitText>
+        <FitText style={styles.direction}>{directionDestination(item.direction)}</FitText>
         <Text numberOfLines={1} style={styles.stopName}>{item.stopName}</Text>
       </View>
 
@@ -81,6 +83,7 @@ function PageBody({ index, item, route, styles }: {
 
 export function TransitCard({ onPress, route, saved = false }: TransitCardProps) {
   const styles = useThemedStyles(createStyles);
+  const routeColor = useRouteColor();
   const { width } = useWindowDimensions();
   const pageWidth = Math.min(width, 540) - CARD_HORIZONTAL_MARGIN * 2;
   const [activePage, setActivePage] = useState(0);
@@ -149,7 +152,7 @@ export function TransitCard({ onPress, route, saved = false }: TransitCardProps)
 
   return (
     <View
-      style={[styles.card, { backgroundColor: route.color }]}
+      style={[styles.card, { backgroundColor: routeColor(route.color) }]}
       testID={`route-card-${route.id}`}
     >
       {Platform.OS === 'web' ? (

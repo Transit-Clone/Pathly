@@ -17,8 +17,8 @@ test('MTA buses are colored by service type, not by their meaningless GTFS color
 
 test('NICE gets one color; Suffolk keeps its red (every 30 min) and blue (every 60 min)', () => {
   for (const gtfs of ['60AA47', 'EF853F', 'FE404E']) assert.equal(displayRouteColor('nice', { routeId: 'n6', shortName: 'n6', color: gtfs }), BUS_COLORS.nice);
-  assert.equal(displayRouteColor('suffolk', { routeId: '51', shortName: '51', color: 'C63F49' }), '#C63F49');
-  assert.equal(displayRouteColor('suffolk', { routeId: '62', shortName: '62', color: '0454A2' }), '#0454A2');
+  assert.equal(displayRouteColor('suffolk', { routeId: '51', shortName: '51', color: 'C63F49' }), BUS_COLORS.suffolkFrequent);
+  assert.equal(displayRouteColor('suffolk', { routeId: '62', shortName: '62', color: '0454A2' }), BUS_COLORS.suffolk);
   assert.equal(displayRouteColor('suffolk', { routeId: '99', shortName: '99', color: '' }), BUS_COLORS.suffolk);
 });
 

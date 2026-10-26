@@ -8,6 +8,7 @@ const { findNearbyTransit } = require('../lib/gtfsDiscovery');
 const { getStopPredictions } = require('../lib/gtfsSchedule');
 const { availableAgencyIds, resetGtfsStaticDataForTests, setAgencyDataForTests } = require('../lib/gtfsStaticData');
 const { getRouteStatus } = require('../lib/gtfsStatus');
+const { BUS_COLORS: BUS_COLORS_HEX } = require('../lib/routeColors');
 
 const fixture = (agency) => path.join(__dirname, 'fixtures', 'gtfs', agency);
 const FIRST_AVE_23 = { lat: 40.737, lng: -73.9789 };
@@ -42,8 +43,8 @@ test('Manhattan buses show up nearby, the SBS under its full name', async () => 
   assert.deepEqual(buses.map((route) => route.shortName).sort(), ['M15', 'M15-SBS']);
   assert.equal(buses[0].agencyDisplayName, 'MTA Bus');
   // A local bus takes MTA's local-bus color (routeColors.ts), whatever its GTFS color.
-  assert.equal(buses.find((route) => route.shortName === 'M15').color, '#006CB7');
-  assert.equal(buses.find((route) => route.shortName === 'M15-SBS').color, '#00AEEF');
+  assert.equal(buses.find((route) => route.shortName === 'M15').color, BUS_COLORS_HEX.mtaLocal);
+  assert.equal(buses.find((route) => route.shortName === 'M15-SBS').color, BUS_COLORS_HEX.mtaSelectBusService);
 });
 
 test('an on-demand agency with no data on this instance is left out', async () => {

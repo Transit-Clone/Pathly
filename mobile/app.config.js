@@ -36,6 +36,7 @@ module.exports = {
     },
     plugins: [
       'expo-web-browser',
+      'expo-sharing',
       ['expo-notifications', { color: '#0B4F9C' }],
       [
         'expo-splash-screen',

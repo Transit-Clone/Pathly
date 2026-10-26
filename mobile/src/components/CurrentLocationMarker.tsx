@@ -30,7 +30,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     height: 17,
     borderRadius: 9,
     borderWidth: 3,
-    borderColor: colors.white,
+    borderColor: colors.ring,
     backgroundColor: colors.primary,
     shadowColor: colors.primary,
     shadowOpacity: 0.32,

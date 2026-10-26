@@ -9,10 +9,12 @@ import { ScreenTransition } from '../theme/motion';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
 import { DONATION_URL, openDonationPage, STUDENT_DISCLAIMER } from '../data/supportPrompt';
-import { findLabeledLocation, sortSavedLocations, type SavedLocation } from '../data/userData';
+import { findLabeledLocation, savedPlaceGroups, sortSavedLocations, type SavedLocation } from '../data/userData';
 import { Icon, type IconName } from './Icon';
 import { Mascot } from './Mascot';
+import { OfficialMapsSettings } from './OfficialMapsSettings';
 import { PressableScale } from './PressableScale';
+import { SavedPlaceBadge } from './SavedPlaceBadge';
 import { savedLocationIcon, savedPlaceLines } from './SavedPlacesStrip';
 import { AccessibilitySettings, AccountSettings, HelpSettings, NotificationSettings, PrivacySettings, TravelSettings } from './SettingsPages';
 
@@ -32,14 +34,31 @@ type ProfileViewProps = {
 
 type SavedPlacesSettingsProps = NonNullable<ProfileViewProps['savedPlaces']>;
 
-/** Settings -> Saved places: Home and Work first (or a row to set each), then the rest, then Add. */
+/**
+ * Settings -> Saved places: Home and Work first (or a row to set each), then the places in no list,
+ * then each list under its name, then Add.
+ */
 function SavedPlacesSettings({ locations, onAdd, onEdit }: SavedPlacesSettingsProps) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
   const missing = (['Home', 'Work'] as const).filter((label) => !findLabeledLocation(locations, label));
+  const sorted = sortSavedLocations(locations);
+  const groups = savedPlaceGroups(locations);
+  const inGroup = (location: SavedLocation, name: string) => location.address.group?.trim().toLowerCase() === name.toLowerCase();
+  const row = (location: SavedLocation) => {
+    const { title, subtitle } = savedPlaceLines(location);
+    return (
+      <PressableScale accessibilityHint="Rename, change the address, icon, color or list, or remove" accessibilityLabel={`Edit saved place ${title}`} accessibilityRole="button" key={location.id} onPress={() => onEdit(location)} style={styles.settingRow} testID={`saved-place-row-${location.id}`}>
+        <SavedPlaceBadge icon={savedLocationIcon(location.address)} location={location.address} size={34} />
+        <View style={styles.rowCopy}><Text numberOfLines={1} style={styles.settingText}>{title}</Text>{subtitle ? <Text numberOfLines={1} style={styles.settingDetail}>{subtitle}</Text> : null}</View>
+        <Icon color={colors.mutedInk} name="forward" size={20} />
+      </PressableScale>
+    );
+  };
+  const ungrouped = sorted.filter((location) => !location.address.group?.trim());
   return (
     <>
-      <Text style={styles.intro}>Keep common destinations one tap away. Tap a place to rename it, change its icon, or remove it.</Text>
+      <Text style={styles.intro}>Keep common destinations one tap away. Tap a place to change its name, address, icon or color, or to put it in a list like Restaurants.</Text>
       <Card>
         {missing.map((label) => (
           <PressableScale accessibilityHint={`Searches for your ${label.toLowerCase()} address`} accessibilityLabel={`Set ${label.toLowerCase()}`} accessibilityRole="button" key={label} onPress={() => onAdd(label)} style={styles.settingRow} testID={`saved-set-${label.toLowerCase()}`}>
@@ -48,22 +67,19 @@ function SavedPlacesSettings({ locations, onAdd, onEdit }: SavedPlacesSettingsPr
             <Icon color={colors.mutedInk} name="forward" size={20} />
           </PressableScale>
         ))}
-        {sortSavedLocations(locations).map((location) => {
-          const { title, subtitle } = savedPlaceLines(location);
-          return (
-            <PressableScale accessibilityHint="Rename, change the icon, or remove" accessibilityLabel={`Edit saved place ${title}`} accessibilityRole="button" key={location.id} onPress={() => onEdit(location)} style={styles.settingRow} testID={`saved-place-row-${location.id}`}>
-              <View style={styles.rowIcon}><Icon filled={true} name={savedLocationIcon(location.address)} size={19} /></View>
-              <View style={styles.rowCopy}><Text numberOfLines={1} style={styles.settingText}>{title}</Text>{subtitle ? <Text numberOfLines={1} style={styles.settingDetail}>{subtitle}</Text> : null}</View>
-              <Icon color={colors.mutedInk} name="forward" size={20} />
-            </PressableScale>
-          );
-        })}
+        {ungrouped.map(row)}
       </Card>
+      {groups.map((group) => (
+        <View key={group.name} testID={`saved-group-${group.name}`}>
+          <Text style={styles.sectionLabel}>{`${group.name.toUpperCase()} · ${group.count}`}</Text>
+          <Card>{sorted.filter((location) => inGroup(location, group.name)).map(row)}</Card>
+        </View>
+      ))}
       <PressableScale accessibilityRole="button" onPress={() => onAdd()} style={styles.primaryAction} testID="add-saved-place"><Text style={styles.primaryActionText}>Add saved place</Text></PressableScale>
     </>
   );
 }
-type SettingsRoute = 'hub' | 'appearance' | 'account' | 'notifications' | 'accessibility' | 'privacy' | 'travel' | 'places' | 'help';
+type SettingsRoute = 'hub' | 'appearance' | 'account' | 'notifications' | 'accessibility' | 'privacy' | 'travel' | 'places' | 'maps' | 'help';
 
 const routes: readonly { id: Exclude<SettingsRoute, 'hub'>; title: string; subtitle: string; icon: IconName; group: 'ACCOUNT' | 'PREFERENCES' | 'SUPPORT' }[] = [
   { id: 'account', title: 'Account details', subtitle: 'Name, email, and password', icon: 'person', group: 'ACCOUNT' },
@@ -73,6 +89,7 @@ const routes: readonly { id: Exclude<SettingsRoute, 'hub'>; title: string; subti
   { id: 'privacy', title: 'Privacy', subtitle: 'Location, your data, and account deletion', icon: 'privacy', group: 'PREFERENCES' },
   { id: 'travel', title: 'Travel preferences', subtitle: 'Modes, walking, and transfers', icon: 'travel', group: 'PREFERENCES' },
   { id: 'places', title: 'Saved places', subtitle: 'Home, work, and frequent destinations', icon: 'place', group: 'PREFERENCES' },
+  { id: 'maps', title: 'Official maps', subtitle: 'MTA subway, bus, and LIRR maps, saved for offline', icon: 'map', group: 'SUPPORT' },
   { id: 'help', title: 'Help & About', subtitle: 'FAQs, support, policies, and app version', icon: 'help', group: 'SUPPORT' },
 ];
 
@@ -131,6 +148,7 @@ export function ProfileView({ initialRoute, onBack, onOpenAdminTools, savedPlace
             {route === 'privacy' ? <PrivacySettings onFeedback={setFeedback} /> : null}
             {route === 'travel' ? <TravelSettings onFeedback={setFeedback} /> : null}
             {route === 'places' ? (savedPlaces ? <SavedPlacesSettings {...savedPlaces} /> : <Text style={styles.intro}>Sign in to save places like home and work.</Text>) : null}
+            {route === 'maps' ? <OfficialMapsSettings onFeedback={setFeedback} /> : null}
             {route === 'help' ? <><HelpSettings onFeedback={setFeedback} /><View style={styles.versionCard}><Mascot pose="happy" size={56} style={styles.aboutMascot} /><Text style={styles.versionName}>Pathly Prototype</Text><Text style={styles.version}>Version 0.1.0</Text><Text style={styles.aboutNote} testID="about-disclaimer">{"Pathly is a free transit app built by a team of students. It isn't affiliated with or endorsed by the MTA, NYC DOT, or any transit agency, so always check posted service changes. Tips are optional and go toward live data and server costs."}</Text></View></> : null}
             {feedback ? <Text accessibilityLiveRegion="polite" style={styles.feedback}>{feedback}</Text> : null}
           </ScrollView>

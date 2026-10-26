@@ -3,12 +3,15 @@ import { defineSecret } from 'firebase-functions/params';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 
+import { getAccessibleStops as findAccessibleStops } from './accessibleStops';
 import { requireAdmin } from './admin';
 import { collectBackendStatus } from './backendStatus';
 import { enforceCallableSecurity, peekRateLimits, type CallableRateLimit } from './callableSecurity';
 import {
   describeRoute,
+  listLines,
   findNearbyTransit as findNearbyTransitDiscovery,
+  getAgencyLines as getAgencyLinesDiscovery,
   getNearestStopForRoute,
   getRouteGeometry as getRouteGeometryDiscovery,
   getRouteTransfers as getRouteTransfersDiscovery,
@@ -80,6 +83,9 @@ const RATE_LIMITS = {
   // Route detail asks again only when its stop changes or the rider moves.
   getWalkingPath: { userPerMinute: 60 },
   getRouteGeometry: { userPerMinute: 120 },
+  // The home map's line layers: one call per agency switched on.
+  getAgencyLines: { userPerMinute: 30 },
+  getAccessibleStops: { userPerMinute: 30 },
   // Each plan is one billed Routes API request (Compute Routes Essentials).
   planTrip: { userPerMinute: 20 },
   geocodeAddress: { userPerMinute: 10 },
@@ -88,6 +94,8 @@ const RATE_LIMITS = {
   // About one call per pause in typing, alongside Google's suggestions.
   searchTransitStops: { userPerMinute: 60 },
   searchTransitRoutes: { userPerMinute: 60 },
+  // The app's line index: fetched once a day or so per device.
+  listTransitLines: { userPerMinute: 10 },
   // Opening a line from a stop or transfer badge in route view.
   describeTransitRoute: { userPerMinute: 60 },
   // Admin-only; each call checks every live feed.
@@ -129,6 +137,8 @@ export const sendRouteAlerts = onSchedule(
     schedule: '*/5 * * * *',
     timeZone: 'America/New_York',
     timeoutSeconds: 240,
+    // NICE and Suffolk's alerts come from Swiftly.
+    secrets: [swiftlyApiKey],
   },
   async () => {
     const { sent } = await sendSavedRouteAlerts();
@@ -234,7 +244,8 @@ type RoutesLiveStatusRequest = { routes: Omit<RouteLiveStatusRequest, 'lat' | 'l
  * response) or `{ ok: false, code }`.
  * Client call: httpsCallable(functions, 'getRoutesLiveStatus')({ routes: [{ agencyId, routeId, direction1StopId, direction0StopId }, ...], lat, lon }).
  */
-export const getRoutesLiveStatus = onCall<RoutesLiveStatusRequest>({ ...liveStatusCallableOptions, secrets: [swiftlyApiKey, mtaBusTimeApiKey] }, async (request) => {
+// minInstances 0 stated outright, so a deploy clears the earlier always-on setting (it billed while idle).
+export const getRoutesLiveStatus = onCall<RoutesLiveStatusRequest>({ ...liveStatusCallableOptions, minInstances: 0, secrets: [swiftlyApiKey, mtaBusTimeApiKey] }, async (request) => {
   await enforceCallableSecurity(request, 'getRoutesLiveStatus', RATE_LIMITS.getRoutesLiveStatus);
   const data = request.data ?? ({} as RoutesLiveStatusRequest);
   if (!Array.isArray(data.routes) || data.routes.length === 0 || data.routes.length > MAX_BATCH_ROUTES) {
@@ -295,6 +306,24 @@ export const getStopDepartures = onCall<StopDeparturesRequest>({ ...liveStatusCa
 type WarmupRequest = { warmup?: boolean };
 
 /**
+ * How many agencies' timetables a cold instance downloads at once. One at a time took ~15 s for
+ * all twelve; every agency at once could buffer too many ZIPs for a 1 GiB instance.
+ */
+const AGENCY_PREPARE_CONCURRENCY = 3;
+
+/** Readies every agency's timetable, a few downloads at a time. `tolerant`: one agency's failure doesn't fail the rest. */
+async function prepareAllAgencyStaticData({ tolerant = false }: { tolerant?: boolean } = {}): Promise<void> {
+  const queue = Object.keys(AGENCY_CONFIGS) as AgencyId[];
+  const worker = async () => {
+    for (let agencyId = queue.shift(); agencyId; agencyId = queue.shift()) {
+      const preparing = prepareAgencyStaticData(agencyId);
+      await (tolerant ? preparing.catch(() => undefined) : preparing);
+    }
+  };
+  await Promise.all(Array.from({ length: AGENCY_PREPARE_CONCURRENCY }, worker));
+}
+
+/**
  * Answers a `{ warmup: true }` call: brings this (possibly cold) instance's static data up —
  * every agency's current snapshot and small files, plus the stop indexes nearby search starts
  * from — so the rider's first real request finds it ready. Returns no transit data. The app waits
@@ -302,9 +331,8 @@ type WarmupRequest = { warmup?: boolean };
  * would otherwise start a second cold instance.
  */
 async function warmTransitInstance({ stopIndexes }: { stopIndexes: boolean }): Promise<{ warmed: true }> {
-  // Sequential for the same reason as findNearbyTransit's hydration below.
+  await prepareAllAgencyStaticData();
   for (const agencyId of Object.keys(AGENCY_CONFIGS) as AgencyId[]) {
-    await prepareAgencyStaticData(agencyId);
     if (!isAgencyAvailable(agencyId)) continue;
     loadAgencyStaticData(agencyId);
     if (stopIndexes) await loadGlobalStopRouteIndex(agencyId);
@@ -321,14 +349,12 @@ type FindNearbyTransitRequest = { lat: number; lon: number } & WarmupRequest;
  * live predictions, or getRouteGeometry for a real map.
  * Client call: httpsCallable(functions, 'findNearbyTransit')({ lat, lon }), or ({ warmup: true }).
  */
-export const findNearbyTransit = onCall<FindNearbyTransitRequest>(protectedCallableOptions, async (request) => {
+// minInstances 0 stated outright, so a deploy clears the earlier always-on setting (it billed while idle).
+export const findNearbyTransit = onCall<FindNearbyTransitRequest>({ ...protectedCallableOptions, minInstances: 0 }, async (request) => {
   await enforceCallableSecurity(request, 'findNearbyTransit', RATE_LIMITS.findNearbyTransit);
   if (request.data?.warmup === true) return warmTransitInstance({ stopIndexes: true });
   const { lat, lon } = requiredCoordinates(request.data?.lat, request.data?.lon);
-  // Hydrate sequentially so a cold instance never buffers four bounded ZIPs at once.
-  for (const agencyId of Object.keys(AGENCY_CONFIGS) as AgencyId[]) {
-    await prepareAgencyStaticData(agencyId);
-  }
+  await prepareAllAgencyStaticData();
   const routes = await findNearbyTransitDiscovery(lat, lon);
   return { routes };
 });
@@ -398,6 +424,31 @@ export const getRouteGeometry = onCall<RouteGeometryRequest>(protectedCallableOp
 });
 
 /**
+ * Every line of one agency, simplified, for the home map's line layers ("all subway lines").
+ * Client call: httpsCallable(functions, 'getAgencyLines')({ agencyId }).
+ */
+export const getAgencyLines = onCall<{ agencyId: AgencyId }>(protectedCallableOptions, async (request) => {
+  await enforceCallableSecurity(request, 'getAgencyLines', RATE_LIMITS.getAgencyLines);
+  const agencyId = requiredAgencyId(request.data?.agencyId);
+  // On-demand agencies (S76/S74's MTA Bus files) are fetched here; one with no data has no lines.
+  await prepareAgencyStaticData(agencyId).catch(() => undefined);
+  if (!isAgencyAvailable(agencyId)) return { lines: [] };
+  return { lines: await getAgencyLinesDiscovery(agencyId) };
+});
+
+/**
+ * The agency's stops a wheelchair user can board at, for route view's wheelchair marks.
+ * Client call: httpsCallable(functions, 'getAccessibleStops')({ agencyId }).
+ */
+export const getAccessibleStops = onCall<{ agencyId: AgencyId }>(protectedCallableOptions, async (request) => {
+  await enforceCallableSecurity(request, 'getAccessibleStops', RATE_LIMITS.getAccessibleStops);
+  const agencyId = requiredAgencyId(request.data?.agencyId);
+  await prepareAgencyStaticData(agencyId).catch(() => undefined);
+  if (agencyId !== 'subway' && !isAgencyAvailable(agencyId)) return { everyStop: false, stopIds: [] };
+  return findAccessibleStops(agencyId);
+});
+
+/**
  * Lines a rider can change to at each stop of a route's direction, keyed by stop id. Separate from
  * getRouteGeometry because it reads every agency's data: the stop list shows first, badges after.
  * Client call: httpsCallable(functions, 'getRouteTransfers')({ agencyId, routeId, directionId }).
@@ -410,13 +461,11 @@ export const getRouteTransfers = onCall<RouteGeometryRequest>(protectedCallableO
   const routeId = requiredRouteId(agencyId, data.routeId);
   const { directionId } = data;
   if (directionId !== 0 && directionId !== 1) throw new HttpsError('invalid-argument', 'directionId must be 0 or 1');
-  for (const other of Object.keys(AGENCY_CONFIGS) as AgencyId[]) {
-    await prepareAgencyStaticData(other);
-  }
+  await prepareAllAgencyStaticData();
   return { transfers: await getRouteTransfersDiscovery(agencyId, routeId, directionId) };
 });
 
-type SearchTransitRoutesRequest = { query?: unknown; lat?: unknown; lon?: unknown };
+type SearchTransitRoutesRequest = { query?: unknown; lat?: unknown; lon?: unknown } & WarmupRequest;
 
 /**
  * Lines whose name matches a search ("1", "B46", "Port Jefferson"), each with its stops nearest
@@ -425,15 +474,25 @@ type SearchTransitRoutesRequest = { query?: unknown; lat?: unknown; lon?: unknow
  */
 export const searchTransitRoutes = onCall<SearchTransitRoutesRequest>(protectedCallableOptions, async (request) => {
   await enforceCallableSecurity(request, 'searchTransitRoutes', RATE_LIMITS.searchTransitRoutes);
+  // Opening search warms an instance, so the first line typed doesn't wait on every agency loading.
+  if (request.data?.warmup === true) return warmTransitInstance({ stopIndexes: false });
   const query = requiredString(request.data?.query, 'query', 40);
   const { lat, lon } = requiredCoordinates(request.data?.lat, request.data?.lon);
-  for (const agencyId of Object.keys(AGENCY_CONFIGS) as AgencyId[]) {
-    await prepareAgencyStaticData(agencyId);
-  }
+  await prepareAllAgencyStaticData();
   return { routes: await searchRoutes(query, lat, lon) };
 });
 
-type DescribeTransitRouteRequest = { agencyId?: unknown; routeId?: unknown; lat?: unknown; lon?: unknown };
+/**
+ * Every line's name, agency and color, for searching lines on the device as the rider types.
+ * Client call: httpsCallable(functions, 'listTransitLines')({}).
+ */
+export const listTransitLines = onCall(protectedCallableOptions, async (request) => {
+  await enforceCallableSecurity(request, 'listTransitLines', RATE_LIMITS.listTransitLines);
+  await prepareAllAgencyStaticData({ tolerant: true });
+  return { lines: listLines() };
+});
+
+type DescribeTransitRouteRequest = { agencyId?: unknown; routeId?: unknown; lat?: unknown; lon?: unknown } & WarmupRequest;
 
 /**
  * One line described like a Nearby card, at its stops nearest a point: route view opens a tapped
@@ -442,6 +501,8 @@ type DescribeTransitRouteRequest = { agencyId?: unknown; routeId?: unknown; lat?
  */
 export const describeTransitRoute = onCall<DescribeTransitRouteRequest>(protectedCallableOptions, async (request) => {
   await enforceCallableSecurity(request, 'describeTransitRoute', RATE_LIMITS.describeTransitRoute);
+  // Search warms one as it opens, so a tapped line opens without a cold start.
+  if (request.data?.warmup === true) return warmTransitInstance({ stopIndexes: false });
   const agencyId = requiredAgencyId(request.data?.agencyId);
   await prepareAgencyStaticData(agencyId);
   const routeId = requiredRouteId(agencyId, request.data?.routeId);
@@ -676,10 +737,7 @@ export const searchTransitStops = onCall<SearchTransitStopsRequest>(protectedCal
     const { lat, lon } = requiredCoordinates(near?.lat, near?.lng);
     return { lat, lng: lon };
   })();
-  // Hydrate sequentially so a cold instance never buffers every agency's ZIP at once.
-  for (const agencyId of Object.keys(AGENCY_CONFIGS) as AgencyId[]) {
-    await prepareAgencyStaticData(agencyId);
-  }
+  await prepareAllAgencyStaticData();
   if (stations) return { stations: await lookupStations(stations, point) };
   return { stops: await searchStops(query!, point) };
 });

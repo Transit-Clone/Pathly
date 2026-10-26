@@ -1,6 +1,6 @@
 import { haversineMeters } from './geo';
 import { AGENCY_CONFIGS, agencyConfig, type AgencyId } from './gtfsAgencies';
-import { computeRouteGeometry, type RouteGeometry } from './gtfsGeometry';
+import { computeRouteGeometry, simplifyPath, type RouteGeometry } from './gtfsGeometry';
 import {
   availableAgencyIds,
   loadAgencyShapes,
@@ -292,12 +292,81 @@ export async function searchRoutes(query: string, lat: number, lon: number): Pro
       if (score > 0) matches.push({ agencyId, routeId: route.routeId, score, shortName: route.shortName });
     }
   }
-  matches.sort((a, b) => b.score - a.score
+  // MTA's borough bus feeds overlap (the Bronx and Staten Island feeds both carry Brooklyn's
+  // routes), so one line can match once per feed: keep its first.
+  const seen = new Set<string>();
+  const unique = matches.filter((match) => {
+    const key = `${agencyConfig(match.agencyId).displayName}:${match.routeId}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  unique.sort((a, b) => b.score - a.score
     || MODE_RANK[a.agencyId] - MODE_RANK[b.agencyId]
     || a.shortName.length - b.shortName.length
     || a.shortName.localeCompare(b.shortName, undefined, { numeric: true }));
-  const described = await Promise.all(matches.slice(0, MAX_ROUTE_RESULTS).map((match) => describeRoute(match.agencyId, match.routeId, lat, lon)));
+  const described = await Promise.all(unique.slice(0, MAX_ROUTE_RESULTS).map((match) => describeRoute(match.agencyId, match.routeId, lat, lon)));
   return described.filter((route): route is DiscoveredRoute => route !== null);
+}
+
+/** One line in the app's on-device line index: enough to find it by name and show its badge. */
+export type IndexedLine = { agencyId: AgencyId; agencyDisplayName: string; routeId: string; shortName: string; routeName: string; color: string };
+
+/** Every line of every available agency, for the app to search on the device as the rider types. */
+export function listLines(): IndexedLine[] {
+  const lines = availableAgencyIds().flatMap((agencyId) => [...loadAgencyStaticData(agencyId).routesById.values()].map((route) => ({
+    agencyId,
+    agencyDisplayName: agencyConfig(agencyId).displayName,
+    routeId: route.routeId,
+    shortName: route.shortName,
+    routeName: route.name,
+    color: displayRouteColor(agencyId, route),
+  })));
+  // The borough bus feeds overlap (see searchRoutes): each line once.
+  const seen = new Set<string>();
+  return lines.filter((line) => {
+    const key = `${line.agencyDisplayName}:${line.routeId}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/** One of an agency's lines for the home map's line layers: its look and a simplified path. */
+export type AgencyLine = { routeId: string; shortName: string; color: string; path: [number, number][] };
+
+// Coarser than route view's paths: the layers are seen zoomed out, and "all buses" is hundreds of lines.
+const LINE_LAYER_SIMPLIFY_METERS = 25;
+const LINE_LAYER_CONCURRENCY = 16;
+const agencyLinesCache = new Map<AgencyId, Promise<AgencyLine[]>>();
+
+/**
+ * Every line of an agency, each as one path (direction 0's, else direction 1's) simplified for a
+ * zoomed-out map, coordinates rounded to about a meter. Cached per instance: static data changes
+ * only on a deploy or a feed refresh.
+ */
+export function getAgencyLines(agencyId: AgencyId): Promise<AgencyLine[]> {
+  const cached = agencyLinesCache.get(agencyId);
+  if (cached) return cached;
+  const promise = (async () => {
+    const routes = [...loadAgencyStaticData(agencyId).routesById.values()];
+    const lines: AgencyLine[] = [];
+    for (let start = 0; start < routes.length; start += LINE_LAYER_CONCURRENCY) {
+      const batch = await Promise.all(routes.slice(start, start + LINE_LAYER_CONCURRENCY).map(async (route): Promise<AgencyLine | null> => {
+        const geometry = (await getRouteGeometry(agencyId, route.routeId, 0).catch(() => null))
+          ?? (await getRouteGeometry(agencyId, route.routeId, 1).catch(() => null));
+        const points = geometry?.path ?? geometry?.stops.map((stop) => ({ lat: stop.lat, lon: stop.lon })) ?? [];
+        if (points.length < 2) return null;
+        const path = simplifyPath(points, LINE_LAYER_SIMPLIFY_METERS).map((point): [number, number] => [Math.round(point.lat * 1e5) / 1e5, Math.round(point.lon * 1e5) / 1e5]);
+        return { routeId: route.routeId, shortName: route.shortName, color: displayRouteColor(agencyId, route), path };
+      }));
+      lines.push(...batch.filter((line): line is AgencyLine => line !== null));
+    }
+    return lines;
+  })();
+  agencyLinesCache.set(agencyId, promise);
+  void promise.catch(() => agencyLinesCache.delete(agencyId));
+  return promise;
 }
 
 /** Another line calling at (or a short walk from) a stop: a transfer badge in route view. */
@@ -442,6 +511,17 @@ export function pickNearbyRoutes(
   return [...base, ...extras].sort(byDistance).slice(0, max);
 }
 
+/** Each line once, its nearest copy: MTA's borough bus feeds overlap (see searchRoutes). */
+function onePerLine(routes: DiscoveredRoute[]): DiscoveredRoute[] {
+  const nearest = new Map<string, DiscoveredRoute>();
+  for (const route of routes) {
+    const key = `${agencyConfig(route.agencyId).displayName}:${route.routeId}`;
+    const kept = nearest.get(key);
+    if (!kept || route.distanceMeters < kept.distanceMeters) nearest.set(key, route);
+  }
+  return [...nearest.values()];
+}
+
 /**
  * Real routes, on every configured agency, near a point (see pickNearbyRoutes for which). Starts
  * from each agency's base "nearby" radius; when fewer than MIN_NEARBY_ROUTES routes are that
@@ -463,9 +543,9 @@ export async function findNearbyTransit(lat: number, lon: number, limit = MAX_NE
 
   const resolveRoute = (agencyId: AgencyId, routeId: string) => describeRoute(agencyId, routeId, lat, lon);
 
-  const resolvedWithin = (multiplier: number) => [...resolved.values()].filter((route): route is DiscoveredRoute => (
+  const resolvedWithin = (multiplier: number) => onePerLine([...resolved.values()].filter((route): route is DiscoveredRoute => (
     route !== null && route.distanceMeters <= Math.min(baseRadius(route.agencyId) * multiplier, capRadius(route.agencyId))
-  ));
+  )));
 
   let base: DiscoveredRoute[] = [];
   let wider: DiscoveredRoute[] = [];

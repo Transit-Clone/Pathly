@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
+import { useRouteColor } from '../data/routeColors';
 import { routes } from '../data/transit';
 import { formatDurationMinutes } from '../data/tripPlanning';
 
@@ -169,6 +170,7 @@ function summaryParts(model: TripDetailModel): SummaryPart[] {
 }
 
 export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = false, isFavorite, locationSelected, map: tripMap, model, onAction, onBack, onCenterOnLocation, onFocusStop, onSelectDeparture, onToggleFavorite, rootTestID, showServiceAlerts = true, testPrefix, tone = 'planned' }: SharedTripDetailViewProps) {
+  const tint = useRouteColor();
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
   const [isLocationCentered, setIsLocationCentered] = useState(false);
@@ -210,7 +212,7 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
   const mapLegs: MapLeg[] = model.legs.map((leg, index) => {
     const path = legPaths[index]!;
     return {
-      color: leg.color,
+      color: tint(leg.color),
       path,
       stops: [
         { label: index === 0 ? leg.startName : undefined, point: path[0]! },
@@ -225,7 +227,7 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
       focus={routeFocus(legPaths)}
       initialSize={{ width: Math.min(width, 540), height: MAP_HEIGHT }}
       padding={{ top: 76, right: 24, bottom: 36, left: 24 }}
-      renderMarkers={(projection) => (destination ? <DestinationPin color={model.legs.at(-1)?.color ?? routeColor} point={destination} projection={projection} /> : null)}
+      renderMarkers={(projection) => (destination ? <DestinationPin color={tint(model.legs.at(-1)?.color ?? routeColor)} point={destination} projection={projection} /> : null)}
       renderOverlay={({ scale }) => <RouteLines legs={mapLegs} scale={scale} showConnectors={true} showStart={true} />}
       showUserLocation={true}
     />
@@ -291,7 +293,7 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
                     <Icon color={colors.mutedInk} filled={true} name="travel" size={16} />
                     <Text style={styles.walkChipText}>{part.minutes >= 60 ? walkDuration.visible : part.minutes}</Text>
                   </View>
-                ) : part.kind === 'leg' ? <RouteBadge agency={part.leg.agency} color={part.leg.color} mode={part.leg.mode} shortName={part.leg.shortName} size="small" textColor={part.leg.textColor} /> : null}
+                ) : part.kind === 'leg' ? <RouteBadge agency={part.leg.agency} color={tint(part.leg.color)} mode={part.leg.mode} shortName={part.leg.shortName} size="small" textColor={part.leg.textColor} /> : null}
                 {index < parts.length - 1 ? <Icon color={colors.mutedInk} name="forward" size={16} style={styles.modeArrow} /> : null}
               </View>
             );
@@ -341,7 +343,7 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
               <View style={styles.stepCard} testID={`${testPrefix}-${tone === 'recent' ? 'leg' : 'step'}-${index}`}>
                 {/* Grouped for screen readers; the departures and stop list below stay separately operable. */}
                 <View accessibilityLabel={`${leg.routeName}, ${leg.direction}, ${duration.accessibility}, ${leg.startTime} to ${leg.endTime}`} accessible={true} style={styles.stepHeader}>
-                  <RouteBadge agency={leg.agency} color={leg.color} mode={leg.mode} shortName={leg.shortName} size="large" textColor={leg.textColor} withModeIcon={true} />
+                  <RouteBadge agency={leg.agency} color={tint(leg.color)} mode={leg.mode} shortName={leg.shortName} size="large" textColor={leg.textColor} withModeIcon={true} />
                   <View style={styles.routeCopy}>
                     <Text style={styles.stepAction}>{leg.routeName}</Text>
                     <Text numberOfLines={2} style={styles.headerDirection}>{leg.headsign ? `Toward ${leg.headsign}` : leg.direction}</Text>
@@ -355,7 +357,7 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
                       {(leg.quickDepartures ?? leg.departures.slice(0, 3)).map((departure) => (
                         <DepartureChip
                           key={departure.key}
-                          color={leg.color}
+                          color={tint(leg.color)}
                           departure={departure}
                           onPress={selectDeparture ? () => selectDeparture(departure.key) : undefined}
                           testID={`${testPrefix}-departure-${index}-${departure.key}`}
@@ -390,7 +392,7 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
                             style={[styles.departureListRow, !departure.reachable && styles.departureUnreachable]}
                             testID={`${testPrefix}-departure-row-${index}-${departure.key}`}
                           >
-                            <View style={[styles.departureRadio, departure.selected && { borderColor: leg.color, backgroundColor: leg.color }]} />
+                            <View style={[styles.departureRadio, departure.selected && { borderColor: tint(leg.color), backgroundColor: tint(leg.color) }]} />
                             <Text style={[styles.departureListTime, departure.selected && styles.walkStrong]}>{departure.time}</Text>
                             <Icon color={colors.mutedInk} name="forward" size={14} />
                             <Text style={styles.departureListArrive}>{`arrive ${departure.arriveTime}`}</Text>
@@ -403,13 +405,13 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
 
                 <View style={styles.segmentTimeline}>
                   <View style={styles.timelineRow}>
-                    <Rail color={leg.color} dot="terminal" from={false} />
+                    <Rail color={tint(leg.color)} dot="terminal" from={false} />
                     <View style={styles.stopRow}><Text style={styles.stopName}>{leg.startName}</Text><Text style={styles.stopTime}>{leg.startTime}</Text></View>
                   </View>
                   {stops ? (
                     <>
                       <View style={styles.timelineRow}>
-                        <Rail color={leg.color} />
+                        <Rail color={tint(leg.color)} />
                         <PressableScale
                           accessibilityHint={expanded ? 'Hides the stops in between' : 'Lists every stop in between with its time'}
                           accessibilityLabel={`${leg.stopCount} stops`}
@@ -419,7 +421,7 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
                           style={styles.stopsToggle}
                           testID={`${testPrefix}-stops-toggle-${index}`}
                         >
-                          <Text style={[styles.stopsToggleText, { color: leg.color }]}>{`${leg.stopCount} ${leg.stopCount === 1 ? 'stop' : 'stops'}`}</Text>
+                          <Text style={[styles.stopsToggleText, { color: tint(leg.color) }]}>{`${leg.stopCount} ${leg.stopCount === 1 ? 'stop' : 'stops'}`}</Text>
                           <Icon color={colors.mutedInk} name={expanded ? 'collapse' : 'expand'} size={16} />
                         </PressableScale>
                       </View>
@@ -436,7 +438,7 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
                               style={styles.timelineRow}
                               testID={`${testPrefix}-stop-${index}-${stopIndex}`}
                             >
-                              <Rail color={leg.color} dot="via" />
+                              <Rail color={tint(leg.color)} dot="via" />
                               <View style={styles.viaRow}>
                                 <Text numberOfLines={1} style={styles.viaName}>{stop.name}</Text>
                                 <Text style={styles.viaTime}>{stop.time}</Text>
@@ -448,12 +450,12 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
                     </>
                   ) : (
                     <View style={styles.timelineRow}>
-                      <Rail color={leg.color} />
+                      <Rail color={tint(leg.color)} />
                       <Text style={styles.direction}>{leg.stopCount ? `${leg.stopCount} ${leg.stopCount === 1 ? 'stop' : 'stops'}` : ''}</Text>
                     </View>
                   )}
                   <View style={styles.timelineRow}>
-                    <Rail color={leg.color} dot="terminal" to={false} />
+                    <Rail color={tint(leg.color)} dot="terminal" to={false} />
                     <View style={styles.stopRow}><Text style={styles.stopName}>{leg.endName}</Text><Text style={styles.stopTime}>{leg.endTime}</Text></View>
                   </View>
                 </View>

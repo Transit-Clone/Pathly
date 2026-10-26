@@ -6,7 +6,7 @@ const test = require('node:test');
 
 const { transit_realtime } = require('gtfs-realtime-bindings');
 
-const { getRouteAlerts, MTA_ALERTS_FEED_URL } = require('../lib/gtfsAlerts');
+const { getRouteAlerts, MTA_ALERTS_FEED_URL, resetAlertsCacheForTests } = require('../lib/gtfsAlerts');
 const { getStopPredictions } = require('../lib/gtfsSchedule');
 const { resetGtfsStaticDataForTests, setAgencyDataForTests } = require('../lib/gtfsStaticData');
 
@@ -14,41 +14,74 @@ const nowSeconds = Math.floor(Date.now() / 1000);
 const text = (value) => ({ translation: [{ text: value, language: 'en' }, { text: `<p>${value}</p>`, language: 'en-html' }] });
 
 function alertsFeed() {
-  const alert = (id, informedEntity, extra = {}) => ({ id, alert: { informedEntity, headerText: text(`Header ${id}`), descriptionText: text(`Details ${id}`), ...extra } });
+  const alert = (id, informed, extra = {}, type = 'Delays') => ({
+    id,
+    alert: {
+      informed_entity: informed.map(([agency_id, route_id]) => ({ agency_id, route_id })),
+      header_text: text(`Header ${id}`),
+      description_text: text(`Details ${id}`),
+      'transit_realtime.mercury_alert': { alert_type: type },
+      ...extra,
+    },
+  });
+  return JSON.stringify({
+    entity: [
+      alert('now', [['MTASBWY', 'A'], ['MTASBWY', 'C']], { active_period: [{ start: nowSeconds - 600 }] }),
+      alert('ended', [['MTASBWY', 'A']], { active_period: [{ start: nowSeconds - 7200, end: nowSeconds - 3600 }] }),
+      alert('later', [['MTASBWY', 'A']], { active_period: [{ start: nowSeconds + 3600 }] }, 'Planned - Stops Skipped'),
+      alert('next-month', [['MTASBWY', 'A']], { active_period: [{ start: nowSeconds + 30 * 86400 }] }),
+      alert('notice', [['MTASBWY', 'A']], {}, 'Station Notice'),
+      alert('other-line', [['MTASBWY', 'E']]),
+      // Same route_id under another agency: Metro-North's line "A" isn't the A train.
+      alert('other-agency', [['MNR', 'A']]),
+      alert('bus', [['MTA NYCT', 'M15']], {}, 'Planned - Detour'),
+    ],
+  });
+}
+
+function ferryAlertsFeed() {
   const message = transit_realtime.FeedMessage.create({
     header: { gtfsRealtimeVersion: '2.0', timestamp: nowSeconds },
     entity: [
-      alert('now', [{ agencyId: 'MTASBWY', routeId: 'A' }, { agencyId: 'MTASBWY', routeId: 'C' }], { activePeriod: [{ start: nowSeconds - 600 }] }),
-      alert('ended', [{ agencyId: 'MTASBWY', routeId: 'A' }], { activePeriod: [{ start: nowSeconds - 7200, end: nowSeconds - 3600 }] }),
-      alert('later', [{ agencyId: 'MTASBWY', routeId: 'A' }], { activePeriod: [{ start: nowSeconds + 3600 }] }),
-      alert('other-line', [{ agencyId: 'MTASBWY', routeId: 'E' }]),
-      // Same route_id under another agency: Metro-North's line "A" isn't the A train.
-      alert('other-agency', [{ agencyId: 'MNR', routeId: 'A' }]),
-      alert('bus', [{ agencyId: 'MTA NYCT', routeId: 'M15' }]),
+      { id: 'detour', alert: { informedEntity: [{ routeId: 'ER' }], headerText: text('East River landing moved'), effect: 4 } },
+      { id: 'everyone', alert: { informedEntity: [{ agencyId: 'NYCF' }], headerText: text('Holiday schedule today') } },
+      { id: 'other', alert: { informedEntity: [{ routeId: 'SB' }], headerText: text('South Brooklyn delays'), effect: 3 } },
     ],
   });
   return Buffer.from(transit_realtime.FeedMessage.encode(message).finish());
 }
 
-test('service alerts in effect now are matched to a route by agency and route_id', async () => {
+test('service alerts are matched to a route by agency and route_id, labeled by type, warnings first', async () => {
   const originalFetch = global.fetch;
   const fetched = [];
   global.fetch = async (url) => {
     fetched.push(String(url));
-    return new Response(alertsFeed());
+    return new Response(String(url) === MTA_ALERTS_FEED_URL ? alertsFeed() : ferryAlertsFeed());
   };
+  resetAlertsCacheForTests();
   try {
-    assert.deepEqual(await getRouteAlerts('subway', 'A'), [{ id: 'now', header: 'Header now', description: 'Details now' }]);
-    assert.deepEqual((await getRouteAlerts('mn', 'M15')).map((alert) => alert.id), ['bus']);
+    const a = await getRouteAlerts('subway', 'A');
+    assert.deepEqual(a.map((alert) => [alert.id, alert.label, alert.warning, alert.upcoming]), [
+      ['now', 'Delays', true, false],
+      ['notice', 'Station notice', false, false],
+      ['later', 'Upcoming service change', false, true],
+    ]);
+    assert.equal(a[0].header, 'Header now');
+    assert.equal(a[0].description, 'Details now');
+    assert.deepEqual((await getRouteAlerts('mn', 'M15')).map((alert) => [alert.label, alert.kind]), [['Detour in effect', 'detour']]);
     assert.deepEqual(await getRouteAlerts('lirr', '10'), []);
-    // Agencies the MTA feed doesn't cover never ask for it.
+    // The MTA feed is read once for every route asked about.
+    assert.equal(fetched.filter((url) => url === MTA_ALERTS_FEED_URL).length, 1);
+    // Agencies with no alerts feed never ask for one.
     const before = fetched.length;
-    assert.deepEqual(await getRouteAlerts('nice', 'n4'), []);
     assert.deepEqual(await getRouteAlerts('siferry', 'SIF'), []);
     assert.equal(fetched.length, before);
-    assert.ok(fetched.every((url) => url === MTA_ALERTS_FEED_URL));
+    // An agency's own GTFS-RT feed: its route's alerts and agency-wide ones, by effect.
+    const ferry = await getRouteAlerts('nycferry', 'ER');
+    assert.deepEqual(ferry.map((alert) => [alert.id, alert.label, alert.warning]), [['detour', 'Detour in effect', true], ['everyone', 'Service notice', false]]);
   } finally {
     global.fetch = originalFetch;
+    resetAlertsCacheForTests();
   }
 });
 
@@ -93,4 +126,13 @@ test('a tracked trip shows how late it runs, from the feed or from its timetable
   assert.deepEqual([second.live, second.delayMinutes], [true, 3]);
   // The untracked trip is the timetable's: no delay to tell.
   assert.deepEqual([third.live, third.delayMinutes], [false, null]);
+  // Each departure says where it ends: tracked or not, from its timetable headsign.
+  assert.ok(predictions.towardDirection0.every((prediction) => prediction.headsign === 'Second St'));
+  // A live trip unknown to the timetable ends at the last stop the feed lists for it.
+  const shortTurn = { tripId: 'X1', directionId: 0, peakOffpeak: null, stops: [
+    { stopId: '1', stopName: 'First St', lat: 0, lon: 0, sequence: 1, scheduledTime: at(5), delaySeconds: null },
+    { stopId: '2', stopName: 'Second St', lat: 0, lon: 0, sequence: 2, scheduledTime: at(9), delaySeconds: null },
+  ] };
+  const unknown = await getStopPredictions('mn', 'B1', '1', '1', [shortTurn]);
+  assert.equal(unknown.towardDirection0[0].headsign, 'Second St');
 });

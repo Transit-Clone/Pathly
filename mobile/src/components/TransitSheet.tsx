@@ -41,8 +41,10 @@ type TransitSheetProps = {
   onTabChange: (tab: TransitTabId) => void;
   /** Destinations saved with a trip's star (Firestore savedLocations), under Favorites -> Places. */
   savedLocations: readonly SavedLocation[];
-  /** Routes saved with the star: listed first in Nearby and under Favorites -> Routes. */
+  /** Routes saved with the star: listed first in Nearby when they run near the map's spot, and under Favorites -> Routes. */
   savedRouteIds: readonly string[];
+  /** The saved routes that run near the map's spot (found by the nearby search); others wait under Favorites. */
+  savedNearbyRouteIds?: ReadonlySet<string>;
   /** Completed local trips, newest first and already scoped to the signed-in account. */
   recentTrips: readonly RecentTripV1[];
   scrollY: Animated.Value;
@@ -80,6 +82,7 @@ export function TransitSheet({
   onVisibleRouteIdsChange,
   recentTrips,
   savedLocations,
+  savedNearbyRouteIds,
   savedRouteIds,
   scrollY,
 }: TransitSheetProps) {
@@ -88,7 +91,10 @@ export function TransitSheet({
   const liveMap = useTransitLiveMap();
   // Re-applies live data every 30 s so countdowns age and past departures drop between polls.
   const now = useNow(30_000);
+  // A saved line leads Nearby only where it runs nearby (found by the nearby search, about a mile
+  // out); elsewhere it waits under Favorites. Until that search answers, saved lines still show.
   const savedRoutes = savedRouteIds
+    .filter((id) => nearbyStatus !== 'loaded' || !savedNearbyRouteIds || savedNearbyRouteIds.has(id))
     .map((id) => findRoute(id))
     .filter((route): route is RouteDetail => route != null)
     .map((route) => applyRouteLive(route, liveMap.get(route.id) ?? { status: 'error' }, now));

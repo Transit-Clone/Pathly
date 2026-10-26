@@ -81,7 +81,7 @@ describe('native active TripMap', () => {
     expect(screen.getByTestId('native-nav-map-user-location', { includeHiddenElements: true }).props.coordinate).toEqual({ latitude: 40.915, longitude: -73.105 });
     expect(StyleSheet.flatten(screen.getByTestId('native-nav-map-user-location-visual', { includeHiddenElements: true }).props.style).opacity).toBe(0.45);
     expect(screen.getByTestId('native-nav-map-progress-completed-0', { includeHiddenElements: true }).props.strokeWidth).toBe(4);
-    expect(screen.getByTestId('native-nav-map-progress-current-1', { includeHiddenElements: true }).props.strokeWidth).toBe(6);
+    expect(screen.getByTestId('native-nav-map-progress-current-1', { includeHiddenElements: true }).props.strokeWidth).toBe(8);
     expect(screen.getByTestId('native-nav-map-progress-upcoming-2', { includeHiddenElements: true }).props.strokeColor).toBe('#F26A21');
   });
 
@@ -305,7 +305,7 @@ describe('web active TripMap', () => {
 
     const lines = screen.getAllByTestId('web-polyline', { includeHiddenElements: true });
     expect(lines[0]!.props.options).toMatchObject({ strokeOpacity: 0.45, strokeWeight: 4 });
-    expect(lines[1]!.props.options.icons[0].icon.scale).toBe(3.25);
+    expect(lines[1]!.props.options.icons[0].icon.scale).toBe(4.25);
     expect(lines[2]!.props.options).toMatchObject({ strokeColor: '#F26A21', strokeOpacity: 1, strokeWeight: 6 });
   });
 

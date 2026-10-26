@@ -15,6 +15,8 @@ type MapControlButtonProps = {
   selected?: boolean;
   /** The save star: gold when saved, with a pop. */
   variant?: 'default' | 'save';
+  /** Colors the saved star its route's way: filled in `onColor` on a `color` button. Unsaved, it's the usual outline. */
+  tint?: { color: string; onColor: string };
   style?: StyleProp<ViewStyle>;
   testID?: string;
 };
@@ -24,18 +26,19 @@ type MapControlButtonProps = {
  * the same everywhere. Pages lay them out the same way too: Back alone at top left, and a column
  * at top right of Save, then Locate, then Fit route.
  */
-export function MapControlButton({ accessibilityLabel, icon, onPress, selected = false, style, testID, variant = 'default' }: MapControlButtonProps) {
+export function MapControlButton({ accessibilityLabel, icon, onPress, selected = false, style, testID, tint, variant = 'default' }: MapControlButtonProps) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
   const saved = variant === 'save' && selected;
-  const glyph = <Icon color={saved ? colors.highlightInk : colors.primary} filled={selected} name={icon} size={icon === 'back' ? 26 : 22} />;
+  const glyphColor = saved ? (tint ? tint.onColor : colors.highlightInk) : colors.primary;
+  const glyph = <Icon color={glyphColor} filled={selected} name={icon} size={icon === 'back' ? 26 : 22} />;
   return (
     <PressableScale
       accessibilityLabel={accessibilityLabel}
       accessibilityRole="button"
       accessibilityState={icon === 'back' ? undefined : { selected }}
       onPress={onPress}
-      style={[styles.button, selected && (saved ? styles.saved : styles.selected), style]}
+      style={[styles.button, selected && (saved ? styles.saved : styles.selected), saved && tint ? { backgroundColor: tint.color } : null, style]}
       testID={testID}
     >
       {variant === 'save' ? <PopOnActivate active={selected}>{glyph}</PopOnActivate> : glyph}

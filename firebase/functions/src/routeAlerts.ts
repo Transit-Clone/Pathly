@@ -7,11 +7,14 @@ import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { getRouteAlerts, type RouteAlert } from './gtfsAlerts';
 import { AGENCY_CONFIGS, type AgencyId } from './gtfsAgencies';
 
-/** Mirrors mobile/src/data/savedRoutes.ts's RouteAlertSetting. */
-export type RouteAlertSetting = 'all' | 'peak' | 'off';
+/** Mirrors mobile/src/data/savedRoutes.ts's RouteAlertSetting. 'peak' is kept for lines saved before Custom hours. */
+export type RouteAlertSetting = 'all' | 'peak' | 'custom' | 'off';
+
+/** A daily alert window, in minutes after midnight New York time; `end` before `start` runs overnight. */
+export type AlertHours = { start: number; end: number };
 
 /** The fields of users/{uid}/savedRoutes/{id} this reads (savedRoutes.ts's SavedRoute). */
-type SavedRouteDoc = { agencyId: string; routeId: string; shortName?: string; routeName?: string; alerts?: RouteAlertSetting };
+type SavedRouteDoc = { agencyId: string; routeId: string; shortName?: string; routeName?: string; alerts?: RouteAlertSetting; alertHours?: AlertHours };
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 /** Expo accepts up to 100 messages per request. */
@@ -31,9 +34,20 @@ export function isPeakTime(now: Date): boolean {
   return (hour >= 6 && hour < 10) || (hour >= 16 && hour < 20);
 }
 
+/** Whether `now` (read in New York) falls in a daily window; an overnight one wraps past midnight. */
+export function isWithinAlertHours(hours: AlertHours, now: Date): boolean {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: 'numeric', hourCycle: 'h23' }).formatToParts(now);
+  const minutes = Number(parts.find((part) => part.type === 'hour')?.value ?? 0) * 60 + Number(parts.find((part) => part.type === 'minute')?.value ?? 0);
+  if (hours.start === hours.end) return true;
+  return hours.start < hours.end ? minutes >= hours.start && minutes < hours.end : minutes >= hours.start || minutes < hours.end;
+}
+
 /** Whether a saved route's setting wants alerts right now. */
-export function wantsAlertsNow(setting: RouteAlertSetting | undefined, now: Date): boolean {
-  return setting === 'all' || (setting === 'peak' && isPeakTime(now));
+export function wantsAlertsNow(setting: RouteAlertSetting | undefined, now: Date, hours?: AlertHours): boolean {
+  if (setting === 'all') return true;
+  if (setting === 'peak') return isPeakTime(now);
+  if (setting === 'custom') return hours != null && isWithinAlertHours(hours, now);
+  return false;
 }
 
 /** The push a rider gets for one alert on one of their saved lines. */
@@ -52,7 +66,7 @@ const sentKey = (route: SavedRouteDoc, alert: RouteAlert) => createHash('sha256'
 export async function sendSavedRouteAlerts(now = new Date()): Promise<{ sent: number }> {
   const app = getApps()[0] ?? initializeApp();
   const firestore = getFirestore(app);
-  const saved = await firestore.collectionGroup('savedRoutes').where('alerts', 'in', ['all', 'peak']).get();
+  const saved = await firestore.collectionGroup('savedRoutes').where('alerts', 'in', ['all', 'peak', 'custom']).get();
 
   const alertsByRoute = new Map<string, Promise<RouteAlert[]>>();
   const alertsFor = (agencyId: AgencyId, routeId: string) => {
@@ -66,8 +80,9 @@ export async function sendSavedRouteAlerts(now = new Date()): Promise<{ sent: nu
   for (const doc of saved.docs) {
     const route = doc.data() as SavedRouteDoc;
     const uid = doc.ref.parent.parent?.id;
-    if (!uid || !Object.hasOwn(AGENCY_CONFIGS, route.agencyId) || !wantsAlertsNow(route.alerts, now)) continue;
-    const alerts = await alertsFor(route.agencyId as AgencyId, route.routeId);
+    if (!uid || !Object.hasOwn(AGENCY_CONFIGS, route.agencyId) || !wantsAlertsNow(route.alerts, now, route.alertHours)) continue;
+    // Planned work starting later is shown in the app, not pushed until it's in effect.
+    const alerts = (await alertsFor(route.agencyId as AgencyId, route.routeId)).filter((alert) => !alert.upcoming);
     if (alerts.length === 0) continue;
     if (!pushTokensByUser.has(uid)) {
       pushTokensByUser.set(uid, firestore.collection('users').doc(uid).get().then((user) => {

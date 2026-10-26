@@ -43,9 +43,9 @@ describe('stackSavedPins', () => {
     expect(metersPerPixelForSpan(0.05, 400, 40.75)).toBeCloseTo(10.54, 1);
   });
 
-  it('draws the pin as one outlined shape', () => {
+  it('draws the marker as one outlined circle', () => {
     const svg = decodeURIComponent(savedPinSvgUrl('#0B4F9C', '#FFFFFF'));
-    expect(svg.match(/<(path|circle)\b/g)).toEqual(['<path']);
+    expect(svg.match(/<(path|circle)\b/g)).toEqual(['<circle']);
   });
 });
 

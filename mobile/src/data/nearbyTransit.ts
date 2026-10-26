@@ -127,10 +127,43 @@ export function discoveredRouteToRouteDetail(discovered: DiscoveredRoute): Route
 const searchTransitRoutesCallable = callable<{ query: string; lat: number; lon: number }, { routes: DiscoveredRoute[] }>('searchTransitRoutes');
 const describeTransitRouteCallable = callable<{ agencyId: string; routeId: string; lat: number; lon: number }, { route: DiscoveredRoute }>('describeTransitRoute');
 
-/** Lines whose name matches a search ("1", "B46", "Port Jefferson"), best match first, at their stops nearest `near`. */
-export async function searchTransitRoutes(query: string, near: Coordinates): Promise<readonly DiscoveredRoute[]> {
-  const { data } = await searchTransitRoutesCallable({ query, lat: near.latitude, lon: near.longitude });
-  return data.routes;
+const warmLineSearchCallable = callable<{ warmup: true }, unknown>('describeTransitRoute');
+let lineSearchWarmed = false;
+
+/**
+ * Starts the instance that describes a searched line, as the search page opens (once per app
+ * session), so a tapped line opens without waiting on a cold start. A failure is ignored.
+ */
+export function warmLineSearch(): void {
+  if (lineSearchWarmed) return;
+  lineSearchWarmed = true;
+  warmLineSearchCallable({ warmup: true }).catch(() => {
+    lineSearchWarmed = false;
+  });
+}
+
+const lineSearchCache = new Map<string, Promise<readonly DiscoveredRoute[]>>();
+
+/**
+ * Lines whose name matches a search ("1", "B46", "Port Jefferson"), best match first, at their
+ * stops nearest `near`. Answers are kept for the session (by query and rough location), and a
+ * failed call (a cold instance timing out) is tried once more before giving up.
+ */
+export function searchTransitRoutes(query: string, near: Coordinates): Promise<readonly DiscoveredRoute[]> {
+  const key = `${query.toLowerCase()}|${near.latitude.toFixed(2)},${near.longitude.toFixed(2)}`;
+  const cached = lineSearchCache.get(key);
+  if (cached) return cached;
+  const ask = () => searchTransitRoutesCallable({ query, lat: near.latitude, lon: near.longitude }).then(({ data }) => data.routes);
+  const promise = ask().catch(() => ask());
+  lineSearchCache.set(key, promise);
+  promise.catch(() => lineSearchCache.delete(key));
+  return promise;
+}
+
+/** A line found in search, described at its stops nearest the rider (to open in route view). */
+export async function describeTransitLine(agencyId: LiveSource['agencyId'], routeId: string, near: Coordinates): Promise<DiscoveredRoute> {
+  const { data } = await describeTransitRouteCallable({ agencyId, routeId, lat: near.latitude, lon: near.longitude });
+  return data.route;
 }
 
 /**

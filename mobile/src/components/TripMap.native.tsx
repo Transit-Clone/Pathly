@@ -3,17 +3,20 @@ import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE, type MapPressEvent, type Region } from 'react-native-maps';
 
 import { googleMapStyle } from '../data/mapStyle';
+import { themedRouteColor } from '../data/routeColors';
 import { zoomForRegion } from '../data/stopDeclutter';
 import { stopIndexAt, tripMapPoints, viaRevealZooms, type TripMapProps, type TripMapStop } from '../data/tripMap';
 import { useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies } from '../theme/typography';
 import { CurrentLocationMarker } from './CurrentLocationMarker';
+import { HeadingBeamMarker } from './HeadingBeamMarker';
 
 const FIT_PADDING = { top: 90, right: 40, bottom: 60, left: 40 };
 const TRANSIT_WIDTH = 6;
-const WALK_WIDTH = 4;
-const WALK_DASH = [2, 8];
+// Walks are plain round gray dots, wide enough to read from far out.
+const WALK_WIDTH = 6;
+const WALK_DASH = [1, 10];
 const FOCUS_ZOOM = 15;
 const FOCUS_DURATION_MS = 350;
 
@@ -190,9 +193,10 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
             <Polyline
               key={`leg-${index}`}
               coordinates={leg.path.map((point) => ({ latitude: point.lat, longitude: point.lng }))}
+              lineCap={leg.walk ? 'round' : undefined}
               lineDashPattern={leg.walk ? WALK_DASH : undefined}
-              strokeColor={completed ? colors.mutedInk : leg.walk ? colors.mutedInk : leg.color ?? colors.primary}
-              strokeWidth={completed ? (leg.walk ? 3 : 4) : current ? (leg.walk ? 6 : 8) : leg.walk ? WALK_WIDTH : TRANSIT_WIDTH}
+              strokeColor={completed || leg.walk ? colors.mutedInk : themedRouteColor(leg.color ?? colors.primary, isDark)}
+              strokeWidth={completed ? 4 : current ? 8 : leg.walk ? WALK_WIDTH : TRANSIT_WIDTH}
               testID={progressState ? `${testID}-progress-${progressState}-${index}` : leg.walk ? `trip-map-walk-${index}` : `trip-map-transit-${index}`}
               zIndex={current ? 3 : leg.walk ? 1 : 2}
             />
@@ -215,11 +219,12 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
                 'state' in stop && stop.state === 'completed' && styles.completedStop,
                 stop.kind === 'start' && { backgroundColor: colors.success },
                 stop.kind === 'end' && { backgroundColor: colors.primary },
-                (stop.kind === 'stop' || stop.kind === 'via') && { backgroundColor: colors.white, borderColor: stop.color ?? colors.primary },
+                (stop.kind === 'stop' || stop.kind === 'via') && { backgroundColor: colors.white, borderColor: themedRouteColor(stop.color ?? colors.primary, isDark) },
               ]}
             />
           </Marker>
         )))}
+        {userLocation ? <HeadingBeamMarker coordinate={{ latitude: userLocation.lat, longitude: userLocation.lng }} /> : null}
         {userLocation ? (
           <Marker
             anchor={{ x: 0.5, y: 0.5 }}

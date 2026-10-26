@@ -7,6 +7,7 @@ import { fetchStopDepartures } from '../data/transitLive';
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
+import { FitText } from './FitText';
 import { Icon } from './Icon';
 import { LiveSignal } from './LiveSignal';
 import { Mascot } from './Mascot';
@@ -83,7 +84,7 @@ export function DeparturesView({ directionIndex, onBack, route }: DeparturesView
           <PressableScale accessibilityLabel="Back" accessibilityRole="button" onPress={onBack} style={styles.backButton} testID="departures-back"><Icon name="back" size={26} /></PressableScale>
           <RouteBadge agency={route.agency} color={route.color} shortName={route.shortName} withModeIcon={true} />
           <View style={styles.headerCopy}>
-            <Text accessibilityRole="header" numberOfLines={1} style={styles.title} testID="departures-destination">{directionDestination(direction.direction)}</Text>
+            <FitText accessibilityRole="header" style={styles.title} testID="departures-destination">{directionDestination(direction.direction)}</FitText>
             <Text numberOfLines={1} style={styles.subtitle} testID="departures-stop">{`From ${direction.stopName}`}</Text>
           </View>
         </View>

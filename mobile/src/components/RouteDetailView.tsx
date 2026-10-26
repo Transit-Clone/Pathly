@@ -1,23 +1,26 @@
 import { useEffect, useRef, useState } from 'react';
-import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type GestureResponderEvent, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type GestureResponderEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useDebug } from '../debug/DebugContext';
 import { useTransitLive } from '../data/TransitLiveContext';
 import { fetchRouteGeometry, fetchRouteTransfers, type LineTransfer, type RouteGeometry } from '../data/routeGeometry';
 import { STATION_TRANSFERS, type StationTransfer, type TransferMode } from '../data/stationTransfers';
-import { departureDisplay, directionDestination, preferredDirectionIndex, formatClockTime, scheduleStopsFromNow, stopsForDirection, type RouteDetail, type RoutePrediction } from '../data/transit';
-import { LATE_THRESHOLD_MINUTES, routeNotices } from '../data/routeNotices';
+import { departureDisplay, differentEndStop, directionDestination, preferredDirectionIndex, formatClockTime, scheduleStopsFromNow, stopsForDirection, type RouteDetail, type RoutePrediction } from '../data/transit';
+import { routeNotices, type RouteNotice } from '../data/routeNotices';
 import { focusStopIndex } from '../data/routeDirection';
-import { useWalkingPath } from '../data/walkingPath';
-import { transferColor } from '../data/routeColors';
+import { useWalkingPath, walkingMinutes } from '../data/walkingPath';
+import { useAccessibleStops } from '../data/accessibleStops';
+import { useUserPreferences } from '../data/userPreferences';
+import { transferColor, useRouteColor } from '../data/routeColors';
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
-import { useLayoutEase } from '../theme/motion';
 import type { Palette } from '../theme/colors';
-import { readableColor } from '../theme/contrast';
+import { contrastRatio, readableColor } from '../theme/contrast';
 import { fontFamilies, typography } from '../theme/typography';
 import { DetailMapPage } from './DetailMapPage';
+import { DirectionSwitch } from './DirectionSwitch';
+import { FitText } from './FitText';
 import { Icon } from './Icon';
 import { LIVE_SIGNAL_WIDTH, LiveSignal } from './LiveSignal';
 import { MapBackdrop } from './MapBackdrop';
@@ -41,6 +44,8 @@ type RouteDetailViewProps = {
   onOpenDepartures?: (directionIndex: number) => void;
   onRefreshLocation?: () => void;
   onToggleFavorite: () => void;
+  /** A saved line's service alerts: the bell under the star opens their setting; on when they're sent. */
+  alerts?: { on: boolean; onOpen: () => void };
   /** Opens a transfer badge's line at the stop it was tapped on. */
   onOpenTransfer?: (transfer: LineTransfer, stop: TappedStop) => void;
   route: RouteDetail;
@@ -122,7 +127,8 @@ function liveStopsFor(
   };
 }
 
-const MAX_TRANSFER_CHIPS = 8;
+// Badges are sign-sized (24 pt), so a row shows fewer before the rest fold into "+N".
+const MAX_TRANSFER_CHIPS = 6;
 /** Departure tiles before the "More departures" card. */
 const MAX_PREDICTION_TILES = 6;
 const TILE_GAP = 8;
@@ -130,7 +136,6 @@ const TILE_GAP = 8;
 const VISIBLE_TILES = 3.5;
 const MAX_TILE_WIDTH = 96;
 /** Room beside the heading for the two direction dots. */
-const DIRECTION_DOTS_WIDTH = 30;
 /** Just below the 46 pt back button, which sits 8 pt below the safe area. */
 const MAP_BADGE_TOP = 62;
 const isWeb = Platform.OS === 'web';
@@ -171,11 +176,20 @@ const isLineTransfer = (transfer: StationTransfer | LineTransfer): transfer is L
 function TransferChip({ onOpen, stopName, testID, transfer }: { onOpen?: (transfer: LineTransfer) => void; stopName: string; testID: string; transfer: StationTransfer | LineTransfer }) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
-  const color = transferColor(transfer);
+  const tint = useRouteColor();
+  const transferHue = transferColor(transfer);
+  const color = transferHue ? tint(transferHue) : null;
   // Recolored buses are white-on-color, like every bus badge; rail keeps its own text color.
   const textColor = color && color !== transfer.color ? colors.white : transfer.textColor ?? colors.white;
   const chipStyle = [styles.transferChip, transfer.mode === 'subway' && styles.subwayChip, { backgroundColor: color ?? colors.surfaceMuted }];
-  const label = <Text numberOfLines={1} style={[styles.transferText, { color: color ? textColor : colors.ink }]}>{transfer.name}</Text>;
+  const labelColor = color ? textColor : colors.ink;
+  // MTA-style signs: subway bullets and bus badges are text only; rail and ferries carry their mode's glyph.
+  const label = (
+    <>
+      {transfer.mode === 'rail' || transfer.mode === 'ferry' ? <Icon color={labelColor} filled={true} name={transfer.mode} size={13} /> : null}
+      <Text numberOfLines={1} style={[styles.transferText, transfer.mode === 'subway' && styles.subwayText, { color: labelColor }]}>{transfer.name}</Text>
+    </>
+  );
   if (onOpen && isLineTransfer(transfer)) {
     return (
       <PressableScale
@@ -193,13 +207,35 @@ function TransferChip({ onOpen, stopName, testID, transfer }: { onOpen?: (transf
   return <View style={chipStyle} testID={testID}>{label}</View>;
 }
 
-/** Connecting lines at a station: rail, then subway (circles), then bus. `+N` opens the full list. */
+// Chip widths, from transferChip/subwayChip/transferText below, to fit one row without measuring each.
+const CHIP_GAP = 5;
+const MORE_CHIP_WIDTH = 36;
+function transferChipWidth(transfer: StationTransfer | LineTransfer): number {
+  if (transfer.mode === 'subway') return 24;
+  const icon = transfer.mode === 'rail' || transfer.mode === 'ferry' ? 17 : 0;
+  return Math.max(24, 16 + icon + transfer.name.length * 7.5);
+}
+
+/** How many chips fit on one row of `width`, leaving room for "+N" when some don't. */
+export function transferChipsThatFit(transfers: readonly (StationTransfer | LineTransfer)[], width: number): number {
+  let used = 0;
+  for (let index = 0; index < transfers.length; index += 1) {
+    used += (index > 0 ? CHIP_GAP : 0) + transferChipWidth(transfers[index]!);
+    const room = index === transfers.length - 1 ? width : width - CHIP_GAP - MORE_CHIP_WIDTH;
+    if (used > room) return index;
+  }
+  return transfers.length;
+}
+
+/** Connecting lines at a station on one row: rail, then subway (circles), then bus; `+N` for the rest opens the full list. */
 function TransferChips({ onOpen, onShowAll, stopName, transfers }: { onOpen?: (transfer: LineTransfer) => void; onShowAll: () => void; stopName: string; transfers: readonly (StationTransfer | LineTransfer)[] }) {
   const styles = useThemedStyles(createStyles);
-  const shown = transfers.slice(0, MAX_TRANSFER_CHIPS);
+  const [width, setWidth] = useState<number | null>(null);
+  const fits = width == null ? MAX_TRANSFER_CHIPS : transferChipsThatFit(transfers, width);
+  const shown = transfers.slice(0, Math.max(1, Math.min(fits, MAX_TRANSFER_CHIPS)));
   const hidden = transfers.length - shown.length;
   return (
-    <View style={styles.transfers} testID={`stop-transfers-${stopName}`}>
+    <View onLayout={(event) => setWidth(event.nativeEvent.layout.width)} style={styles.transfers} testID={`stop-transfers-${stopName}`}>
       {shown.map((transfer) => (
         <TransferChip key={`${transfer.agency}-${transfer.name}`} onOpen={onOpen} stopName={stopName} testID={`route-transfer-${stopName}-${transfer.name}`} transfer={transfer} />
       ))}
@@ -225,6 +261,37 @@ const TRANSFER_MODE_HEADINGS: readonly { mode: TransferMode; title: string }[] =
   { mode: 'bus', title: 'Bus' },
   { mode: 'ferry', title: 'Ferry' },
 ];
+
+/** Every alert on the line, from the bottom: each with its label (yellow for a disruption now), headline and details. */
+function AlertsSheet({ notices, onClose }: { notices: readonly RouteNotice[] | null; onClose: () => void }) {
+  const styles = useThemedStyles(createStyles);
+  const { colors } = useTheme();
+  return (
+    <Modal animationType="slide" onRequestClose={onClose} transparent={true} visible={notices != null}>
+      <Pressable accessibilityLabel="Close alerts" onPress={onClose} style={styles.sheetBackdrop} testID="service-alerts-backdrop" />
+      {notices ? (
+        <View style={styles.transfersSheet} testID="service-alerts-list">
+          <View style={styles.transfersSheetHeader}>
+            <Text accessibilityRole="header" style={styles.transfersSheetTitle}>Service alerts</Text>
+            <PressableScale accessibilityLabel="Close" accessibilityRole="button" hitSlop={8} onPress={onClose} testID="service-alerts-close"><Icon name="close" size={26} /></PressableScale>
+          </View>
+          <ScrollView contentContainerStyle={styles.alertSheetContent}>
+            {notices.map((notice, index) => (
+              <View key={`${notice.kind}-${index}`} style={index > 0 ? styles.alertItemSpaced : undefined} testID={`service-alert-${index}`}>
+                <View style={[styles.alertLabel, notice.warning ? styles.alertPillWarning : styles.alertPillNeutral]}>
+                  <Icon color={notice.warning ? colors.onAlertYellow : colors.ink} filled={true} name={notice.warning ? 'warning' : 'info'} size={14} />
+                  <Text style={[styles.alertLabelText, { color: notice.warning ? colors.onAlertYellow : colors.ink }]}>{notice.label}</Text>
+                </View>
+                <Text style={styles.alertTitle}>{notice.title}</Text>
+                {notice.detail ? <Text style={styles.alertBody}>{notice.detail}</Text> : null}
+              </View>
+            ))}
+          </ScrollView>
+        </View>
+      ) : null}
+    </Modal>
+  );
+}
 
 /**
  * A stop's sheet, opened by tapping its row (or its `+N`): every line to change to there, grouped
@@ -267,16 +334,18 @@ function TransfersSheet({ onClose, onOpen, sheet }: {
   );
 }
 
-export function RouteDetailView({ initialDirectionIndex, isFavorite, location, locationKnown = false, onBack, onOpenDepartures, onOpenTransfer, onRefreshLocation, onToggleFavorite, route, wholeRoute = false }: RouteDetailViewProps) {
+export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, location, locationKnown = false, onBack, onOpenDepartures, onOpenTransfer, onRefreshLocation, onToggleFavorite, route, wholeRoute = false }: RouteDetailViewProps) {
+  const routeColor = useRouteColor()(route.color);
   const styles = useThemedStyles(createStyles);
   const { colors, isDark } = useTheme();
   // Route colors stay exact on fills; text and icons are lightened in dark mode to stay readable.
-  const routeText = isDark ? readableColor(route.color, colors.surface) : route.color;
+  const routeText = isDark ? readableColor(routeColor, colors.surface) : routeColor;
+  // Saved, the star is a white star on the route's color (dark on pale lines like the N/Q/R/W).
+  const favoriteTint = { color: routeColor, onColor: contrastRatio(colors.white, routeColor) >= 2.2 ? colors.white : '#1A1A1A' };
   const { height, width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [transfersSheet, setTransfersSheet] = useState<{ stop: LiveStop; transfers: readonly (StationTransfer | LineTransfer)[] } | null>(null);
-  const ease = useLayoutEase();
   const liveStatus = useTransitLive(route.id);
   const debug = useDebug();
   const vehicles = liveStatus.status === 'loaded' ? liveStatus.data.vehicles : [];
@@ -289,12 +358,6 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
   // Tall, narrow fixed-width tiles: about three and a half across on a phone (so a lone
   // departure never fills the row), capped so wider screens show more tiles rather than squares.
   const tileWidth = Math.min((pageWidth - 3 * TILE_GAP) / VISIBLE_TILES, MAX_TILE_WIDTH);
-  // The heading pages beside the direction dots.
-  const headingWidth = pageWidth - DIRECTION_DOTS_WIDTH;
-
-  const updateDirection = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    setActiveDirectionIndex(Math.round(event.nativeEvent.contentOffset.x / headingWidth));
-  };
 
   // Which upcoming trip's tile is tapped — "Route stops" below shows *that* trip's schedule,
   // not always the very next one, so tapping a later tile answers "what are this train's stop
@@ -320,7 +383,6 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
   // rather than in an effect, since it's a one-time derivation from props, not a subscription.
   // A caller-chosen direction counts as already selected, so it isn't overridden.
   const [hasAutoSelectedDirection, setHasAutoSelectedDirection] = useState(initialDirectionIndex !== undefined);
-  const directionScrollRef = useRef<ScrollView>(null);
   // The exception is a rider clearly at one end of the line (a ferry terminal, the 1 at South
   // Ferry): the direction that's nearly over is never the one they want, however soon it goes.
   if (!hasAutoSelectedDirection) {
@@ -335,40 +397,7 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
     }
   }
 
-  // On native, the ScrollView's own scroll position (not `activeDirectionIndex`) decides which
-  // page is actually visible, so it's kept in sync here — covers the auto-select above and is
-  // a no-op (already there) after the user's own scroll gesture updates the index instead.
-  useEffect(() => {
-    directionScrollRef.current?.scrollTo({ x: activeDirectionIndex * headingWidth, animated: false });
-  }, [activeDirectionIndex, headingWidth]);
-
-  // react-native-web's horizontal ScrollView doesn't support click-and-drag scrolling for
-  // mouse users the way native touch devices do (browsers only do that for real touch/trackpad
-  // gestures), so `pagingEnabled` alone never lets a mouse user swipe here — same gap already
-  // hit on the route card. Native keeps the ScrollView paging below, which already works.
-  const directionDragStartX = useRef<number | null>(null);
   const DIRECTION_SWIPE_THRESHOLD = 24;
-
-  const handleDirectionPressIn = (event: GestureResponderEvent) => {
-    directionDragStartX.current = event.nativeEvent.pageX;
-  };
-
-  // `onTap` fires for a plain tap (negligible horizontal movement) instead of the swipe — used
-  // by each prediction tile below so tapping one selects it, while still swiping anywhere
-  // (including starting on a tile) to change direction, with exactly one handler per touch
-  // rather than this and a tile's own tap handler racing over the same gesture.
-  const handleDirectionPressOut = (event: GestureResponderEvent, onTap?: () => void) => {
-    const startX = directionDragStartX.current;
-    directionDragStartX.current = null;
-    if (startX == null) return;
-    const dx = event.nativeEvent.pageX - startX;
-    if (Math.abs(dx) <= DIRECTION_SWIPE_THRESHOLD) {
-      onTap?.();
-      return;
-    }
-    const direction = dx < 0 ? 1 : -1;
-    setActiveDirectionIndex((current) => Math.min(Math.max(current + direction, 0), route.directions.length - 1));
-  };
 
   // The departure tiles scroll on their own. Native and web touch/trackpad scroll the ScrollView
   // directly; a web mouse drag is turned into a scroll here, while a plain click still taps.
@@ -398,7 +427,13 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
   const activeDirection = route.directions[activeDirectionIndex] ?? route.directions[0];
   const activeDestination = directionDestination(activeDirection.direction);
   // The walk from the rider to the stop shown, drawn dotted on the map.
-  const walkPath = useWalkingPath(route.liveSource?.agencyId, activeDirection.stopId, locationKnown ? location : undefined);
+  // Walked from where the rider was when the page opened: drawn once, not redrawn as they move.
+  const [walkFrom, setWalkFrom] = useState<Coordinates | null>(null);
+  if (locationKnown && location && !walkFrom) setWalkFrom(location);
+  const walkPath = useWalkingPath(route.liveSource?.agencyId, activeDirection.stopId, walkFrom ?? undefined);
+  // With Step-free routes on (Settings -> Accessibility), step-free stations get a small wheelchair beside their name.
+  const { preferences } = useUserPreferences();
+  const isAccessibleStop = useAccessibleStops(route.liveSource?.agencyId, preferences.stepFree);
 
   // Real geometry is fetched on demand for whichever route is actually open, derived
   // generically on the backend from its real schedule (gtfsDiscovery.ts) — not hand-authored
@@ -471,10 +506,7 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
   const vehicleIcon = transitModeForAgency(route.agency);
   // Delays on the shown direction's tracked departures, then MTA alerts, under the time cards.
   const notices = routeNotices(route, activePredictions, vehicleIcon);
-  const hasDelays = notices.some((notice) => notice.kind === 'delay');
   // The stop list follows the selected departure, so its chip says whether that one is late.
-  const selectedPrediction = activePredictions[selectedPredictionIndex] ?? activePredictions[0];
-  const selectedDelay = selectedPrediction?.live && (selectedPrediction.delayMinutes ?? 0) >= LATE_THRESHOLD_MINUTES ? selectedPrediction.delayMinutes! : null;
 
   // Only ever rendered below for a route with no `liveSource` — every entry in the static demo
   // catalog has real values here; a dynamically-discovered route always has a `liveSource`
@@ -483,19 +515,29 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
   // not a real fallback path.
   const illustrativeMapPath = route.mapPath ?? [];
   const routeLeg: MapLeg = {
-    color: route.color,
+    color: routeColor,
     path: illustrativeMapPath,
     stops: (route.mapStops ?? []).map((pathIndex, index) => ({ label: (route.mapLabels ?? [])[index] ?? '', point: illustrativeMapPath[pathIndex] ?? [0, 0] })),
   };
 
   // Compact (short code only) and tucked under the back button, clear of the map's center and the
   // rider's stop that the camera opens on.
-  const mapBadge = (
+  // Buses are named in their route color on a plain pill; other modes keep their colored sign.
+  const mapBadge = transitModeForAgency(route.agency) === 'bus' ? (
+    <View
+      accessibilityLabel={`${badgeLabel(route)} bus`}
+      accessible={true}
+      style={[styles.mapBusLabel, { top: insets.top + MAP_BADGE_TOP }]}
+      testID="route-detail-badge"
+    >
+      <Text numberOfLines={1} style={[styles.mapBusLabelText, { color: routeText }]}>{badgeLabel(route)}</Text>
+    </View>
+  ) : (
     <RouteBadge
       agency={route.agency}
-      color={route.color}
+      color={routeColor}
       shortName={badgeLabel(route)}
-      size="medium"
+      size={transitModeForAgency(route.agency) === 'subway' ? 'xlarge' : 'medium'}
       style={[styles.mapRouteBadge, { top: insets.top + MAP_BADGE_TOP }]}
       testID="route-detail-badge"
       withModeIcon={true}
@@ -511,7 +553,7 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
         initialSize={{ width: Math.min(width, 540), height: mapHeight }}
         padding={{ top: 76, right: 64, bottom: 44, left: 16 }}
         renderMarkers={(projection) => (
-          <VehicleMarker color={route.color} minutes={activeDirection.minutes} mode={vehicleIcon} point={pointAlong(illustrativeMapPath, activeDirectionIndex === 0 ? 0.3 : 0.7)} projection={projection} />
+          <VehicleMarker color={routeColor} minutes={activeDirection.minutes} mode={vehicleIcon} point={pointAlong(illustrativeMapPath, activeDirectionIndex === 0 ? 0.3 : 0.7)} projection={projection} />
         )}
         renderOverlay={({ scale }) => <RouteLines legs={[routeLeg]} scale={scale} />}
         showUserLocation={true}
@@ -522,7 +564,7 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
     <>
       <RouteMap
         centerOnUserRequest={centerOnUserRequest}
-        color={route.color}
+        color={routeColor}
         directionId={geometryDirectionId}
         focusStopId={wholeRoute ? undefined : activeDirection.stopId}
         focusStopName={wholeRoute ? undefined : activeDirection.stopName}
@@ -554,7 +596,8 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
       <MapControlButton accessibilityLabel="Back" icon="back" onPress={onBack} testID="route-back" />
       {/* Every map page's order: Save, then Locate. */}
       <View style={styles.topActions}>
-        <MapControlButton accessibilityLabel={isFavorite ? 'Remove route from saved' : 'Save route'} icon="favorite" onPress={onToggleFavorite} selected={isFavorite} testID="route-favorite" variant="save" />
+        <MapControlButton accessibilityLabel={isFavorite ? 'Remove route from saved' : 'Save route'} icon="favorite" onPress={onToggleFavorite} selected={isFavorite} testID="route-favorite" tint={favoriteTint} variant="save" />
+        {isFavorite && alerts ? <MapControlButton accessibilityLabel={alerts.on ? 'Service alerts on' : 'Service alerts off'} icon="bell" onPress={alerts.onOpen} selected={alerts.on} testID="route-alerts" /> : null}
         <MapControlButton accessibilityLabel="Show current location" icon="locate" onPress={() => {
           setIsLocationCentered(true);
           onRefreshLocation?.();
@@ -581,51 +624,19 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
       testID={`route-detail-${route.id}`}
     >
       <ThemedStatusBar />
-      {/* The destination heading is the direction control: swipe it for the other direction. Its
-          page dots sit beside it. */}
+      {/* The direction control: one wide oval, a destination on each side. A one-way line just
+          names where it goes. */}
       <View style={styles.headingRow}>
-        {Platform.OS === 'web' ? (
-          <PressableScale
-            accessibilityHint="Swipe horizontally for the other direction."
-            accessible={false}
-            onPressIn={handleDirectionPressIn}
-            onPressOut={handleDirectionPressOut}
-            style={[styles.titleRow, { width: headingWidth }]}
-            testID={`route-direction-${activeDirectionIndex}`}
-          >
-            <Text accessibilityRole="header" numberOfLines={2} style={styles.title} testID="route-detail-destination">{activeDestination}</Text>
-          </PressableScale>
+        {route.directions.length > 1 ? (
+          <DirectionSwitch
+            activeIndex={activeDirectionIndex}
+            color={routeColor}
+            labels={[directionDestination(route.directions[0]!.direction), directionDestination(route.directions[1]!.direction)]}
+            onChange={setActiveDirectionIndex}
+          />
         ) : (
-          <ScrollView ref={directionScrollRef} accessibilityHint="Swipe horizontally for the other direction." decelerationRate="fast" horizontal={true} onMomentumScrollEnd={updateDirection} onScroll={updateDirection} pagingEnabled={true} scrollEventThrottle={16} showsHorizontalScrollIndicator={false} style={styles.directionPager} testID="route-direction-pager">
-            {route.directions.map((direction, directionIndex) => (
-              <View key={`${direction.direction}-${directionIndex}`} style={[styles.titleRow, { width: headingWidth }]} testID={`route-direction-${directionIndex}`}>
-                <Text
-                  accessibilityRole={directionIndex === activeDirectionIndex ? 'header' : undefined}
-                  numberOfLines={2}
-                  style={styles.title}
-                  testID={directionIndex === activeDirectionIndex ? 'route-detail-destination' : undefined}
-                >
-                  {directionDestination(direction.direction)}
-                </Text>
-              </View>
-            ))}
-          </ScrollView>
+          <FitText accessibilityRole="header" style={styles.title} testID="route-detail-destination">{activeDestination}</FitText>
         )}
-
-        <View style={[styles.pageDots, { width: DIRECTION_DOTS_WIDTH }]}>
-          {route.directions.map((direction, index) => (
-            <PressableScale
-              key={`${direction.direction}-${index}`}
-              accessibilityLabel={`Show ${directionDestination(direction.direction)} predictions`}
-              accessibilityRole="button"
-              accessibilityState={{ selected: index === activeDirectionIndex }}
-              hitSlop={8}
-              onPress={() => setActiveDirectionIndex(index)}
-            >
-              <View style={[styles.pageDot, index === activeDirectionIndex && { backgroundColor: route.color }]} />
-            </PressableScale>
-          ))}
-        </View>
       </View>
 
       {debug.mockTime ? <Text style={styles.debugNote} testID="route-live-real-time">{"Live times are real-time; mock time doesn't apply to them."}</Text> : null}
@@ -662,20 +673,28 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
             const predictionColor = highlighted ? colors.white : routeText;
             const timing = predictionTiming(prediction);
             const isClockTime = timing.value.includes(':');
+            const endStop = differentEndStop(prediction, activeDestination);
             const selectTile = () => setSelectedPredictionIndex(index);
             return (
               <PressableScale
                 key={`${activeDirectionIndex}-${index}`}
                 accessibilityHint="Shows this trip's stop times below."
-                accessibilityLabel={`${timing.accessibility}, ${prediction.live ? 'live GPS prediction' : 'scheduled time'}`}
+                accessibilityLabel={`${timing.accessibility}, ${prediction.live ? 'live GPS prediction' : 'scheduled time'}${endStop ? `, ends at ${endStop}` : ''}`}
                 accessibilityRole="button"
                 accessibilityState={{ selected: highlighted }}
                 onPress={isWeb ? undefined : selectTile}
                 onPressIn={isWeb ? handleTilesPressIn : undefined}
                 onPressOut={isWeb ? (event) => handleTilesPressOut(event, selectTile) : undefined}
-                style={[styles.prediction, { borderColor: route.color, width: tileWidth }, highlighted && { backgroundColor: route.color }, !prediction.live && styles.scheduled]}
+                style={[styles.prediction, { borderColor: routeColor, width: tileWidth }, highlighted && { backgroundColor: routeColor }, !prediction.live && styles.scheduled]}
                 testID={`route-prediction-${activeDirectionIndex}-${index}`}
               >
+                {/* A trip that doesn't run the direction's usual way names its own end stop. */}
+                {/* Written out in full (wrapping as needed), over a light rule that sets it apart from the time. */}
+                {endStop ? (
+                  <View style={[styles.predictionEndStopBox, highlighted && styles.predictionEndStopBoxHighlighted]}>
+                    <Text style={[styles.predictionEndStop, { color: predictionColor }]} testID={`route-prediction-end-${activeDirectionIndex}-${index}`}>{`To ${endStop}`}</Text>
+                  </View>
+                ) : null}
                 {/* Minutes get the big number; a clock time ("12:04") is longer, so it's a size down and
                     drops the centering spacer to fit the narrow tile. */}
                 <View style={styles.predictionRow}>{prediction.live && !isClockTime ? <View style={styles.predictionSignalSpacer} /> : null}<Text numberOfLines={1} style={[styles.predictionTime, isClockTime && styles.predictionClockTime, { color: predictionColor }]}>{timing.value}</Text>{prediction.live ? <LiveSignal color={predictionColor} style={styles.predictionSignal} /> : null}</View>
@@ -691,7 +710,7 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
             onPress={isWeb ? undefined : () => onOpenDepartures?.(activeDirectionIndex)}
             onPressIn={isWeb ? handleTilesPressIn : undefined}
             onPressOut={isWeb ? (event) => handleTilesPressOut(event, () => onOpenDepartures?.(activeDirectionIndex)) : undefined}
-            style={[styles.prediction, styles.moreCard, { borderColor: route.color, width: tileWidth }]}
+            style={[styles.prediction, styles.moreCard, { borderColor: routeColor, width: tileWidth }]}
             testID="route-more-departures"
           >
             <Icon color={routeText} name="time" size={24} />
@@ -700,32 +719,28 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
         </ScrollView>
       )}
 
-      {/* Only a route with a delay or an alert gets this row; "No delays" needs no dropdown. */}
+      {/* Only a route with a delay or an alert gets this pill. It names the most pressing one,
+          yellow when service is disrupted now, and opens every alert in a sheet. */}
       {notices.length > 0 ? (
-        <>
-          <PressableScale accessibilityLabel="Service alerts" accessibilityRole="button" accessibilityState={{ expanded: alertsOpen }} onPress={() => {
-            ease();
-            setAlertsOpen((value) => !value);
-          }} style={styles.alertButton} testID="service-alerts">
-            <Icon color={colors.warning} filled={true} name="alert" size={18} style={styles.alertIcon} /><Text style={styles.alertText}>{hasDelays ? 'Delays and alerts' : 'Service alerts'}</Text><Text style={[styles.alertStatus, { color: colors.warning }]}>{hasDelays ? 'Delayed' : notices.length > 1 ? `${notices.length} advisories` : 'Advisory'}</Text><Icon color={colors.mutedInk} name={alertsOpen ? 'collapse' : 'expand'} size={18} style={styles.chevron} />
-          </PressableScale>
-          {alertsOpen ? (
-            <View style={styles.alertList} testID="service-alerts-list">
-              {notices.map((notice, index) => (
-                <View key={`${notice.kind}-${index}`} style={index > 0 ? styles.alertItemSpaced : undefined}>
-                  <Text style={[styles.alertBody, notice.detail ? styles.alertTitle : null]}>{notice.title}</Text>
-                  {notice.detail ? <Text style={styles.alertBody}>{notice.detail}</Text> : null}
-                </View>
-              ))}
-            </View>
-          ) : null}
-        </>
+        <PressableScale
+          accessibilityHint="Shows every alert for this line"
+          accessibilityLabel={`${notices[0]!.label}${notices.length > 1 ? `, ${notices.length - 1} more` : ''}`}
+          accessibilityRole="button"
+          onPress={() => setAlertsOpen(true)}
+          style={[styles.alertPill, notices[0]!.warning ? styles.alertPillWarning : styles.alertPillNeutral]}
+          testID="service-alerts"
+        >
+          <Icon color={notices[0]!.warning ? colors.onAlertYellow : colors.ink} filled={true} name={notices[0]!.warning ? 'warning' : 'info'} size={20} />
+          <Text numberOfLines={1} style={[styles.alertPillText, { color: notices[0]!.warning ? colors.onAlertYellow : colors.ink }]}>{notices[0]!.label}</Text>
+          {notices.length > 1 ? <Text style={[styles.alertPillMore, { color: notices[0]!.warning ? colors.onAlertYellow : colors.mutedInk }]}>{`+${notices.length - 1} more`}</Text> : null}
+          <Icon color={notices[0]!.warning ? colors.onAlertYellow : colors.mutedInk} name="forward" size={18} />
+        </PressableScale>
       ) : null}
+      <AlertsSheet notices={alertsOpen ? notices : null} onClose={() => setAlertsOpen(false)} />
 
-      <View style={styles.timelineHeading}><Text style={styles.timelineTitle}>Route stops</Text><View style={[styles.onTimeChip, selectedDelay !== null && styles.lateChip]} testID="route-stops-status"><View style={[styles.onTimeDot, selectedDelay !== null && styles.lateDot]} /><Text style={[styles.onTimeText, selectedDelay !== null && styles.lateText]}>{selectedDelay !== null ? `${selectedDelay} min late` : 'On time'}</Text></View></View>
-      <View accessibilityLabel="Stops for the next departure">
+      <View accessibilityLabel="Stops for the next departure" style={styles.stopList}>
         {liveStopsResult.status === 'loading' ? (
-          <StopListSkeleton color={route.color} />
+          <StopListSkeleton color={routeColor} />
         ) : liveStopsResult.status !== 'ready' ? (
           <View accessible={true} style={styles.predictionsEmpty} testID="route-stops-empty">
             <Text style={styles.predictionsEmptyText}>Stop times unavailable right now.</Text>
@@ -745,6 +760,15 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
             // at all — so there's always exactly one highlight and the wording never claims a
             // match that isn't real.
             const nearestMatchIndex = focusStopIndex(liveStops, activeDirection.stopId, activeDirection.stopName);
+            // The walk to the rider's stop, over the first stop when that's the one it leads to.
+            const walkMinutes = nearestMatchIndex === 0 && walkPath ? walkingMinutes(walkPath) : null;
+            // Just above the first stop's name, small: how long the walk there takes.
+            const walkNote = walkMinutes != null ? (
+              <View accessibilityLabel={`${walkMinutes} minute walk to ${liveStops[0]?.name ?? 'this stop'}`} accessible={true} style={styles.walkRow} testID="route-walk-time">
+                <Icon color={colors.mutedInk} filled={true} name="travel" size={12} />
+                <Text style={styles.walkText}>{`${walkMinutes} min`}</Text>
+              </View>
+            ) : null;
             return liveStops.map((stop, index) => {
               const isFirst = index === 0;
               const isLast = index === liveStops.length - 1;
@@ -759,7 +783,7 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
                 <PressableScale
                   key={`${stop.stopId ?? stop.name}-${index}`}
                   accessibilityHint={canOpen ? 'Shows the lines to change to here' : undefined}
-                  accessibilityLabel={`${stop.name}, ${isNearestMatch ? 'nearest to you, ' : ''}${isFirst ? 'departs' : 'arrives'} ${stop.time}${transferLabel}`}
+                  accessibilityLabel={`${stop.name}, ${isAccessibleStop?.(stop.stopId) ? 'wheelchair accessible, ' : ''}${isNearestMatch ? 'nearest to you, ' : ''}${isFirst ? 'departs' : 'arrives'} ${stop.time}${transferLabel}`}
                   accessibilityRole={canOpen ? 'button' : undefined}
                   disabled={!canOpen}
                   onPress={canOpen ? () => setTransfersSheet({ stop, transfers }) : undefined}
@@ -767,10 +791,10 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
                   style={styles.stopRow}
                   testID={`stop-row-${index}`}
                 >
-                  <View style={styles.timelineRail}>{!isFirst ? <View style={[styles.rail, styles.railTop, { backgroundColor: route.color }]} /> : null}<View style={[styles.stopDot, { borderColor: route.color }, isHighlighted && { backgroundColor: route.color }]} />{!isLast ? <View style={[styles.rail, styles.railBottom, { backgroundColor: route.color }]} /> : null}</View>
+                  <View style={styles.timelineRail}>{!isFirst ? <View style={[styles.rail, styles.railTop, { backgroundColor: routeColor }]} /> : null}<View style={[styles.stopDot, { borderColor: routeColor }, isHighlighted && { backgroundColor: routeColor }]} />{!isLast ? <View style={[styles.rail, styles.railBottom, { backgroundColor: routeColor }]} /> : null}</View>
                   {/* One divider spans the name and the time, not just the name. */}
                   <View style={styles.stopBody} testID={`stop-row-body-${stop.name}`}>
-                    <View style={styles.stopCopy}><Text style={styles.stopName}>{stop.name}</Text>{debug.overlays.ids && stop.stopId ? <Text selectable={true} style={styles.debugNote} testID={`stop-debug-id-${stop.stopId}`}>{`stop ${stop.stopId}`}</Text> : null}{transfers.length > 0 ? <TransferChips onShowAll={() => setTransfersSheet({ stop, transfers })} stopName={stop.name} transfers={transfers} /> : null}</View>
+                    <View style={styles.stopCopy}>{isFirst ? walkNote : null}<View style={styles.stopNameRow}><Text style={styles.stopName}>{stop.name}</Text>{isAccessibleStop?.(stop.stopId) ? <View accessibilityLabel="Wheelchair accessible" accessible={true} style={styles.wheelchair} testID={`stop-accessible-${index}`}><Icon color={colors.white} name="wheelchair" size={12} /></View> : null}</View>{debug.overlays.ids && stop.stopId ? <Text selectable={true} style={styles.debugNote} testID={`stop-debug-id-${stop.stopId}`}>{`stop ${stop.stopId}`}</Text> : null}{transfers.length > 0 ? <TransferChips onShowAll={() => setTransfersSheet({ stop, transfers })} stopName={stop.name} transfers={transfers} /> : null}</View>
                     <Text style={styles.stopTime}>{stop.time}</Text>
                   </View>
                 </PressableScale>
@@ -798,6 +822,20 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     shadowOpacity: 0.16,
     shadowRadius: 8,
     elevation: 4,
+  },
+  // Bus routes name themselves in the route's color straight on the map, haloed so it reads over streets.
+  mapBusLabel: {
+    position: 'absolute',
+    left: 16,
+    justifyContent: 'center',
+  },
+  mapBusLabelText: {
+    fontFamily: fontFamilies.black,
+    fontSize: 44,
+    letterSpacing: -0.5,
+    textShadowColor: colors.surface,
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 6,
   },
   mapFallback: {
     flex: 1,
@@ -827,20 +865,13 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   headingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  titleRow: {
-    minHeight: 34,
-    justifyContent: 'center',
+    gap: 8,
   },
   title: {
     color: colors.ink,
     ...typography.screenHeading,
     fontSize: 23,
     lineHeight: 27,
-  },
-  directionPager: {
-    flexGrow: 0,
-    marginHorizontal: 0,
   },
   tilesScroll: {
     flexGrow: 0,
@@ -923,6 +954,24 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     fontFamily: fontFamilies.bold,
     fontSize: 12,
   },
+  predictionEndStopBox: {
+    alignSelf: 'stretch',
+    marginTop: 10,
+    marginHorizontal: 8,
+    marginBottom: 2,
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  predictionEndStopBoxHighlighted: {
+    borderBottomColor: 'rgba(255, 255, 255, 0.45)',
+  },
+  predictionEndStop: {
+    fontFamily: fontFamilies.extraBold,
+    fontSize: 11,
+    lineHeight: 14,
+    textAlign: 'center',
+  },
   // Positioned so scheduled tiles keep the same number and label placement as live ones.
   // Filled pill so timetable tiles read clearly on both plain and route-colored tiles.
   predictionSource: {
@@ -937,105 +986,78 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     ...typography.label,
     fontSize: 8,
   },
-  pageDots: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 5,
-  },
-  pageDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.border,
-  },
-  alertButton: {
+  // The whole pill takes the alert's color: yellow for a disruption now, neutral otherwise.
+  alertPill: {
     minHeight: 48,
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
     marginTop: 12,
     paddingHorizontal: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
     borderRadius: 15,
-    backgroundColor: colors.background,
   },
-  alertIcon: {
-    marginRight: 8,
+  alertPillWarning: {
+    backgroundColor: colors.alertYellow,
   },
-  alertText: {
+  alertPillNeutral: {
+    backgroundColor: colors.surfaceMuted,
+  },
+  alertPillText: {
     flex: 1,
-    color: colors.ink,
     ...typography.bodyStrong,
   },
-  alertStatus: {
-    color: colors.success,
+  alertPillMore: {
     ...typography.metadata,
+    fontFamily: fontFamilies.bold,
   },
-  chevron: {
-    marginLeft: 8,
-    color: colors.mutedInk,
+  alertSheetContent: {
+    paddingTop: 6,
+  },
+  alertLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  alertLabelText: {
     fontFamily: fontFamilies.extraBold,
-  },
-  alertBody: {
-    paddingHorizontal: 14,
-    paddingTop: 8,
-    color: colors.mutedInk,
-    ...typography.metadata,
-  },
-  alertList: {
-    paddingBottom: 4,
+    fontSize: 12,
   },
   alertItemSpaced: {
-    marginTop: 6,
-    paddingTop: 2,
+    marginTop: 14,
+    paddingTop: 14,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
   },
   alertTitle: {
+    marginTop: 8,
     color: colors.ink,
+    ...typography.bodyStrong,
+  },
+  alertBody: {
+    marginTop: 4,
+    color: colors.mutedInk,
+    ...typography.metadata,
+  },
+  walkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    marginBottom: 1,
+  },
+  walkText: {
+    color: colors.mutedInk,
     fontFamily: fontFamilies.bold,
+    fontSize: 11,
   },
-  timelineHeading: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 22,
-    marginBottom: 4,
-  },
-  timelineTitle: {
-    color: colors.ink,
-    ...typography.sectionHeading,
-  },
-  onTimeChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 7,
-    borderRadius: 10,
-    backgroundColor: colors.greenSoft,
-  },
-  onTimeDot: {
-    width: 6,
-    height: 6,
-    marginRight: 5,
-    borderRadius: 3,
-    backgroundColor: colors.success,
-  },
-  onTimeText: {
-    color: colors.success,
-    fontFamily: fontFamilies.extraBold,
-    fontSize: 10,
-  },
-  lateChip: {
-    backgroundColor: colors.amberSoft,
-  },
-  lateDot: {
-    backgroundColor: colors.warning,
-  },
-  lateText: {
-    color: colors.warning,
+  stopList: {
+    marginTop: 14,
   },
   stopRow: {
-    minHeight: 74,
+    minHeight: 64,
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -1081,33 +1103,43 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   },
   transfers: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    overflow: 'hidden',
     alignItems: 'center',
-    gap: 4,
-    marginTop: 6,
+    gap: 5,
+    marginTop: 7,
   },
+  // Sign-sized badges, like the MTA's: 24 pt tall, bold.
   transferChip: {
-    minWidth: 22,
-    height: 20,
+    minWidth: 24,
+    height: 24,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 6,
-    borderRadius: 5,
+    gap: 4,
+    paddingHorizontal: 8,
+    borderRadius: 10,
   },
   // Subway bullets are round, as on MTA signage.
   subwayChip: {
-    width: 20,
-    minWidth: 20,
+    width: 24,
+    minWidth: 24,
     paddingHorizontal: 0,
-    borderRadius: 10,
+    borderRadius: 12,
   },
   transferText: {
     fontFamily: fontFamilies.extraBold,
-    fontSize: 10,
+    fontSize: 12,
   },
+  subwayText: {
+    fontSize: 13,
+  },
+  // "+N" as a soft pill the same height as the badges.
   transferMoreButton: {
+    height: 24,
     justifyContent: 'center',
-    minHeight: 20,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    backgroundColor: colors.surfaceMuted,
   },
   sheetBackdrop: {
     flex: 1,
@@ -1145,20 +1177,34 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     ...typography.label,
   },
   transferMore: {
-    marginLeft: 2,
     color: colors.mutedInk,
-    fontFamily: fontFamilies.bold,
-    fontSize: 11,
+    fontFamily: fontFamilies.extraBold,
+    fontSize: 12,
+  },
+  stopNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  // The International Symbol of Access: white on blue, small.
+  wheelchair: {
+    width: 17,
+    height: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 4,
+    backgroundColor: '#1F5FBF',
   },
   stopName: {
     color: colors.ink,
-    fontFamily: fontFamilies.bold,
+    fontFamily: fontFamilies.extraBold,
     fontSize: 16,
   },
   stopTime: {
     paddingLeft: 10,
-    color: colors.ink,
-    fontFamily: fontFamilies.extraBold,
-    fontSize: 16,
+    color: colors.mutedInk,
+    fontFamily: fontFamilies.regular,
+    fontSize: 15,
   },
 });

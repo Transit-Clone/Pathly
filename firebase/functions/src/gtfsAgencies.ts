@@ -67,6 +67,11 @@ export type AgencyConfig = {
   onDemandRouteFiles?: boolean;
   /** The agency_ids MTA's service-alert feed files this agency's routes under (see gtfsAlerts.ts); none for agencies it doesn't cover. */
   serviceAlertAgencyIds?: readonly string[];
+  /**
+   * The agency's own GTFS-RT service-alerts feed, for agencies MTA's feed doesn't cover. Tried in
+   * order until one answers (Swiftly's path isn't documented publicly); none for agencies without one.
+   */
+  alertFeedRequests?: () => FeedRequest[];
   /** Secret (an env var at runtime) the live feed needs; a feed without one is public. */
   liveFeedSecret?: 'SWIFTLY_API_KEY' | 'MTA_BUS_TIME_API_KEY';
   /** Some agencies split their GTFS-RT feed by line group (subway) or by feed type (Swiftly-hosted agencies' trip-updates/vehicle-positions); most publish one combined feed for the whole system (LIRR). */
@@ -115,6 +120,15 @@ function swiftlyFeedRequests(agencyKey: string): FeedRequest[] {
  * (`firebase functions:secrets:set MTA_BUS_TIME_API_KEY`; injected into `process.env` by the live
  * callables' `secrets` option). gtfsRealtime.ts leaves the query string out of its error messages.
  */
+/** Swiftly's service alerts for an agency: the plain path, then the v2 one. */
+function swiftlyAlertRequests(agencyKey: string): FeedRequest[] {
+  const headers = { Authorization: process.env.SWIFTLY_API_KEY ?? '' };
+  return [
+    { url: `https://api.goswift.ly/real-time/${agencyKey}/gtfs-rt-alerts`, headers },
+    { url: `https://api.goswift.ly/real-time/${agencyKey}/gtfs-rt-alerts/v2`, headers },
+  ];
+}
+
 function busTimeFeedRequests(): FeedRequest[] {
   const key = encodeURIComponent(process.env.MTA_BUS_TIME_API_KEY ?? '');
   return [
@@ -200,6 +214,7 @@ export const AGENCY_CONFIGS: Record<AgencyId, AgencyConfig> = {
     realtimeTripIdsMatchStatic: false,
     liveFeedSecret: 'SWIFTLY_API_KEY',
     feedRequestsForRoute: () => swiftlyFeedRequests('nice-bus'),
+    alertFeedRequests: () => swiftlyAlertRequests('nice-bus'),
   },
   suffolk: {
     id: 'suffolk',
@@ -215,6 +230,7 @@ export const AGENCY_CONFIGS: Record<AgencyId, AgencyConfig> = {
     realtimeTripIdsMatchStatic: true,
     liveFeedSecret: 'SWIFTLY_API_KEY',
     feedRequestsForRoute: () => swiftlyFeedRequests('suffolk-county'),
+    alertFeedRequests: () => swiftlyAlertRequests('suffolk-county'),
   },
   bx: mtaBusConfig('bx', 'gtfs_bx'),
   bk: mtaBusConfig('bk', 'gtfs_b'),
@@ -236,6 +252,8 @@ export const AGENCY_CONFIGS: Record<AgencyId, AgencyConfig> = {
     onDemandRouteFiles: true,
     // Trip updates only: NYC Ferry publishes no vehicle positions.
     feedRequestsForRoute: () => [{ url: 'https://nycferry.connexionz.net/rtt/public/utility/gtfsrealtime.aspx/tripupdate' }],
+    // Same host's service alerts (answered with an empty feed when there are none, checked 2026-10-25).
+    alertFeedRequests: () => [{ url: 'https://nycferry.connexionz.net/rtt/public/utility/gtfsrealtime.aspx/alert' }],
   },
   siferry: {
     id: 'siferry',

@@ -2,6 +2,7 @@ import { Nunito_400Regular } from '@expo-google-fonts/nunito/400Regular';
 import { Nunito_600SemiBold } from '@expo-google-fonts/nunito/600SemiBold';
 import { Nunito_700Bold } from '@expo-google-fonts/nunito/700Bold';
 import { Nunito_800ExtraBold } from '@expo-google-fonts/nunito/800ExtraBold';
+import { Nunito_900Black } from '@expo-google-fonts/nunito/900Black';
 import { useFonts } from '@expo-google-fonts/nunito/useFonts';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
@@ -49,6 +50,7 @@ export default function App() {
     Nunito_600SemiBold,
     Nunito_700Bold,
     Nunito_800ExtraBold,
+    Nunito_900Black,
     ...Ionicons.font,
     ...MaterialCommunityIcons.font,
   });

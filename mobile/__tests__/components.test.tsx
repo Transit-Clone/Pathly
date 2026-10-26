@@ -75,8 +75,8 @@ describe('RouteBadge', () => {
     const rail = StyleSheet.flatten(screen.getByTestId('rail').props.style);
 
     expect(subway).toMatchObject({ height: 46, width: 46, borderRadius: 23 });
-    expect(bus).toMatchObject({ height: 46, borderRadius: 12 });
-    expect(rail).toMatchObject({ height: 46, borderRadius: 4 });
+    expect(bus).toMatchObject({ height: 46, borderRadius: 18 });
+    expect(rail).toMatchObject({ height: 46, borderRadius: 18 });
   });
 });
 
@@ -244,7 +244,7 @@ describe('RouteMap', () => {
     const screen = render(<RouteMap color="#A626AA" focusStopId="0" stops={stops} vehicles={[]} walkPath={walkPath} />);
     const walk = screen.getByTestId('route-walk', { includeHiddenElements: true });
     expect(walk.props.coordinates).toEqual(walkPath.map((point) => ({ latitude: point.lat, longitude: point.lon })));
-    expect(walk.props.lineDashPattern).toEqual([2, 8]);
+    expect(walk.props.lineDashPattern).toEqual([1, 10]);
   });
 });
 
@@ -259,7 +259,7 @@ describe('badgeLabel', () => {
     expect(badgeLabel({ agency: 'NICE Bus', shortName: 'Roosevelt Field Shuttle Line' })).toBe('RFS');
     // A single route code is shown whole: "S" would read as the S shuttle, not the SIM3C.
     expect(badgeLabel({ agency: 'MTA Bus Company', shortName: 'SIM3C' })).toBe('SIM3C');
-    expect(badgeLabel({ agency: 'MTA New York City Transit', shortName: 'Q44-SBS' })).toBe('Q44-SBS');
+    expect(badgeLabel({ agency: 'MTA New York City Transit', shortName: 'Q44-SBS' })).toBe('Q44+');
   });
 });
 

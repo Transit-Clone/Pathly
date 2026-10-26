@@ -1,5 +1,6 @@
 import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
+import { useRouteColor } from '../data/routeColors';
 import { useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies } from '../theme/typography';
@@ -35,7 +36,7 @@ const LIRR_BRANCH_CODES: Record<string, string> = {
   'West Hempstead': 'WH',
 };
 
-// Single-word route codes up to this long are shown whole (`SIM3C`, `BxM10`, `Q44-SBS`): cutting
+// Single-word route codes up to this long are shown whole (`SIM3C`, `BxM10`, `SIM10`): cutting
 // one down to initials would name a different route.
 const MAX_ROUTE_CODE = 7;
 
@@ -45,6 +46,8 @@ const MAX_ROUTE_CODE = 7;
  * name without "Branch"/"Line".
  */
 export function badgeLabel(route: { agency: string; shortName: string }): string {
+  // Select Bus Service is signed the MTA's way: `M15+`, not `M15-SBS`.
+  if (/-SBS$/i.test(route.shortName)) return `${route.shortName.replace(/-SBS$/i, '')}+`;
   if (route.shortName.length <= MAX_BADGE_LABEL) return route.shortName;
   if (!/\s/.test(route.shortName) && route.shortName.length <= MAX_ROUTE_CODE) return route.shortName;
   const name = route.shortName.replace(/\s+(Branch|Line|Service)$/i, '').trim();
@@ -64,6 +67,8 @@ const sizes = {
   small: { height: 28, fontSize: 12, icon: 13, padding: 7 },
   medium: { height: 36, fontSize: 14, icon: 15, padding: 9 },
   large: { height: 46, fontSize: 17, icon: 18, padding: 11 },
+  // Route view's sign over its map: big enough to read at a glance, like the bus name beside it.
+  xlarge: { height: 58, fontSize: 30, icon: 22, padding: 14 },
 } as const;
 
 type RouteBadgeProps = {
@@ -93,6 +98,7 @@ export function RouteBadge({
 }: RouteBadgeProps) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
+  const routeColor = useRouteColor()(color);
   const mode = modeOverride ?? transitModeForAgency(agency);
   const metrics = sizes[size];
   // Ferries always carry the boat: with the pill shape, it's what sets them apart from buses.
@@ -109,7 +115,7 @@ export function RouteBadge({
         style={[styles.badge, { width: metrics.height, height: metrics.height }, style]}
         testID={testID}
       >
-        <View style={[styles.diamond, { width: side, height: side, backgroundColor: color }]} />
+        <View style={[styles.diamond, { width: side, height: side, backgroundColor: routeColor }]} />
         <Text style={[styles.text, { fontSize: metrics.fontSize }, textColor ? { color: textColor } : null]}>{expressLine}</Text>
       </View>
     );
@@ -121,10 +127,10 @@ export function RouteBadge({
       accessible={true}
       style={[
         styles.badge,
-        { height: metrics.height, minWidth: metrics.height, backgroundColor: color },
+        { height: metrics.height, minWidth: metrics.height, backgroundColor: routeColor },
         mode === 'subway' && { width: metrics.height, borderRadius: metrics.height / 2 },
-        mode === 'bus' && { paddingHorizontal: metrics.padding, borderRadius: Math.round(metrics.height * 0.25) },
-        mode === 'rail' && { paddingHorizontal: metrics.padding, borderRadius: 4 },
+        mode === 'bus' && { paddingHorizontal: metrics.padding, borderRadius: Math.round(metrics.height * 0.4) },
+        mode === 'rail' && { paddingHorizontal: metrics.padding, borderRadius: Math.round(metrics.height * 0.4) },
         mode === 'ferry' && { paddingHorizontal: metrics.padding, borderRadius: metrics.height / 2 },
         style,
       ]}

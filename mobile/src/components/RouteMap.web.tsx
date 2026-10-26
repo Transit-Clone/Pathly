@@ -1,17 +1,20 @@
-import { GoogleMap, Marker, OverlayViewF, OVERLAY_MOUSE_TARGET, Polyline, useJsApiLoader } from '@react-google-maps/api';
+import { GoogleMap, Marker, OverlayViewF, OVERLAY_LAYER, OVERLAY_MOUSE_TARGET, Polyline, useJsApiLoader } from '@react-google-maps/api';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_SCRIPT_ID } from '../data/googleMapsLoaderConfig';
 import { formatAge, visibleTrains } from '../data/liveTrains';
 import { googleMapStyle } from '../data/mapStyle';
-import { bearingToNextStop, focusStopIndex, splitIndexAtStop } from '../data/routeDirection';
+import { directionArrowAt, focusStopIndex, splitPathAtStop } from '../data/routeDirection';
 import { stopRevealZoom } from '../data/stopDeclutter';
 import type { RouteLiveVehicle } from '../data/transitLive';
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { useNow } from '../hooks/useNow';
 import { useTheme } from '../theme/AppSettings';
 import type { TransitMode } from './RouteBadge';
+import { HeadingBeamMarker } from './HeadingBeamMarker';
+import { Glide } from '../hooks/useGlide';
+import { DIRECTION_ARROW_BOX, DirectionArrow } from './DirectionArrow';
 
 type GeometryStop = { stopId?: string; name: string; lat: number; lon: number };
 
@@ -29,15 +32,10 @@ const BEHIND_LINE_OPACITY = 0.35;
 // so they sit inside it like beads. Only the rider's own stop is drawn larger, so it stands out.
 const LINE_WIDTH = 8;
 const STOP_RING = 1.5;
-// The direction arrow beside the rider's stop: an arrowhead (tip up at rotation 0) drawn in
-// symbol units, anchored below itself so it sits just outside the stop dot, in screen pixels, at
-// any zoom. With scale 1.5 its wings start 12 px from the stop's center and its tip is 30 px out.
-const DIRECTION_ARROW_PATH = 'M 0 -8 L 6 4 L 0 1 L -6 4 Z';
-const DIRECTION_ARROW_SCALE = 1.5;
-const DIRECTION_ARROW_ANCHOR_Y = 12;
 const STOP_DOT_SCALE = (LINE_WIDTH - STOP_RING) / 2;
 // The walk to the stop: a row of dots, matching TripMap.web.tsx's walking legs.
-const WALK_DOT_SCALE = 2.5;
+// Walks are plain round gray dots, which read from far out over any street.
+const WALK_DOT_SCALE = 3.5;
 
 // Vehicle marker geometry: circle at bottom-left of a larger box so the age badge can overhang its top-right.
 const VEHICLE_SIZE = 42;
@@ -101,6 +99,8 @@ type RouteMapProps = {
 };
 
 /** Real route map: actual stop positions, the real line, and live vehicles — for any route with a live feed. */
+const arrowOffset = () => ({ x: -DIRECTION_ARROW_BOX / 2, y: -DIRECTION_ARROW_BOX / 2 });
+
 export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusStopId, focusStopName, mode = 'rail', onUserPan, path, showRouteRequest = 0, stops, testID = 'route-map', userLocation, vehicles, walkPath }: RouteMapProps) {
   const { isLoaded } = useJsApiLoader({
     id: GOOGLE_MAPS_SCRIPT_ID,
@@ -126,14 +126,14 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
   const vehicleLabel = mode === 'bus' ? 'Bus' : 'Train';
   const focusStop = stops[focusStopIndex(stops, focusStopId, focusStopName)];
 
-  // Split at the rider's stop: faint behind it, full strength ahead, with an arrow toward the next stop.
+  // Split at the rider's stop: faint behind it, full strength ahead.
   const line = useMemo(() => {
     const points = path ?? stops;
     const toPath = (part: readonly { lat: number; lon: number }[]) => part.map((point) => ({ lat: point.lat, lng: point.lon }));
     const focusIndex = focusStop ? stops.indexOf(focusStop) : -1;
-    if (focusIndex < 0) return { behind: [], ahead: toPath(points), focusIndex, bearing: null };
-    const split = splitIndexAtStop(points, stops, focusIndex);
-    return { behind: toPath(points.slice(0, split + 1)), ahead: toPath(points.slice(split)), focusIndex, bearing: bearingToNextStop(stops, focusIndex) };
+    if (focusIndex < 0) return { behind: [], ahead: toPath(points), focusIndex, arrow: null };
+    const { behind, ahead } = splitPathAtStop(points, stops, focusIndex);
+    return { behind: toPath(behind), ahead: toPath(ahead), focusIndex, arrow: directionArrowAt(ahead) };
   }, [focusStop, path, stops]);
   const polylineOptions = useMemo(() => ({ strokeColor: color, strokeWeight: LINE_WIDTH, zIndex: 1 }), [color]);
   const behindPolylineOptions = useMemo(() => ({ strokeColor: color, strokeOpacity: BEHIND_LINE_OPACITY, strokeWeight: LINE_WIDTH, zIndex: 0 }), [color]);
@@ -209,29 +209,11 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
             <Polyline
               options={{
                 strokeOpacity: 0,
-                icons: [{ icon: { path: google.maps.SymbolPath.CIRCLE, scale: WALK_DOT_SCALE, fillColor: colors.mutedInk, fillOpacity: 1, strokeOpacity: 0 }, offset: '0', repeat: '10px' }],
+                icons: [{ icon: { path: google.maps.SymbolPath.CIRCLE, scale: WALK_DOT_SCALE, fillColor: colors.mutedInk, fillOpacity: 1, strokeWeight: 0 }, offset: '0', repeat: '13px' }],
                 zIndex: 2,
                 clickable: false,
               }}
               path={walkPath.map((point) => ({ lat: point.lat, lng: point.lon }))}
-            />
-          ) : null}
-          {line.bearing != null && focusStop ? (
-            // One arrow right beside the rider's stop, pointing at the next stop.
-            <Marker
-              clickable={false}
-              icon={{
-                path: DIRECTION_ARROW_PATH,
-                scale: DIRECTION_ARROW_SCALE,
-                rotation: line.bearing,
-                anchor: new google.maps.Point(0, DIRECTION_ARROW_ANCHOR_Y),
-                fillColor: color,
-                fillOpacity: 1,
-                strokeColor: '#FFFFFF',
-                strokeWeight: 2,
-              }}
-              position={{ lat: focusStop.lat, lng: focusStop.lon }}
-              zIndex={3}
             />
           ) : null}
           {stops.map((stop, stopIndex) => {
@@ -243,9 +225,9 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
               <Marker
                 key={`${stop.stopId ?? stop.name}-${stopIndex}`}
                 // A circle symbol is centered on its position by definition, unlike a pin. The
-                // rider's nearest stop is larger and filled, with a white ring.
+                // rider's nearest stop is larger and white, with a thick ring in the route color.
                 icon={focused
-                  ? { path: google.maps.SymbolPath.CIRCLE, scale: 9, fillColor: color, fillOpacity: 1, strokeColor: '#FFFFFF', strokeWeight: 3 }
+                  ? { path: google.maps.SymbolPath.CIRCLE, scale: 9, fillColor: '#FFFFFF', fillOpacity: 1, strokeColor: color, strokeWeight: 4 }
                   : { path: google.maps.SymbolPath.CIRCLE, scale: STOP_DOT_SCALE, fillColor: '#FFFFFF', fillOpacity: 1, strokeColor: color, strokeOpacity: passed ? BEHIND_LINE_OPACITY : 1, strokeWeight: STOP_RING }}
                 onClick={() => setSelectedStop(stop)}
                 position={{ lat: stop.lat, lng: stop.lon }}
@@ -274,30 +256,40 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
               </div>
             </OverlayViewF>
           ) : null}
+          {userLocation ? <HeadingBeamMarker coordinate={userLocation} /> : null}
           {userLocation ? (
             // Same blue "you are here" dot as the home map.
             <Marker
               clickable={false}
-              icon={{ path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: '#4285F4', fillOpacity: 1, strokeColor: '#FFFFFF', strokeWeight: 2 }}
+              icon={{ path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: '#4285F4', fillOpacity: 1, strokeColor: colors.ring, strokeWeight: 2 }}
               position={{ lat: userLocation.latitude, lng: userLocation.longitude }}
               title="Your location"
               zIndex={3}
             />
           ) : null}
-          {shownVehicles.map((vehicle) => (
-            <Marker
-              key={vehicle.tripId}
-              icon={{
-                url: vehicleIconUrl(color, vehicle.updatedAt != null ? formatAge(now - vehicle.updatedAt) : null),
-                scaledSize: new google.maps.Size(VEHICLE_BOX, VEHICLE_BOX),
-                // Anchor on the circle's center, not the badge-inclusive box's.
-                anchor: new google.maps.Point(VEHICLE_SIZE / 2, VEHICLE_BOX - VEHICLE_SIZE / 2),
-              }}
-              position={{ lat: vehicle.lat, lng: vehicle.lon }}
-              title={vehicleLabel}
-              zIndex={2}
-            />
-          ))}
+          {line.arrow ? (
+            // Which way the line runs, beside it just past the rider's stop (web maps stay north-up).
+            <OverlayViewF getPixelPositionOffset={arrowOffset} mapPaneName={OVERLAY_LAYER} position={{ lat: line.arrow.point.lat, lng: line.arrow.point.lon }}>
+              <View pointerEvents="none" style={{ width: DIRECTION_ARROW_BOX, height: DIRECTION_ARROW_BOX, transform: [{ rotate: `${line.arrow.bearing}deg` }] }} testID="route-direction-arrow">
+                <DirectionArrow color={color} />
+              </View>
+            </OverlayViewF>
+          ) : null}
+          {shownVehicles.map((vehicle) => {
+            // Built once per refresh, not per glide frame, so the marker never redraws its icon mid-slide.
+            const icon = {
+              url: vehicleIconUrl(color, vehicle.updatedAt != null ? formatAge(now - vehicle.updatedAt) : null),
+              scaledSize: new google.maps.Size(VEHICLE_BOX, VEHICLE_BOX),
+              // Anchor on the circle's center, not the badge-inclusive box's.
+              anchor: new google.maps.Point(VEHICLE_SIZE / 2, VEHICLE_BOX - VEHICLE_SIZE / 2),
+            };
+            // Each vehicle glides to its refreshed spot rather than jumping there.
+            return (
+              <Glide key={vehicle.tripId} lat={vehicle.lat} lon={vehicle.lon}>
+                {(point) => <Marker icon={icon} position={{ lat: point.lat, lng: point.lon }} title={vehicleLabel} zIndex={2} />}
+              </Glide>
+            );
+          })}
         </GoogleMap>
       ) : null}
     </View>

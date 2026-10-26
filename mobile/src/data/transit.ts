@@ -65,10 +65,38 @@ export type RoutePrediction = {
   peakOffpeak?: boolean | null;
   /** Minutes a tracked trip is running behind its timetable (negative: ahead); null or absent when unknown or not tracked. */
   delayMinutes?: number | null;
+  /** Where this trip ends, when known: some of a direction's trips stop short of its usual terminal. */
+  headsign?: string | null;
 };
 
-/** One MTA service alert in effect on a route (delays, reroutes, suspensions, planned work). */
-export type ServiceAlert = { id: string; header: string; description: string | null };
+/**
+ * A departure's own end stop, when it isn't the direction's usual one (an S76 ending at Clove Rd
+ * rather than Oakwood): its time card says so. Null when it goes the usual way, or isn't known.
+ */
+export function differentEndStop(prediction: { headsign?: string | null }, usualDestination: string): string | null {
+  const own = prediction.headsign?.trim();
+  if (!own) return null;
+  const simplify = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const usual = simplify(usualDestination);
+  const mine = simplify(own);
+  // "Penn Station" and "New York Penn Station" are the same terminal.
+  return !usual || mine === usual || mine.includes(usual) || usual.includes(mine) ? null : own;
+}
+
+/**
+ * One service alert on a route (delays, detours, suspensions, planned work), in effect now or
+ * starting soon. `label`, `warning` and `upcoming` are absent from functions deployed before them.
+ */
+export type ServiceAlert = {
+  id: string;
+  header: string;
+  description: string | null;
+  /** A short name for it: "Detour in effect", "Upcoming service change". */
+  label?: string;
+  /** Disrupts service now, so it's shown in warning yellow; otherwise neutral. */
+  warning?: boolean;
+  upcoming?: boolean;
+};
 
 export function minuteLabel(minutes: number): string {
   return minutes === 1 ? 'minute' : 'minutes';

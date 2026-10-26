@@ -297,6 +297,16 @@ describe('Pathly prototype navigation', () => {
     expect(mockAutocompletePlaces).toHaveBeenCalledTimes(1);
   });
 
+  it('shows a saved place that matches the search first, with its own icon', async () => {
+    await saveLocation('test-uid', { id: 'gym-place', title: 'Gold Gym', subtitle: '5 Oak St', location: { latitude: 40.8, longitude: -73.1 } }, 'Destination');
+    const screen = await renderHome();
+    fireEvent.press(screen.getByTestId('search-trigger'));
+    fireEvent.changeText(screen.getByTestId('search-input'), 'oak');
+    const row = await screen.findByTestId('search-result-gym-place');
+    expect(within(row).getByTestId('search-kind-icon-saved', { includeHiddenElements: true })).toBeTruthy();
+    expect(within(row).getByText('Gold Gym')).toBeTruthy();
+  });
+
   it('shows the empty state when Google finds no places', async () => {
     const screen = await renderHome();
     fireEvent.press(screen.getByTestId('search-trigger'));
@@ -825,6 +835,9 @@ describe('Pathly prototype navigation', () => {
     expect(screen.queryByTestId('saved-place-marker-name%3AFuture', { includeHiddenElements: true })).toBeNull();
     const calls = planTripMock().mock.calls.length;
     fireEvent.press(marker);
+    // The marker opens the place's details first; Go plans the trip.
+    expect(planTripMock().mock.calls.length).toBe(calls);
+    fireEvent.press(await screen.findByTestId('saved-place-details-go-work-place'));
 
     expect(await screen.findByTestId('route-results-view')).toBeTruthy();
     await waitFor(() => expect(planTripMock().mock.calls.length).toBe(calls + 1));
@@ -1150,7 +1163,7 @@ describe('Pathly prototype navigation', () => {
     expect(backgroundOf(screen.getByTestId('transit-sheet'))).toBe(darkColors.surface);
   });
 
-  it('renders home surfaces dark while route cards keep their colors', async () => {
+  it('renders home surfaces dark while subway cards keep their official colors', async () => {
     const screen = await renderDark();
     expect(backgroundOf(screen.getByTestId('transit-sheet'))).toBe(darkColors.surface);
     // Only reachable once the mocked dynamic discovery resolves (jest.setup.js's
@@ -1824,10 +1837,10 @@ describe('Pathly prototype navigation', () => {
           <RouteDetailView isFavorite={false} onBack={jest.fn()} onToggleFavorite={jest.fn()} route={routeById.s1} />
         </AppSettingsProvider>,
       );
-      expect(s1.getByText('Advisory')).toBeTruthy();
+      expect(within(s1.getByTestId('service-alerts')).getByText('Service advisory')).toBeTruthy();
       expect(s1.queryByText(routeById.s1.alert)).toBeNull();
       fireEvent.press(s1.getByTestId('service-alerts'));
-      expect(s1.getByText(routeById.s1.alert)).toBeTruthy();
+      expect(within(s1.getByTestId('service-alerts-list')).getByText(routeById.s1.alert)).toBeTruthy();
       await act(async () => {}); // settle the route's geometry fetch
     });
 
@@ -1906,7 +1919,7 @@ describe('Pathly prototype navigation', () => {
         const dot = StyleSheet.flatten(within(stop).getByTestId(`route-dot-${name}`, hidden).props.style);
         // Westbound from Stony Brook, Port Jefferson is behind the rider: its outline is faint.
         expect(dot).toMatchObject(name === 'Stony Brook'
-          ? { backgroundColor: routeById.ronkonkoma.color, borderColor: '#FFFFFF', width: 20 }
+          ? { backgroundColor: '#FFFFFF', borderColor: routeById.ronkonkoma.color, width: 20 }
           : { backgroundColor: '#FFFFFF', borderColor: name === 'Port Jefferson' ? `${routeById.ronkonkoma.color}59` : routeById.ronkonkoma.color, width: 8 });
         // Ordinary stops are exactly as wide as the line, so they don't bulge out of it.
         if (name !== 'Stony Brook') expect(dot.width).toBe(routeLine.props.strokeWidth);
@@ -1930,25 +1943,18 @@ describe('Pathly prototype navigation', () => {
       expect(overlay?.props.pointerEvents).toBe('none');
     });
 
-    it("points an arrow from the rider's stop toward the next stop, flipping with the direction", async () => {
+    it("points an arrow beside the line past the rider's stop, and the line turns full strength right at the stop", async () => {
       const screen = await openPortJefferson();
-      // One arrow, anchored at the rider's stop and turned to the line's bearing there. Mocked
-      // westbound runs southeast across the map (lat falls, lon rises): bearing 90°–180°.
-      const arrow = () => screen.getByTestId('route-direction-arrow', hidden);
-      const bearing = () => arrow().props.rotation;
-      expect(screen.getAllByTestId('route-direction-arrow', hidden)).toHaveLength(1);
-      expect(arrow().props.flat).toBe(true);
-      // Anchored at Stony Brook itself (mocked at 40.89, -73.09).
-      expect(arrow().props.coordinate.latitude).toBeCloseTo(40.89, 6);
-      expect(arrow().props.coordinate.longitude).toBeCloseTo(-73.09, 6);
-      expect(bearing()).toBeGreaterThan(90);
-      expect(bearing()).toBeLessThan(180);
-
-      // Eastbound flips it to the northwest.
-      fireEvent.press(screen.getAllByLabelText(/^Show .* predictions$/)[1]!);
-      await waitFor(() => expect(bearing()).toBeGreaterThan(270));
-      // Eastbound from Stony Brook only Port Jefferson is ahead; everything else is behind.
-      expect(screen.getByTestId('route-line', hidden).props.coordinates).toHaveLength(3 + 1);
+      // The arrow sits along the line ahead of the stop, not on Stony Brook itself.
+      const arrow = screen.getByTestId('route-direction-arrow', hidden);
+      expect(arrow.props.coordinate.latitude).not.toBeCloseTo(40.89, 4);
+      expect(arrow.props.flat).toBe(true);
+      // The faint part ends, and the full part starts, at Stony Brook itself (mocked at 40.89, -73.09).
+      const ahead = screen.getByTestId('route-line', hidden).props.coordinates;
+      const behind = screen.getByTestId('route-line-behind', hidden).props.coordinates;
+      expect(ahead[0].latitude).toBeCloseTo(40.89, 6);
+      expect(ahead[0].longitude).toBeCloseTo(-73.09, 6);
+      expect(behind.at(-1)).toEqual(ahead[0]);
     });
 
     it('lets only the live route map take gestures through the scrolling page', async () => {
@@ -2011,12 +2017,12 @@ describe('Pathly prototype navigation', () => {
       const jamaicaOtherModes = STATION_TRANSFERS.Jamaica!.filter((transfer) => transfer.agency !== 'LIRR');
       const jamaica = within(screen.getByTestId('stop-transfers-Jamaica', hidden));
       const chips = jamaica.getAllByTestId(/^route-transfer-Jamaica-/, hidden);
-      expect(chips).toHaveLength(8);
+      expect(chips).toHaveLength(6);
       for (const branch of STATION_TRANSFERS.Jamaica!.filter((transfer) => transfer.agency === 'LIRR')) {
         expect(screen.queryByTestId(`route-transfer-Jamaica-${branch.name}`, hidden)).toBeNull();
       }
       expect(screen.getByTestId('route-transfer-Jamaica-E', hidden)).toBeTruthy();
-      expect(within(screen.getByTestId('stop-transfers-more-Jamaica', hidden)).getByText(`+${jamaicaOtherModes.length - 8}`, hidden)).toBeTruthy();
+      expect(within(screen.getByTestId('stop-transfers-more-Jamaica', hidden)).getByText(`+${jamaicaOtherModes.length - 6}`, hidden)).toBeTruthy();
       // No fare row on route detail (any route).
       expect(screen.queryByTestId('route-fare')).toBeNull();
       expect(screen.queryByTestId('stop-transfers-St. James', hidden)).toBeNull();
@@ -2106,7 +2112,7 @@ describe('Pathly prototype navigation', () => {
       const rowWidth = Math.min(750, 540) - 36; // jest's window is 750 pt wide
       expect(tileWidth * 3.5 + 8 * 3).toBeLessThanOrEqual(rowWidth);
 
-      // The direction dots share the heading's row, above (not inside) the tiles.
+      // The direction switch sits above (not inside) the tiles.
       let headingRow = screen.getByTestId('route-detail-destination').parent;
       while (headingRow && within(headingRow).queryAllByLabelText(/^Show .* predictions$/).length === 0) headingRow = headingRow.parent;
       expect(within(headingRow!).queryByTestId('route-predictions-scroll')).toBeNull();
@@ -2115,8 +2121,8 @@ describe('Pathly prototype navigation', () => {
       fireEvent.scroll(tiles, { nativeEvent: { contentOffset: { x: 240, y: 0 } } });
       expect(screen.getByTestId('route-detail-destination').props.children).toBe('Penn Station');
 
-      // Swiping the heading switches direction; the tiles follow, and a short list still ends with More.
-      fireEvent(screen.getByTestId('route-direction-pager'), 'momentumScrollEnd', { nativeEvent: { contentOffset: { x: 354, y: 0 } } });
+      // Picking the other side of the switch changes direction; the tiles follow, and a short list still ends with More.
+      fireEvent.press(screen.getByTestId('route-direction-switch-1'));
       expect(screen.getByTestId('route-detail-destination').props.children).toBe('Port Jefferson');
       expect(screen.getAllByLabelText(/^Show .* predictions$/)[1]!.props.accessibilityState).toEqual({ selected: true });
       expect(screen.getByTestId('route-prediction-1-1')).toBeTruthy();
@@ -2264,9 +2270,7 @@ describe('Pathly prototype navigation', () => {
     });
     expect(screen.getByTestId('route-location').props.accessibilityState).toEqual({ selected: true });
 
-    fireEvent(screen.getByTestId('route-direction-pager'), 'momentumScrollEnd', {
-      nativeEvent: { contentOffset: { x: 354, y: 0 } },
-    });
+    fireEvent.press(screen.getByTestId('route-direction-switch-1'));
     expect(screen.getByTestId('route-detail-destination').props.children).toBe('Port Jefferson');
     expect(screen.queryByText('Eastbound to Port Jefferson')).toBeNull();
   });

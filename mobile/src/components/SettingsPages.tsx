@@ -147,7 +147,7 @@ export function NotificationSettings({ onFeedback }: PageProps) {
   const setLineAlerts = (route: SavedRoute, label: string) => {
     const option = ROUTE_ALERT_OPTIONS.find((candidate) => candidate.label === label);
     if (!uid || !option) return;
-    setRouteAlerts(uid, route.id, option.value).catch(() => undefined);
+    setRouteAlerts(uid, route.id, option.value, route.alertHours).catch(() => undefined);
     if (option.value !== 'off') void registerForRouteAlerts(uid);
     onFeedback(`${route.shortName || route.routeName} alerts: ${option.label}`);
   };
@@ -174,12 +174,12 @@ export function NotificationSettings({ onFeedback }: PageProps) {
             label={route.shortName && route.shortName !== route.routeName ? `${route.shortName} · ${route.routeName}` : route.routeName}
             onSelect={(label) => setLineAlerts(route, label)}
             options={ROUTE_ALERT_OPTIONS.map((option) => option.label)}
-            selected={ROUTE_ALERT_OPTIONS.find((option) => option.value === route.alerts)?.label ?? 'Off'}
+            selected={ROUTE_ALERT_OPTIONS.find((option) => option.value === (route.alerts === 'peak' ? 'custom' : route.alerts))?.label ?? 'Never'}
             testPrefix={`line-alerts-${route.id}`}
           />
         ))}
       </Card>
-      <Text style={profile.note} testID="notifications-not-sent">{"Peak times are weekdays 6–10 AM and 4–8 PM. Line alerts arrive as push notifications in the Android and iOS app; the web app doesn't receive them."}</Text>
+      <Text style={profile.note} testID="notifications-not-sent">{"Set a line's custom hours from the bell in its route view. Line alerts arrive as push notifications in the Android and iOS app; the web app doesn't receive them."}</Text>
     </>
   );
 }
@@ -215,9 +215,9 @@ export function AccessibilitySettings({ onFeedback }: PageProps) {
         />
         <ToggleRow detail="Stop pulsing live signals and other animation" label="Reduce motion" onChange={(value) => { setReducedMotion(value); onFeedback(value ? 'Motion reduced' : 'Motion restored'); }} testID="toggle-reduced-motion" value={reducedMotion} />
         <ToggleRow detail="Darker text and stronger borders and colors" label="High contrast" onChange={(value) => { setHighContrast(value); onFeedback(value ? 'High contrast on' : 'High contrast off'); }} testID="toggle-high-contrast" value={highContrast} />
-        <ToggleRow detail="Remember that you need accessible stations and vehicles" label="Step-free routes" onChange={(value) => { updatePreferences({ stepFree: value }); onFeedback('Step-free preference saved'); }} testID="toggle-step-free" value={preferences.stepFree} />
+        <ToggleRow detail="Mark step-free subway and LIRR stations in route view" label="Step-free routes" onChange={(value) => { updatePreferences({ stepFree: value }); onFeedback('Step-free preference saved'); }} testID="toggle-step-free" value={preferences.stepFree} />
       </Card>
-      <Text style={profile.note} testID="step-free-note">Google&apos;s transit planner doesn&apos;t report step-free access, so trips aren&apos;t filtered for it yet. Check station accessibility with the agency before you go.</Text>
+      <Text style={profile.note} testID="step-free-note">Station access comes from the MTA and can change when an elevator is out. Every bus and ferry is step-free. Google&apos;s transit planner doesn&apos;t report step-free access, so trips aren&apos;t filtered for it yet.</Text>
     </>
   );
 }

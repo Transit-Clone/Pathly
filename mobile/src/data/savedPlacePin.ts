@@ -1,32 +1,40 @@
+import type { Location, SavedPlaceColor } from './userData';
+
 /**
- * The home map's saved-place pin: a round badge in the brand color over a short point at the place,
- * with the place's icon centered on the badge. The web map draws the badge from this SVG and the
- * icon as the marker's label; the native map draws the same shape from views
- * (GoogleMapView.native.tsx).
+ * The home map's saved-place marker, as in Google Maps: a round badge right on the place, in the
+ * place's color, with its icon centered. The web map draws the badge from this SVG and the icon as
+ * the marker's label; the native map draws the same badge from views (GoogleMapView.native.tsx).
  */
 
-/** Badge size and the point's length, in px; the marker's anchor is the point's tip. */
-export const SAVED_PIN = { size: 34, point: 7 } as const;
+/** Badge size in px; the marker's anchor is its center. */
+export const SAVED_PIN = { size: 30 } as const;
 
-/** Half the point's width where it meets the badge, in px. */
-const POINT_HALF_WIDTH = 6;
 const RING_WIDTH = 2.5;
 
-/**
- * The empty pin as an SVG data URL: one outlined shape, the badge's circle running straight into
- * the point, so no ring crosses the pin where the two meet. The outline is in `ring`.
- */
+/** Marker fills for the colors a rider can pick, bright enough to stand out on the map in light and dark. */
+export const SAVED_PLACE_COLOR_HEX: Record<SavedPlaceColor, string> = {
+  blue: '#1A73E8',
+  red: '#E53935',
+  orange: '#F57C00',
+  yellow: '#F2B705',
+  green: '#2E9E48',
+  teal: '#00897B',
+  purple: '#8E44AD',
+  pink: '#E0457B',
+  gray: '#6B7280',
+};
+
+/** A saved place's marker fill: its picked color, else `fallback` (the brand color). */
+export function savedPlaceColor(location: Location, fallback: string): string {
+  return location.color ? SAVED_PLACE_COLOR_HEX[location.color] ?? fallback : fallback;
+}
+
+/** The empty badge as an SVG data URL: a filled circle outlined in `ring`. */
 export function savedPinSvgUrl(fill: string, ring: string): string {
-  const { size, point } = SAVED_PIN;
+  const { size } = SAVED_PIN;
   const r = size / 2;
-  const height = size + point;
-  const radius = r - RING_WIDTH / 2;
-  // Where the point's sides leave the circle, and its tip (kept inside the image with its stroke).
-  const joinY = (r + Math.sqrt(radius * radius - POINT_HALF_WIDTH * POINT_HALF_WIDTH)).toFixed(2);
-  const tipY = height - RING_WIDTH / 2;
-  const outline = `M${r - POINT_HALF_WIDTH} ${joinY} A${radius} ${radius} 0 1 1 ${r + POINT_HALF_WIDTH} ${joinY} L${r} ${tipY} Z`;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${height}" viewBox="0 0 ${size} ${height}">`
-    + `<path d="${outline}" fill="${fill}" stroke="${ring}" stroke-width="${RING_WIDTH}" stroke-linejoin="round"/>`
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">`
+    + `<circle cx="${r}" cy="${r}" r="${r - RING_WIDTH / 2}" fill="${fill}" stroke="${ring}" stroke-width="${RING_WIDTH}"/>`
     + '</svg>';
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 }

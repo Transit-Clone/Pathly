@@ -51,6 +51,7 @@ declare module 'gtfs-realtime-bindings' {
     interface EntitySelector {
       agencyId?: string | null;
       routeId?: string | null;
+      stopId?: string | null;
     }
 
     interface Alert {
@@ -58,6 +59,8 @@ declare module 'gtfs-realtime-bindings' {
       informedEntity?: EntitySelector[] | null;
       headerText?: TranslatedString | null;
       descriptionText?: TranslatedString | null;
+      /** GTFS-RT Alert.Effect (1 NO_SERVICE … 9 STOP_MOVED). */
+      effect?: number | null;
     }
 
     interface FeedEntity {

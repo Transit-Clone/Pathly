@@ -53,3 +53,18 @@ export function useWalkingPath(agencyId: LiveSource['agencyId'] | undefined, sto
   }, [agencyId, stopId, latStep, lonStep]);
   return walk && walk.stopId === stopId && location ? walk.path : null;
 }
+
+/** An everyday walking pace, about 4.8 km/h (what trip planners like Google assume). */
+const WALK_METERS_PER_MINUTE = 80;
+
+/** Minutes to walk a street path (from the OpenStreetMap walking graph), rounded up; at least 1. */
+export function walkingMinutes(path: readonly WalkPoint[]): number | null {
+  if (path.length < 2) return null;
+  let meters = 0;
+  for (let index = 1; index < path.length; index += 1) {
+    const a = path[index - 1]!;
+    const b = path[index]!;
+    meters += Math.hypot((b.lon - a.lon) * Math.cos(((a.lat + b.lat) / 2) * (Math.PI / 180)), b.lat - a.lat) * 111_320;
+  }
+  return Math.max(1, Math.ceil(meters / WALK_METERS_PER_MINUTE));
+}

@@ -37,10 +37,15 @@ export const lightColors = {
   onHighlight: '#3D2A00',
   highlightSoft: '#FFF4D6',
   highlightInk: '#B86E00',
+  /** A service disruption (detour, delays, suspension): a yellow fill with dark text, like a road sign. */
+  alertYellow: '#FFD64F',
+  onAlertYellow: '#3B2A00',
   shadow: '#16324F',
   scrim: 'rgba(22, 50, 79, 0.32)',
   locationHalo: 'rgba(167, 216, 255, 0.46)',
   white: '#FFFFFF',
+  /** The outline around pins, badges and map dots: white on the light map, black on the dark one. */
+  ring: '#FFFFFF',
   mapLand: '#EFEBE3',
   mapRoad: '#FFFFFF',
   mapRoadMajor: '#FFFFFF',
@@ -56,7 +61,7 @@ export type Palette = { readonly [Key in keyof typeof lightColors]: string };
 
 export const darkColors: Palette = {
   primary: '#5B9BF8',
-  searchCenter: '#A78BFA',
+  searchCenter: '#9B5CFF',
   onPrimary: '#0A1B30',
   accent: '#2F5E93',
   background: '#000000',
@@ -86,10 +91,13 @@ export const darkColors: Palette = {
   onHighlight: '#2A1D00',
   highlightSoft: '#3A2D0E',
   highlightInk: '#FFC94D',
+  alertYellow: '#F2C230',
+  onAlertYellow: '#2A1D00',
   shadow: '#000000',
   scrim: 'rgba(0, 0, 0, 0.6)',
   locationHalo: 'rgba(91, 155, 248, 0.32)',
   white: '#FFFFFF',
+  ring: '#000000',
   mapLand: '#1D1F22',
   mapRoad: '#34373C',
   mapRoadMajor: '#45494F',

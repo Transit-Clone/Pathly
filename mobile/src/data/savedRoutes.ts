@@ -5,16 +5,41 @@ import { discoveredRouteToRouteDetail, type DiscoveredRoute } from './nearbyTran
 import type { LiveSource, RouteDetail } from './transit';
 
 /**
- * When a saved line's service alerts are pushed: any time, weekday rush hours only, or never.
+ * When a saved line's service alerts are pushed: any time, during the rider's own hours, or never.
+ * 'peak' (weekday rush hours) is from before Custom hours; lines saved with it keep working.
  * Mirrors firebase/functions/src/routeAlerts.ts's RouteAlertSetting.
  */
-export type RouteAlertSetting = 'all' | 'peak' | 'off';
+export type RouteAlertSetting = 'all' | 'peak' | 'custom' | 'off';
 
-export const ROUTE_ALERT_OPTIONS: readonly { value: RouteAlertSetting; label: string; detail: string }[] = [
-  { value: 'all', label: 'All times', detail: 'Any service change, day or night' },
-  { value: 'peak', label: 'Peak times', detail: 'Weekdays 6–10 AM and 4–8 PM' },
-  { value: 'off', label: 'Off', detail: 'No notifications for this line' },
+/** A daily alert window, in minutes after midnight; `end` before `start` runs overnight. */
+export type AlertHours = { start: number; end: number };
+
+/** Custom hours start here until the rider changes them: the working day. */
+export const DEFAULT_ALERT_HOURS: AlertHours = { start: 7 * 60, end: 19 * 60 };
+
+export const ROUTE_ALERT_OPTIONS: readonly { value: RouteAlertSetting; label: string }[] = [
+  { value: 'all', label: 'All times' },
+  { value: 'custom', label: 'Custom hours' },
+  { value: 'off', label: 'Never' },
 ];
+
+/** "7:30 AM" for minutes after midnight. */
+export function formatAlertTime(minutes: number): string {
+  const hour = Math.floor(minutes / 60) % 24;
+  const minute = minutes % 60;
+  return `${hour % 12 || 12}:${String(minute).padStart(2, '0')} ${hour < 12 ? 'AM' : 'PM'}`;
+}
+
+/** A line's alert setting in a few words: "All times", "7:00 AM – 7:00 PM", "Never". */
+export function describeRouteAlerts(setting: RouteAlertSetting, hours?: AlertHours): string {
+  if (setting === 'all') return 'All times';
+  if (setting === 'peak') return 'Weekday rush hours';
+  if (setting === 'custom') {
+    const window = hours ?? DEFAULT_ALERT_HOURS;
+    return `${formatAlertTime(window.start)} – ${formatAlertTime(window.end)}`;
+  }
+  return 'Never';
+}
 
 type SavedStop = { stopId: string; name: string; headsign: string | null } | null;
 
@@ -32,6 +57,8 @@ export type SavedRoute = {
   shortName: string;
   color: string;
   alerts: RouteAlertSetting;
+  /** The daily window for 'custom' alerts. */
+  alertHours?: AlertHours;
   direction1: SavedStop;
   direction0: SavedStop;
 };
@@ -89,8 +116,8 @@ export function removeSavedRoute(uid: string, id: string) {
   return deleteDoc(doc(db, 'users', uid, SAVED_ROUTES, routeKey(id)));
 }
 
-export function setRouteAlerts(uid: string, id: string, alerts: RouteAlertSetting) {
-  return setDoc(doc(db, 'users', uid, SAVED_ROUTES, routeKey(id)), { alerts }, { merge: true });
+export function setRouteAlerts(uid: string, id: string, alerts: RouteAlertSetting, alertHours?: AlertHours) {
+  return setDoc(doc(db, 'users', uid, SAVED_ROUTES, routeKey(id)), { alerts, ...(alerts === 'custom' ? { alertHours: alertHours ?? DEFAULT_ALERT_HOURS } : {}) }, { merge: true });
 }
 
 /** Settings' "Allow notifications" or "Service alerts" turned off: the backend sends no line alerts at all. */

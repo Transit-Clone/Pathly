@@ -3,6 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { Circle, G, Line, Polyline, Text as SvgText } from 'react-native-svg';
 
 import { boundsOf, type Bounds, type Point } from '../data/mapGeometry';
+import { useRouteColor } from '../data/routeColors';
 import { useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies } from '../theme/typography';
@@ -93,6 +94,7 @@ type RouteLinesProps = {
 export function RouteLines({ legs, scale, showConnectors = false, showStart = false }: RouteLinesProps) {
   const { colors, isDark } = useTheme();
   const casing = isDark ? '#000000' : '#FFFFFF';
+  const tint = useRouteColor();
   const first = legs[0]?.path[0];
   const placedLabels = placeStopLabels(legs, scale);
 
@@ -108,11 +110,11 @@ export function RouteLines({ legs, scale, showConnectors = false, showStart = fa
       {legs.map((leg, legIndex) => (
         <Fragment key={`leg-${legIndex}`}>
           <Polyline fill="none" points={toPoints(leg.path)} stroke={casing} strokeLinecap="round" strokeLinejoin="round" strokeWidth={(LINE_WIDTH + CASING_WIDTH) * scale} />
-          <Polyline fill="none" points={toPoints(leg.path)} stroke={leg.color} strokeLinecap="round" strokeLinejoin="round" strokeWidth={LINE_WIDTH * scale} testID={`map-route-path-${legIndex}`} />
+          <Polyline fill="none" points={toPoints(leg.path)} stroke={tint(leg.color)} strokeLinecap="round" strokeLinejoin="round" strokeWidth={LINE_WIDTH * scale} testID={`map-route-path-${legIndex}`} />
         </Fragment>
       ))}
       {legs.map((leg, legIndex) => leg.stops.map((stop, stopIndex) => (
-        <Circle key={`stop-${legIndex}-${stopIndex}`} cx={stop.point[0]} cy={stop.point[1]} fill="#FFFFFF" r={4.5 * scale} stroke={leg.color} strokeWidth={2.5 * scale} testID={`map-stop-${legIndex}-${stopIndex}`} />
+        <Circle key={`stop-${legIndex}-${stopIndex}`} cx={stop.point[0]} cy={stop.point[1]} fill="#FFFFFF" r={4.5 * scale} stroke={tint(leg.color)} strokeWidth={2.5 * scale} testID={`map-stop-${legIndex}-${stopIndex}`} />
       )))}
       {showStart && first ? <Circle cx={first[0]} cy={first[1]} fill="#FFFFFF" r={7 * scale} stroke={legs[0]!.color} strokeWidth={4 * scale} testID="map-trip-start" /> : null}
       {legs.map((leg, legIndex) => leg.stops.map((stop, stopIndex) => {

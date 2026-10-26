@@ -9,14 +9,18 @@ import { MTA_BUS_AGENCY_IDS, type AgencyId } from './gtfsAgencies';
  * red routes run about every 30 minutes on weekdays, blue ones every 60.
  */
 export const BUS_COLORS = {
-  mtaLocal: '#006CB7',
-  mtaSelectBusService: '#00AEEF',
-  mtaLimited: '#B933AD',
-  mtaExpress: '#00933C',
-  nice: '#257489',
-  suffolk: '#0454A2',
-  suffolkFrequent: '#C63F49',
+  // The MTA's bus-map hues, lifted a little so they glow on the map rather than sit dull on it.
+  mtaLocal: '#1A7FD4',
+  mtaSelectBusService: '#00B2F0',
+  mtaLimited: '#C845BC',
+  mtaExpress: '#00A651',
+  nice: '#1F9BB5',
+  suffolk: '#2F6FE0',
+  suffolkFrequent: '#E8453C',
 } as const;
+
+/** Suffolk's GTFS color for its frequent (red) routes, as the feed publishes it. */
+const SUFFOLK_GTFS_FREQUENT = 'C63F49';
 
 const FALLBACK_COLOR = '#0B4F9C';
 const MTA_BUS_AGENCIES = new Set<AgencyId>(MTA_BUS_AGENCY_IDS);
@@ -35,7 +39,7 @@ function mtaBusColor({ routeId = '', shortName = '', name = '' }: RouteNames): s
   return BUS_COLORS.mtaLocal;
 }
 
-const isSuffolkFrequent = (color: string | undefined) => color?.replace(/^#/, '').toUpperCase() === BUS_COLORS.suffolkFrequent.slice(1);
+const isSuffolkFrequent = (color: string | undefined) => color?.replace(/^#/, '').toUpperCase() === SUFFOLK_GTFS_FREQUENT;
 
 /** The color to show for a GTFS route, as "#RRGGBB". */
 export function displayRouteColor(agencyId: AgencyId, route: RouteNames & { color?: string }): string {
