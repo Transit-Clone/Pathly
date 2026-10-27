@@ -1,6 +1,6 @@
 import * as Location from 'expo-location';
 import { useCallback, useEffect, useState } from 'react';
-import { AppState, Linking, Platform, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, AppState, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { useAuth } from '../auth/AuthContext';
 import {
@@ -221,58 +221,64 @@ function AddSavedLine({ onAdd, savedIds }: { onAdd: (line: IndexedLine) => Promi
       setAdding(null);
     }
   };
-  if (!open) {
-    return (
+  const close = () => { setOpen(false); setQuery(''); };
+  return (
+    <>
       <Card>
         <SettingRow label="Add a line" onPress={() => setOpen(true)} testID="notifications-add-line" />
       </Card>
-    );
-  }
-  return (
-    <Card>
-      <View style={page.editBlock} testID="notifications-add-line-panel">
-        <TextInput
-          accessibilityLabel="Search lines"
-          autoCapitalize="none"
-          autoCorrect={false}
-          autoFocus={true}
-          onChangeText={setQuery}
-          placeholder="Line or route, like 51, E, or Port Jefferson"
-          placeholderTextColor={colors.mutedInk}
-          returnKeyType="search"
-          style={page.input}
-          testID="notifications-add-line-input"
-          value={query}
-        />
-        {trimmed && !index ? <Text style={page.lineEmpty}>Loading lines…</Text> : null}
-        {trimmed && index && results.length === 0 ? <Text style={page.lineEmpty} testID="notifications-add-line-empty">No lines match</Text> : null}
-        {results.map((line) => {
-          const id = `${line.agencyId}:${line.routeId}`;
-          const label = badgeLabel({ agency: line.agencyDisplayName, shortName: line.shortName });
-          return (
-            <PressableScale
-              accessibilityLabel={`Add ${line.agencyDisplayName} ${label}, ${line.routeName}`}
-              accessibilityRole="button"
-              disabled={adding != null}
-              key={id}
-              onPress={() => void add(line)}
-              style={page.lineRow}
-              testID={`notifications-add-line-${line.agencyId}-${line.routeId}`}
-            >
-              <RouteBadge agency={line.agencyDisplayName} color={line.color} mode={transitModeForAgency(line.agencyDisplayName)} shortName={label} size="small" />
-              <View style={page.lineCopy}>
-                <Text numberOfLines={1} style={page.lineTitle}>{line.routeName || label}</Text>
-                <Text numberOfLines={1} style={page.lineSubtitle}>{line.agencyDisplayName}</Text>
-              </View>
-              <Icon color={colors.primary} name="add" size={22} />
+      <Modal animationType="slide" onRequestClose={close} statusBarTranslucent={true} transparent={true} visible={open}>
+        <View style={page.sheetViewport}>
+          <Pressable accessibilityLabel="Close" onPress={close} style={page.sheetBackdrop} testID="notifications-add-line-backdrop" />
+          <View style={page.sheet} testID="notifications-add-line-panel">
+            <Text style={page.sheetTitle}>Add a line</Text>
+            <Text style={page.lineSubtitle}>Its service alerts start at all times; change that in Saved lines.</Text>
+            <TextInput
+              accessibilityLabel="Search lines"
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoFocus={true}
+              onChangeText={setQuery}
+              placeholder="Line or route, like 51, E, or Port Jefferson"
+              placeholderTextColor={colors.mutedInk}
+              returnKeyType="search"
+              style={[page.input, page.sheetInput]}
+              testID="notifications-add-line-input"
+              value={query}
+            />
+            <ScrollView keyboardShouldPersistTaps="handled" style={page.sheetResults}>
+              {trimmed && !index ? <Text style={page.lineEmpty}>Loading lines…</Text> : null}
+              {trimmed && index && results.length === 0 ? <Text style={page.lineEmpty} testID="notifications-add-line-empty">No lines match</Text> : null}
+              {results.map((line) => {
+                const id = `${line.agencyId}:${line.routeId}`;
+                const label = badgeLabel({ agency: line.agencyDisplayName, shortName: line.shortName });
+                return (
+                  <PressableScale
+                    accessibilityLabel={`Add ${line.agencyDisplayName} ${label}, ${line.routeName}`}
+                    accessibilityRole="button"
+                    disabled={adding != null}
+                    key={id}
+                    onPress={() => void add(line)}
+                    style={page.lineRow}
+                    testID={`notifications-add-line-${line.agencyId}-${line.routeId}`}
+                  >
+                    <RouteBadge agency={line.agencyDisplayName} color={line.color} mode={transitModeForAgency(line.agencyDisplayName)} shortName={label} size="small" />
+                    <View style={page.lineCopy}>
+                      <Text numberOfLines={1} style={page.lineTitle}>{line.routeName || label}</Text>
+                      <Text numberOfLines={1} style={page.lineSubtitle}>{line.agencyDisplayName}</Text>
+                    </View>
+                    {adding === id ? <ActivityIndicator color={colors.primary} size="small" /> : <Icon color={colors.primary} name="add" size={22} />}
+                  </PressableScale>
+                );
+              })}
+            </ScrollView>
+            <PressableScale accessibilityRole="button" onPress={close} style={[page.button, page.primaryButton, page.sheetDone]} testID="notifications-add-line-done">
+              <Text style={page.primaryButtonText}>Done</Text>
             </PressableScale>
-          );
-        })}
-        <PressableScale accessibilityRole="button" onPress={() => { setOpen(false); setQuery(''); }} style={[page.button, page.secondaryButton]} testID="notifications-add-line-done">
-          <Text style={page.secondaryButtonText}>Done</Text>
-        </PressableScale>
-      </View>
-    </Card>
+          </View>
+        </View>
+      </Modal>
+    </>
   );
 }
 
@@ -594,6 +600,13 @@ export function HelpSettings({ onFeedback }: PageProps) {
 }
 
 const createStyles = (colors: Palette) => StyleSheet.create({
+  sheetViewport: { flex: 1, justifyContent: 'flex-end' },
+  sheetBackdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: colors.scrim },
+  sheet: { width: '100%', maxWidth: 540, maxHeight: '80%', alignSelf: 'center', gap: 6, paddingHorizontal: 18, paddingTop: 18, paddingBottom: 30, borderTopLeftRadius: radii.sheet, borderTopRightRadius: radii.sheet, backgroundColor: colors.surface },
+  sheetTitle: { color: colors.ink, ...typography.sectionHeading, fontSize: 18 },
+  sheetInput: { marginTop: 8 },
+  sheetResults: { flexGrow: 0, minHeight: 60 },
+  sheetDone: { marginTop: 8 },
   lineRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 },
   lineCopy: { flex: 1, minWidth: 0 },
   lineTitle: { color: colors.ink, fontFamily: fontFamilies.bold, fontSize: 15 },

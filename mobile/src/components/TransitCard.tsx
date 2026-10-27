@@ -21,6 +21,7 @@ import { FitText } from './FitText';
 import { Icon } from './Icon';
 import { LIVE_SIGNAL_WIDTH, LiveSignal } from './LiveSignal';
 import { PressableScale } from './PressableScale';
+import { afterClick } from './afterClick';
 import { useSkeletonPulse } from './Skeleton';
 import { radii } from '../theme/shape';
 
@@ -142,7 +143,7 @@ export function TransitCard({ onPress, route, saved = false }: TransitCardProps)
     if (startX == null) return;
     const dx = event.nativeEvent.pageX - startX;
     if (Math.abs(dx) <= SWIPE_THRESHOLD) {
-      onPress();
+      afterClick(onPress);
       return;
     }
     const direction = dx < 0 ? 1 : -1;

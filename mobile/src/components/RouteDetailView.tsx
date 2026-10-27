@@ -31,6 +31,7 @@ import { pointAlong, routeFocus, RouteLines, VehicleMarker, type MapLeg } from '
 import { badgeLabel, RouteBadge, transitModeForAgency } from './RouteBadge';
 import { MapControlButton } from './MapControlButton';
 import { PressableScale } from './PressableScale';
+import { afterClick } from './afterClick';
 import { MapSkeleton, PredictionTilesSkeleton, StopListSkeleton } from './Skeleton';
 import { radii } from '../theme/shape';
 
@@ -417,7 +418,7 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
     if (startX == null) return;
     const dx = event.nativeEvent.pageX - startX;
     if (Math.abs(dx) <= DIRECTION_SWIPE_THRESHOLD) {
-      onTap();
+      afterClick(onTap);
       return;
     }
     tilesScrollRef.current?.scrollTo({ x: Math.max(0, tilesScrollX.current - dx), animated: true });

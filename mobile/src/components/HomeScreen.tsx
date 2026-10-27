@@ -79,7 +79,7 @@ const MINIMUM_MAP_HEIGHT = 240;
 // Height reserved for the floating search header at the top of the map.
 const HEADER_INSET = 80;
 // Same footprint as the blue current-location dot (CurrentLocationMarker).
-const SEARCH_CENTER_SIZE = 34;
+const SEARCH_CENTER_SIZE = 17;
 const NEARBY_SEARCH_DEBOUNCE_MS = 600;
 // A cached nearby list older than a day is more misleading than helpful.
 const NEARBY_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -811,7 +811,9 @@ export function HomeScreen() {
   if (activeView.name === 'search' && activeView.pickSavedPlace) {
     const { label, replacing, returnTo } = activeView.pickSavedPlace;
     return screen(
+      // Its own instance: nothing typed or pressed on the search page carries into the pick.
       <SearchView
+        key="pick-saved-place"
         near={riderLocation(location, locationStatus)}
         onCancel={() => {
           // Back to the edit sheet as it was left.
@@ -820,8 +822,8 @@ export function HomeScreen() {
         }}
         onSelect={(place) => {
           if (replacing) setSaveRequest({ ...replacing, place, replacing: replacing.replacing ?? replacing.place.id });
-          else if (label) saveNamedPlace(place, label);
-          else setSaveRequest({ place });
+          // Home and Work too are confirmed in the sheet (named already), never saved unseen.
+          else setSaveRequest(label ? { place, label } : { place });
           leaveSavedPlacePick(returnTo);
         }}
         placeholder={replacing ? `Search for the new address for ${replacing.label?.trim() || replacing.place.title}` : label ? `Search for your ${label.toLowerCase()} address` : 'Search for a place to save'}
@@ -991,9 +993,7 @@ export function HomeScreen() {
             pointerEvents="none"
             style={[styles.searchCenter, { top: (homeHeaderInset + mapHeight) / 2 - SEARCH_CENTER_SIZE / 2 }]}
             testID="search-center"
-          >
-            <Mascot pose="happy" size={22} />
-          </View>
+          />
         ) : null}
         {locationStatus !== 'located' ? (
           <View pointerEvents="none" style={[styles.locationStatusPill, { top: homeHeaderInset }]}>
@@ -1098,7 +1098,6 @@ export function HomeScreen() {
           findRoute={findRoute}
           mapHeight={mapHeight}
           nearbyRoutes={nearbyRoutes}
-          nearbyRefreshing={nearbyStatus.status === 'loaded' && nearbyStatus.refreshing === true}
           nearbyStatus={nearbyStatus.status}
           onAddSavedPlace={uid ? () => addSavedPlace('favorites') : undefined}
           onOpenRecentTrip={openRecentTrip}
@@ -1211,19 +1210,14 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     zIndex: 3,
     width: SEARCH_CENTER_SIZE,
     height: SEARCH_CENTER_SIZE,
-    // Pathly itself marks the point it's searching around: a round pin in the brand blue's
-    // surface, distinct from the rider's location dot.
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
+    borderWidth: 3,
     borderRadius: SEARCH_CENTER_SIZE / 2,
-    borderColor: colors.primary,
-    backgroundColor: colors.surface,
-    shadowColor: colors.shadow,
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 4,
+    borderColor: colors.ring,
+    backgroundColor: colors.searchCenter,
+    shadowColor: colors.searchCenter,
+    shadowOpacity: 0.32,
+    shadowRadius: 5,
+    elevation: 3,
   },
   locationStatusPill: {
     position: 'absolute',

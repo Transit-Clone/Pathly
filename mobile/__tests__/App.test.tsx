@@ -1472,9 +1472,10 @@ describe('Pathly prototype navigation', () => {
     batch.mockImplementation(() => new Promise(() => undefined));
     try {
       const screen = await renderHome();
-      // The saved card shows at once, marked as updating, with its saved time aged by a minute.
+      // The saved card shows at once, with its saved time aged by a minute, and updates quietly
+      // (no spinner pushing the cards down).
       const card = await screen.findByTestId(`route-card-${PJ_CARD}-primary`);
-      expect(screen.getByTestId('nearby-refreshing')).toBeTruthy();
+      expect(screen.queryByTestId('nearby-refreshing')).toBeNull();
       await waitFor(() => expect(within(card).getByText('8')).toBeTruthy());
     } finally {
       nearby.mockImplementation(nearbyDefault);
@@ -1520,7 +1521,7 @@ describe('Pathly prototype navigation', () => {
     fireEvent(map, 'regionChangeComplete', { latitude: 40.7685, longitude: -73.5251, latitudeDelta: 0.05, longitudeDelta: 0.05 });
     // A solid purple dot the size of the GPS dot, not a faint ring.
     const centerStyle = StyleSheet.flatten(screen.getByTestId('search-center').props.style);
-    expect(centerStyle).toEqual(expect.objectContaining({ width: 34, height: 34, borderColor: lightColors.primary }));
+    expect(centerStyle).toEqual(expect.objectContaining({ width: 17, height: 17, backgroundColor: lightColors.searchCenter }));
     await waitFor(() => expect(nearby).toHaveBeenLastCalledWith({ lat: 40.7685, lon: -73.5251 }));
     // Each card's stop and departures are for the stop nearest the dot, not the rider.
     await waitFor(() => expect(callableNamed('getRouteLiveStatus')).toHaveBeenCalledWith(expect.objectContaining({ lat: 40.7685, lon: -73.5251 })));

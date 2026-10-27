@@ -589,7 +589,8 @@ export function requiredPlanTripRequest(data: unknown, nowMs = Date.now()): Plan
  * Client call: httpsCallable(functions, 'planTrip')({ origin, destination, time, preference, modes, lessWalking? }).
  */
 export const planTrip = onCall<PlanTripRequest, Promise<{ itineraries: Itinerary[] }>>(
-  { ...protectedCallableOptions, secrets: [googleMapsApiKey], timeoutSeconds: 30 },
+  // The bus feeds' keys too: the live check reads NYC, Suffolk, and NICE buses (tripLive.ts).
+  { ...protectedCallableOptions, secrets: [googleMapsApiKey, swiftlyApiKey, mtaBusTimeApiKey], timeoutSeconds: 30 },
   async (request) => {
     await enforceCallableSecurity(request, 'planTrip', RATE_LIMITS.planTrip);
     const nowMs = Date.now();

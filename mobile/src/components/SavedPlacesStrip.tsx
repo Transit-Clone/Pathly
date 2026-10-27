@@ -8,6 +8,7 @@ import type { Palette } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { Icon, type IconName } from './Icon';
 import { PressableScale } from './PressableScale';
+import { afterClick } from './afterClick';
 import { SavedPlaceBadge } from './SavedPlaceBadge';
 import { radii } from '../theme/shape';
 
@@ -126,7 +127,7 @@ export function SavedPlacesStrip({ onAdd, onSelect, places }: SavedPlacesStripPr
     if (startX == null) return;
     const dx = event.nativeEvent.pageX - startX;
     if (Math.abs(dx) <= DRAG_THRESHOLD) {
-      card.onPress();
+      afterClick(card.onPress);
       return;
     }
     scrollRef.current?.scrollTo({ x: Math.max(0, scrollX.current - dx), animated: true });

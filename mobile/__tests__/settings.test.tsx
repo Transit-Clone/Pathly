@@ -12,6 +12,7 @@ import { ProfileView } from '../src/components/ProfileView';
 import { ISSUES_URL } from '../src/components/SettingsPages';
 import type { Itinerary } from '../src/data/tripPlanning';
 import { filterItinerariesByWalk } from '../src/data/tripPlanning';
+import { resetLineIndexForTests } from '../src/data/lineIndex';
 import { recordSearch, saveLocation } from '../src/data/userData';
 import { DEFAULT_PREFERENCES, parsePreferences, preferencesKey, UserPreferencesProvider } from '../src/data/userPreferences';
 import { AppSettingsProvider, DISPLAY_SETTINGS_KEY, scaleTypography, useAppSettings } from '../src/theme/AppSettings';
@@ -92,6 +93,25 @@ describe('Settings', () => {
       // Turning notifications off hides the individual kinds.
       fireEvent(again.getByTestId('toggle-notifications'), 'valueChange', false);
       expect(again.queryByTestId('toggle-service-alerts')).toBeNull();
+    });
+
+    it('searches for a line in a popup and adds it with alerts on, unstarred', async () => {
+      resetLineIndexForTests([
+        { agencyId: 'suffolk', agencyDisplayName: 'Suffolk County Transit', routeId: '51', shortName: '51', routeName: 'Patchogue RR to Port Jefferson', color: '#C43D4B' },
+        { agencyId: 'lirr', agencyDisplayName: 'LIRR', routeId: '10', shortName: 'Port Jefferson Branch', routeName: 'Port Jefferson Branch', color: '#006EC7' },
+      ]);
+      const screen = renderSettings();
+      await openPage(screen, 'notifications');
+      fireEvent.press(screen.getByTestId('notifications-add-line'));
+      fireEvent.changeText(screen.getByTestId('notifications-add-line-input'), 'port jeff');
+      expect(screen.getByTestId('notifications-add-line-suffolk-51')).toBeTruthy();
+      await act(async () => {
+        fireEvent.press(screen.getByTestId('notifications-add-line-lirr-10'));
+      });
+      const saved = (await getDocs(collection({} as never, 'users', UID, 'savedRoutes'))).docs.map((entry) => entry.data());
+      expect(saved).toContainEqual(expect.objectContaining({ routeId: '10', agencyId: 'lirr', alerts: 'all', favorite: false }));
+      expect(screen.getByText('PJ alerts: All times')).toBeTruthy();
+      resetLineIndexForTests();
     });
   });
 
