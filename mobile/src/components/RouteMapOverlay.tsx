@@ -147,7 +147,7 @@ export function VehicleMarker({ color, minutes, mode, point, projection }: Vehic
   const { x, y } = projection.project(point);
   return (
     <View style={[styles.vehicle, { left: x - VEHICLE_SIZE / 2, top: y - VEHICLE_SIZE / 2 }]} testID="map-vehicle">
-      <Icon color={color} filled={true} name={mode} size={24} />
+      <Icon color={color} name={mode} size={24} />
       <View style={styles.vehicleSignal}><LiveSignal color={color} /></View>
       <View style={[styles.minutesBubble, { backgroundColor: color }]}><Text style={styles.minutesText}>{minutes}m</Text></View>
     </View>
@@ -163,7 +163,7 @@ export function DestinationPin({ color, point, projection }: { color: string; po
   return (
     <View style={[styles.pin, { left: x - PIN_SIZE / 2, top: y - PIN_SIZE + 3 }]} testID="map-destination-pin">
       <View style={styles.pinCore} />
-      <Icon color={color} filled={true} name="place" size={PIN_SIZE} />
+      <Icon color={color} name="place" size={PIN_SIZE} />
     </View>
   );
 }

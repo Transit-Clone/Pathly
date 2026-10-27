@@ -1,7 +1,5 @@
 export const lightColors = {
   primary: '#0B4F9C',
-  /** Home map center-search marker. */
-  searchCenter: '#7C3AED',
   onPrimary: '#FFFFFF',
   accent: '#A7D8FF',
   background: '#F7FAFF',
@@ -42,7 +40,9 @@ export const lightColors = {
   onAlertYellow: '#3B2A00',
   shadow: '#16324F',
   scrim: 'rgba(22, 50, 79, 0.32)',
-  locationHalo: 'rgba(167, 216, 255, 0.46)',
+  /** The rider's own location dot and heading beam, the same blue on every map and theme. */
+  location: '#4285F4',
+  locationHalo: 'rgba(66, 133, 244, 0.22)',
   white: '#FFFFFF',
   /** The outline around pins, badges and map dots: white on the light map, black on the dark one. */
   ring: '#FFFFFF',
@@ -65,7 +65,6 @@ export type Palette = { readonly [Key in keyof typeof lightColors]: string };
 
 export const darkColors: Palette = {
   primary: '#5B9BF8',
-  searchCenter: '#9B5CFF',
   onPrimary: '#0A1B30',
   accent: '#2F5E93',
   background: '#000000',
@@ -99,7 +98,8 @@ export const darkColors: Palette = {
   onAlertYellow: '#2A1D00',
   shadow: '#000000',
   scrim: 'rgba(0, 0, 0, 0.6)',
-  locationHalo: 'rgba(91, 155, 248, 0.32)',
+  location: '#4285F4',
+  locationHalo: 'rgba(66, 133, 244, 0.3)',
   white: '#FFFFFF',
   ring: '#000000',
   tripStart: '#8A9099',

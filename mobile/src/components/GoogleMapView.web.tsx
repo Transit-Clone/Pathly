@@ -266,7 +266,7 @@ export function GoogleMapView({ initialCamera, lines = [], location, onCameraCha
           {/* The rider's blue "you are here" dot, following every GPS update. */}
           <Marker
             clickable={false}
-            icon={{ path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: '#4285F4', fillOpacity: 1, strokeColor: '#FFFFFF', strokeWeight: 2 }}
+            icon={{ path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: colors.location, fillOpacity: 1, strokeColor: '#FFFFFF', strokeWeight: 2 }}
             position={position}
             title="Your location"
             zIndex={3}

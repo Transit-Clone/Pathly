@@ -28,6 +28,7 @@ import { PressableScale } from './PressableScale';
 import { badgeLabel, RouteBadge, transitModeForAgency, type TransitMode } from './RouteBadge';
 import { SavedPlaceBadge } from './SavedPlaceBadge';
 import { savedLocationIcon, savedPlaceLines, SavedPlacesStrip } from './SavedPlacesStrip';
+import { radii } from '../theme/shape';
 
 const MAX_RECENT_SEARCHES = 8;
 /** Line names are short ("1", "B46", "Port Jefferson"); longer queries are addresses. */
@@ -493,7 +494,7 @@ export function SearchView({ initialQuery = '', near, onAddSavedPlace, onCancel,
               testID="search-current-location"
             >
               <View style={styles.resultIcon}>
-                <Icon color={colors.primary} filled={true} name="locate" size={20} />
+                <Icon color={colors.primary} name="locate" size={20} />
               </View>
               <View style={styles.resultCopy}>
                 <Text numberOfLines={1} style={styles.resultTitle}>Current location</Text>
@@ -581,7 +582,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     gap: 12,
     paddingLeft: 16,
     paddingRight: 6,
-    borderRadius: 25,
+    borderRadius: radii.pill,
     backgroundColor: colors.surfaceMuted,
   },
   searchInput: {
@@ -719,7 +720,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     justifyContent: 'center',
     marginTop: 16,
     paddingHorizontal: 20,
-    borderRadius: 22,
+    borderRadius: radii.pill,
     backgroundColor: colors.primary,
   },
   retryText: {

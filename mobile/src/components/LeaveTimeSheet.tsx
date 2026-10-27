@@ -9,6 +9,7 @@ import { fontFamilies, typography } from '../theme/typography';
 import { Icon } from './Icon';
 import { WheelColumn } from './WheelColumn';
 import { PressableScale } from './PressableScale';
+import { radii } from '../theme/shape';
 
 type LeaveMode = TripTimeChoice['mode'];
 
@@ -126,19 +127,19 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     alignSelf: 'center',
     paddingHorizontal: 18,
     paddingBottom: 16,
-    borderTopLeftRadius: 26,
-    borderTopRightRadius: 26,
+    borderTopLeftRadius: radii.sheet,
+    borderTopRightRadius: radii.sheet,
     backgroundColor: colors.surface,
   },
   handle: { alignSelf: 'center', width: 40, height: 5, marginTop: 10, borderRadius: 3, backgroundColor: colors.border },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 },
-  headerButton: { minWidth: 72, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22 },
+  headerButton: { minWidth: 72, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: radii.pill },
   doneButton: { backgroundColor: colors.primary },
   cancelText: { color: colors.mutedInk, ...typography.bodyStrong, fontSize: 15 },
   doneText: { color: colors.onPrimary, fontFamily: fontFamilies.extraBold, fontSize: 15 },
   title: { color: colors.ink, ...typography.sectionHeading, fontSize: 18 },
-  segments: { flexDirection: 'row', gap: 4, marginTop: 14, padding: 4, borderRadius: 14, backgroundColor: colors.background },
-  segment: { flex: 1, minHeight: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 10 },
+  segments: { flexDirection: 'row', gap: 4, marginTop: 14, padding: 4, borderRadius: radii.control, backgroundColor: colors.background },
+  segment: { flex: 1, minHeight: 40, alignItems: 'center', justifyContent: 'center', borderRadius: radii.control },
   selectedSegment: { backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 2 },
   segmentText: { color: colors.mutedInk, ...typography.bodyStrong, fontSize: 13 },
   selectedSegmentText: { color: colors.primary, fontFamily: fontFamilies.extraBold },

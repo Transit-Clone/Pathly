@@ -297,7 +297,7 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
             // Same blue "you are here" dot as the home map.
             <Marker
               clickable={false}
-              icon={{ path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: '#4285F4', fillOpacity: 1, strokeColor: '#FFFFFF', strokeWeight: 2 }}
+              icon={{ path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: colors.location, fillOpacity: 1, strokeColor: '#FFFFFF', strokeWeight: 2 }}
               position={{ lat: userLocation.latitude, lng: userLocation.longitude }}
               title="Your location"
               zIndex={3}

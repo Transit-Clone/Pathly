@@ -64,9 +64,12 @@ import { SavedPlaceDetailsSheet } from './SavedPlaceDetailsSheet';
 import { SavePlaceSheet, type SavePlaceRequest } from './SavePlaceSheet';
 import { ResumeTripCard } from './ResumeTripCard';
 import { CURRENT_LOCATION_LABEL, initialResultsCriteria, RouteResultsView, type ResultsCriteria } from './RouteResultsView';
+import { useNudgePrompt } from '../data/nudgePrompt';
+import { NudgeBanner } from './NudgeBanner';
 import { SearchHeader } from './SearchHeader';
 import { SearchView } from './SearchView';
 import { TransitSheet, type TransitTabId } from './TransitSheet';
+import { radii } from '../theme/shape';
 
 const TRANSIT_TABS_HEIGHT = 30;
 const TRANSIT_CARD_HEIGHT = 104;
@@ -76,7 +79,7 @@ const MINIMUM_MAP_HEIGHT = 240;
 // Height reserved for the floating search header at the top of the map.
 const HEADER_INSET = 80;
 // Same footprint as the blue current-location dot (CurrentLocationMarker).
-const SEARCH_CENTER_SIZE = 17;
+const SEARCH_CENTER_SIZE = 34;
 const NEARBY_SEARCH_DEBOUNCE_MS = 600;
 // A cached nearby list older than a day is more misleading than helpful.
 const NEARBY_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -227,6 +230,7 @@ export function HomeScreen() {
     [trip.active],
   );
   const hasResumableTrip = trip.status === 'active' || trip.status === 'recovery';
+  const nudge = useNudgePrompt(hasResumableTrip);
   const homeHeaderInset = hasResumableTrip ? 158 : HEADER_INSET;
   const processedFixRef = useRef<string | null>(null);
   const [followEvidence, setFollowEvidence] = useState<{ sessionId: string; fix: NonNullable<typeof navigationFix> } | null>(null);
@@ -987,7 +991,9 @@ export function HomeScreen() {
             pointerEvents="none"
             style={[styles.searchCenter, { top: (homeHeaderInset + mapHeight) / 2 - SEARCH_CENTER_SIZE / 2 }]}
             testID="search-center"
-          />
+          >
+            <Mascot pose="happy" size={22} />
+          </View>
         ) : null}
         {locationStatus !== 'located' ? (
           <View pointerEvents="none" style={[styles.locationStatusPill, { top: homeHeaderInset }]}>
@@ -1072,15 +1078,18 @@ export function HomeScreen() {
                 />
               </View>
             ) : null}
-            {/* Line layers, under the profile button. */}
-            <MapControlButton
-              accessibilityLabel="Lines on the map"
-              icon="modes"
-              onPress={() => setLayersOpen(true)}
-              selected={lineChoice.groups.length > 0 || lineChoice.routes.length > 0}
-              style={styles.layersButton}
-              testID="line-layers-button"
-            />
+            {/* An occasional ask (feedback or a tip) beside the line layers button, under the profile button. */}
+            <View pointerEvents="box-none" style={styles.underSearch}>
+              {nudge.kind ? <NudgeBanner kind={nudge.kind} onAct={nudge.act} onDismiss={nudge.dismiss} style={styles.nudge} /> : <View pointerEvents="none" style={styles.nudge} />}
+              <MapControlButton
+                accessibilityLabel="Lines on the map"
+                icon="modes"
+                onPress={() => setLayersOpen(true)}
+                selected={lineChoice.groups.length > 0 || lineChoice.routes.length > 0}
+                style={styles.layersButton}
+                testID="line-layers-button"
+              />
+            </View>
           </View>
         </SafeAreaView>
 
@@ -1147,7 +1156,9 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   header: { paddingTop: 10, paddingHorizontal: 16 },
   resumeCardWrap: { marginTop: 8 },
   // Centered under the 54 px profile button.
-  layersButton: { alignSelf: 'flex-end', marginTop: 10, marginRight: 4 },
+  underSearch: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 },
+  nudge: { flex: 1 },
+  layersButton: { marginRight: 4 },
   locationButton: {
     position: 'absolute',
     right: 16,
@@ -1192,8 +1203,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     borderRightColor: 'transparent',
     borderTopColor: colors.mutedInk,
   },
-  // Solid purple with a white ring, matching the GPS dot's look so it reads as a map point.
-  tapCoords: { position: 'absolute', alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 16, backgroundColor: colors.ink, zIndex: 4 },
+  tapCoords: { position: 'absolute', alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 14, borderRadius: radii.pill, backgroundColor: colors.ink, zIndex: 4 },
   tapCoordsText: { color: colors.surface, fontFamily: fontFamilies.bold, fontSize: 13 },
   searchCenter: {
     position: 'absolute',
@@ -1201,14 +1211,19 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     zIndex: 3,
     width: SEARCH_CENTER_SIZE,
     height: SEARCH_CENTER_SIZE,
-    borderWidth: 3,
+    // Pathly itself marks the point it's searching around: a round pin in the brand blue's
+    // surface, distinct from the rider's location dot.
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
     borderRadius: SEARCH_CENTER_SIZE / 2,
-    borderColor: colors.ring,
-    backgroundColor: colors.searchCenter,
-    shadowColor: colors.searchCenter,
-    shadowOpacity: 0.32,
-    shadowRadius: 5,
-    elevation: 3,
+    borderColor: colors.primary,
+    backgroundColor: colors.surface,
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
   },
   locationStatusPill: {
     position: 'absolute',
@@ -1225,7 +1240,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     gap: 6,
     paddingVertical: 6,
     paddingHorizontal: 12,
-    borderRadius: 16,
+    borderRadius: radii.pill,
     backgroundColor: 'rgba(0,0,0,0.6)',
     maxWidth: '100%',
   },

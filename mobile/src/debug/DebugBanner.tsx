@@ -5,6 +5,7 @@ import { useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
 import { appNow, useDebug } from './DebugContext';
+import { radii } from '../theme/shape';
 
 const timeFormat = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
@@ -37,7 +38,7 @@ export function DebugBanner({ top }: { top: number }) {
 
 const createStyles = (colors: Palette) => StyleSheet.create({
   wrap: { position: 'absolute', left: 16, right: 16, alignItems: 'center', gap: 6, zIndex: 4 },
-  pill: { maxWidth: '100%', flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 7, paddingHorizontal: 14, borderRadius: 18, backgroundColor: colors.warning },
+  pill: { maxWidth: '100%', flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 7, paddingHorizontal: 14, borderRadius: radii.pill, backgroundColor: colors.warning },
   text: { flexShrink: 1, color: '#1B1B1B', ...typography.metadata, fontFamily: fontFamilies.bold },
   action: { color: '#1B1B1B', fontFamily: fontFamilies.extraBold, fontSize: 13, textDecorationLine: 'underline' },
 });

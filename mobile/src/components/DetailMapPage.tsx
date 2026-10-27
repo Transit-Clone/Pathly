@@ -5,6 +5,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAppSettings, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { SHEET_AT_REST_TOLERANCE, SheetHandle } from './SheetHandle';
+import { radii } from '../theme/shape';
 
 const CONTROL_ROW_HEIGHT = 48;
 const ACTION_HEIGHT = 60;
@@ -157,8 +158,8 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   map: { position: 'absolute', top: 0, right: 0, left: 0, overflow: 'hidden', backgroundColor: colors.blueSoft },
   scroll: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, zIndex: 3, backgroundColor: 'transparent' },
   sheet: {
-    borderTopLeftRadius: 26,
-    borderTopRightRadius: 26,
+    borderTopLeftRadius: radii.sheet,
+    borderTopRightRadius: radii.sheet,
     backgroundColor: colors.surface,
     shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: -5 },

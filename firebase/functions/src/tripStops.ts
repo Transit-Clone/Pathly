@@ -178,7 +178,13 @@ export function pickBusPattern(candidates: readonly Candidate[], stopCount: numb
  * undefined when none fits. A city bus is looked for in every borough feed at once; the first
  * feed (in order) with a match wins.
  */
-type TripMatch = { stops: TripStop[]; tripId?: string; departures?: TripDeparture[] };
+type TripMatch = { stops: TripStop[]; tripId?: string; departures?: TripDeparture[]; live?: LiveTripRef };
+
+/** Where an exactly matched leg's trip is found in its agency's live feed (tripLive.ts). */
+export type LiveTripRef = { agencyId: AgencyId; routeId: string; tripId: string; boardStopId: string; alightStopId: string };
+
+/** Each matched step's live-feed reference, kept off the step itself so it never reaches the app. */
+export const liveTripRefs = new WeakMap<TransitStep, LiveTripRef>();
 
 export async function matchTripStops(step: TransitStep): Promise<TripMatch | undefined> {
   const agencies = agencyIdsForStep(step).filter(isAgencyAvailable);
@@ -265,7 +271,10 @@ async function matchInAgency(agencyId: AgencyId, step: TransitStep): Promise<Tri
     stops.push({ name: (parent ?? stop).name, location: { lat: stop.lat, lng: stop.lon }, time: stopTime(time) });
   }
   const departures = await departureOptions(agencyId, best, departureMs);
-  return { stops, ...(exact ? { tripId: exact.tripId } : {}), ...(departures.length > 1 ? { departures } : {}) };
+  const live = exact?.routeId && exact.boardStopId && exact.alightStopId
+    ? { agencyId, routeId: exact.routeId, tripId: exact.tripId, boardStopId: exact.boardStopId, alightStopId: exact.alightStopId }
+    : undefined;
+  return { stops, ...(exact ? { tripId: exact.tripId } : {}), ...(departures.length > 1 ? { departures } : {}), ...(live ? { live } : {}) };
 }
 
 /**
@@ -320,6 +329,7 @@ export async function addTripStops<T extends { steps: { kind: string }[] }>(itin
       step.stops = result.stops;
       if (result.tripId) step.tripId = result.tripId;
       if (result.departures) step.departures = result.departures;
+      if (result.live) liveTripRefs.set(step, result.live);
     }
   }));
   if (timer) clearTimeout(timer);

@@ -291,7 +291,7 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByTestId('search-loading')).toBeTruthy();
 
     const row = await screen.findByTestId('search-result-stony-brook-university');
-    expect(within(row).getByText('location-outline', { includeHiddenElements: true })).toBeTruthy();
+    expect(within(row).getByText('location', { includeHiddenElements: true })).toBeTruthy();
     expect(within(row).getByText('Stony Brook University')).toBeTruthy();
     expect(within(row).getByText('Stony Brook, NY')).toBeTruthy();
     expect(mockAutocompletePlaces).toHaveBeenCalledTimes(1);
@@ -434,7 +434,7 @@ describe('Pathly prototype navigation', () => {
 
     const recentRows = screen.getAllByTestId(/^search-result-/);
     expect(recentRows[0].props.testID).toBe('search-result-terry-road-smithtown');
-    expect(within(recentRows[0]).getByText('time-outline', { includeHiddenElements: true })).toBeTruthy();
+    expect(within(recentRows[0]).getByText('time', { includeHiddenElements: true })).toBeTruthy();
     mockAutocompletePlaces.mockClear();
     mockFetchPlaceDetails.mockClear();
     fireEvent.press(recentRows[0]);
@@ -1520,7 +1520,7 @@ describe('Pathly prototype navigation', () => {
     fireEvent(map, 'regionChangeComplete', { latitude: 40.7685, longitude: -73.5251, latitudeDelta: 0.05, longitudeDelta: 0.05 });
     // A solid purple dot the size of the GPS dot, not a faint ring.
     const centerStyle = StyleSheet.flatten(screen.getByTestId('search-center').props.style);
-    expect(centerStyle).toEqual(expect.objectContaining({ width: 17, height: 17, backgroundColor: lightColors.searchCenter }));
+    expect(centerStyle).toEqual(expect.objectContaining({ width: 34, height: 34, borderColor: lightColors.primary }));
     await waitFor(() => expect(nearby).toHaveBeenLastCalledWith({ lat: 40.7685, lon: -73.5251 }));
     // Each card's stop and departures are for the stop nearest the dot, not the rider.
     await waitFor(() => expect(callableNamed('getRouteLiveStatus')).toHaveBeenCalledWith(expect.objectContaining({ lat: 40.7685, lon: -73.5251 })));
@@ -1931,13 +1931,14 @@ describe('Pathly prototype navigation', () => {
       expect(region.latitudeDelta).toBe(0.06);
     });
 
-    it('shows a compact route badge over the map that lets gestures through', async () => {
+    it('names the train in big text over the map, letting gestures through', async () => {
       const screen = await openPortJefferson();
       const badge = screen.getByTestId('route-detail-badge', hidden);
+      expect(badge.props.accessibilityLabel).toBe('PJ train');
       expect(within(badge).getByText('PJ', hidden)).toBeTruthy();
       expect(within(badge).queryByText(/Port Jefferson/, hidden)).toBeNull();
-      // No taller than the 46 pt map controls, and inside an overlay that ignores touches.
-      expect(StyleSheet.flatten(badge.props.style).height).toBeLessThan(46);
+      expect(screen.getByTestId('map-label-glow', hidden)).toBeTruthy();
+      // Inside an overlay that ignores touches.
       let overlay = badge.parent;
       while (overlay && overlay.props.pointerEvents === undefined) overlay = overlay.parent;
       expect(overlay?.props.pointerEvents).toBe('none');

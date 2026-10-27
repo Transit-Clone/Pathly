@@ -3,6 +3,7 @@ import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import { useRouteColor } from '../data/routeColors';
 import { routes } from '../data/transit';
+import type { TripLegNote } from '../data/tripLive';
 import { formatDurationMinutes } from '../data/tripPlanning';
 
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
@@ -17,6 +18,8 @@ import { RouteBadge, type TransitMode } from './RouteBadge';
 import { DestinationPin, orientLegs, routeFocus, RouteLines, type MapLeg } from './RouteMapOverlay';
 import { MapControlButton } from './MapControlButton';
 import { PressableScale } from './PressableScale';
+import { TripNotePill } from './TripNotePill';
+import { radii } from '../theme/shape';
 
 const MAP_HEIGHT = 360;
 
@@ -49,6 +52,8 @@ export type TripDetailLeg = {
   walkBefore?: TripDetailWalk;
   /** Between the previous leg and this one: minutes waiting for this departure. */
   waitBeforeMinutes?: number;
+  /** Live notes: live times, a cancelled trip, a tight or missed connection (planned trips). */
+  notes?: readonly TripLegNote[];
   routeId: string;
   color: string;
   direction: string;
@@ -113,7 +118,7 @@ function WalkCard({ testID, waitMinutes, walk }: { testID: string; waitMinutes?:
   const wait = waitMinutes !== undefined ? formatDurationMinutes(waitMinutes) : null;
   return (
     <View accessibilityLabel={`Walk ${duration.accessibility}, ${walk.distance}, to ${walk.toName}${wait ? `, then wait ${wait.accessibility}` : ''}`} accessible={true} style={styles.walkCard} testID={testID}>
-      <View style={styles.walkIcon}><Icon color={colors.ink} filled={true} name="travel" size={20} /></View>
+      <View style={styles.walkIcon}><Icon color={colors.ink} name="travel" size={20} /></View>
       <View style={styles.routeCopy}>
         <Text style={styles.walkTitle}>{`Walk to ${walk.toName}`}</Text>
         <Text style={styles.walkMeta}>{walk.distance}{wait ? ` · then wait ${wait.visible}` : ''}</Text>
@@ -248,7 +253,7 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
 
   const action = (
     <PressableScale accessibilityLabel={actionLabel} accessibilityRole="button" onPress={isEndAction ? () => setConfirmingEnd(true) : onAction} style={[styles.goButton, isEndAction && styles.endTripAction]} testID={isEndAction ? `${testPrefix}-end` : `${testPrefix}-go`}>
-      <Icon color={colors.onPrimary} filled={true} name={isEndAction ? 'stop' : 'go'} size={20} />
+      <Icon color={colors.onPrimary} name={isEndAction ? 'stop' : 'go'} size={20} />
       <Text style={styles.goButtonText}>{isEndAction ? 'END' : 'GO'}</Text>
     </PressableScale>
   );
@@ -290,7 +295,7 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
               <View key={`${part.kind}-${index}-summary`} style={styles.modeItem}>
                 {part.kind === 'walk' && walkDuration ? (
                   <View accessibilityLabel={`Walk ${walkDuration.accessibility}`} accessible={true} style={styles.walkChip} testID={`${testPrefix}-summary-walk-${index}`}>
-                    <Icon color={colors.mutedInk} filled={true} name="travel" size={16} />
+                    <Icon color={colors.mutedInk} name="travel" size={16} />
                     <Text style={styles.walkChipText}>{part.minutes >= 60 ? walkDuration.visible : part.minutes}</Text>
                   </View>
                 ) : part.kind === 'leg' ? <RouteBadge agency={part.leg.agency} color={tint(part.leg.color)} mode={part.leg.mode} shortName={part.leg.shortName} size="small" textColor={part.leg.textColor} /> : null}
@@ -316,7 +321,7 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
           ease();
           setAlertsOpen((value) => !value);
         }} style={styles.alertButton} testID={`${testPrefix}-service-alerts`}>
-          <Icon color={colors.success} filled={true} name="ok" size={18} style={styles.alertIcon} /><Text style={styles.alertText}>Service alerts</Text><Text style={styles.alertStatus}>No delays</Text><Icon color={colors.mutedInk} name={alertsOpen ? 'collapse' : 'expand'} size={18} style={styles.chevron} />
+          <Icon color={colors.success} name="ok" size={18} style={styles.alertIcon} /><Text style={styles.alertText}>Service alerts</Text><Text style={styles.alertStatus}>No delays</Text><Icon color={colors.mutedInk} name={alertsOpen ? 'collapse' : 'expand'} size={18} style={styles.chevron} />
         </PressableScale>
       ) : null}
       {showServiceAlerts && alertsOpen ? <Text style={styles.alertBody}>No active service advisories affect this trip.</Text> : null}
@@ -343,13 +348,18 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
               <View style={styles.stepCard} testID={`${testPrefix}-${tone === 'recent' ? 'leg' : 'step'}-${index}`}>
                 {/* Grouped for screen readers; the departures and stop list below stay separately operable. */}
                 <View accessibilityLabel={`${leg.routeName}, ${leg.direction}, ${duration.accessibility}, ${leg.startTime} to ${leg.endTime}`} accessible={true} style={styles.stepHeader}>
-                  <RouteBadge agency={leg.agency} color={tint(leg.color)} mode={leg.mode} shortName={leg.shortName} size="large" textColor={leg.textColor} withModeIcon={true} />
+                  <RouteBadge agency={leg.agency} color={tint(leg.color)} mode={leg.mode} shortName={leg.shortName} size="large" textColor={leg.textColor} />
                   <View style={styles.routeCopy}>
                     <Text style={styles.stepAction}>{leg.routeName}</Text>
                     <Text numberOfLines={2} style={styles.headerDirection}>{leg.headsign ? `Toward ${leg.headsign}` : leg.direction}</Text>
                   </View>
                   <Text style={styles.segmentDuration}>{duration.visible}</Text>
                 </View>
+                {leg.notes && leg.notes.length > 0 ? (
+                  <View style={styles.legNotes} testID={`${testPrefix}-notes-${index}`}>
+                    {leg.notes.map((note) => <TripNotePill key={note.kind} note={note} testID={`${testPrefix}-note-${index}-${note.kind}`} />)}
+                  </View>
+                ) : null}
 
                 {leg.departures && leg.departures.length > 1 ? (
                   <View style={styles.departureBox} testID={`${testPrefix}-departures-${index}`}>
@@ -484,7 +494,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   walkChipText: { color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 12 },
   departureBox: { paddingHorizontal: 14, paddingTop: 12, paddingBottom: 4 },
   departureChips: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
-  departureChip: { minHeight: 34, justifyContent: 'center', paddingHorizontal: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 17, backgroundColor: colors.surface },
+  departureChip: { minHeight: 34, justifyContent: 'center', paddingHorizontal: 12, borderWidth: 1, borderColor: colors.border, borderRadius: radii.pill, backgroundColor: colors.surface },
   departureChipText: { color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 13, fontVariant: ['tabular-nums'] },
   departureUnreachable: { opacity: 0.45 },
   allDepartures: { minHeight: 34, flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 4 },
@@ -503,8 +513,8 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   topBar: { flexDirection: 'row', justifyContent: 'space-between', paddingTop: 8, paddingHorizontal: 14 }, mapActions: { gap: 10 },
   goButton: { minWidth: 104, height: 60, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 18, borderWidth: 3, borderColor: colors.blueSoft, borderRadius: 30, backgroundColor: colors.primary, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.28, shadowRadius: 10, elevation: 9 }, endTripAction: { borderColor: '#992D38', backgroundColor: colors.red }, goButtonPressed: { opacity: 0.88, transform: [{ scale: 0.97 }] }, goButtonText: { color: colors.onPrimary, fontFamily: fontFamilies.extraBold, fontSize: 18 },
   content: { padding: 16, paddingTop: 20, paddingBottom: 28, backgroundColor: colors.surfaceMuted }, summaryHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }, summaryHeaderLargeText: { flexDirection: 'column', alignItems: 'stretch' }, modeStrip: { minWidth: 0, flex: 1, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', rowGap: 6, paddingTop: 4 }, modeStripLargeText: { flexGrow: 0 }, modeItem: { flexDirection: 'row', alignItems: 'center' }, modeArrow: { marginHorizontal: 3 }, primaryMetrics: { minWidth: 0, flexShrink: 0, flexDirection: 'row', alignItems: 'baseline', justifyContent: 'flex-end', gap: 14 }, primaryMetricsLargeText: { alignSelf: 'stretch', flexShrink: 1, justifyContent: 'space-between' }, fare: { color: colors.primary, fontFamily: fontFamilies.extraBold, fontSize: 13 }, metricValue: { color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 10 }, minutes: { flexShrink: 1, fontSize: 25, lineHeight: 27, textAlign: 'right' },
-  timeCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18, padding: 16, borderWidth: 1, borderColor: colors.border, borderRadius: 18, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.08, shadowRadius: 9, elevation: 2 }, timeLabel: { color: colors.primary, ...typography.label, fontSize: 12 }, timeValue: { marginTop: 2, color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 20, lineHeight: 25 }, arriveTime: { alignItems: 'flex-end' },
-  tripContext: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginTop: 16 }, tripContextCopy: { minWidth: 0, flex: 1 }, contextLabel: { color: colors.primary, ...typography.label, fontSize: 9 }, destination: { marginTop: 2, color: colors.ink, ...typography.sectionHeading, fontSize: 19 }, origin: { marginTop: 2, color: colors.mutedInk, ...typography.metadata }, detailNote: { marginTop: 2, color: colors.primary, ...typography.metadata }, status: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 12, backgroundColor: colors.greenSoft }, statusDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.success }, statusText: { color: colors.success, fontFamily: fontFamilies.extraBold, fontSize: 10 }, recentStatus: { backgroundColor: colors.blueSoft }, recentStatusDot: { backgroundColor: colors.primary }, recentStatusText: { color: colors.primary }, transferLine: { flexDirection: 'row', alignItems: 'baseline', marginTop: 10 }, transferCount: { color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 16 }, transferText: { marginLeft: 4, color: colors.mutedInk, ...typography.metadata },
-  alertButton: { minHeight: 48, flexDirection: 'row', alignItems: 'center', marginTop: 12, paddingHorizontal: 14, borderWidth: 1, borderColor: colors.border, borderRadius: 15, backgroundColor: colors.background }, alertIcon: { marginRight: 8 }, alertText: { flex: 1, color: colors.ink, ...typography.bodyStrong }, alertStatus: { color: colors.success, ...typography.metadata }, chevron: { marginLeft: 8, color: colors.mutedInk, fontFamily: fontFamilies.extraBold }, alertBody: { paddingHorizontal: 14, paddingTop: 8, color: colors.mutedInk, ...typography.metadata },
-  steps: { gap: 14, marginTop: 14 }, stepGroup: { gap: 10 }, transferRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.border, borderRadius: 14 }, walkText: { flex: 1, color: colors.mutedInk, ...typography.metadata }, walkStrong: { color: colors.ink, fontFamily: fontFamilies.extraBold }, stepCard: { overflow: 'hidden', borderWidth: 1, borderColor: colors.border, borderRadius: 20, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.08, shadowRadius: 10, elevation: 2 }, stepHeader: { flexDirection: 'row', alignItems: 'center', gap: 11, padding: 14, borderBottomWidth: 1, borderBottomColor: colors.border }, routeCopy: { minWidth: 0, flex: 1 }, stepAction: { color: colors.ink, ...typography.routeName, fontSize: 16, lineHeight: 20 }, segmentDuration: { color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 16 }, segmentTimeline: { paddingVertical: 8, paddingHorizontal: 15 }, segmentDot: { zIndex: 1, width: 17, height: 17, borderWidth: 5, borderRadius: 9, backgroundColor: colors.white }, stopRow: { minWidth: 0, flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginLeft: 10, paddingVertical: 8 }, stopName: { minWidth: 0, flex: 1, color: colors.ink, ...typography.bodyStrong, fontSize: 14 }, stopTime: { color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 14 }, direction: { alignSelf: 'center', marginLeft: 10, paddingVertical: 10, color: colors.mutedInk, ...typography.metadata, fontSize: 11 },
+  timeCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18, padding: 16, borderWidth: 1, borderColor: colors.border, borderRadius: radii.card, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.08, shadowRadius: 9, elevation: 2 }, timeLabel: { color: colors.primary, ...typography.label, fontSize: 12 }, timeValue: { marginTop: 2, color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 20, lineHeight: 25 }, arriveTime: { alignItems: 'flex-end' },
+  tripContext: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginTop: 16 }, tripContextCopy: { minWidth: 0, flex: 1 }, contextLabel: { color: colors.primary, ...typography.label, fontSize: 9 }, destination: { marginTop: 2, color: colors.ink, ...typography.sectionHeading, fontSize: 19 }, origin: { marginTop: 2, color: colors.mutedInk, ...typography.metadata }, detailNote: { marginTop: 2, color: colors.primary, ...typography.metadata }, status: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 7, borderRadius: radii.control, backgroundColor: colors.greenSoft }, statusDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.success }, statusText: { color: colors.success, fontFamily: fontFamilies.extraBold, fontSize: 10 }, recentStatus: { backgroundColor: colors.blueSoft }, recentStatusDot: { backgroundColor: colors.primary }, recentStatusText: { color: colors.primary }, transferLine: { flexDirection: 'row', alignItems: 'baseline', marginTop: 10 }, transferCount: { color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 16 }, transferText: { marginLeft: 4, color: colors.mutedInk, ...typography.metadata },
+  alertButton: { minHeight: 48, flexDirection: 'row', alignItems: 'center', marginTop: 12, paddingHorizontal: 14, borderWidth: 1, borderColor: colors.border, borderRadius: radii.pill, backgroundColor: colors.background }, alertIcon: { marginRight: 8 }, alertText: { flex: 1, color: colors.ink, ...typography.bodyStrong }, alertStatus: { color: colors.success, ...typography.metadata }, chevron: { marginLeft: 8, color: colors.mutedInk, fontFamily: fontFamilies.extraBold }, alertBody: { paddingHorizontal: 14, paddingTop: 8, color: colors.mutedInk, ...typography.metadata },
+  steps: { gap: 14, marginTop: 14 }, stepGroup: { gap: 10 }, transferRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.border, borderRadius: radii.control }, walkText: { flex: 1, color: colors.mutedInk, ...typography.metadata }, walkStrong: { color: colors.ink, fontFamily: fontFamilies.extraBold }, stepCard: { overflow: 'hidden', borderWidth: 1, borderColor: colors.border, borderRadius: 20, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.08, shadowRadius: 10, elevation: 2 }, stepHeader: { flexDirection: 'row', alignItems: 'center', gap: 11, padding: 14, borderBottomWidth: 1, borderBottomColor: colors.border }, legNotes: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 14, paddingTop: 10 }, routeCopy: { minWidth: 0, flex: 1 }, stepAction: { color: colors.ink, ...typography.routeName, fontSize: 16, lineHeight: 20 }, segmentDuration: { color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 16 }, segmentTimeline: { paddingVertical: 8, paddingHorizontal: 15 }, segmentDot: { zIndex: 1, width: 17, height: 17, borderWidth: 5, borderRadius: 9, backgroundColor: colors.white }, stopRow: { minWidth: 0, flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginLeft: 10, paddingVertical: 8 }, stopName: { minWidth: 0, flex: 1, color: colors.ink, ...typography.bodyStrong, fontSize: 14 }, stopTime: { color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 14 }, direction: { alignSelf: 'center', marginLeft: 10, paddingVertical: 10, color: colors.mutedInk, ...typography.metadata, fontSize: 11 },
 });

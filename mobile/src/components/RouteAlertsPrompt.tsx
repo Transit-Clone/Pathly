@@ -7,6 +7,7 @@ import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
 import { Icon } from './Icon';
 import { PressableScale } from './PressableScale';
+import { radii } from '../theme/shape';
 
 /** What the sheet is asking about: a line's alert setting, from route view's bell. */
 export type RouteAlertsRequest = {
@@ -60,7 +61,7 @@ function AlertsForm({ onClose, onDone, request }: RouteAlertsPromptProps & { req
   return (
     <View accessibilityViewIsModal={true} style={styles.sheet} testID="route-alerts-prompt">
       <View style={styles.header}>
-        <Icon color={colors.primary} filled={true} name="bell" size={26} />
+        <Icon color={colors.primary} name="bell" size={26} />
         <View style={styles.headerCopy}>
           <Text style={styles.title}>Service alerts</Text>
         </View>
@@ -120,20 +121,20 @@ function AlertsForm({ onClose, onDone, request }: RouteAlertsPromptProps & { req
 const createStyles = (colors: Palette) => StyleSheet.create({
   viewport: { flex: 1, justifyContent: 'flex-end' },
   backdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: colors.scrim },
-  sheet: { width: '100%', maxWidth: 540, alignSelf: 'center', paddingHorizontal: 18, paddingTop: 18, paddingBottom: 30, borderTopLeftRadius: 24, borderTopRightRadius: 24, backgroundColor: colors.surface },
+  sheet: { width: '100%', maxWidth: 540, alignSelf: 'center', paddingHorizontal: 18, paddingTop: 18, paddingBottom: 30, borderTopLeftRadius: radii.sheet, borderTopRightRadius: radii.sheet, backgroundColor: colors.surface },
   header: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   headerCopy: { flex: 1, minWidth: 0 },
   title: { color: colors.ink, ...typography.sectionHeading, fontSize: 18 },
   label: { marginTop: 18, marginBottom: 8, color: colors.mutedInk, ...typography.label },
   options: { flexDirection: 'row', gap: 8 },
-  option: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8, borderWidth: 1, borderColor: colors.border, borderRadius: 22, backgroundColor: colors.surface },
+  option: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8, borderWidth: 1, borderColor: colors.border, borderRadius: radii.control, backgroundColor: colors.surface },
   optionSelected: { borderColor: colors.primary, backgroundColor: colors.primary },
   optionLabel: { color: colors.ink, ...typography.bodyStrong, fontSize: 14, textAlign: 'center' },
   optionLabelSelected: { color: colors.onPrimary },
   hours: { gap: 8, marginTop: 14 },
-  hourRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 14, backgroundColor: colors.background },
+  hourRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 8, borderRadius: radii.control, backgroundColor: colors.background },
   hourLabel: { width: 44, color: colors.mutedInk, ...typography.bodyStrong, fontSize: 14 },
-  hourInput: { flex: 1, minHeight: 40, paddingHorizontal: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 12, backgroundColor: colors.surface, color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 17, textAlign: 'center' },
-  done: { minHeight: 48, alignItems: 'center', justifyContent: 'center', marginTop: 20, borderRadius: 24, backgroundColor: colors.primary },
+  hourInput: { flex: 1, minHeight: 40, paddingHorizontal: 12, borderWidth: 1, borderColor: colors.border, borderRadius: radii.control, backgroundColor: colors.surface, color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 17, textAlign: 'center' },
+  done: { minHeight: 48, alignItems: 'center', justifyContent: 'center', marginTop: 20, borderRadius: radii.pill, backgroundColor: colors.primary },
   doneText: { color: colors.onPrimary, fontFamily: fontFamilies.extraBold, fontSize: 16 },
 });

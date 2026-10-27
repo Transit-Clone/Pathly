@@ -8,6 +8,7 @@ import { Icon } from './Icon';
 import { PressableScale } from './PressableScale';
 import { SavedPlaceBadge } from './SavedPlaceBadge';
 import { savedLocationIcon, savedPlaceLines } from './SavedPlacesStrip';
+import { radii } from '../theme/shape';
 
 type SavedLocationCardProps = {
   location: SavedLocation;
@@ -73,7 +74,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     paddingVertical: 12,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 16,
+    borderRadius: radii.card,
     backgroundColor: colors.surface,
     shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 2 },

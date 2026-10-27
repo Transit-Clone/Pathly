@@ -32,7 +32,7 @@ export function RecentTripCard({ destination, endedAt, onOpen, origin, testID }:
       style={styles.card}
       testID={testID}
     >
-      <View style={styles.icon}><Icon color={colors.primary} filled={true} name="recent" size={20} /></View>
+      <View style={styles.icon}><Icon color={colors.primary} name="recent" size={20} /></View>
       <View style={styles.copy}>
         <Text numberOfLines={1} style={styles.destination}>{destination}</Text>
         <Text numberOfLines={1} style={styles.origin}>{`From ${origin}`}</Text>

@@ -36,7 +36,15 @@ export type TransitStep = {
   tripId?: string;
   /** The same line's scheduled departures between the same two stops, this one included (tripDepartures.ts). */
   departures?: TripDeparture[];
+  /** What the agency's live feed says about this leg's trip (backend tripLive.ts). */
+  live?: LegLive;
+  /** The connection into this leg from the previous one, when it's tight or already missed. */
+  connection?: LegConnection;
 };
+/** 'tracked': live times, `delaySeconds` against the plan (late when positive). */
+export type LegLive = { status: 'tracked' | 'cancelled' | 'skips-stop'; departs?: string; arrives?: string; delaySeconds?: number };
+/** `spareSeconds`: time left after the walk between the legs; negative when already missed. */
+export type LegConnection = { status: 'tight' | 'missed'; spareSeconds: number };
 /** `stopTimes` follow the leg's `stops` when that trip calls at the same stops in between. */
 export type TripDeparture = { departs: string; arrives: string; stopTimes?: string[] };
 export type TripStep = WalkStep | TransitStep;

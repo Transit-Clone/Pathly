@@ -23,6 +23,7 @@ import {
   type LatLng,
   type ResumePlanRequest,
 } from '../data/tripPlanning';
+import { itineraryNote } from '../data/tripLive';
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { useClock } from '../hooks/useClock';
 import { useTripPlan } from '../hooks/useTripPlan';
@@ -34,12 +35,14 @@ import { fontFamilies, typography } from '../theme/typography';
 import { Icon, type IconName } from './Icon';
 import { LeaveTimeSheet } from './LeaveTimeSheet';
 import { PlannedTripDetailView } from './PlannedTripDetailView';
+import { TripNotePill } from './TripNotePill';
 import { Mascot } from './Mascot';
 import { MapControlButton } from './MapControlButton';
 import { PressableScale } from './PressableScale';
 import { RouteBadge, type TransitMode } from './RouteBadge';
 import { ItinerarySkeleton } from './Skeleton';
 import { TripMap } from './TripMap';
+import { radii } from '../theme/shape';
 
 /** What the rider has chosen on Route Results; kept by HomeScreen so it survives a trip to the search page. */
 export type ResultsCriteria = {
@@ -532,6 +535,7 @@ export function RouteResultsView({
               const fare = fareLabel(itinerary.fare);
               const leavesIn = Math.round((Date.parse(itinerary.departureTime) - now) / 60_000);
               const span = `${formatTripClock(itinerary.departureTime)} - ${formatTripClock(itinerary.arrivalTime)}`;
+              const liveNote = itineraryNote(itinerary);
               const timing = tripTime.mode === 'now' ? `${leavesIn > 0 ? `Leaves in ${leavesIn} min` : 'Leave now'} · ${span}` : span;
               return (
                 <View key={itinerary.id} style={styles.itinerary} testID={`itinerary-${itinerary.id}`}>
@@ -548,11 +552,11 @@ export function RouteResultsView({
                     <View style={[styles.itineraryTop, stackLargeTextMetrics && styles.itineraryTopLargeText]} testID={`search-result-layout-${itinerary.id}`}>
                       <View style={[styles.segmentColumn, stackLargeTextMetrics && styles.segmentColumnLargeText]}>
                         <View style={styles.segmentRow}>
-                          {legs.length === 0 && parts.length === 0 ? <Icon color={colors.mutedInk} filled={true} name="travel" size={18} /> : null}
+                          {legs.length === 0 && parts.length === 0 ? <Icon color={colors.mutedInk} name="travel" size={18} /> : null}
                           {parts.map((step, partIndex) => (
                             <View key={`${step.kind}-${partIndex}`} style={styles.segmentGroup}>
                               {step.kind === 'walk' ? (
-                                <Icon color={colors.mutedInk} filled={true} name="travel" size={18} testID={`itinerary-walk-${itinerary.id}-${partIndex}`} />
+                                <Icon color={colors.mutedInk} name="travel" size={18} testID={`itinerary-walk-${itinerary.id}-${partIndex}`} />
                               ) : (
                                 <RouteBadge
                                   agency={step.agency.name}
@@ -568,6 +572,7 @@ export function RouteResultsView({
                           ))}
                         </View>
                         <Text style={styles.nextRide} testID={`schedule-${itinerary.id}`}>{timing}</Text>
+                        {liveNote ? <View style={styles.liveNote}><TripNotePill note={liveNote} testID={`itinerary-note-${itinerary.id}`} /></View> : null}
                       </View>
                       <View style={[styles.summary, stackLargeTextMetrics && styles.summaryLargeText]}>
                         <Text style={styles.fare} testID={`fare-${itinerary.id}`}>{fare}</Text>
@@ -611,7 +616,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   topOverlay: { zIndex: 4 },
   tripRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingTop: 8, paddingHorizontal: 12 },
   backButton: { marginTop: 17 },
-  criteriaCard: { minWidth: 0, flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 14, paddingRight: 9, paddingVertical: 8, borderRadius: 20, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.16, shadowRadius: 12, elevation: 6 },
+  criteriaCard: { minWidth: 0, flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 14, paddingRight: 9, paddingVertical: 8, borderRadius: radii.card, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.16, shadowRadius: 12, elevation: 6 },
   endpointStack: { minWidth: 0, flex: 1 },
   endpointRow: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 11 },
   endpointDot: { width: 10, height: 10, borderRadius: 5 },
@@ -628,7 +633,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   resultsSheetInner: { flex: 1 },
   dragHandle: { height: 24, alignItems: 'center', justifyContent: 'center' },
   dragHandleGrip: { width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border },
-  resultsSheet: { position: 'absolute', right: 0, bottom: 0, left: 0, overflow: 'hidden', borderTopLeftRadius: 26, borderTopRightRadius: 26, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: -5 }, shadowOpacity: 0.12, shadowRadius: 16, elevation: 12 },
+  resultsSheet: { position: 'absolute', right: 0, bottom: 0, left: 0, overflow: 'hidden', borderTopLeftRadius: radii.sheet, borderTopRightRadius: radii.sheet, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: -5 }, shadowOpacity: 0.12, shadowRadius: 16, elevation: 12 },
   controls: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 2, paddingHorizontal: 14 },
   // Modes, Filter, and the leave time share the row equally; a long leave time is cut short.
   toolbarPill: { height: 36, minWidth: 0, flex: 1, flexDirection: 'row', gap: 5, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 18, backgroundColor: colors.surface },
@@ -648,13 +653,13 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   emptyTitle: { color: colors.ink, ...typography.bodyStrong },
   emptyBody: { maxWidth: 280, color: colors.mutedInk, ...typography.metadata, textAlign: 'center' },
   walkLimitNote: { marginHorizontal: 16, marginBottom: 8, color: colors.mutedInk, ...typography.metadata },
-  resetButton: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 16, borderRadius: 20, backgroundColor: colors.primary },
+  resetButton: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 16, borderRadius: radii.pill, backgroundColor: colors.primary },
   resetText: { color: colors.onPrimary, fontFamily: fontFamilies.extraBold, fontSize: 13 },
   resultHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 12, paddingHorizontal: 16 },
   resultTitle: { color: colors.ink, ...typography.sectionHeading, fontSize: 18 },
   updated: { color: colors.mutedInk, ...typography.metadata, fontSize: 9 },
   results: { gap: 8, padding: 12, paddingTop: 9, paddingBottom: 30 },
-  itinerary: { overflow: 'hidden', borderWidth: 1, borderColor: colors.border, borderRadius: 12, backgroundColor: colors.surface },
+  itinerary: { overflow: 'hidden', borderWidth: 1, borderColor: colors.border, borderRadius: radii.control, backgroundColor: colors.surface },
   itineraryPressable: { paddingHorizontal: 12, paddingVertical: 10 },
   itineraryTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   itineraryTopLargeText: { flexDirection: 'column', alignItems: 'stretch' },
@@ -662,6 +667,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   segmentColumnLargeText: { flexGrow: 0 },
   segmentRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4 },
   segmentGroup: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  liveNote: { marginTop: 6 },
   nextRide: { marginTop: 6, color: colors.mutedInk, ...typography.metadata, fontSize: 10 },
   summary: { minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 8 },
   summaryLargeText: { justifyContent: 'space-between' },

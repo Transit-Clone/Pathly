@@ -32,6 +32,7 @@ import { badgeLabel, RouteBadge, transitModeForAgency } from './RouteBadge';
 import { MapControlButton } from './MapControlButton';
 import { PressableScale } from './PressableScale';
 import { MapSkeleton, PredictionTilesSkeleton, StopListSkeleton } from './Skeleton';
+import { radii } from '../theme/shape';
 
 type RouteDetailViewProps = {
   /** Direction to open on (by `directions` index), e.g. when returning from the departures page. */
@@ -189,7 +190,7 @@ function TransferChip({ onOpen, stopName, testID, transfer }: { onOpen?: (transf
   // MTA-style signs: subway bullets and bus badges are text only; rail and ferries carry their mode's glyph.
   const label = (
     <>
-      {transfer.mode === 'rail' || transfer.mode === 'ferry' ? <Icon color={labelColor} filled={true} name={transfer.mode} size={13} /> : null}
+      {transfer.mode === 'rail' || transfer.mode === 'ferry' ? <Icon color={labelColor} name={transfer.mode} size={13} /> : null}
       <Text numberOfLines={1} style={[styles.transferText, transfer.mode === 'subway' && styles.subwayText, { color: labelColor }]}>{transfer.name}</Text>
     </>
   );
@@ -279,7 +280,7 @@ function AlertsSheet({ notices, onClose }: { notices: readonly RouteNotice[] | n
             {notices.map((notice, index) => (
               <View key={`${notice.kind}-${index}`} style={index > 0 ? styles.alertItemSpaced : undefined} testID={`service-alert-${index}`}>
                 <View style={[styles.alertLabel, notice.warning ? styles.alertPillWarning : styles.alertPillNeutral]}>
-                  <Icon color={notice.warning ? colors.onAlertYellow : colors.ink} filled={true} name={notice.warning ? 'warning' : 'info'} size={14} />
+                  <Icon color={notice.warning ? colors.onAlertYellow : colors.ink} name={notice.warning ? 'warning' : 'info'} size={14} />
                   <Text style={[styles.alertLabelText, { color: notice.warning ? colors.onAlertYellow : colors.ink }]}>{notice.label}</Text>
                 </View>
                 <Text style={styles.alertTitle}>{notice.title}</Text>
@@ -525,13 +526,13 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
 
   // Compact (short code only) and tucked under the back button, clear of the map's center and the
   // rider's stop that the camera opens on.
-  // Buses are named in big type in their route color, over a soft glow from the map's top-left corner so
-  // busy streets don't run through the name; other modes keep their colored sign.
-  const mapBadge = transitModeForAgency(route.agency) === 'bus' ? (
+  // Buses, trains and ferries are named in big type in their route color, over a soft glow from the
+  // map's top-left corner so busy streets don't run through the name; subway lines keep their round sign.
+  const mapBadge = vehicleIcon !== 'subway' ? (
     <>
       <MapLabelGlow color={colors.surface} height={insets.top + MAP_BADGE_TOP + MAP_BUS_LABEL_HEIGHT + 320} width={300} />
       <View
-        accessibilityLabel={`${badgeLabel(route)} bus`}
+        accessibilityLabel={`${badgeLabel(route)} ${vehicleIcon === 'rail' ? 'train' : vehicleIcon}`}
         accessible={true}
         style={[styles.mapBusLabel, { top: insets.top + MAP_BADGE_TOP }]}
         testID="route-detail-badge"
@@ -544,10 +545,9 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
       agency={route.agency}
       color={routeColor}
       shortName={badgeLabel(route)}
-      size={transitModeForAgency(route.agency) === 'subway' ? 'xlarge' : 'medium'}
+      size="xlarge"
       style={[styles.mapRouteBadge, { top: insets.top + MAP_BADGE_TOP }]}
       testID="route-detail-badge"
-      withModeIcon={true}
     />
   );
 
@@ -737,7 +737,7 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
           style={[styles.alertPill, notices[0]!.warning ? styles.alertPillWarning : styles.alertPillNeutral]}
           testID="service-alerts"
         >
-          <Icon color={notices[0]!.warning ? colors.onAlertYellow : colors.ink} filled={true} name={notices[0]!.warning ? 'warning' : 'info'} size={20} />
+          <Icon color={notices[0]!.warning ? colors.onAlertYellow : colors.ink} name={notices[0]!.warning ? 'warning' : 'info'} size={20} />
           <Text numberOfLines={1} style={[styles.alertPillText, { color: notices[0]!.warning ? colors.onAlertYellow : colors.ink }]}>{notices[0]!.label}</Text>
           {notices.length > 1 ? <Text style={[styles.alertPillMore, { color: notices[0]!.warning ? colors.onAlertYellow : colors.mutedInk }]}>{`+${notices.length - 1} more`}</Text> : null}
           <Icon color={notices[0]!.warning ? colors.onAlertYellow : colors.mutedInk} name="forward" size={18} />
@@ -772,7 +772,7 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
             // Just above the first stop's name, small: how long the walk there takes.
             const walkNote = walkMinutes != null ? (
               <View accessibilityLabel={`${walkMinutes} minute walk to ${liveStops[0]?.name ?? 'this stop'}`} accessible={true} style={styles.walkRow} testID="route-walk-time">
-                <Icon color={colors.mutedInk} filled={true} name="travel" size={12} />
+                <Icon color={colors.mutedInk} name="travel" size={12} />
                 <Text style={styles.walkText}>{`${walkMinutes} min`}</Text>
               </View>
             ) : null;
@@ -898,7 +898,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     paddingHorizontal: 16,
     borderWidth: 2,
     borderColor: colors.border,
-    borderRadius: 20,
+    borderRadius: radii.card,
   },
   predictionsEmptyText: {
     flexShrink: 1,
@@ -916,7 +916,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingBottom: 24,
-    borderRadius: 20,
+    borderRadius: radii.card,
   },
   moreCard: {
     gap: 6,
@@ -999,7 +999,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     gap: 10,
     marginTop: 12,
     paddingHorizontal: 14,
-    borderRadius: 15,
+    borderRadius: radii.pill,
   },
   alertPillWarning: {
     backgroundColor: colors.alertYellow,
@@ -1158,8 +1158,8 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     paddingHorizontal: 18,
     paddingTop: 18,
     paddingBottom: 30,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderTopLeftRadius: radii.sheet,
+    borderTopRightRadius: radii.sheet,
     backgroundColor: colors.surface,
   },
   transfersSheetHeader: {

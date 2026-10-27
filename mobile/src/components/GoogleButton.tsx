@@ -5,6 +5,7 @@ import { useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies } from '../theme/typography';
 import { PressableScale } from './PressableScale';
+import { radii } from '../theme/shape';
 
 export type GoogleSignInButtonProps = {
   disabled?: boolean;
@@ -45,7 +46,7 @@ export function GoogleButton({ disabled, onPress }: { disabled?: boolean; onPres
 }
 
 const createStyles = (colors: Palette) => StyleSheet.create({
-  button: { minHeight: 52, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border, borderRadius: 16, backgroundColor: colors.surface },
+  button: { minHeight: 52, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border, borderRadius: radii.pill, backgroundColor: colors.surface },
   disabled: { opacity: 0.5 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   label: { color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 15 },

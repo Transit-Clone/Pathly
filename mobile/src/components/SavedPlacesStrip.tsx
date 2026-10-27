@@ -9,6 +9,7 @@ import { typography } from '../theme/typography';
 import { Icon, type IconName } from './Icon';
 import { PressableScale } from './PressableScale';
 import { SavedPlaceBadge } from './SavedPlaceBadge';
+import { radii } from '../theme/shape';
 
 /** Matches the search page's content width. */
 const MAX_PAGE_WIDTH = 540;
@@ -191,7 +192,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     paddingVertical: 8,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 28,
+    borderRadius: radii.card,
     backgroundColor: colors.surface,
   },
   cardMuted: { borderStyle: 'dashed' },

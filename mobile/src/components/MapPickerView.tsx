@@ -12,6 +12,7 @@ import { GoogleMapView } from './GoogleMapView';
 import { Icon } from './Icon';
 import { MapControlButton } from './MapControlButton';
 import { PressableScale } from './PressableScale';
+import { radii } from '../theme/shape';
 
 const PIN_SIZE = 44;
 /** The map coming to rest, not every frame of a drag, looks up the address. */
@@ -97,7 +98,7 @@ export function MapPickerView({ location, onCancel, onPick }: MapPickerViewProps
         />
         {/* The pin's point sits on the map's center; it ignores touches so the map pans under it. */}
         <View pointerEvents="none" style={styles.pinWrap}>
-          <Icon color={colors.primary} filled={true} name="place" size={PIN_SIZE} />
+          <Icon color={colors.primary} name="place" size={PIN_SIZE} />
         </View>
         <SafeAreaView edges={['top']} pointerEvents="box-none" style={styles.topBar}>
           <MapControlButton accessibilityLabel="Back" icon="back" onPress={onCancel} testID="map-picker-back" />
@@ -147,8 +148,8 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   card: {
     gap: 12,
     padding: 16,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: radii.sheet,
+    borderTopRightRadius: radii.sheet,
     backgroundColor: colors.surface,
     shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: -2 },
@@ -163,7 +164,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     minHeight: 50,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 25,
+    borderRadius: radii.pill,
     backgroundColor: colors.primary,
   },
   setText: { color: colors.onPrimary, ...typography.bodyStrong, fontSize: 16 },

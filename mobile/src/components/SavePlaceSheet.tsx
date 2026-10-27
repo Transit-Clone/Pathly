@@ -10,6 +10,7 @@ import { fontFamilies, typography } from '../theme/typography';
 import { Icon } from './Icon';
 import { PressableScale } from './PressableScale';
 import { savedPlaceIcon } from './SavedPlacesStrip';
+import { radii } from '../theme/shape';
 
 const QUICK_NAMES = ['Home', 'Work'] as const;
 const ICON_NAMES: Record<SavedPlaceIcon, string> = {
@@ -127,7 +128,7 @@ function SavePlaceForm({ groups = [], onCancel, onChangeAddress, onRemove, onSav
                 style={[styles.quickName, selected && styles.quickNameSelected]}
                 testID={`save-place-${quick.toLowerCase()}`}
               >
-                <Icon color={selected ? colors.onPrimary : colors.primary} filled={true} name={quick === 'Home' ? 'home' : 'work'} size={16} />
+                <Icon color={selected ? colors.onPrimary : colors.primary} name={quick === 'Home' ? 'home' : 'work'} size={16} />
                 <Text style={[styles.quickNameText, selected && styles.quickNameTextSelected]}>{quick}</Text>
               </PressableScale>
             );
@@ -159,7 +160,7 @@ function SavePlaceForm({ groups = [], onCancel, onChangeAddress, onRemove, onSav
                 style={[styles.groupChip, selected && styles.groupChipSelected]}
                 testID={entry ? `save-place-group-${entry.name}` : 'save-place-group-none'}
               >
-                {entry ? <Icon color={selected ? colors.onPrimary : entry.color ? SAVED_PLACE_COLOR_HEX[entry.color] : colors.primary} filled={true} name={entry.icon ?? 'place'} size={15} /> : null}
+                {entry ? <Icon color={selected ? colors.onPrimary : entry.color ? SAVED_PLACE_COLOR_HEX[entry.color] : colors.primary} name={entry.icon ?? 'place'} size={15} /> : null}
                 <Text style={[styles.groupChipText, selected && styles.groupChipTextSelected]}>{entry ? entry.name : 'None'}</Text>
               </PressableScale>
             );
@@ -210,7 +211,7 @@ function SavePlaceForm({ groups = [], onCancel, onChangeAddress, onRemove, onSav
                 style={[styles.iconChoice, selected && { backgroundColor: SAVED_PLACE_COLOR_HEX[shownColor] }]}
                 testID={`save-place-icon-${icon}`}
               >
-                <Icon color={selected ? colors.white : colors.primary} filled={true} name={icon} size={20} />
+                <Icon color={selected ? colors.white : colors.primary} name={icon} size={20} />
               </PressableScale>
             );
           })}
@@ -265,15 +266,15 @@ function SavePlaceForm({ groups = [], onCancel, onChangeAddress, onRemove, onSav
 
 const createStyles = (colors: Palette) => StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 32, backgroundColor: colors.scrim },
-  card: { width: '100%', maxWidth: 380, maxHeight: '100%', padding: 20, borderRadius: 20, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.2, shadowRadius: 20, elevation: 12 },
+  card: { width: '100%', maxWidth: 380, maxHeight: '100%', padding: 20, borderRadius: radii.card, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.2, shadowRadius: 20, elevation: 12 },
   title: { color: colors.ink, ...typography.sectionHeading, fontSize: 18 },
   placeName: { marginTop: 8, color: colors.ink, ...typography.bodyStrong, fontSize: 15 },
   placeAddress: { marginTop: 1, color: colors.mutedInk, ...typography.metadata, fontSize: 13 },
-  changeAddress: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, paddingVertical: 6, paddingHorizontal: 12, borderRadius: 16, backgroundColor: colors.blueSoft },
+  changeAddress: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, paddingVertical: 6, paddingHorizontal: 12, borderRadius: radii.pill, backgroundColor: colors.blueSoft },
   changeAddressText: { color: colors.primary, ...typography.bodyStrong, fontSize: 13 },
   optional: { color: colors.mutedInk, fontFamily: fontFamilies.semibold, letterSpacing: 0 },
   groups: { gap: 8, paddingRight: 4 },
-  groupChip: { minHeight: 34, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 17, backgroundColor: colors.surface },
+  groupChip: { minHeight: 34, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, borderWidth: 1, borderColor: colors.border, borderRadius: radii.pill, backgroundColor: colors.surface },
   groupChipNew: { borderStyle: 'dashed' },
   groupChipSelected: { borderColor: colors.primary, borderStyle: 'solid', backgroundColor: colors.primary },
   groupChipText: { color: colors.ink, ...typography.bodyStrong, fontSize: 13 },
@@ -284,15 +285,15 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   colorSwatch: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 15 },
   fieldLabel: { marginTop: 18, marginBottom: 8, color: colors.mutedInk, ...typography.label },
   quickNames: { flexDirection: 'row', gap: 8, marginBottom: 10 },
-  quickName: { minHeight: 36, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, borderWidth: 1, borderColor: colors.border, borderRadius: 18, backgroundColor: colors.surface },
+  quickName: { minHeight: 36, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, borderWidth: 1, borderColor: colors.border, borderRadius: radii.pill, backgroundColor: colors.surface },
   quickNameSelected: { borderColor: colors.primary, backgroundColor: colors.primary },
   quickNameText: { color: colors.ink, ...typography.bodyStrong, fontSize: 14 },
   quickNameTextSelected: { color: colors.onPrimary },
-  input: { minHeight: 46, paddingHorizontal: 14, borderWidth: 1, borderColor: colors.border, borderRadius: 12, color: colors.ink, backgroundColor: colors.background, fontFamily: fontFamilies.semibold, fontSize: 15 },
+  input: { minHeight: 46, paddingHorizontal: 14, borderWidth: 1, borderColor: colors.border, borderRadius: radii.control, color: colors.ink, backgroundColor: colors.background, fontFamily: fontFamilies.semibold, fontSize: 15 },
   icons: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   iconChoice: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22, backgroundColor: colors.blueSoft },
   actions: { flexDirection: 'row', gap: 10, marginTop: 20 },
-  button: { flex: 1, minHeight: 46, alignItems: 'center', justifyContent: 'center', borderRadius: 23 },
+  button: { flex: 1, minHeight: 46, alignItems: 'center', justifyContent: 'center', borderRadius: radii.pill },
   cancelButton: { backgroundColor: colors.background },
   confirmButton: { backgroundColor: colors.primary },
   disabled: { opacity: 0.5 },

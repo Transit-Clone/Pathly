@@ -5,6 +5,7 @@ import type { Palette } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { Icon } from './Icon';
 import { PressableScale } from './PressableScale';
+import { radii } from '../theme/shape';
 
 type SearchHeaderProps = {
   onProfilePress: () => void;
@@ -35,7 +36,7 @@ export function SearchHeader({ onProfilePress, onSearchPress }: SearchHeaderProp
         style={styles.profile}
         testID="profile-trigger"
       >
-        <Icon color={colors.onPrimary} filled={true} name="person" size={24} />
+        <Icon color={colors.onPrimary} name="person" size={24} />
       </PressableScale>
     </View>
   );
@@ -54,7 +55,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     alignItems: 'center',
     gap: 13,
     paddingHorizontal: 18,
-    borderRadius: 28,
+    borderRadius: radii.pill,
     backgroundColor: colors.surface,
     shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 5 },

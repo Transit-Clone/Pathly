@@ -5,6 +5,7 @@ import type { Palette } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { Icon } from './Icon';
 import { PressableScale } from './PressableScale';
+import { radii } from '../theme/shape';
 
 type ResumeTripCardProps = {
   destination: string;
@@ -25,7 +26,7 @@ export function ResumeTripCard({ destination, instruction, onResume }: ResumeTri
       style={styles.card}
       testID="resume-active-trip"
     >
-      <View style={styles.icon}><Icon color={colors.onPrimary} filled={true} name="go" size={18} /></View>
+      <View style={styles.icon}><Icon color={colors.onPrimary} name="go" size={18} /></View>
       <View style={styles.copy}>
         <Text style={styles.label}>ACTIVE TRIP</Text>
         <Text numberOfLines={1} style={styles.destination}>{destination}</Text>
@@ -44,7 +45,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     gap: 11,
     paddingHorizontal: 12,
     paddingVertical: 9,
-    borderRadius: 18,
+    borderRadius: radii.card,
     borderWidth: 1,
     borderColor: colors.accent,
     backgroundColor: colors.surface,
@@ -59,6 +60,6 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   label: { color: colors.primary, ...typography.label },
   destination: { marginTop: 1, color: colors.ink, ...typography.bodyStrong, fontSize: 15 },
   instruction: { color: colors.mutedInk, ...typography.metadata },
-  resumePill: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16, backgroundColor: colors.blueSoft },
+  resumePill: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: radii.pill, backgroundColor: colors.blueSoft },
   resumeText: { color: colors.primary, ...typography.bodyStrong, fontSize: 13 },
 });

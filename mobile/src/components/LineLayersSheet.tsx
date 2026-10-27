@@ -7,6 +7,7 @@ import { typography } from '../theme/typography';
 import { Icon, type IconName } from './Icon';
 import { PressableScale } from './PressableScale';
 import { RouteBadge } from './RouteBadge';
+import { radii } from '../theme/shape';
 
 type LineLayersSheetProps = {
   visible: boolean;
@@ -55,7 +56,7 @@ export function LineLayersSheet({ choice, lines, onChange, onClose, visible }: L
               const on = choice.groups.includes(group.id);
               return (
                 <View key={group.id} style={styles.row}>
-                  <View style={styles.modeIcon}><Icon color={colors.primary} filled={true} name={group.icon as IconName} size={18} /></View>
+                  <View style={styles.modeIcon}><Icon color={colors.primary} name={group.icon as IconName} size={18} /></View>
                   <Text style={styles.rowText}>{group.label}</Text>
                   <Switch accessibilityLabel={`Show every ${group.label} line`} onValueChange={(value) => toggleGroup(group.id, value)} testID={`line-layer-group-${group.id}`} value={on} />
                 </View>
@@ -82,7 +83,7 @@ export function LineLayersSheet({ choice, lines, onChange, onClose, visible }: L
 const createStyles = (colors: Palette) => StyleSheet.create({
   viewport: { flex: 1, justifyContent: 'flex-end' },
   backdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: colors.scrim },
-  sheet: { width: '100%', maxWidth: 540, maxHeight: '80%', alignSelf: 'center', paddingHorizontal: 18, paddingTop: 18, paddingBottom: 30, borderTopLeftRadius: 24, borderTopRightRadius: 24, backgroundColor: colors.surface },
+  sheet: { width: '100%', maxWidth: 540, maxHeight: '80%', alignSelf: 'center', paddingHorizontal: 18, paddingTop: 18, paddingBottom: 30, borderTopLeftRadius: radii.sheet, borderTopRightRadius: radii.sheet, backgroundColor: colors.surface },
   header: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   title: { flex: 1, color: colors.ink, ...typography.sectionHeading, fontSize: 18 },
   clear: { color: colors.primary, ...typography.bodyStrong, fontSize: 14 },

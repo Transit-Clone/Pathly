@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 
+import { legNotes } from '../data/tripLive';
 import { legDepartureOptions, quickDepartureOptions, retimeItinerary, type DepartureChoices, type LegDepartureOption } from '../data/tripDepartures';
 
 import {
@@ -72,6 +73,7 @@ export function toTripDetailModel(itinerary: Itinerary, origin: string, destinat
       ? (Date.parse(step.from.time) - Date.parse(previous.to.time)) / 1000 - (pendingWalk?.durationSeconds ?? 0)
       : undefined;
     const options = departures[legs.length] ?? [];
+    const notes = legNotes(step);
     legs.push({
       agency: step.agency.name,
       ...(options.length > 1 ? { departures: options.map(departureRow), quickDepartures: quickDepartureOptions(options).map(departureRow) } : {}),
@@ -92,6 +94,7 @@ export function toTripDetailModel(itinerary: Itinerary, origin: string, destinat
       endTime: formatTripClock(step.to.time),
       ...(walkBefore ? { walkBefore } : {}),
       ...(waitSeconds !== undefined ? { waitBeforeMinutes: Math.max(0, Math.round(waitSeconds / 60)) } : {}),
+      ...(notes.length > 0 ? { notes } : {}),
     });
     pendingWalk = null;
     previous = step;

@@ -272,7 +272,7 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
         <Marker anchor={VEHICLE_ANCHOR} coordinate={{ latitude: point.lat, longitude: point.lon }} testID={`route-vehicle-${vehicle.tripId}`} title={vehicleLabel} zIndex={2}>
           <View style={styles.vehicleBox}>
             <View style={styles.vehicleBadge} testID={`route-vehicle-badge-${vehicle.tripId}`}>
-              <Icon color={color} filled={true} name={vehicleIcon} size={22} />
+              <Icon color={color} name={vehicleIcon} size={22} />
             </View>
             {vehicle.updatedAt != null ? (
               <View style={[styles.ageBadge, { backgroundColor: color }]} testID={`route-vehicle-age-badge-${vehicle.tripId}`}>

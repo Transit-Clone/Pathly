@@ -22,6 +22,7 @@ import { Icon } from './Icon';
 import { LIVE_SIGNAL_WIDTH, LiveSignal } from './LiveSignal';
 import { PressableScale } from './PressableScale';
 import { useSkeletonPulse } from './Skeleton';
+import { radii } from '../theme/shape';
 
 type TransitCardProps = {
   onPress: () => void;
@@ -193,7 +194,7 @@ export function TransitCard({ onPress, route, saved = false }: TransitCardProps)
         </ScrollView>
       )}
 
-      {saved ? <View pointerEvents="none" style={styles.savedBadge} testID={`route-card-${route.id}-saved`}><Icon color="rgba(255,255,255,0.9)" filled={true} name="favorite" size={12} /></View> : null}
+      {saved ? <View pointerEvents="none" style={styles.savedBadge} testID={`route-card-${route.id}-saved`}><Icon color="rgba(255,255,255,0.9)" name="favorite" size={12} /></View> : null}
       <View accessibilityElementsHidden={true} style={styles.pageDots}>
         {route.directions.map((item, index) => (
           <View
@@ -212,7 +213,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     overflow: 'hidden',
     marginHorizontal: CARD_HORIZONTAL_MARGIN,
     marginVertical: 3,
-    borderRadius: 14,
+    borderRadius: radii.card,
   },
   page: {
     height: 104,

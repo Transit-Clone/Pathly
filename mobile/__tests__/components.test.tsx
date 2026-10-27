@@ -22,8 +22,8 @@ describe('Icon', () => {
   it('renders the solid glyph for a filled toggle and stays hidden from accessibility', () => {
     const screen = render(
       <>
-        <Icon name="favorite" testID="outline" />
-        <Icon filled={true} name="favorite" testID="filled" />
+        <Icon filled={false} name="favorite" testID="outline" />
+        <Icon name="favorite" testID="filled" />
       </>,
     );
 
@@ -45,12 +45,12 @@ describe('RouteBadge', () => {
     expect(transitModeForAgency('Staten Island Ferry')).toBe('ferry');
   });
 
-  it('draws a ferry as a pill with a boat, announced as a ferry', () => {
+  it('draws a ferry as the shared text badge, announced as a ferry', () => {
     const screen = render(<RouteBadge agency="NYC Ferry" color="#00839C" shortName="ER" size="large" testID="ferry" />);
     const badge = screen.getByTestId('ferry');
     expect(badge.props.accessibilityLabel).toBe('ER ferry');
-    expect(StyleSheet.flatten(badge.props.style).borderRadius).toBe(23);
-    expect(screen.getByText('boat', { includeHiddenElements: true })).toBeTruthy();
+    expect(StyleSheet.flatten(badge.props.style).borderRadius).toBe(18);
+    expect(screen.queryByText('boat', { includeHiddenElements: true })).toBeNull();
   });
 
   it.each([
@@ -138,7 +138,7 @@ describe('loading placeholders', () => {
     expect(group.props.accessible).toBe(true);
     expect(screen.getAllByTestId('nearby-placeholder-card')).toHaveLength(3);
     for (const card of screen.getAllByTestId('nearby-placeholder-card')) {
-      expect(StyleSheet.flatten(card.props.style)).toEqual(expect.objectContaining({ height: 104, borderRadius: 14, backgroundColor: lightColors.skeleton }));
+      expect(StyleSheet.flatten(card.props.style)).toEqual(expect.objectContaining({ height: 104, borderRadius: 20, backgroundColor: lightColors.skeleton }));
     }
     expect(loop).toHaveBeenCalledTimes(1);
     screen.unmount();

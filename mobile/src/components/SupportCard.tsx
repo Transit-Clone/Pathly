@@ -6,6 +6,7 @@ import { fontFamilies, typography } from '../theme/typography';
 import { STUDENT_DISCLAIMER } from '../data/supportPrompt';
 import { Mascot } from './Mascot';
 import { PressableScale } from './PressableScale';
+import { radii } from '../theme/shape';
 
 /** The arrival screen's small, dismissable donation ask (see useSupportPrompt). */
 export function SupportCard({ onDismiss, onDonate }: { onDismiss: () => void; onDonate: () => void }) {
@@ -28,7 +29,7 @@ export function SupportCard({ onDismiss, onDonate }: { onDismiss: () => void; on
 }
 
 const createStyles = (colors: Palette) => StyleSheet.create({
-  card: { marginTop: 16, padding: 14, borderWidth: 1, borderColor: colors.border, borderRadius: 18, backgroundColor: colors.highlightSoft },
+  card: { marginTop: 16, padding: 14, borderWidth: 1, borderColor: colors.border, borderRadius: radii.card, backgroundColor: colors.highlightSoft },
   row: { flexDirection: 'row', gap: 12 },
   copy: { minWidth: 0, flex: 1 },
   title: { color: colors.ink, ...typography.bodyStrong },
@@ -36,6 +37,6 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   actions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 12 },
   secondary: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 14 },
   secondaryText: { color: colors.mutedInk, fontFamily: fontFamilies.extraBold, fontSize: 13 },
-  primary: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 16, borderRadius: 14, backgroundColor: colors.highlight },
+  primary: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 16, borderRadius: radii.pill, backgroundColor: colors.highlight },
   primaryText: { color: colors.onHighlight, fontFamily: fontFamilies.extraBold, fontSize: 13 },
 });

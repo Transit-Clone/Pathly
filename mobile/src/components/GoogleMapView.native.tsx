@@ -27,7 +27,7 @@ function SavedPlacePin({ color, icon }: { color: string; icon: IconName | null }
   const { colors } = useTheme();
   return (
     <View style={[pinStyles.badge, { backgroundColor: color, borderColor: colors.ring }]}>
-      {icon ? <Icon color={colors.ring} filled={true} name={icon} size={16} /> : null}
+      {icon ? <Icon color={colors.ring} name={icon} size={16} /> : null}
     </View>
   );
 }

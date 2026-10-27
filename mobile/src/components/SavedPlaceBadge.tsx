@@ -15,7 +15,7 @@ export function SavedPlaceBadge({ icon, location, size = 40, style, testID }: { 
   const { colors } = useTheme();
   return (
     <View style={[styles.badge, { width: size, height: size, borderRadius: size / 2, backgroundColor: savedPlaceColor(location, colors.primary), borderColor: colors.ring }, style]} testID={testID}>
-      <Icon color={colors.ring} filled={true} name={icon} size={Math.round(size * 0.5)} />
+      <Icon color={colors.ring} name={icon} size={Math.round(size * 0.5)} />
     </View>
   );
 }

@@ -19,6 +19,7 @@ import { TransitCard } from './TransitCard';
 import { PressableScale } from './PressableScale';
 import { RecentTripCard } from './RecentTripCard';
 import { SHEET_AT_REST_TOLERANCE, SheetHandle } from './SheetHandle';
+import { radii } from '../theme/shape';
 
 export type TransitTabId = 'nearby' | 'recents' | 'favorites';
 
@@ -383,8 +384,8 @@ export function TransitSheet({
 const createStyles = (colors: Palette) => StyleSheet.create({
   sheet: {
     overflow: 'hidden',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderTopLeftRadius: radii.sheet,
+    borderTopRightRadius: radii.sheet,
     backgroundColor: colors.surface,
     shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: -5 },

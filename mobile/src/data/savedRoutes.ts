@@ -1,6 +1,7 @@
 import { collection, deleteDoc, doc, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, type Unsubscribe } from 'firebase/firestore';
 
 import { db } from '../lib/firebase';
+import type { IndexedLine } from './lineIndex';
 import { discoveredRouteToRouteDetail, type DiscoveredRoute } from './nearbyTransit';
 import type { LiveSource, RouteDetail } from './transit';
 
@@ -114,6 +115,26 @@ export function savedRouteFrom(route: RouteDetail, alerts: RouteAlertSetting, fa
     alerts,
     direction1: stop(direction1, direction1?.stopId ?? source.direction1StopId),
     direction0: stop(direction0, direction0?.stopId ?? source.direction0StopId),
+  };
+}
+
+/**
+ * A line picked from search (Settings > Notifications), with alerts on and no star. It has no stop
+ * yet: its card finds the stops nearest the rider wherever they are, like a starred line far away.
+ */
+export function savedRouteFromLine(line: IndexedLine, alerts: RouteAlertSetting = 'all'): SavedRoute {
+  return {
+    id: `${line.agencyId}:${line.routeId}`,
+    agencyId: line.agencyId,
+    routeId: line.routeId,
+    agencyName: line.agencyDisplayName,
+    routeName: line.routeName,
+    shortName: line.shortName,
+    color: line.color,
+    favorite: false,
+    alerts,
+    direction1: null,
+    direction0: null,
   };
 }
 

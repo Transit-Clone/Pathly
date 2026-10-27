@@ -2,8 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useState } from 'react';
 import { Linking } from 'react-native';
 
-/** Where "Support Pathly" goes (a Ko-fi, Buy Me a Coffee, or GitHub Sponsors page). Unset hides every donation entry point. */
-export const DONATION_URL = process.env.EXPO_PUBLIC_DONATION_URL?.trim() || null;
+/** Where "Support Pathly" goes (EXPO_PUBLIC_DONATION_URL overrides Pathly's Ko-fi), always set so Settings always offers it. */
+export const DONATION_URL: string = process.env.EXPO_PUBLIC_DONATION_URL?.trim() || 'https://ko-fi.com/pathly';
 
 const STORAGE_KEY = 'pathly.supportPrompt.v1';
 /** The ask waits until Pathly has actually got the rider somewhere a few times. */

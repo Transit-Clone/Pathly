@@ -1,10 +1,9 @@
 import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { useRouteColor } from '../data/routeColors';
-import { useTheme, useThemedStyles } from '../theme/AppSettings';
+import { useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies } from '../theme/typography';
-import { Icon } from './Icon';
 
 export type TransitMode = 'subway' | 'bus' | 'rail' | 'ferry';
 
@@ -64,11 +63,11 @@ export function subwayExpressLine(shortName: string): string | null {
 }
 
 const sizes = {
-  small: { height: 28, fontSize: 12, icon: 13, padding: 7 },
-  medium: { height: 36, fontSize: 14, icon: 15, padding: 9 },
-  large: { height: 46, fontSize: 17, icon: 18, padding: 11 },
+  small: { height: 28, fontSize: 12, padding: 7 },
+  medium: { height: 36, fontSize: 14, padding: 9 },
+  large: { height: 46, fontSize: 17, padding: 11 },
   // Route view's sign over its map: big enough to read at a glance, like the bus name beside it.
-  xlarge: { height: 58, fontSize: 30, icon: 22, padding: 14 },
+  xlarge: { height: 58, fontSize: 30, padding: 14 },
 } as const;
 
 type RouteBadgeProps = {
@@ -82,7 +81,6 @@ type RouteBadgeProps = {
   textColor?: string;
   style?: StyleProp<ViewStyle>;
   testID?: string;
-  withModeIcon?: boolean;
 };
 
 export function RouteBadge({
@@ -94,15 +92,11 @@ export function RouteBadge({
   style,
   testID,
   textColor,
-  withModeIcon = false,
 }: RouteBadgeProps) {
   const styles = useThemedStyles(createStyles);
-  const { colors } = useTheme();
   const routeColor = useRouteColor()(color);
   const mode = modeOverride ?? transitModeForAgency(agency);
   const metrics = sizes[size];
-  // Ferries always carry the boat: with the pill shape, it's what sets them apart from buses.
-  const showIcon = mode === 'rail' || mode === 'ferry' || (mode === 'bus' && withModeIcon);
   const expressLine = mode === 'subway' ? subwayExpressLine(shortName) : null;
 
   if (expressLine) {
@@ -129,14 +123,12 @@ export function RouteBadge({
         styles.badge,
         { height: metrics.height, minWidth: metrics.height, backgroundColor: routeColor },
         mode === 'subway' && { width: metrics.height, borderRadius: metrics.height / 2 },
-        mode === 'bus' && { paddingHorizontal: metrics.padding, borderRadius: Math.round(metrics.height * 0.4) },
-        mode === 'rail' && { paddingHorizontal: metrics.padding, borderRadius: Math.round(metrics.height * 0.4) },
-        mode === 'ferry' && { paddingHorizontal: metrics.padding, borderRadius: metrics.height / 2 },
+        // Only subway lines get the MTA's round sign; buses, trains and ferries share one text badge.
+        mode !== 'subway' && { paddingHorizontal: metrics.padding, borderRadius: Math.round(metrics.height * 0.4) },
         style,
       ]}
       testID={testID}
     >
-      {showIcon ? <Icon color={textColor ?? colors.white} filled={true} name={mode === 'rail' ? 'rail' : mode === 'ferry' ? 'ferry' : 'bus'} size={metrics.icon} /> : null}
       <Text style={[styles.text, { fontSize: metrics.fontSize }, textColor ? { color: textColor } : null]}>{shortName}</Text>
     </View>
   );
