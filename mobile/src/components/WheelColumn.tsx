@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View, type NativeScrollEvent, type NativeSyntheticEvent, type ScrollViewInstance } from 'react-native';
 
 import { useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
@@ -20,7 +20,7 @@ type WheelColumnProps = {
 /** A snapping scroll wheel whose items can also be tapped directly. */
 export function WheelColumn({ accessibilityLabel, disabled = false, items, onSelect, selectedIndex }: WheelColumnProps) {
   const styles = useThemedStyles(createStyles);
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ y: selectedIndex * WHEEL_ITEM_HEIGHT, animated: true });

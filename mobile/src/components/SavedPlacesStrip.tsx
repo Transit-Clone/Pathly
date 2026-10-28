@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { Platform, ScrollView, StyleSheet, Text, useWindowDimensions, View, type GestureResponderEvent } from 'react-native';
+import { Platform, ScrollView, StyleSheet, Text, useWindowDimensions, View, type GestureResponderEvent, type ScrollViewInstance } from 'react-native';
 
 import { addressAfterName } from '../data/placesSearch';
 import { findLabeledLocation, savedPlaceName, sortSavedLocations, type Location, type SavedLocation } from '../data/userData';
@@ -67,7 +67,7 @@ export function SavedPlacesStrip({ onAdd, onSelect, places }: SavedPlacesStripPr
   const { width } = useWindowDimensions();
   // react-native-web's horizontal ScrollView scrolls by touch and trackpad but not by mouse drag,
   // so on web a drag across the cards scrolls the row here, while a plain click still opens one.
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const scrollX = useRef(0);
   const dragStartX = useRef<number | null>(null);
   const cards: StripCard[] = sortSavedLocations(places).map((place) => {

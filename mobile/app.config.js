@@ -20,6 +20,7 @@ module.exports = {
       output: 'single',
     },
     plugins: [
+      'expo-status-bar',
       [
         'react-native-maps',
         {

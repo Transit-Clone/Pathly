@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type GestureResponderEvent, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type GestureResponderEvent, type NativeScrollEvent, type NativeSyntheticEvent, type ScrollViewInstance } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useDebug } from '../debug/DebugContext';
@@ -287,7 +287,7 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
   // rather than in an effect, since it's a one-time derivation from props, not a subscription.
   // A caller-chosen direction counts as already selected, so it isn't overridden.
   const [hasAutoSelectedDirection, setHasAutoSelectedDirection] = useState(initialDirectionIndex !== undefined);
-  const directionScrollRef = useRef<ScrollView>(null);
+  const directionScrollRef = useRef<ScrollViewInstance>(null);
   if (!hasAutoSelectedDirection) {
     const [first, second] = route.directions;
     if (first.live && second.live && !first.unavailable && !second.unavailable) {
@@ -333,7 +333,7 @@ export function RouteDetailView({ initialDirectionIndex, isFavorite, location, l
 
   // The departure tiles scroll on their own. Native and web touch/trackpad scroll the ScrollView
   // directly; a web mouse drag is turned into a scroll here, while a plain click still taps.
-  const tilesScrollRef = useRef<ScrollView>(null);
+  const tilesScrollRef = useRef<ScrollViewInstance>(null);
   const tilesScrollX = useRef(0);
   const tilesDragStartX = useRef<number | null>(null);
   const handleTilesPressIn = (event: GestureResponderEvent) => {

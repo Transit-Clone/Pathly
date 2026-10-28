@@ -1,5 +1,5 @@
 import { forwardRef, useState } from 'react';
-import { Animated, Platform, Pressable, StyleSheet, type GestureResponderEvent, type PressableProps, type StyleProp, type View, type ViewStyle } from 'react-native';
+import { Animated, Platform, Pressable, StyleSheet, type GestureResponderEvent, type PressableProps, type StyleProp, type ViewInstance, type ViewStyle } from 'react-native';
 
 import { useAppSettings } from '../theme/AppSettings';
 
@@ -15,7 +15,7 @@ type PressableScaleProps = Omit<PressableProps, 'style'> & {
  * Pressable that eases down in scale and opacity while touched and springs back on release,
  * instead of snapping between states. Falls back to an instant opacity change under reduced motion.
  */
-export const PressableScale = forwardRef<View, PressableScaleProps>(function PressableScale(
+export const PressableScale = forwardRef<ViewInstance, PressableScaleProps>(function PressableScale(
   { disabled, onPressIn, onPressOut, pressedScale = 0.97, style, ...rest },
   ref,
 ) {

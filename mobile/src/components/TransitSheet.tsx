@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Platform, StyleSheet, Text, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type ScrollView } from 'react-native';
+import { ActivityIndicator, Animated, Platform, StyleSheet, Text, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type ScrollViewInstance } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { applyRouteLive } from '../data/applyRouteLive';
@@ -121,7 +121,7 @@ export function TransitSheet({
   // The handle sits inside the page scroll, so dragging it on native already scrolls the
   // sheet up and down like the rest of the page; tapping it (and clicking on web, where mouse
   // drags don't scroll) jumps between the resting and expanded positions.
-  const pageScrollRef = useRef<ScrollView>(null);
+  const pageScrollRef = useRef<ScrollViewInstance>(null);
   const scrollOffset = useRef(0);
   const expandedOffset = Math.max(0, mapHeight - EXPANDED_TOP);
   // The sheet is rebuilt at the top each time Home is shown (e.g. back from a route), but

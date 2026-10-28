@@ -214,7 +214,7 @@ describe('Settings', () => {
     it("exports the rider's searches, recent destinations, and saved places as JSON", async () => {
       await recordSearch(UID, place);
       await saveLocation(UID, place, 'Destination');
-      const share = jest.spyOn(Share, 'share').mockResolvedValue({ action: 'sharedAction' });
+      const share = jest.spyOn(Share, 'share').mockResolvedValue({ action: 'sharedAction', activityType: undefined });
       const screen = renderSettings();
       await openPage(screen, 'privacy');
       await act(async () => {
@@ -276,7 +276,7 @@ describe('Settings', () => {
 
   describe('Help & About', () => {
     it('shows the FAQ, privacy, and terms, and opens support', async () => {
-      const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
+      const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
       const screen = renderSettings();
       await openPage(screen, 'help');
       fireEvent.press(screen.getByTestId('help-faq'));
@@ -293,7 +293,7 @@ describe('Settings', () => {
     });
 
     it('credits OpenStreetMap for walking distances and links to its copyright page', async () => {
-      const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
+      const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
       const screen = renderSettings();
       await openPage(screen, 'help');
       expect(screen.getByText('Walking distances use map data © OpenStreetMap contributors')).toBeTruthy();
