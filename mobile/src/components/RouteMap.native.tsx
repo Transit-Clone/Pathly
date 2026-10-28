@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, useWindowDimensions, View, type LayoutChangeEvent } from 'react-native';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE, type Region } from 'react-native-maps';
+import MapView, { Marker, Polyline, type Region } from 'react-native-maps';
 
 import { formatAge, visibleTrains } from '../data/liveTrains';
 import { googleMapStyle } from '../data/mapStyle';
@@ -11,6 +11,7 @@ import type { Coordinates } from '../hooks/useCurrentLocation';
 import { useNow } from '../hooks/useNow';
 import { useTheme } from '../theme/AppSettings';
 import { Icon } from './Icon';
+import { NATIVE_MAP_PROVIDER } from './mapProvider';
 import type { TransitMode } from './RouteBadge';
 import { HeadingBeamMarker } from './HeadingBeamMarker';
 import { Glide } from '../hooks/useGlide';
@@ -216,7 +217,7 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
       }}
       onRegionChangeComplete={(region: Region) => setZoom(zoomForRegion(region.longitudeDelta, mapWidth || windowWidth))}
       customMapStyle={mapStyle}
-      provider={PROVIDER_GOOGLE}
+      provider={NATIVE_MAP_PROVIDER}
       ref={mapRef}
       showsCompass={false}
       showsMyLocationButton={false}
@@ -224,6 +225,7 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
       style={StyleSheet.absoluteFill}
       testID={testID}
       toolbarEnabled={false}
+      userInterfaceStyle={isDark ? 'dark' : 'light'}
     >
       {line.behind.length > 1 ? <Polyline coordinates={line.behind} strokeColor={withAlpha(color, BEHIND_LINE_ALPHA)} strokeWidth={LINE_WIDTH} testID="route-line-behind" zIndex={0} /> : null}
       <Polyline coordinates={line.ahead} strokeColor={color} strokeWidth={LINE_WIDTH} testID="route-line" zIndex={1} />

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
-import MapView, { Marker, PROVIDER_GOOGLE, Polygon, Polyline, type Camera, type LongPressEvent, type MapPressEvent, type Region } from 'react-native-maps';
+import MapView, { Marker, Polygon, Polyline, type Camera, type LongPressEvent, type MapPressEvent, type Region } from 'react-native-maps';
 
 import type { MapLine } from '../data/lineLayers';
 import { googleMapStyle } from '../data/mapStyle';
@@ -14,6 +14,7 @@ import { useTheme } from '../theme/AppSettings';
 import { CurrentLocationMarker } from './CurrentLocationMarker';
 import { HeadingBeamMarker } from './HeadingBeamMarker';
 import { Icon, type IconName } from './Icon';
+import { NATIVE_MAP_PROVIDER } from './mapProvider';
 import { savedLocationIcon } from './SavedPlacesStrip';
 
 /** How long saved-place pins keep redrawing after they change, so their icon font has drawn. */
@@ -197,7 +198,7 @@ export function GoogleMapView({ initialCamera, lines = [], location, onCameraCha
       onPress={onPress ? (event: MapPressEvent) => onPress(event.nativeEvent.coordinate) : undefined}
       onRegionChangeComplete={onRegionChangeComplete}
       customMapStyle={mapStyle}
-      provider={PROVIDER_GOOGLE}
+      provider={NATIVE_MAP_PROVIDER}
       ref={mapRef}
       region={region}
       showsCompass={false}
@@ -206,6 +207,7 @@ export function GoogleMapView({ initialCamera, lines = [], location, onCameraCha
       style={StyleSheet.absoluteFill}
       testID={testID}
       toolbarEnabled={false}
+      userInterfaceStyle={isDark ? 'dark' : 'light'}
     >
       <Polygon coordinates={SERVICE_AREA_OUTLINE} fillColor="transparent" strokeColor="#0B4F9C" strokeWidth={2} />
       {lines.map((line) => <Polyline coordinates={[...line.path]} key={line.key} strokeColor={themedRouteColor(line.color, isDark)} strokeWidth={3} tappable={false} testID={`map-line-${line.key}`} zIndex={0} />)}

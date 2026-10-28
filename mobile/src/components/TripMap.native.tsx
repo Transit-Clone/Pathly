@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE, type LatLng, type MapPressEvent, type Region } from 'react-native-maps';
+import MapView, { Marker, Polyline, type LatLng, type MapPressEvent, type Region } from 'react-native-maps';
 
 import { googleMapStyle } from '../data/mapStyle';
 import { themedRouteColor } from '../data/routeColors';
@@ -11,6 +11,7 @@ import type { Palette } from '../theme/colors';
 import { fontFamilies } from '../theme/typography';
 import { CurrentLocationMarker } from './CurrentLocationMarker';
 import { HeadingBeamMarker } from './HeadingBeamMarker';
+import { NATIVE_MAP_PROVIDER } from './mapProvider';
 
 const FIT_PADDING = { top: 90, right: 40, bottom: 60, left: 40 };
 const TRANSIT_WIDTH = 6;
@@ -188,7 +189,7 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
           if (event.nativeEvent.action !== 'marker-press') setSelected(null);
         } : undefined}
         pitchEnabled={false}
-        provider={PROVIDER_GOOGLE}
+        provider={NATIVE_MAP_PROVIDER}
         ref={mapRef}
         rotateEnabled={false}
         scrollEnabled={interactive}
@@ -199,6 +200,7 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
         style={StyleSheet.absoluteFill}
         testID={testID}
         toolbarEnabled={false}
+        userInterfaceStyle={isDark ? 'dark' : 'light'}
         zoomEnabled={interactive}
       >
         {legs.map((leg, index) => {
