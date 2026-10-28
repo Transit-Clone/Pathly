@@ -10,6 +10,11 @@ import { radii } from '../theme/shape';
 const CONTROL_ROW_HEIGHT = 48;
 const ACTION_HEIGHT = 60;
 const ACTION_GAP = 16;
+/** How much of the sheet stays in view once it's lowered to show more of the map. */
+const LOWERED_SHEET_PEEK = 190;
+/** A drag on the grip this far down lowers the sheet; this far up raises it again. */
+const HANDLE_DRAG_THRESHOLD = 32;
+const LOWER_ANIMATION_MS = 260;
 
 type DetailMapPageProps = {
   action?: ReactNode;
@@ -74,11 +79,31 @@ export function DetailMapPage({
   const recordScrollEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     scrollOffset.current = event.nativeEvent.contentOffset.y;
   };
+  // Lowered: the sheet drops toward the bottom so more of the map shows (dragging the grip down).
+  const [lowered, setLowered] = useState(false);
+  const loweredHeight = Math.max(mapHeight, height - LOWERED_SHEET_PEEK);
+  const [mapWindow] = useState(() => new Animated.Value(mapHeight));
+  useEffect(() => {
+    Animated.timing(mapWindow, { toValue: lowered ? loweredHeight : mapHeight, duration: reducedMotionActive ? 0 : LOWER_ANIMATION_MS, useNativeDriver: false }).start();
+  }, [lowered, loweredHeight, mapHeight, mapWindow, reducedMotionActive]);
   // Expanded = the sheet's top edge just below the status bar, as on the home screen.
   const toggleExpanded = () => {
+    // A lowered sheet comes back up to rest.
+    if (lowered) {
+      setLowered(false);
+      return;
+    }
     const target = scrollOffset.current <= SHEET_AT_REST_TOLERANCE ? Math.max(0, mapHeight - insets.top) : 0;
     scrollOffset.current = target;
     scrollRef.current?.scrollTo({ y: target, animated: !reducedMotionActive });
+  };
+  // Dragging the grip: down from rest lowers the sheet, up from lowered brings it back, and up
+  // from rest expands it.
+  const dragHandle = (dy: number) => {
+    const atRest = scrollOffset.current <= SHEET_AT_REST_TOLERANCE;
+    if (dy > HANDLE_DRAG_THRESHOLD && atRest) setLowered(true);
+    else if (dy < -HANDLE_DRAG_THRESHOLD && lowered) setLowered(false);
+    else if (dy < -HANDLE_DRAG_THRESHOLD && atRest) toggleExpanded();
   };
   const restingTop = mapHeight - ACTION_HEIGHT - ACTION_GAP;
   // With the controls gone (scrolled away with the map), the action takes their row.
@@ -99,12 +124,12 @@ export function DetailMapPage({
   return (
     <View style={styles.viewport}>
       <View style={styles.screen} testID={testID}>
-        <View pointerEvents={interactiveMap ? 'auto' : 'none'} style={[styles.map, { height: mapHeight }]} testID={mapTestID}>
+        <Animated.View pointerEvents={interactiveMap ? 'auto' : 'none'} style={[styles.map, { height: handle ? mapWindow : mapHeight }]} testID={mapTestID}>
           {map}
-        </View>
+        </Animated.View>
         {/* Shows through the sheet's rounded top corners in the map's own land color, so they
             read as map rather than a gap (the map itself stops above, keeping Google's logo clear). */}
-        <View pointerEvents="none" style={[styles.cornerFill, { top: mapHeight }]} testID={`${mapTestID}-corner-fill`} />
+        <Animated.View pointerEvents="none" style={[styles.cornerFill, { top: handle ? mapWindow : mapHeight }]} testID={`${mapTestID}-corner-fill`} />
 
         <Animated.ScrollView
           bounces={false}
@@ -122,15 +147,15 @@ export function DetailMapPage({
           style={styles.scroll}
           testID={scrollTestID}
         >
-          <View pointerEvents="box-none" style={{ height: mapHeight }} testID={`${scrollTestID}-map-window`}>
+          <Animated.View pointerEvents="box-none" style={{ height: handle ? mapWindow : mapHeight }} testID={`${scrollTestID}-map-window`}>
             {controlsScrollWithMap ? (
               <View pointerEvents="box-none" style={{ paddingTop: insets.top }}>
                 {controls}
               </View>
             ) : null}
-          </View>
+          </Animated.View>
           <SafeAreaView edges={['bottom']} style={[styles.sheet, { minHeight: height }, contentStyle, handle && styles.sheetWithHandle]} testID={contentTestID}>
-            {handle ? <SheetHandle {...handle} onPress={toggleExpanded} /> : null}
+            {handle ? <SheetHandle {...handle} expanded={!lowered} onDrag={dragHandle} onPress={toggleExpanded} /> : null}
             {children}
           </SafeAreaView>
         </Animated.ScrollView>

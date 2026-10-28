@@ -257,6 +257,8 @@ describe('Pathly prototype navigation', () => {
     fireEvent.press(screen.getByTestId('search-trigger'));
     fireEvent.press(screen.getByTestId('search-choose-on-map'));
     expect(screen.getByTestId('map-picker')).toBeTruthy();
+    const pickerMap = screen.getByTestId('map-picker-map', { includeHiddenElements: true });
+    expect(pickerMap.props.mapPadding.bottom).toBeGreaterThan(0);
     // Back returns to the search, still empty.
     fireEvent.press(screen.getByTestId('map-picker-back'));
     expect(screen.getByTestId('search-choose-on-map')).toBeTruthy();
@@ -278,8 +280,10 @@ describe('Pathly prototype navigation', () => {
     fireEvent.changeText(screen.getByTestId('search-input'), 'port');
     fireEvent.press(await screen.findByTestId('search-line-lirr-10'));
     await screen.findByTestId('route-map', { includeHiddenElements: true });
-    // The whole line: it starts at its first station, Port Jefferson, not the stop nearest the rider.
-    await screen.findByLabelText(/^Port Jefferson, (nearest to you, )?departs /);
+    // The whole line, in general: every stop from the first, with no times, departures or stop of the rider's.
+    await screen.findByLabelText(/^Port Jefferson(,|$)/);
+    expect(screen.queryByLabelText(/nearest to you|departs|arrives/)).toBeNull();
+    expect(screen.queryByTestId('route-predictions-scroll')).toBeNull();
     fireEvent.press(screen.getByTestId('route-back'));
     expect(await screen.findByTestId('search-view')).toBeTruthy();
   });
@@ -1114,6 +1118,9 @@ describe('Pathly prototype navigation', () => {
     const hidden = { includeHiddenElements: true };
     const screen = await openResults();
     expect(screen.getByTestId('results-map', hidden).props.scrollEnabled).toBe(true);
+    const mapViewport = StyleSheet.flatten(screen.getByTestId('results-map-viewport').props.style);
+    const sheetTop = StyleSheet.flatten(screen.getByTestId('results-sheet').props.style).top;
+    expect(mapViewport.height).toBe(sheetTop);
     fireEvent.press(screen.getByTestId(`search-result-view-${LIRR_TRIP.id}`));
     expect(screen.getByTestId('search-trip-map').props.pointerEvents).toBe('auto');
     const scroll = screen.getByTestId('search-trip-scroll');

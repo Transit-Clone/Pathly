@@ -280,4 +280,13 @@ describe('SavedPlacesStrip', () => {
     const screen = render(<AppSettingsProvider><SavedPlacesStrip onSelect={jest.fn()} places={[]} /></AppSettingsProvider>);
     expect(screen.queryByTestId('search-saved-places')).toBeNull();
   });
+
+  it('puts saved destinations before unset Home and Work shortcuts', () => {
+    const screen = render(<AppSettingsProvider><SavedPlacesStrip onAdd={jest.fn()} onSelect={jest.fn()} places={[place('gym', 'Gym')]} /></AppSettingsProvider>);
+    const strip = screen.getByTestId('search-saved-places');
+    const ids = strip.findAll((node: { props: { testID?: string } }) => typeof node.props.testID === 'string' && /^(search-saved-place-|search-set-|search-add-saved-place)/.test(node.props.testID))
+      .map((node: { props: { testID?: string } }) => node.props.testID);
+    const unique = [...new Set(ids)];
+    expect(unique).toEqual(['search-saved-place-gym', 'search-set-home', 'search-set-work', 'search-add-saved-place']);
+  });
 });

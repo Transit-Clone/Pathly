@@ -91,7 +91,7 @@ export function SavedPlacesStrip({ onAdd, onSelect, places }: SavedPlacesStripPr
   });
   if (onAdd) {
     const missing = (['Home', 'Work'] as const).filter((label) => !findLabeledLocation(places, label));
-    cards.unshift(...missing.map((label): StripCard => ({
+    cards.push(...missing.map((label): StripCard => ({
       key: `set-${label}`,
       icon: label === 'Home' ? 'home' : 'work',
       title: label,

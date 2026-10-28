@@ -6,7 +6,7 @@ import { GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_SCRIPT_ID } from '../data/googleMaps
 import type { MapLine } from '../data/lineLayers';
 import { googleMapStyle } from '../data/mapStyle';
 import { themedRouteColor } from '../data/routeColors';
-import { SERVICE_AREA_BOUNDS } from '../data/serviceArea';
+import { MAP_EXPLORATION_BOUNDS, SERVICE_AREA_BOUNDS } from '../data/serviceArea';
 import { addressAfterName } from '../data/placesSearch';
 import { metersPerPixelAtZoom, SAVED_PIN, savedPinSvgUrl, savedPlaceColor, stackSavedPins } from '../data/savedPlacePin';
 import { locationPoint, savedPlaceName, type SavedLocation } from '../data/userData';
@@ -18,18 +18,17 @@ import { HeadingBeamMarker } from './HeadingBeamMarker';
 import { centerOffsetFrom, glideMapTo } from './webMapGlide';
 
 const ZOOM = 14;
-const MIN_ZOOM = 9;
+const MIN_ZOOM = 8;
 
 const containerStyle = { width: '100%', height: '100%' };
 
-// Google Maps JS API supports hard pan/zoom restriction natively on web (strictBounds
-// disables panning/zooming past it entirely) — no manual clamping needed here, unlike native.
+// Keep the camera near the region, with a generous browsing margin and a soft viewport edge.
 // disableDefaultUI drops the satellite/map-type toggle, street view pegman, fullscreen
 // button, and zoom buttons the API shows by default — none of that fits this app's own UI.
 const baseMapOptions = {
   restriction: {
-    latLngBounds: SERVICE_AREA_BOUNDS,
-    strictBounds: true,
+    latLngBounds: MAP_EXPLORATION_BOUNDS,
+    strictBounds: false,
   },
   minZoom: MIN_ZOOM,
   disableDefaultUI: true,
@@ -247,7 +246,7 @@ export function GoogleMapView({ initialCamera, lines = [], location, onCameraCha
                 // Centered on the place, as Google Maps marks one; the icon is the label, drawn in
                 // the icon font at the badge's exact center.
                 icon={{
-                  url: savedPinSvgUrl(savedPlaceColor(saved.address, colors.primary), colors.ring),
+                  url: savedPinSvgUrl(savedPlaceColor(saved.address, colors.primary), colors.savedPlaceBorder),
                   anchor: new google.maps.Point(SAVED_PIN.size / 2, SAVED_PIN.size / 2),
                   labelOrigin: new google.maps.Point(SAVED_PIN.size / 2, SAVED_PIN.size / 2),
                 }}

@@ -1,7 +1,8 @@
 import type { User } from 'firebase/auth';
-import { collection, doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, onSnapshot, setDoc } from 'firebase/firestore';
 
-import { ensureUserProfile } from '../src/auth/userProfile';
+import { createUserProfile, ensureUserProfile } from '../src/auth/userProfile';
+import { normalizeBeanAvatar } from '../src/avatars/beanAvatar';
 import { db } from '../src/lib/firebase';
 
 type Profile = { displayName: string | null; email: string | null };
@@ -18,6 +19,20 @@ function readProfiles() {
 }
 
 describe('ensureUserProfile', () => {
+  it('assigns and saves a random bean once, including overlapping signup/backfill calls', async () => {
+    const user = { uid: 'new-rider', email: 'new@example.com' } as User;
+    const random = jest.spyOn(Math, 'random').mockReturnValue(0.4);
+    try {
+      await ensureUserProfile(user);
+      const initial = (await getDoc(doc(db, 'users', user.uid))).data()?.avatar;
+      expect(initial).toEqual(normalizeBeanAvatar(initial));
+      expect(initial.color).toBe('sky');
+      random.mockReturnValue(0.9);
+      await createUserProfile(user);
+      await ensureUserProfile(user);
+      expect((await getDoc(doc(db, 'users', user.uid))).data()?.avatar).toEqual(initial);
+    } finally { random.mockRestore(); }
+  });
   it('creates a profile doc for an account that has none', async () => {
     await ensureUserProfile({ uid: 'uid-1', email: 'rider@example.com', displayName: 'Pathly Rider' } as User);
     expect(readProfiles()['uid-1']).toMatchObject({ displayName: 'Pathly Rider', email: 'rider@example.com' });

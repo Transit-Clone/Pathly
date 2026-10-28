@@ -92,6 +92,13 @@ export function readAgencyStaticData(dataDir: string): AgencyStaticData {
       shapeId: row.shape_id || null,
     });
   }
+  // MTA's borough bus feeds list other boroughs' routes with no trips (the Bronx feed lists every
+  // SIM express bus); such a copy can't be described or ridden, and listed first it would hide the
+  // feed that runs the line. A route belongs to the feeds that run it.
+  if (tripsById.size > 0) {
+    const routesWithTrips = new Set([...tripsById.values()].map((trip) => trip.routeId));
+    for (const routeId of routesById.keys()) if (!routesWithTrips.has(routeId)) routesById.delete(routeId);
+  }
 
   const calendarByService = new Map<string, GtfsCalendar>();
   for (const row of readCsv<CalendarRow>(dataDir, 'calendar.txt')) {

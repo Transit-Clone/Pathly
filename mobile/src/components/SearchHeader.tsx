@@ -6,6 +6,8 @@ import { typography } from '../theme/typography';
 import { Icon } from './Icon';
 import { PressableScale } from './PressableScale';
 import { radii } from '../theme/shape';
+import { useAuth } from '../auth/AuthContext';
+import { BeanAvatar } from '../avatars/BeanAvatarImage';
 
 type SearchHeaderProps = {
   onProfilePress: () => void;
@@ -15,6 +17,7 @@ type SearchHeaderProps = {
 export function SearchHeader({ onProfilePress, onSearchPress }: SearchHeaderProps) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
+  const { avatar } = useAuth();
   return (
     <View style={styles.row}>
       <PressableScale
@@ -36,7 +39,7 @@ export function SearchHeader({ onProfilePress, onSearchPress }: SearchHeaderProp
         style={styles.profile}
         testID="profile-trigger"
       >
-        <Icon color={colors.onPrimary} name="person" size={24} />
+        <BeanAvatar config={avatar} size={46} testID="header-bean-avatar" />
       </PressableScale>
     </View>
   );
@@ -76,7 +79,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     borderRadius: 27,
     borderWidth: 3,
     borderColor: colors.surface,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.surface,
     shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 5 },
     shadowOpacity: 0.18,

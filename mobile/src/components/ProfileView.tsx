@@ -21,6 +21,8 @@ import { SavedPlaceBadge } from './SavedPlaceBadge';
 import { savedLocationIcon, savedPlaceLines } from './SavedPlacesStrip';
 import { AccessibilitySettings, AccountSettings, HelpSettings, NotificationSettings, PrivacySettings, TravelSettings } from './SettingsPages';
 import { radii } from '../theme/shape';
+import { BeanAvatar } from '../avatars/BeanAvatarImage';
+import { BeanAvatarEditor } from '../avatars/BeanAvatarEditor';
 
 type ProfileViewProps = {
   onBack: () => void;
@@ -83,7 +85,7 @@ function SavedPlacesSettings({ locations, onAdd, onEdit }: SavedPlacesSettingsPr
     </>
   );
 }
-type SettingsRoute = 'hub' | 'appearance' | 'account' | 'notifications' | 'accessibility' | 'privacy' | 'travel' | 'places' | 'maps' | 'help';
+type SettingsRoute = 'hub' | 'avatar' | 'appearance' | 'account' | 'notifications' | 'accessibility' | 'privacy' | 'travel' | 'places' | 'maps' | 'help';
 
 /** The hub's sections, in the order riders tend to need them; each row says what's inside. */
 const groups = ['ACCOUNT', 'TRIPS', 'DISPLAY', 'ALERTS & PRIVACY', 'SUPPORT'] as const;
@@ -170,7 +172,11 @@ const appearanceOptions: readonly { label: string; value: Appearance }[] = [
 
 export function ProfileView({ initialRoute, onBack, onOpenAdminTools, savedPlaces }: ProfileViewProps) {
   const { appearance, setAppearance } = useAppSettings();
-  const { user } = useAuth();
+  const { user, avatar } = useAuth();
+  const joined = user?.metadata?.creationTime ? new Date(user.metadata.creationTime) : null;
+  const since = joined && Number.isFinite(joined.getTime())
+    ? `Since ${joined.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' })}`
+    : null;
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
   const [route, setRoute] = useState<SettingsRoute>(initialRoute ?? 'hub');
@@ -179,6 +185,10 @@ export function ProfileView({ initialRoute, onBack, onOpenAdminTools, savedPlace
   const setFeedback = useCallback((text: string) => setFeedbackMessage(text ? { text, id: Date.now() } : null), []);
   const hideFeedback = useCallback(() => setFeedbackMessage(null), []);
   const openRoute = (nextRoute: SettingsRoute) => { setFeedback(''); setRoute(nextRoute); };
+
+  if (route === 'avatar') {
+    return <BeanAvatarEditor onCancel={() => openRoute('hub')} onSaved={() => { openRoute('hub'); setFeedback('Your bean is saved.'); }} />;
+  }
 
   if (route !== 'hub') {
     const title = routes.find((item) => item.id === route)?.title ?? 'Settings';
@@ -213,7 +223,7 @@ export function ProfileView({ initialRoute, onBack, onOpenAdminTools, savedPlace
         <ThemedStatusBar />
         <Header onBack={onBack} testID="profile-back" title="Profile & Settings" />
         <ScrollView contentContainerStyle={styles.pageContent} showsVerticalScrollIndicator={false}>
-          <View style={styles.accountCard}><View style={styles.avatar}><Icon color={colors.onPrimary} name="person" size={28} /></View><View><Text style={styles.name}>{user?.displayName || 'Pathly Rider'}</Text><Text style={styles.guest}>{user?.email ?? 'Signed in'}</Text></View></View>
+          <PressableScale accessibilityRole="button" accessibilityLabel="Customize your profile bean" accessibilityHint="Change your bean’s color, eyes, mouth and hair" onPress={() => openRoute('avatar')} style={styles.accountCard} testID="profile-edit-avatar"><View style={[styles.avatar, { backgroundColor: colors.surfaceMuted }]}><BeanAvatar config={avatar} size={58} testID="profile-bean-avatar" /></View><View style={styles.rowCopy}><Text style={styles.name}>{user?.displayName || 'Pathly Rider'}</Text>{since ? <Text style={styles.guest} testID="profile-since">{since}</Text> : null}</View><Icon name="forward" color={colors.mutedInk} size={20} /></PressableScale>
           {groups.map((group) => <View key={group}><Text style={styles.sectionLabel}>{group}</Text><Card>{routes.filter((item) => item.group === group).map((item) => <PressableScale accessibilityHint={item.detail} accessibilityLabel={item.title} accessibilityRole="button" key={item.id} onPress={() => openRoute(item.id)} style={styles.settingRow} testID={`settings-row-${item.id}`}><View style={styles.rowIcon}><Icon name={item.icon} size={19} /></View><View style={styles.rowCopy}><Text style={styles.settingText}>{item.title}</Text></View><Icon color={colors.mutedInk} name="forward" size={20} /></PressableScale>)}{group === 'SUPPORT' ? <PressableScale accessibilityHint="Opens Pathly's feedback form" accessibilityLabel="Submit feedback" accessibilityRole="link" onPress={() => void Linking.openURL(FEEDBACK_FORM_URL).catch(() => undefined)} style={styles.settingRow} testID="settings-row-feedback"><View style={styles.rowIcon}><Icon name="feedback" size={19} /></View><View style={styles.rowCopy}><Text style={styles.settingText}>Submit feedback</Text></View><Icon color={colors.mutedInk} name="forward" size={20} /></PressableScale> : null}{group === 'SUPPORT' ? <PressableScale accessibilityHint="Opens Pathly's donation page" accessibilityLabel="Support Pathly" accessibilityRole="link" onPress={openDonationPage} style={styles.settingRow} testID="settings-row-support"><View style={[styles.rowIcon, styles.supportIcon]}><Icon color={colors.highlightInk} name="heart" size={19} /></View><View style={styles.rowCopy}><Text style={styles.settingText}>Support Pathly</Text><Text style={styles.settingDetail}>{STUDENT_DISCLAIMER}</Text></View><Icon color={colors.mutedInk} name="forward" size={20} /></PressableScale> : null}</Card></View>)}
           {onOpenAdminTools ? <View><Text style={styles.sectionLabel}>ADMIN</Text><Card><PressableScale accessibilityLabel="Admin tools" accessibilityRole="button" onPress={onOpenAdminTools} style={styles.settingRow} testID="settings-row-admin"><View style={styles.rowIcon}><Icon name="crosshair" size={19} /></View><View style={styles.rowCopy}><Text style={styles.settingText}>Admin tools</Text></View><Icon color={colors.mutedInk} name="forward" size={20} /></PressableScale></Card></View> : null}
           <PressableScale accessibilityRole="button" onPress={() => { void signOutUser(); }} style={styles.signOut} testID="sign-out"><Text style={styles.signOutText}>Sign out</Text></PressableScale>

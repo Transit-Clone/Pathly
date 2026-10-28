@@ -52,10 +52,13 @@ type RouteDetailViewProps = {
   alerts?: { on: boolean; onOpen: () => void };
   /** Opens a transfer badge's line at the stop it was tapped on. */
   onOpenTransfer?: (transfer: LineTransfer, stop: TappedStop) => void;
+  /** Opens this line at one of its stops (a stop on the map, or a stop row on the whole line). */
+  onOpenStop?: (stop: TappedStop) => void;
   route: RouteDetail;
   /**
-   * The whole line, not one stop's view of it (opened from search): every stop is listed, the map
-   * frames the full route, and no part of the line is shown as already passed.
+   * The whole line, not one stop's view of it (opened from search): a general overview that
+   * ignores where the rider is. Every stop is listed without times or a highlighted stop, the map
+   * frames the full route, and tapping a stop opens the line there.
    */
   wholeRoute?: boolean;
 };
@@ -339,7 +342,7 @@ function TransfersSheet({ onClose, onOpen, sheet }: {
   );
 }
 
-export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, location, locationKnown = false, onBack, onOpenDepartures, onOpenTransfer, onRefreshLocation, onToggleFavorite, route, wholeRoute = false }: RouteDetailViewProps) {
+export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, location, locationKnown = false, onBack, onOpenDepartures, onOpenStop, onOpenTransfer, onRefreshLocation, onToggleFavorite, route, wholeRoute = false }: RouteDetailViewProps) {
   const routeColor = useRouteColor()(route.color);
   const styles = useThemedStyles(createStyles);
   const { colors, isDark } = useTheme();
@@ -438,7 +441,8 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
   // Walked from where the rider was when the page opened: drawn once, not redrawn as they move.
   const [walkFrom, setWalkFrom] = useState<Coordinates | null>(null);
   if (locationKnown && location && !walkFrom) setWalkFrom(location);
-  const walkPath = useWalkingPath(route.liveSource?.agencyId, activeDirection.stopId, walkFrom ?? undefined);
+  // The whole line has no stop of the rider's, so no walk to one.
+  const walkPath = useWalkingPath(route.liveSource?.agencyId, activeDirection.stopId, wholeRoute ? undefined : walkFrom ?? undefined);
   // With Step-free routes on (Settings -> Accessibility), step-free stations get a small wheelchair beside their name.
   const { preferences } = useUserPreferences();
   const isAccessibleStop = useAccessibleStops(route.liveSource?.agencyId, preferences.stepFree);
@@ -513,7 +517,8 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
 
   const vehicleIcon = transitModeForAgency(route.agency);
   // Delays on the shown direction's tracked departures, then MTA alerts, under the time cards.
-  const notices = routeNotices(route, activePredictions, vehicleIcon);
+  // The whole line shows no departures, so only its alerts, not one stop's delays.
+  const notices = routeNotices(route, wholeRoute ? [] : activePredictions, vehicleIcon);
   // The stop list follows the selected departure, so its chip says whether that one is late.
 
   // Only ever rendered below for a route with no `liveSource` — every entry in the static demo
@@ -584,6 +589,10 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
         focusStopId={wholeRoute ? undefined : activeDirection.stopId}
         focusStopName={wholeRoute ? undefined : activeDirection.stopName}
         mode={vehicleIcon}
+        onOpenStop={onOpenStop ? (stop) => {
+          if (stop.lat == null || stop.lon == null || (!wholeRoute && stop.stopId === activeDirection.stopId)) return;
+          onOpenStop({ name: stop.name, stopId: stop.stopId, lat: stop.lat, lon: stop.lon, directionIndex: activeDirectionIndex });
+        } : undefined}
         onUserPan={() => setIsLocationCentered(false)}
         // The agency's real track/street shape for this direction, served with the stop list.
         path={geometryStatus.geometry.path}
@@ -658,7 +667,7 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
       {debug.overlays.ids ? <Text selectable={true} style={styles.debugNote} testID="route-debug-ids">{route.liveSource ? `${route.liveSource.agencyId}:${route.liveSource.routeId}` : `route ${route.id}`}</Text> : null}
 
       {/* The active direction's departures: their own horizontal scroll, separate from the direction swipe. */}
-      {activePredictions.length === 0 && route.liveStatus === 'loading' ? (
+      {wholeRoute ? null : activePredictions.length === 0 && route.liveStatus === 'loading' ? (
         <PredictionTilesSkeleton accessibilityLabel={predictionsEmptyMessage(route) ?? 'Loading departures'} gap={TILE_GAP} tileWidth={tileWidth} />
       ) : activePredictions.length === 0 ? (
         <View style={styles.predictions}>
@@ -753,7 +762,7 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
       ) : null}
       <AlertsSheet notices={alertsOpen ? notices : null} onClose={() => setAlertsOpen(false)} />
 
-      <View accessibilityLabel="Stops for the next departure" style={styles.stopList}>
+      <View accessibilityLabel={wholeRoute ? 'Stops' : 'Stops for the next departure'} style={styles.stopList}>
         {liveStopsResult.status === 'loading' ? (
           <StopListSkeleton color={routeColor} />
         ) : liveStopsResult.status !== 'ready' ? (
@@ -774,7 +783,7 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
             // "Departs" (no "nearest to you" claim), for the few routes with no real geometry
             // at all — so there's always exactly one highlight and the wording never claims a
             // match that isn't real.
-            const nearestMatchIndex = focusStopIndex(liveStops, activeDirection.stopId, activeDirection.stopName);
+            const nearestMatchIndex = wholeRoute ? -1 : focusStopIndex(liveStops, activeDirection.stopId, activeDirection.stopName);
             // The walk to the rider's stop, over the first stop when that's the one it leads to.
             const walkMinutes = nearestMatchIndex === 0 && walkPath ? walkingMinutes(walkPath) : null;
             // Just above the first stop's name, small: how long the walk there takes.
@@ -788,20 +797,24 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
               const isFirst = index === 0;
               const isLast = index === liveStops.length - 1;
               const isNearestMatch = index === nearestMatchIndex;
-              const isHighlighted = nearestMatchIndex >= 0 ? isNearestMatch : isFirst;
+              const isHighlighted = !wholeRoute && (nearestMatchIndex >= 0 ? isNearestMatch : isFirst);
               const transfers = transfersFor(route, stop, lineTransfers);
-              const canOpen = transfers.length > 0;
+              // On the whole line a stop opens the line there; otherwise one with transfers lists them.
+              const at = wholeRoute && onOpenStop ? tappedStop(stop) : null;
+              const canOpen = at != null || transfers.length > 0;
               const transferLabel = transfers.length > 0 ? `, transfers: ${transfers.map((transfer) => transfer.name).join(', ')}` : '';
               // Rows show only the stop name and time (plus transfers); "nearest to you" and
               // departs/arrives stay in the accessibility label.
               return (
                 <PressableScale
                   key={`${stop.stopId ?? stop.name}-${index}`}
-                  accessibilityHint={canOpen ? 'Shows the lines to change to here' : undefined}
-                  accessibilityLabel={`${stop.name}, ${isAccessibleStop?.(stop.stopId) ? 'wheelchair accessible, ' : ''}${isNearestMatch ? 'nearest to you, ' : ''}${isFirst ? 'departs' : 'arrives'} ${stop.time}${transferLabel}`}
+                  accessibilityHint={at ? 'Opens departures from this stop' : canOpen ? 'Shows the lines to change to here' : undefined}
+                  accessibilityLabel={wholeRoute
+                    ? `${stop.name}${isAccessibleStop?.(stop.stopId) ? ', wheelchair accessible' : ''}${transferLabel}`
+                    : `${stop.name}, ${isAccessibleStop?.(stop.stopId) ? 'wheelchair accessible, ' : ''}${isNearestMatch ? 'nearest to you, ' : ''}${isFirst ? 'departs' : 'arrives'} ${stop.time}${transferLabel}`}
                   accessibilityRole={canOpen ? 'button' : undefined}
                   disabled={!canOpen}
-                  onPress={canOpen ? () => setTransfersSheet({ stop, transfers }) : undefined}
+                  onPress={at ? () => onOpenStop?.(at) : canOpen ? () => setTransfersSheet({ stop, transfers }) : undefined}
                   pressedScale={0.99}
                   style={styles.stopRow}
                   testID={`stop-row-${index}`}
@@ -810,7 +823,7 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
                   {/* One divider spans the name and the time, not just the name. */}
                   <View style={styles.stopBody} testID={`stop-row-body-${stop.name}`}>
                     <View style={styles.stopCopy}>{isFirst ? walkNote : null}<View style={styles.stopNameRow}><Text style={styles.stopName}>{stop.name}</Text>{isAccessibleStop?.(stop.stopId) ? <View accessibilityLabel="Wheelchair accessible" accessible={true} style={styles.wheelchair} testID={`stop-accessible-${index}`}><Icon color={colors.white} name="wheelchair" size={12} /></View> : null}</View>{debug.overlays.ids && stop.stopId ? <Text selectable={true} style={styles.debugNote} testID={`stop-debug-id-${stop.stopId}`}>{`stop ${stop.stopId}`}</Text> : null}{transfers.length > 0 ? <TransferChips stopName={stop.name} transfers={transfers} /> : null}</View>
-                    <Text style={styles.stopTime}>{stop.time}</Text>
+                    {wholeRoute ? null : <Text style={styles.stopTime}>{stop.time}</Text>}
                   </View>
                 </PressableScale>
               );

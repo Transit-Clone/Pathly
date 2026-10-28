@@ -112,7 +112,7 @@ const ALL_MODES: readonly TransitMode[] = ['subway', 'bus', 'rail', 'ferry'];
 /** The results sheet's top at rest, as a share of the screen; expanded, it stops below the trip card. */
 const SHEET_REST_SHARE = 0.44;
 /** Space kept between the trip card and an expanded sheet. */
-const SHEET_EXPANDED_GAP = 10;
+const SHEET_EXPANDED_GAP = 48;
 /** A drag shorter than this (points) is a tap on the handle. */
 const HANDLE_TAP_SLOP = 6;
 /** Walks at least this long show in a result's steps; shorter ones are just getting between platforms. */
@@ -174,7 +174,7 @@ export function RouteResultsView({
   const insets = useSafeAreaInsets();
   const { reducedMotionActive } = useAppSettings();
   const [tripCardBottom, setTripCardBottom] = useState(insets.top + 120);
-  const restTop = height * SHEET_REST_SHARE;
+  const restTop = Math.max(height * SHEET_REST_SHARE, Math.min(height - insets.bottom - 128, tripCardBottom + SHEET_EXPANDED_GAP));
   const expandedTop = Math.min(restTop, tripCardBottom + SHEET_EXPANDED_GAP);
   const [sheetTop] = useState(() => new Animated.Value(restTop));
   const sheetExpanded = useRef(false);
@@ -191,6 +191,12 @@ export function RouteResultsView({
     sheetBounds.current = { restTop, expandedTop };
     settleRef.current = settleSheet;
   });
+  useEffect(() => {
+    // A taller trip card or a rotated screen must not leave the map's legal edge
+    // below a sheet still using its previous layout position.
+    sheetTop.stopAnimation();
+    sheetTop.setValue(sheetExpanded.current ? expandedTop : restTop);
+  }, [expandedTop, restTop, sheetTop]);
   // The refs are only read inside gesture callbacks, never while rendering.
   // eslint-disable-next-line react-hooks/refs
   const [handleResponder] = useState(() => PanResponder.create({
@@ -305,6 +311,9 @@ export function RouteResultsView({
     <View style={styles.viewport}>
       <View style={styles.screen} testID="route-results-view">
         <ThemedStatusBar />
+        {/* The map stays fixed while the sheet moves; its fixed height keeps the SDK's logo and
+            legal links above the resting sheet. */}
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: restTop }} testID="results-map-viewport">
         <TripMap
           centerOnUserRequest={centerRequest}
           destination={placePoint(criteria.destinationPlace)}
@@ -313,10 +322,11 @@ export function RouteResultsView({
           itinerary={visibleItineraries[0] ?? null}
           onUserPan={() => setCentered(false)}
           origin={originPoint}
-          padding={{ top: 140, right: 40, bottom: height * 0.58, left: 40 }}
+          padding={{ top: 140, right: 40, bottom: 24, left: 40 }}
           testID="results-map"
           userLocation={userLocation}
         />
+        </View>
 
         <SafeAreaView edges={['top']} onLayout={(event) => setTripCardBottom(event.nativeEvent.layout.y + event.nativeEvent.layout.height)} style={styles.topOverlay}>
           <View style={styles.tripRow}>
@@ -365,6 +375,11 @@ export function RouteResultsView({
             </View>
           </View>
         </SafeAreaView>
+
+        {/* Refresh, on the map just below the trip card. */}
+        <View pointerEvents="box-none" style={[styles.mapLocation, { top: tripCardBottom + 12 }]}>
+          <MapControlButton accessibilityLabel="Refresh route results" icon="refresh" onPress={refresh} testID="refresh-results" />
+        </View>
 
         {/* Locate, just above the resting sheet. */}
         <View pointerEvents="box-none" style={[styles.mapLocation, { bottom: height - restTop + 14 }]}>
@@ -416,15 +431,6 @@ export function RouteResultsView({
             >
               <Icon color={colors.ink} name="filter" size={15} />
               <Text style={styles.toolbarPillText}>Filter</Text>
-            </PressableScale>
-            <PressableScale
-              accessibilityLabel="Refresh route results"
-              accessibilityRole="button"
-              onPress={refresh}
-              style={styles.refreshButton}
-              testID="refresh-results"
-            >
-              <Icon color={colors.ink} name="refresh" size={19} />
             </PressableScale>
             <PressableScale
               accessibilityLabel="Change leave time"
@@ -665,7 +671,6 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   toolbarPillText: { color: colors.ink, fontFamily: fontFamilies.bold, fontSize: 10 },
   leaveControl: { minWidth: 0, height: 36, flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 8, borderRadius: 18, borderColor: colors.border, borderWidth: 1, backgroundColor: colors.surface },
   leaveTime: { flexShrink: 1, color: colors.ink, ...typography.bodyStrong, fontSize: 10 },
-  refreshButton: { width: 40, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 },
   preferences: { flexDirection: 'row', gap: 7, paddingTop: 9, paddingHorizontal: 14 },
   preference: { minHeight: 36, flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5, borderWidth: 1, borderColor: colors.border, borderRadius: 18, backgroundColor: colors.surface },
   selectedPreference: { borderColor: colors.primary, backgroundColor: colors.primary },

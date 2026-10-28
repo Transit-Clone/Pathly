@@ -50,6 +50,7 @@ export function MapPickerView({ location, onCancel, onPick }: MapPickerViewProps
   const { colors } = useTheme();
   const [center, setCenter] = useState<Coordinates>(location);
   const [recenterRequest, setRecenterRequest] = useState(0);
+  const [bottomInset, setBottomInset] = useState(180);
   // The address under the pin, once the map rests; keyed by point so a stale answer never shows.
   const [address, setAddress] = useState<{ key: string; value: PinAddress | null } | null>(null);
   const lookups = useRef(new Map<string, Promise<PinAddress | null>>());
@@ -92,19 +93,20 @@ export function MapPickerView({ location, onCancel, onPick }: MapPickerViewProps
         <GoogleMapView
           initialCamera={{ latitude: location.latitude, longitude: location.longitude, zoom: 16 }}
           location={location}
+          padding={{ bottom: bottomInset }}
           onCameraChange={(camera) => setCenter({ latitude: camera.latitude, longitude: camera.longitude })}
           recenterRequest={recenterRequest}
           testID="map-picker-map"
         />
         {/* The pin's point sits on the map's center; it ignores touches so the map pans under it. */}
-        <View pointerEvents="none" style={styles.pinWrap}>
+        <View pointerEvents="none" style={[styles.pinWrap, { bottom: bottomInset }]}>
           <Icon color={colors.primary} name="place" size={PIN_SIZE} />
         </View>
         <SafeAreaView edges={['top']} pointerEvents="box-none" style={styles.topBar}>
           <MapControlButton accessibilityLabel="Back" icon="back" onPress={onCancel} testID="map-picker-back" />
           <MapControlButton accessibilityLabel="Show current location" icon="locate" onPress={() => setRecenterRequest((count) => count + 1)} testID="map-picker-locate" />
         </SafeAreaView>
-        <SafeAreaView edges={['bottom']} pointerEvents="box-none" style={styles.bottomBar}>
+        <SafeAreaView edges={['bottom']} pointerEvents="box-none" onLayout={(event) => setBottomInset(event.nativeEvent.layout.height)} style={styles.bottomBar}>
           <View style={styles.card}>
             <View accessibilityLiveRegion="polite" style={styles.addressBlock} testID="map-picker-address">
               <Text numberOfLines={1} style={styles.addressTitle}>{shown ? shown.value?.title ?? 'Dropped pin' : 'Finding the address…'}</Text>

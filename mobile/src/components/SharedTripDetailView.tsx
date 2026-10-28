@@ -650,7 +650,6 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
             <Text style={styles.arrivalLabel}>Arrive</Text>
             <Text style={styles.segmentDuration}>{model.arriveTime}</Text>
           </View>
-          {hasDestinationLines ? <Icon color={colors.mutedInk} name="forward" size={18} /> : null}
         </PressableScale>
         <DestinationLinesSheet lines={destinationLinesOpen ? model.destinationLines ?? [] : null} onClose={() => setDestinationLinesOpen(false)} stopName={model.destination} />
       </View>

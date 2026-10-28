@@ -91,6 +91,10 @@ export type NearestRouteStop = {
 const WALK_RANGE_METERS = 2_500;
 // A walk longer than this isn't searched; such a stop counts as unreachable on foot.
 const WALK_LIMIT_METERS = 5_000;
+// The walk drawn to the rider's stop: up to about an hour on foot (4.8 km at 80 m a minute, the
+// app's walking pace), so only stops within this straight line of the rider are tried.
+const WALK_PATH_LIMIT_METERS = 4_800;
+const WALK_PATH_RANGE_METERS = 4_000;
 // The straight-line nearest few are enough: walking is never shorter than straight line, so the
 // search stops at the first stop farther in straight line than the best walk so far.
 const MAX_WALK_CANDIDATES = 6;
@@ -136,8 +140,8 @@ async function departureStopsByDirection(agencyId: AgencyId, routeId: string): P
 
 /**
  * The walk from a point to one stop, for drawing — the same walk pickWalkingNearest measured when
- * it chose that stop. Null when the stop is unknown, out of walking range (where the stop was
- * chosen by straight line), or not reachable on foot.
+ * it chose that stop. Null when the stop is unknown, more than about an hour's walk away
+ * (WALK_PATH_RANGE_METERS), or not reachable on foot.
  */
 export function getWalkingPathToStop(
   agencyId: AgencyId,
@@ -146,8 +150,8 @@ export function getWalkingPathToStop(
   lon: number,
 ): { meters: number; path: { lat: number; lon: number }[] } | null {
   const stop = loadAgencyStaticData(agencyId).stopsById.get(stopId);
-  if (!stop || haversineMeters(lat, lon, stop.lat, stop.lon) > WALK_RANGE_METERS) return null;
-  return walkingPath(lat, lon, stop.lat, stop.lon, WALK_LIMIT_METERS);
+  if (!stop || haversineMeters(lat, lon, stop.lat, stop.lon) > WALK_PATH_RANGE_METERS) return null;
+  return walkingPath(lat, lon, stop.lat, stop.lon, WALK_PATH_LIMIT_METERS);
 }
 
 /**

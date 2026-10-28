@@ -9,7 +9,8 @@ type AgencyId = LiveSource['agencyId'];
 /** One line in the on-device index (firebase/functions/src/gtfsDiscovery.ts's IndexedLine). */
 export type IndexedLine = { agencyId: AgencyId; agencyDisplayName: string; routeId: string; shortName: string; routeName: string; color: string };
 
-const INDEX_KEY = 'pathly.lineIndex.v1';
+// v2: indexes saved before the backend dropped trip-less route copies point SIM buses at the Bronx feed.
+const INDEX_KEY = 'pathly.lineIndex.v2';
 // Lines change with timetable updates, a few times a year; a week-old index is still right.
 const INDEX_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
