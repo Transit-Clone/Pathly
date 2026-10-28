@@ -104,7 +104,8 @@ describe('Settings', () => {
       await openPage(screen, 'notifications');
       fireEvent.press(screen.getByTestId('notifications-add-line'));
       fireEvent.changeText(screen.getByTestId('notifications-add-line-input'), 'port jeff');
-      expect(screen.getByTestId('notifications-add-line-suffolk-51')).toBeTruthy();
+      // The branch by its name; not the 51 bus, whose name only says it runs there.
+      expect(screen.queryByTestId('notifications-add-line-suffolk-51')).toBeNull();
       await act(async () => {
         fireEvent.press(screen.getByTestId('notifications-add-line-lirr-10'));
       });
@@ -140,7 +141,7 @@ describe('Settings', () => {
       act(() => result.current.setAppearance('dark'));
       expect(result.current.colors).toBe(highContrastDarkColors);
       act(() => result.current.setReducedMotion(true));
-      await waitFor(async () => expect(JSON.parse((await AsyncStorage.getItem(DISPLAY_SETTINGS_KEY))!)).toEqual({ appearance: 'dark', reducedMotion: true, textSize: 'default', highContrast: true }));
+      await waitFor(async () => expect(JSON.parse((await AsyncStorage.getItem(DISPLAY_SETTINGS_KEY))!)).toEqual({ appearance: 'dark', reducedMotion: true, textSize: 'default', highContrast: true, mapDotColor: 'default' }));
 
       const reloaded = renderHook(() => useAppSettings(), { wrapper: ({ children }) => <AppSettingsProvider>{children}</AppSettingsProvider> });
       await waitFor(() => expect(reloaded.result.current.colors).toBe(highContrastDarkColors));

@@ -108,12 +108,34 @@ test('only legs leaving soon are looked up, and a slow feed doesn\'t hold up the
     return ref.tripId === 'slow' ? new Promise(() => undefined) : Promise.resolve({ status: 'tracked', departs: at(12) });
   };
   const started = Date.now();
-  const [trip] = await addLiveStatus([{ steps: [soon, later, slow] }], 200, now, lookup, (step) => refs.get(step));
+  const [trip] = await addLiveStatus([{ steps: [soon, later, slow] }], 200, now, lookup, (step) => refs.get(step), async () => []);
   assert.ok(Date.now() - started < 2_000);
   assert.deepEqual(looked, [soon, slow]);
   assert.deepEqual(trip.steps[0].live, { status: 'tracked', departs: at(12) });
   assert.equal(trip.steps[1].live, undefined);
   assert.equal(trip.steps[2].live, undefined);
+});
+
+test("every matched leg carries its line's service alerts, looked up once per line", async () => {
+  const now = Date.parse(at(0));
+  const soon = transit(10, 30);
+  const later = transit(180, 200);
+  const other = transit(40, 50);
+  const unmatched = transit(60, 70);
+  const refs = new Map([[soon, REF], [later, { ...REF, tripId: 'later' }], [other, { ...REF, routeId: '2' }]]);
+  const asked = [];
+  const alert = { id: 'a1', header: 'Delays', description: 'Signal problems', kind: 'delay', label: 'Delays', warning: true, upcoming: false };
+  const alertsFor = async (ref) => {
+    asked.push(ref.routeId);
+    return ref.routeId === '1' ? [alert] : [];
+  };
+  const [trip] = await addLiveStatus([{ steps: [soon, later, other, unmatched] }], 200, now, async () => undefined, (step) => refs.get(step), alertsFor);
+  assert.deepEqual(asked.sort(), ['1', '2']);
+  const { kind: _kind, ...legAlert } = alert;
+  assert.deepEqual(trip.steps[0].alerts, [legAlert]);
+  assert.deepEqual(trip.steps[1].alerts, [legAlert]);
+  assert.equal(trip.steps[2].alerts, undefined);
+  assert.equal(trip.steps[3].alerts, undefined);
 });
 
 test('an exactly matched LIRR leg carries where to find its trip in the live feed', async () => {

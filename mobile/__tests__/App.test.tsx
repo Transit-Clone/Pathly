@@ -506,7 +506,8 @@ describe('Pathly prototype navigation', () => {
 
     expect(screen.getByLabelText('Trip origin, Stony Brook University Main Campus')).toBeTruthy();
     expect(screen.getByLabelText('Trip destination, Times Square')).toBeTruthy();
-    expect(textOf(screen.getByTestId('leave-time-label'))).toMatch(/^Depart 10:30 AM( tomorrow)?$/);
+    // Depart at, from the current time (rounded up to 5 minutes).
+    expect(textOf(screen.getByTestId('leave-time-label'))).toMatch(/^Leave \d{1,2}:\d[05] [AP]M( tomorrow)?$/);
     expect(await screen.findByText('Updated just now')).toBeTruthy();
     expect(screen.getByTestId('preference-cheapest').props.accessibilityState).toEqual({ selected: true });
     // Both real itineraries, each with its line badges, and no fare Google or the app could know.
@@ -536,11 +537,11 @@ describe('Pathly prototype navigation', () => {
     fireEvent.press(screen.getByTestId('leave-hour-2'));
     fireEvent.press(screen.getByTestId('leave-minute-15'));
     fireEvent.press(screen.getByTestId('leave-period-pm'));
-    expect(screen.getByTestId('leave-time-preview').props.children).toBe('Depart 2:15 PM');
+    expect(screen.getByTestId('leave-time-done').props.accessibilityHint).toMatch(/^Plans for Leave 2:15 PM( tomorrow)?$/);
     fireEvent.press(screen.getByTestId('leave-time-done'));
 
     expect(screen.queryByTestId('leave-time-sheet')).toBeNull();
-    expect(textOf(screen.getByTestId('leave-time-label'))).toMatch(/^Depart 2:15 PM( tomorrow)?$/);
+    expect(textOf(screen.getByTestId('leave-time-label'))).toMatch(/^Leave 2:15 PM( tomorrow)?$/);
     await waitFor(() => expect(planTripMock()).toHaveBeenLastCalledWith(expect.objectContaining({ time: { mode: 'depart', at: expect.stringMatching(/T(18|19):15:00\.000Z$/) } })));
     // With a chosen time, the card shows departure and arrival only.
     expect(textOf(await screen.findByTestId(`schedule-${LIRR_TRIP.id}`))).toBe('8:52 AM - 10:51 AM');
@@ -568,14 +569,16 @@ describe('Pathly prototype navigation', () => {
     fireEvent.press(screen.getByTestId('leave-time-control'));
     fireEvent.press(screen.getByTestId('leave-mode-arrive'));
     fireEvent.press(screen.getByTestId('leave-time-done'));
-    expect(textOf(screen.getByTestId('leave-time-label'))).toMatch(/^Arrive by 12:00 PM( tomorrow)?$/);
-    await waitFor(() => expect(planTripMock()).toHaveBeenLastCalledWith(expect.objectContaining({ time: { mode: 'arrive', at: expect.stringMatching(/T1[67]:00:00\.000Z$/) } })));
+    // An hour from now by default.
+    const arriveLabel = textOf(screen.getByTestId('leave-time-label'));
+    expect(arriveLabel).toMatch(/^Arrive by \d{1,2}:\d[05] [AP]M( tomorrow)?$/);
+    await waitFor(() => expect(planTripMock()).toHaveBeenLastCalledWith(expect.objectContaining({ time: { mode: 'arrive', at: expect.any(String) } })));
 
     const calls = planTripMock().mock.calls.length;
     fireEvent.press(screen.getByTestId('leave-time-control'));
-    fireEvent.press(screen.getByTestId('leave-mode-now'));
+    fireEvent.press(screen.getByTestId('leave-mode-depart'));
     fireEvent.press(screen.getByTestId('leave-time-cancel'));
-    expect(textOf(screen.getByTestId('leave-time-label'))).toMatch(/^Arrive by 12:00 PM/);
+    expect(textOf(screen.getByTestId('leave-time-label'))).toBe(arriveLabel);
     expect(planTripMock().mock.calls.length).toBe(calls);
   });
 
@@ -588,7 +591,7 @@ describe('Pathly prototype navigation', () => {
     fireEvent.press(screen.getByTestId('leave-minute-00'));
     fireEvent.press(screen.getByTestId('leave-period-am'));
     fireEvent.press(screen.getByTestId('leave-time-done'));
-    expect(textOf(screen.getByTestId('leave-time-label'))).toBe('Depart 7:00 AM tomorrow');
+    expect(textOf(screen.getByTestId('leave-time-label'))).toBe('Leave 7:00 AM tomorrow');
     await waitFor(() => expect(planTripMock()).toHaveBeenLastCalledWith(expect.objectContaining({ time: { mode: 'depart', at: '2026-10-15T11:00:00.000Z' } })));
   });
 
@@ -939,7 +942,7 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByLabelText('Trip destination, Stony Brook University Main Campus')).toBeTruthy();
     expect(screen.getByLabelText('Trip origin, Current location')).toBeTruthy();
     // Leave time and the chosen preference survived the round trip.
-    expect(textOf(screen.getByTestId('leave-time-label'))).toMatch(/^Depart 10:30 AM( tomorrow)?$/);
+    expect(textOf(screen.getByTestId('leave-time-label'))).toMatch(/^Leave \d{1,2}:\d[05] [AP]M( tomorrow)?$/);
     fireEvent.press(screen.getByTestId('filter-control'));
     expect(screen.getByTestId('preference-cheapest').props.accessibilityState).toEqual(expect.objectContaining({ selected: true }));
 
@@ -1039,8 +1042,10 @@ describe('Pathly prototype navigation', () => {
     expect(StyleSheet.flatten(screen.getByTestId('search-trip-scroll-map-window').props.style).height).toBe(
       StyleSheet.flatten(screen.getByTestId('search-trip-map').props.style).height,
     );
-    expect(within(plannedScroll).queryByTestId('search-trip-back')).toBeNull();
-    expect(within(plannedScroll).queryByTestId('search-trip-favorite')).toBeNull();
+    // As in Route View, the map's buttons scroll away with it.
+    expect(within(plannedScroll).getByTestId('search-trip-back')).toBeTruthy();
+    expect(within(plannedScroll).getByTestId('search-trip-favorite')).toBeTruthy();
+    expect(screen.queryByTestId('search-trip-header')).toBeNull();
     fireEvent.scroll(plannedScroll, { nativeEvent: { contentOffset: { y: 140 } } });
     fireEvent.scroll(plannedScroll, { nativeEvent: { contentOffset: { y: 280 } } });
     fireEvent.scroll(plannedScroll, { nativeEvent: { contentOffset: { y: 0 } } });

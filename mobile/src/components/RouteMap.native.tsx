@@ -158,7 +158,7 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
   }, [focusStop?.stopId]);
 
   // Once a live vehicle shows up on its way to the rider's stop, the map glides out (once) to show
-  // the stop, the vehicle, and the rider together, unless the rider has moved the map already.
+  // just the stop and that vehicle (not the rider, who has Locate), unless the rider has moved the map already.
   useEffect(() => {
     if (framedVehicle.current || riderMovedMap.current || !focusStop) return;
     const vehicle = approachingVehicle(line.behindPoints, shownVehicles);
@@ -167,7 +167,6 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
     mapRef.current?.fitToCoordinates([
       { latitude: focusStop.lat, longitude: focusStop.lon },
       { latitude: vehicle.lat, longitude: vehicle.lon },
-      ...(userLocation ? [userLocation] : []),
     ], { edgePadding: ROUTE_FIT_PADDING, animated: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-checked as vehicles report; the rest is read then
   }, [focusStop?.stopId, vehicles]);

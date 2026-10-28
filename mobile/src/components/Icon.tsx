@@ -27,6 +27,7 @@ const glyphs = {
   edit: ['create-outline', 'create'],
   expand: ['chevron-down', 'chevron-down'],
   fare: ['pricetag-outline', 'pricetag'],
+  feedback: ['chatbubble-ellipses-outline', 'chatbubble-ellipses'],
   favorite: ['star-outline', 'star'],
   filter: ['funnel-outline', 'funnel'],
   ferry: ['boat-outline', 'boat'],

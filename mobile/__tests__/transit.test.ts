@@ -51,7 +51,7 @@ describe('transit prototype data', () => {
 
   it('formats leave-time choices for the control label', () => {
     expect(formatTripTimeChoice({ mode: 'now' })).toBe('Leave now');
-    expect(formatTripTimeChoice({ mode: 'depart', minutes: 630 })).toBe('Depart 10:30 AM');
+    expect(formatTripTimeChoice({ mode: 'depart', minutes: 630 })).toBe('Leave 10:30 AM');
     expect(formatTripTimeChoice({ mode: 'arrive', minutes: 720 })).toBe('Arrive by 12:00 PM');
   });
 

@@ -4,7 +4,7 @@ import { badgeLabel, type TransitMode } from '../components/RouteBadge';
 import { callable } from '../lib/firebase';
 import type { SearchPlace } from './placesSearch';
 import { appNow, isMockClock } from '../debug/clock';
-import type { RoutePreference, TripTimeChoice } from './transit';
+import type { RoutePreference, ServiceAlert, TripTimeChoice } from './transit';
 import {
   createTripSelectionIdentity,
   sameTripSelection,
@@ -40,6 +40,8 @@ export type TransitStep = {
   live?: LegLive;
   /** The connection into this leg from the previous one, when it's tight or already missed. */
   connection?: LegConnection;
+  /** The line's service alerts in effect now or starting soon (backend tripLive.ts); absent when there are none. */
+  alerts?: readonly ServiceAlert[];
 };
 /** 'tracked': live times, `delaySeconds` against the plan (late when positive). */
 export type LegLive = { status: 'tracked' | 'cancelled' | 'skips-stop'; departs?: string; arrives?: string; delaySeconds?: number };
@@ -138,6 +140,49 @@ export function nextOccurrence(minutes: number, now: Date = new Date()): { at: s
   const today = nyInstant(now.getTime(), minutes);
   if (today >= now.getTime() + ONE_MINUTE_MS) return { at: new Date(today).toISOString(), tomorrow: false };
   return { at: new Date(nyInstant(now.getTime() + ONE_DAY_MS, minutes)).toISOString(), tomorrow: true };
+}
+
+const dateKeyFormat = new Intl.DateTimeFormat('en-CA', { timeZone: TRIP_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' });
+
+/** New York's date at `ms`, as "2026-10-29". */
+export function nyDateKey(ms: number): string {
+  return dateKeyFormat.format(new Date(ms));
+}
+
+/** Midday UTC on a date key's day: an instant that falls on that same day in New York. */
+export function dateKeyMs(key: string): number {
+  return Date.UTC(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1, Number(key.slice(8, 10)), 16);
+}
+
+/** `key` moved by whole days. */
+export function addDays(key: string, days: number): string {
+  return new Date(dateKeyMs(key) + days * ONE_DAY_MS).toISOString().slice(0, 10);
+}
+
+/**
+ * When a timed trip choice happens: its chosen day at that clock time while that's still ahead,
+ * otherwise (no day chosen, or it has passed) the clock time's next occurrence. `dayOffset`
+ * counts New York days from today.
+ */
+export function tripTimeAt(time: { minutes: number; date?: string }, now: Date = new Date()): { at: string; dayOffset: number } {
+  const chosen = time.date ? nyInstant(dateKeyMs(time.date), time.minutes) : Number.NaN;
+  const at = chosen >= now.getTime() + ONE_MINUTE_MS ? new Date(chosen).toISOString() : nextOccurrence(time.minutes, now).at;
+  const dayOffset = Math.round((dateKeyMs(nyDateKey(Date.parse(at))) - dateKeyMs(nyDateKey(now.getTime()))) / ONE_DAY_MS);
+  return { at, dayOffset };
+}
+
+const dayFormat = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' });
+
+/** "Tue, Oct 27" for a date key. */
+export function formatDateKey(key: string): string {
+  return dayFormat.format(new Date(dateKeyMs(key)));
+}
+
+/** How a trip time's day reads after the clock time: nothing today, "tomorrow", else the date. */
+export function tripDayLabel(time: { minutes: number; date?: string }, now: Date = new Date()): string {
+  const { at, dayOffset } = tripTimeAt(time, now);
+  if (dayOffset <= 0) return '';
+  return dayOffset === 1 ? 'tomorrow' : formatDateKey(nyDateKey(Date.parse(at)));
 }
 
 const clockFormat = new Intl.DateTimeFormat('en-US', { timeZone: TRIP_TIME_ZONE, hour: 'numeric', minute: '2-digit' });
@@ -286,7 +331,7 @@ export function createResumePlanRequest(
     destination: destinationReference,
     time: time.mode === 'now'
       ? { mode: 'depart', at: now.toISOString() }
-      : { mode: time.mode, at: nextOccurrence(time.minutes, now).at },
+      : { mode: time.mode, at: tripTimeAt(time, now).at },
     preference: preference === 'transfers' ? 'transfers' : 'fastest',
     modes: [...modes],
     ...(asksLessWalking(preference, lessWalking) ? { lessWalking: true as const } : {}),
@@ -316,7 +361,7 @@ export async function planTrip({ endpoints, location, time, preference, modes, l
     origin: origin.endpoint,
     destination: destination.endpoint,
     // The backend's "now" is real, so an admin's mock time goes as an explicit departure.
-    time: time.mode === 'now' ? (isMockClock() ? { mode: 'depart', at: now.toISOString() } : { mode: 'now' }) : { mode: time.mode, at: nextOccurrence(time.minutes, now).at },
+    time: time.mode === 'now' ? (isMockClock() ? { mode: 'depart', at: now.toISOString() } : { mode: 'now' }) : { mode: time.mode, at: tripTimeAt(time, now).at },
     // Lowest fare and fastest sort the same results; fewer transfers and less walking ask Google
     // differently.
     preference: preference === 'transfers' ? 'transfers' : 'fastest',

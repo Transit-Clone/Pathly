@@ -14,7 +14,7 @@ import {
   requestModes,
   formatTripClock,
   lineBadge,
-  nextOccurrence,
+  tripDayLabel,
   distinctRouteItineraries,
   orderItineraries,
   transitSteps,
@@ -23,7 +23,6 @@ import {
   type LatLng,
   type ResumePlanRequest,
 } from '../data/tripPlanning';
-import { itineraryNote } from '../data/tripLive';
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { useClock } from '../hooks/useClock';
 import { useTripPlan } from '../hooks/useTripPlan';
@@ -34,8 +33,9 @@ import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
 import { Icon, type IconName } from './Icon';
 import { LeaveTimeSheet } from './LeaveTimeSheet';
+import { LiveSignal } from './LiveSignal';
+import { stopLineBadges } from './SearchView';
 import { PlannedTripDetailView } from './PlannedTripDetailView';
-import { TripNotePill } from './TripNotePill';
 import { Mascot } from './Mascot';
 import { MapControlButton } from './MapControlButton';
 import { PressableScale } from './PressableScale';
@@ -117,6 +117,8 @@ const SHEET_EXPANDED_GAP = 10;
 const HANDLE_TAP_SLOP = 6;
 /** Walks at least this long show in a result's steps; shorter ones are just getting between platforms. */
 const SHOWN_WALK_SECONDS = 3 * 60;
+/** Live signals stay on for this long after the last successful update. */
+const LIVE_FRESH_MS = 2 * 60_000;
 
 type OptionsPanel = 'modes' | 'filter' | null;
 
@@ -152,8 +154,9 @@ export function RouteResultsView({
 }: RouteResultsViewProps) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
-  const { fontScale, height, width } = useWindowDimensions();
-  const stackLargeTextMetrics = fontScale >= 1.5 || width <= 360;
+  const { fontScale, height } = useWindowDimensions();
+  // Fare and minutes keep the first row's right side at any width (the badges wrap instead).
+  const stackLargeTextMetrics = fontScale >= 1.5;
   const { destination, enabledModes, origin, preference } = criteria;
   const travelPreferences = useUserPreferences().preferences.travel;
   const setPreference = (next: RoutePreference) => onChangeCriteria({ ...criteria, preference: next });
@@ -247,7 +250,9 @@ export function RouteResultsView({
     };
   }, [enabledModes, maxWalkMinutes, planned, preference]);
   const modesFiltered = enabledModes.length < ALL_MODES.length;
-  const tomorrow = tripTime.mode !== 'now' && nextOccurrence(tripTime.minutes, new Date(now)).tomorrow;
+  const tripDay = tripTime.mode === 'now' ? '' : tripDayLabel(tripTime, new Date(now));
+  // Live signals only while the last update is fresh: offline, refreshes fail and it ages out.
+  const liveFresh = plan.status === 'loaded' && !plan.refreshing && now - plan.fetchedAt < LIVE_FRESH_MS;
   const updatedLabel = plan.status !== 'loaded'
     ? ''
     : plan.refreshing
@@ -276,6 +281,9 @@ export function RouteResultsView({
       <ScreenTransition key="trip">
       <PlannedTripDetailView
         destination={destination}
+        destinationAddress={criteria.destinationPlace?.subtitle}
+        destinationLines={stopLineBadges(criteria.destinationPlace)}
+        liveFresh={liveFresh}
         isActive={false}
         isFavorite={isDestinationSaved}
         itinerary={selectedItinerary}
@@ -416,7 +424,7 @@ export function RouteResultsView({
               style={styles.refreshButton}
               testID="refresh-results"
             >
-              <Icon name="refresh" size={19} />
+              <Icon color={colors.ink} name="refresh" size={19} />
             </PressableScale>
             <PressableScale
               accessibilityLabel="Change leave time"
@@ -427,7 +435,7 @@ export function RouteResultsView({
             >
               <Icon color={tripTime.mode === 'now' ? colors.ink : colors.primary} name="time" size={15} />
               <Text numberOfLines={1} style={[styles.leaveTime, tripTime.mode !== 'now' && styles.activePillText]} testID="leave-time-label">
-                {formatTripTimeChoice(tripTime)}{tomorrow ? ' tomorrow' : ''}
+                {formatTripTimeChoice(tripTime)}{tripDay ? ` ${tripDay}` : ''}
               </Text>
             </PressableScale>
           </View>
@@ -535,8 +543,12 @@ export function RouteResultsView({
               const fare = fareLabel(itinerary.fare);
               const leavesIn = Math.round((Date.parse(itinerary.departureTime) - now) / 60_000);
               const span = `${formatTripClock(itinerary.departureTime)} - ${formatTripClock(itinerary.arrivalTime)}`;
-              const liveNote = itineraryNote(itinerary);
-              const timing = tripTime.mode === 'now' ? `${leavesIn > 0 ? `Leaves in ${leavesIn} min` : 'Leave now'} · ${span}` : span;
+              const leaves = leavesIn > 0 ? `Leave within ${leavesIn} min` : 'Leave now';
+              const timing = tripTime.mode === 'now' ? `${leaves} · ${span}` : span;
+              // The first ride's live feed is tracking it, so "Leave within" follows the real vehicle.
+              const leavesLive = liveFresh && tripTime.mode === 'now' && legs[0]?.live?.status === 'tracked';
+              // Like the home cards: a live signal on the minutes when a ride's times come from its live feed.
+              const tripLive = liveFresh && legs.some((leg) => leg.live?.status === 'tracked');
               return (
                 <View key={itinerary.id} style={styles.itinerary} testID={`itinerary-${itinerary.id}`}>
                   <PressableScale
@@ -560,6 +572,7 @@ export function RouteResultsView({
                               ) : (
                                 <RouteBadge
                                   agency={step.agency.name}
+                                  alert={!!step.alerts?.length}
                                   color={step.line.color ?? colors.primary}
                                   mode={badgeMode(step)}
                                   shortName={lineBadge(step)}
@@ -571,8 +584,19 @@ export function RouteResultsView({
                             </View>
                           ))}
                         </View>
-                        <Text style={styles.nextRide} testID={`schedule-${itinerary.id}`}>{timing}</Text>
-                        {liveNote ? <View style={styles.liveNote}><TripNotePill note={liveNote} testID={`itinerary-note-${itinerary.id}`} /></View> : null}
+                        {leavesLive ? (
+                          <View accessibilityLabel={`${timing}, live`} accessible={true} style={styles.nextRideLive} testID={`schedule-${itinerary.id}`}>
+                            {/* On a narrow card the times wrap whole onto the next line. */}
+                            <View style={styles.nextRideLeave}>
+                              <Text style={styles.nextRide}>{leaves}</Text>
+                              <LiveSignal color={colors.green} style={styles.nextRideSignal} />
+                              <Text style={styles.nextRide}>{' · '}</Text>
+                            </View>
+                            <Text style={styles.nextRide}>{span}</Text>
+                          </View>
+                        ) : (
+                          <Text style={styles.nextRide} testID={`schedule-${itinerary.id}`}>{timing}</Text>
+                        )}
                       </View>
                       <View style={[styles.summary, stackLargeTextMetrics && styles.summaryLargeText]}>
                         <Text style={styles.fare} testID={`fare-${itinerary.id}`}>{fare}</Text>
@@ -583,6 +607,7 @@ export function RouteResultsView({
                               /^\d/.test(part) ? part : <Text key={partIndex} style={styles.durationUnit}>{part}</Text>
                             ))}
                           </Text>
+                          {tripLive ? <LiveSignal color={colors.green} style={styles.durationSignal} /> : null}
                         </View>
                       </View>
                     </View>
@@ -667,12 +692,15 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   segmentColumnLargeText: { flexGrow: 0 },
   segmentRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4 },
   segmentGroup: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  liveNote: { marginTop: 6 },
   nextRide: { marginTop: 6, color: colors.mutedInk, ...typography.metadata, fontSize: 10 },
+  nextRideLive: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start' },
+  nextRideLeave: { flexDirection: 'row', alignItems: 'flex-start' },
+  nextRideSignal: { marginTop: 3, marginLeft: 1, transform: [{ scale: 0.8 }] },
   summary: { minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 8 },
   summaryLargeText: { justifyContent: 'space-between' },
   fare: { color: colors.primary, fontFamily: fontFamilies.extraBold, fontSize: 11 },
-  durationGroup: { minWidth: 0, flexShrink: 1, alignItems: 'flex-end' },
+  durationGroup: { minWidth: 0, flexShrink: 1, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'flex-end' },
+  durationSignal: { marginLeft: 2, marginTop: 1 },
   duration: { flexShrink: 1, color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 26, lineHeight: 28, textAlign: 'right' },
   durationUnit: { color: colors.mutedInk, fontFamily: fontFamilies.bold, fontSize: 12 },
 });

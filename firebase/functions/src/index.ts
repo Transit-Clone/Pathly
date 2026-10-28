@@ -113,6 +113,11 @@ let tripLiveLookup: Parameters<typeof addLiveStatus>[3];
 export function setTripLiveLookupForTests(lookup: typeof tripLiveLookup): void {
   tripLiveLookup = lookup;
 }
+let tripAlertsLookup: Parameters<typeof addLiveStatus>[5];
+/** Unit-test dependency injection only. */
+export function setTripAlertsLookupForTests(lookup: typeof tripAlertsLookup): void {
+  tripAlertsLookup = lookup;
+}
 /** Unit-test dependency injection only. */
 export function setTripStopMatcherForTests(matcher: typeof matchTripStops | undefined): void {
   tripStopMatcher = matcher ?? matchTripStops;
@@ -633,7 +638,7 @@ export const planTrip = onCall<PlanTripRequest, Promise<{ itineraries: Itinerary
     for (const agencyId of agencies) await prepareAgencyStaticData(agencyId);
     const withStops = await addTripStops(itineraries, TRIP_STOPS_BUDGET_MS, tripStopMatcher);
     // Then each leg against the agencies' live feeds: cancelled trips, live times, missed connections.
-    return { itineraries: await addLiveStatus(withStops, TRIP_LIVE_BUDGET_MS, nowMs, tripLiveLookup) };
+    return { itineraries: await addLiveStatus(withStops, TRIP_LIVE_BUDGET_MS, nowMs, tripLiveLookup, undefined, tripAlertsLookup) };
   },
 );
 

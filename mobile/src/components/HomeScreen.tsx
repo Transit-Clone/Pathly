@@ -1212,7 +1212,8 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     height: SEARCH_CENTER_SIZE,
     borderWidth: 3,
     borderRadius: SEARCH_CENTER_SIZE / 2,
-    borderColor: colors.ring,
+    // White in both themes, like the rider's location dot.
+    borderColor: '#FFFFFF',
     backgroundColor: colors.searchCenter,
     shadowColor: colors.searchCenter,
     shadowOpacity: 0.32,

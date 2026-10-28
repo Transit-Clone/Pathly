@@ -306,5 +306,6 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     borderRadius: 3,
     backgroundColor: 'rgba(255,255,255,0.42)',
   },
-  activePageDot: { width: 14, backgroundColor: colors.white },
+  // Two round dots; the shown direction's is solid white.
+  activePageDot: { backgroundColor: colors.white },
 });

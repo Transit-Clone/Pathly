@@ -28,6 +28,7 @@ import { MapLabelGlow } from './MapLabelGlow';
 import { Mascot } from './Mascot';
 import { RouteMap } from './RouteMap';
 import { pointAlong, routeFocus, RouteLines, VehicleMarker, type MapLeg } from './RouteMapOverlay';
+import { AgencyLogo } from './AgencyLogo';
 import { badgeLabel, RouteBadge, transitModeForAgency } from './RouteBadge';
 import { MapControlButton } from './MapControlButton';
 import { PressableScale } from './PressableScale';
@@ -143,6 +144,8 @@ const MAX_TILE_WIDTH = 96;
 const MAP_BADGE_TOP = 62;
 /** The bus name's line height over the map (its 44 pt type). */
 const MAP_BUS_LABEL_HEIGHT = 52;
+/** The subway sign's height over the map (RouteBadge's xlarge). */
+const MAP_ROUTE_BADGE_HEIGHT = 58;
 const isWeb = Platform.OS === 'web';
 
 /**
@@ -540,16 +543,20 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
       >
         <Text numberOfLines={1} style={[styles.mapBusLabelText, { color: routeText }]}>{badgeLabel(route)}</Text>
       </View>
+      <AgencyLogo agencyId={route.liveSource?.agencyId} style={[styles.mapAgencyLogo, { top: insets.top + MAP_BADGE_TOP + MAP_BUS_LABEL_HEIGHT + 2 }]} testID="route-detail-agency-logo" />
     </>
   ) : (
-    <RouteBadge
-      agency={route.agency}
-      color={routeColor}
-      shortName={badgeLabel(route)}
-      size="xlarge"
-      style={[styles.mapRouteBadge, { top: insets.top + MAP_BADGE_TOP }]}
-      testID="route-detail-badge"
-    />
+    <>
+      <RouteBadge
+        agency={route.agency}
+        color={routeColor}
+        shortName={badgeLabel(route)}
+        size="xlarge"
+        style={[styles.mapRouteBadge, { top: insets.top + MAP_BADGE_TOP }]}
+        testID="route-detail-badge"
+      />
+      <AgencyLogo agencyId={route.liveSource?.agencyId} style={[styles.mapAgencyLogo, { top: insets.top + MAP_BADGE_TOP + MAP_ROUTE_BADGE_HEIGHT + 8 }]} testID="route-detail-agency-logo" />
+    </>
   );
 
   // Routes with a `liveSource` get the real map (once its geometry has loaded); every other
@@ -832,6 +839,8 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     elevation: 4,
   },
   // Bus routes name themselves in the route's color straight on the map, haloed so it reads over streets.
+  // The agency's logo, smaller, under the route's name or sign.
+  mapAgencyLogo: { position: 'absolute', left: 16 },
   mapBusLabel: {
     position: 'absolute',
     left: 16,

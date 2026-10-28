@@ -81,7 +81,8 @@ export function DetailMapPage({
     scrollRef.current?.scrollTo({ y: target, animated: !reducedMotionActive });
   };
   const restingTop = mapHeight - ACTION_HEIGHT - ACTION_GAP;
-  const stickyTop = Math.min(restingTop, insets.top + 8 + CONTROL_ROW_HEIGHT + 12);
+  // With the controls gone (scrolled away with the map), the action takes their row.
+  const stickyTop = Math.min(restingTop, insets.top + 8 + (controlsScrollWithMap ? 0 : CONTROL_ROW_HEIGHT + 12));
   const actionTop = scrollY.interpolate({
     inputRange: [0, Math.max(1, restingTop - stickyTop)],
     outputRange: [restingTop, stickyTop],
@@ -101,6 +102,9 @@ export function DetailMapPage({
         <View pointerEvents={interactiveMap ? 'auto' : 'none'} style={[styles.map, { height: mapHeight }]} testID={mapTestID}>
           {map}
         </View>
+        {/* Shows through the sheet's rounded top corners in the map's own land color, so they
+            read as map rather than a gap (the map itself stops above, keeping Google's logo clear). */}
+        <View pointerEvents="none" style={[styles.cornerFill, { top: mapHeight }]} testID={`${mapTestID}-corner-fill`} />
 
         <Animated.ScrollView
           bounces={false}
@@ -156,6 +160,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   viewport: { flex: 1, alignItems: 'center', backgroundColor: colors.background },
   screen: { width: '100%', maxWidth: 540, flex: 1, overflow: 'hidden', backgroundColor: colors.canvas },
   map: { position: 'absolute', top: 0, right: 0, left: 0, overflow: 'hidden', backgroundColor: colors.blueSoft },
+  cornerFill: { position: 'absolute', right: 0, left: 0, height: radii.sheet, backgroundColor: colors.mapLand },
   scroll: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, zIndex: 3, backgroundColor: 'transparent' },
   sheet: {
     borderTopLeftRadius: radii.sheet,

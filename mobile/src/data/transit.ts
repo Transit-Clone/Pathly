@@ -459,7 +459,8 @@ export const allNearbyRoutes = [
 export type RoutePreference = 'fastest' | 'transfers' | 'walking' | 'cheapest';
 export type TripTimeChoice =
   | { mode: 'now' }
-  | { mode: 'depart' | 'arrive'; minutes: number };
+  /** `date`: the New York day ("2026-10-29") it's for; without one, the clock time's next occurrence. */
+  | { mode: 'depart' | 'arrive'; minutes: number; date?: string };
 
 const MINUTES_PER_DAY = 24 * 60;
 
@@ -476,7 +477,7 @@ export function formatClockTime(minutes: number) {
 
 export function formatTripTimeChoice(choice: TripTimeChoice) {
   if (choice.mode === 'now') return 'Leave now';
-  return `${choice.mode === 'depart' ? 'Depart' : 'Arrive by'} ${formatClockTime(choice.minutes)}`;
+  return `${choice.mode === 'depart' ? 'Leave' : 'Arrive by'} ${formatClockTime(choice.minutes)}`;
 }
 
 export type ScheduledStop = { name: string; time: string };

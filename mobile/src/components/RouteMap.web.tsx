@@ -172,7 +172,7 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
   }, [map, focusStop?.stopId]);
 
   // Once a live vehicle shows up on its way to the rider's stop, the map glides out (once) to show
-  // the stop, the vehicle, and the rider together, unless the rider has moved the map already.
+  // just the stop and that vehicle (not the rider, who has Locate), unless the rider has moved the map already.
   const glideCancel = useRef<(() => void) | null>(null);
   useEffect(() => {
     if (framedVehicle.current || riderMovedMap.current || !map || !focusStop) return;
@@ -182,7 +182,6 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
     const points = [
       { lat: focusStop.lat, lng: focusStop.lon },
       { lat: vehicle.lat, lng: vehicle.lon },
-      ...(userLocation ? [{ lat: userLocation.latitude, lng: userLocation.longitude }] : []),
     ];
     const camera = cameraToFit(map, points, ROUTE_FIT_PADDING, FOCUS_ZOOM + 3);
     if (camera) {

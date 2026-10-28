@@ -162,11 +162,12 @@ export function pickTrip(candidates: readonly Candidate[], stopCount: number): C
 }
 
 /**
- * A bus leg with no exact match: the scheduled trip nearest Google's departure, within
- * BUS_PATTERN_WINDOW_SECONDS, whose stop count agrees with Google's. Its stops are the route's
+ * A leg with no exact match (a bus off its timetable, or a train or ferry Google timed from live
+ * data): the scheduled trip nearest Google's departure, within BUS_PATTERN_WINDOW_SECONDS, whose
+ * stop count agrees with Google's, so an express isn't taken for a local. Its stops are the route's
  * stops between the two; their times are spread between Google's departure and arrival.
  */
-export function pickBusPattern(candidates: readonly Candidate[], stopCount: number): Candidate | undefined {
+export function pickStopPattern(candidates: readonly Candidate[], stopCount: number): Candidate | undefined {
   return [...candidates]
     .filter((candidate) => candidate.offsetSeconds <= BUS_PATTERN_WINDOW_SECONDS)
     .filter((candidate) => stopCount <= 0 || Math.abs(candidate.between.length - (stopCount - 1)) <= 1)
@@ -257,7 +258,7 @@ async function matchInAgency(agencyId: AgencyId, step: TransitStep): Promise<Tri
   }
 
   const exact = pickTrip(candidates.filter((candidate) => candidate.offsetSeconds <= DEPARTURE_WINDOW_SECONDS), step.stopCount);
-  const best = exact ?? (step.mode === 'bus' ? pickBusPattern(candidates, step.stopCount) : undefined);
+  const best = exact ?? pickStopPattern(candidates, step.stopCount);
   // Google often times a leg from live data, minutes off every scheduled trip (or between two):
   // no stops then, but the nearest trip still says where the live check should look.
   const nearest = best ?? [...candidates].sort((a, b) => a.score - b.score)[0];

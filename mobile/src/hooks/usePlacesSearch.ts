@@ -70,6 +70,7 @@ export function usePlacesSearch(query: string, near?: { latitude: number; longit
           input: trimmedQuery,
           sessionToken: getSessionToken(),
           signal: controller.signal,
+          origin: nearRef.current,
         });
         if (!controller.signal.aborted) setSettled({ query: trimmedQuery, attempt, status: 'success', suggestions });
       } catch {

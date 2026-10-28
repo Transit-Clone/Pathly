@@ -1,9 +1,10 @@
 import type { transit_realtime } from 'gtfs-realtime-bindings';
 
 import { agencyConfig } from './gtfsAgencies';
+import { getRouteAlerts, type RouteAlert } from './gtfsAlerts';
 import { fetchFeedEntities } from './gtfsRealtime';
 import { loadAgencyStaticData } from './gtfsStaticData';
-import type { LegConnection, LegLive, TransitStep, WalkStep } from './tripPlanning';
+import type { LegAlert, LegConnection, LegLive, TransitStep, WalkStep } from './tripPlanning';
 import { liveTripRefs, type LiveTripRef } from './tripStops';
 
 /**
@@ -159,13 +160,17 @@ export function addConnections(steps: readonly { kind: string }[]): void {
   }
 }
 
-/** Adds live status to every checkable leg, then judges each itinerary's connections. */
+/**
+ * Adds live status to every checkable leg and each matched leg's line alerts (one lookup per line),
+ * then judges each itinerary's connections.
+ */
 export async function addLiveStatus<T extends { steps: { kind: string }[] }>(
   itineraries: T[],
   budgetMs: number,
   nowMs = Date.now(),
   lookup: (ref: LiveTripRef, step: TransitStep) => Promise<LegLive | undefined> = liveTripStatus,
   refFor: (step: TransitStep) => LiveTripRef | undefined = (step) => liveTripRefs.get(step),
+  alertsFor: (ref: LiveTripRef) => Promise<RouteAlert[]> = (ref) => getRouteAlerts(ref.agencyId, ref.routeId, nowMs),
 ): Promise<T[]> {
   const checks = itineraries.flatMap((itinerary) => itinerary.steps
     .filter((step): step is TransitStep => step.kind === 'transit')
@@ -178,10 +183,31 @@ export async function addLiveStatus<T extends { steps: { kind: string }[] }>(
   const deadline = new Promise<'timeout'>((resolve) => {
     timer = setTimeout(() => resolve('timeout'), budgetMs);
   });
-  await Promise.all(checks.map(async ({ ref, step }) => {
-    const live = await Promise.race([lookup(ref, step).catch(() => undefined), deadline]);
-    if (live && live !== 'timeout') step.live = live;
-  }));
+  // Alerts belong to the line, not the trip, so every matched leg gets them, however far out.
+  const lines = new Map<string, { ref: LiveTripRef; steps: TransitStep[] }>();
+  for (const itinerary of itineraries) {
+    for (const step of itinerary.steps) {
+      if (step.kind !== 'transit') continue;
+      const ref = refFor(step as TransitStep);
+      if (!ref) continue;
+      const key = `${ref.agencyId}:${ref.routeId}`;
+      const line = lines.get(key) ?? { ref, steps: [] };
+      line.steps.push(step as TransitStep);
+      lines.set(key, line);
+    }
+  }
+  await Promise.all([
+    ...checks.map(async ({ ref, step }) => {
+      const live = await Promise.race([lookup(ref, step).catch(() => undefined), deadline]);
+      if (live && live !== 'timeout') step.live = live;
+    }),
+    ...[...lines.values()].map(async ({ ref, steps }) => {
+      const alerts = await Promise.race([alertsFor(ref).catch(() => []), deadline]);
+      if (alerts === 'timeout' || alerts.length === 0) return;
+      const legAlerts: LegAlert[] = alerts.map(({ id, header, description, label, warning, upcoming }) => ({ id, header, description, label, warning, upcoming }));
+      for (const step of steps) step.alerts = legAlerts;
+    }),
+  ]);
   if (timer) clearTimeout(timer);
   for (const itinerary of itineraries) addConnections(itinerary.steps);
   return itineraries;

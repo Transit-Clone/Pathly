@@ -14,14 +14,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../auth/AuthContext';
 import { searchLineIndex, useLineIndex, type IndexedLine } from '../data/lineIndex';
 import { searchTransitRoutes, warmLineSearch } from '../data/nearbyTransit';
-import { addressAfterName, fetchPlaceDetails, type PlaceKind, type SearchPlace } from '../data/placesSearch';
+import { addressAfterName, fetchPlaceDetails, formatDistanceAway, placeDistanceMeters, type PlaceKind, type SearchPlace } from '../data/placesSearch';
 import { locationToPlace, recordSearch, removeSearch, subscribeToSearches, type SavedLocation } from '../data/userData';
 import { SERVICE_AREA_FALLBACK } from '../data/serviceArea';
 import { normalizeStopName } from '../data/stopSearch';
 import { usePlacesSearch } from '../hooks/usePlacesSearch';
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
-import { typography } from '../theme/typography';
+import { fontFamilies, typography } from '../theme/typography';
 import { Icon, type IconName } from './Icon';
 import { Mascot, type MascotPose } from './Mascot';
 import { PressableScale } from './PressableScale';
@@ -75,6 +75,10 @@ function useLineSearch(query: string, near: { latitude: number; longitude: numbe
 }
 /** Recent searches shown above the results while typing. */
 const MAX_MATCHING_RECENTS = 3;
+/** Lines shown before "Show more", so Places stays in view. */
+const VISIBLE_LINES = 3;
+/** Recent searches shown before "Show all". */
+const VISIBLE_RECENTS = 4;
 
 /** A recent search matches when every typed word starts a word of its name or address. */
 function recentMatches(place: SearchPlace, query: string): boolean {
@@ -97,6 +101,14 @@ const MAX_ROW_BADGES = 6;
 
 const KIND_ICONS: Record<Exclude<PlaceKind, 'place'>, IconName> = { subway: 'subway', rail: 'rail', bus: 'bus', ferry: 'ferry' };
 const KIND_BADGE_MODES: Record<Exclude<PlaceKind, 'place'>, TransitMode> = { subway: 'subway', rail: 'rail', bus: 'bus', ferry: 'ferry' };
+
+/** A transit stop's lines as route badges (none for a plain place), for wherever the stop is shown. */
+export function stopLineBadges(place: SearchPlace | undefined): { agency: string; color: string; mode: TransitMode; shortName: string }[] {
+  if (!place?.routes?.length || !place.kind || place.kind === 'place') return [];
+  const mode = KIND_BADGE_MODES[place.kind];
+  const agency = place.agency ?? '';
+  return place.routes.map((route) => ({ agency, color: route.color, mode, shortName: badgeLabel({ agency, shortName: route.shortName }) }));
+}
 
 /** "Jamaica, LIRR station, lines PJ, RK, and 8 more" for a stop; "name, address" for a place. */
 /** A stop's kind in words; older recents saved it with its agency ("Bus stop · NICE Bus"). */
@@ -144,6 +156,8 @@ type SearchResultRowProps = {
   onRemove?: () => void;
   /** The rider saved this place: the row shows its icon, color and label. */
   saved?: SavedLocation;
+  /** Where the rider is searching around: each row says how far it is, under its icon. */
+  near?: { latitude: number; longitude: number } | null;
 };
 
 function SearchIcon() {
@@ -151,20 +165,22 @@ function SearchIcon() {
   return <Icon color={colors.ink} name="search" size={20} />;
 }
 
-function SearchResultRow({ onPress, onRemove, place, recent = false, resolving = false, saved }: SearchResultRowProps) {
+function SearchResultRow({ near, onPress, onRemove, place, recent = false, resolving = false, saved }: SearchResultRowProps) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
   const transitKind = saved ? undefined : place.kind && place.kind !== 'place' ? place.kind : undefined;
   const savedLines = saved ? savedPlaceLines(saved) : null;
+  const distance = placeDistanceMeters(place, near);
   const row = (
     <PressableScale
-      accessibilityLabel={rowLabel(place)}
+      accessibilityLabel={distance != null ? `${rowLabel(place)}, ${formatDistanceAway(distance)} away` : rowLabel(place)}
       accessibilityRole="button"
       accessibilityState={{ busy: resolving }}
       onPress={onPress}
       style={[styles.resultRow, onRemove && styles.removableResultRow]}
       testID={`search-result-${place.id}`}
     >
+      <View style={styles.resultIconColumn}>
       <View style={[styles.resultIcon, saved && !resolving ? styles.savedIcon : null]}>
         {resolving ? (
           <ActivityIndicator color={colors.primary} size="small" testID={`search-result-resolving-${place.id}`} />
@@ -173,6 +189,9 @@ function SearchResultRow({ onPress, onRemove, place, recent = false, resolving =
         ) : (
           <Icon color={transitKind ? colors.primary : colors.mutedInk} name={transitKind ? KIND_ICONS[transitKind] : recent ? 'recent' : 'place'} size={20} testID={`search-kind-icon-${transitKind ?? (recent ? 'recent' : 'place')}`} />
         )}
+      </View>
+      {/* As in Google Maps: a 20 mi result is likely the wrong place. */}
+      {distance != null ? <Text numberOfLines={1} style={styles.resultDistance} testID={`search-result-distance-${place.id}`}>{formatDistanceAway(distance)}</Text> : null}
       </View>
 
       <View style={styles.resultCopy}>
@@ -239,9 +258,21 @@ function LineResultRow({ line, loading, onPress }: { line: IndexedLine; loading:
       </View>
       <View style={styles.resultCopy}>
         <Text numberOfLines={1} style={styles.resultTitle}>{line.routeName || label}</Text>
-        <Text numberOfLines={1} style={styles.resultSubtitle}>{`${line.agencyDisplayName} · Line`}</Text>
+        <Text numberOfLines={1} style={styles.resultSubtitle}>{line.agencyDisplayName}</Text>
       </View>
       {loading ? <ActivityIndicator size="small" testID={`search-line-loading-${line.agencyId}-${line.routeId}`} /> : null}
+    </PressableScale>
+  );
+}
+
+/** "Show 4 more lines" / "Show less", under a list cut short. */
+function ShowMoreRow({ expanded, hiddenCount, noun, onToggle, testID }: { expanded: boolean; hiddenCount: number; noun: string; onToggle: () => void; testID: string }) {
+  const styles = useThemedStyles(createStyles);
+  const { colors } = useTheme();
+  return (
+    <PressableScale accessibilityRole="button" accessibilityState={{ expanded }} onPress={onToggle} style={styles.showMore} testID={testID}>
+      <Text style={styles.showMoreText}>{expanded ? 'Show less' : `Show ${hiddenCount} more ${noun}${hiddenCount === 1 ? '' : 's'}`}</Text>
+      <Icon color={colors.primary} name={expanded ? 'collapse' : 'expand'} size={14} />
     </PressableScale>
   );
 }
@@ -293,6 +324,12 @@ export function SearchView({ initialQuery = '', near, onAddSavedPlace, onCancel,
   const forgetPlace = (place: SearchPlace) => {
     if (uid) removeSearch(uid, place.id).catch(() => undefined);
   };
+  const clearHistory = () => {
+    if (uid) for (const place of recentPlaces) removeSearch(uid, place.id).catch(() => undefined);
+    setRecentsExpanded(false);
+  };
+  const [linesExpanded, setLinesExpanded] = useState(false);
+  const [recentsExpanded, setRecentsExpanded] = useState(false);
   const { endSession, getSessionToken, retry, status, suggestions } = usePlacesSearch(query, near);
   const isSearching = status !== 'idle';
   const lines = useLineSearch(query, near, onSelectLine != null);
@@ -385,6 +422,7 @@ export function SearchView({ initialQuery = '', near, onAddSavedPlace, onCancel,
     return results.map((place) => (
       <SearchResultRow
         key={place.id}
+        near={near}
         onPress={() => selectSuggestion(place)}
         place={place}
         resolving={resolvingId === place.id}
@@ -507,7 +545,7 @@ export function SearchView({ initialQuery = '', near, onAddSavedPlace, onCancel,
               {lines.length > 0 ? (
                 <View testID="search-lines">
                   <Text accessibilityRole="header" style={styles.heading}>Lines</Text>
-                  {lines.map((line) => {
+                  {(linesExpanded ? lines : lines.slice(0, VISIBLE_LINES)).map((line) => {
                     const key = `${line.agencyId}:${line.routeId}`;
                     return (
                       <LineResultRow key={key} line={line} loading={openingLine === key} onPress={() => {
@@ -519,26 +557,35 @@ export function SearchView({ initialQuery = '', near, onAddSavedPlace, onCancel,
                       }} />
                     );
                   })}
+                  {lines.length > VISIBLE_LINES ? (
+                    <ShowMoreRow expanded={linesExpanded} hiddenCount={lines.length - VISIBLE_LINES} noun="line" onToggle={() => setLinesExpanded((open) => !open)} testID="search-lines-more" />
+                  ) : null}
                   <Text accessibilityRole="header" style={styles.heading}>Places</Text>
                 </View>
               ) : null}
               {matchingSaved.map((saved) => {
                 const place = locationToPlace(saved.address);
-                return <SearchResultRow key={`saved-${saved.id}`} onPress={() => selectRecent(place)} place={place} saved={saved} />;
+                return <SearchResultRow near={near} key={`saved-${saved.id}`} onPress={() => selectRecent(place)} place={place} saved={saved} />;
               })}
               {matchingRecents.map((place) => (
-                <SearchResultRow key={`recent-${place.id}`} onPress={() => selectRecent(place)} place={place} recent={true} saved={savedByPlaceId.get(place.id)} />
+                <SearchResultRow near={near} key={`recent-${place.id}`} onPress={() => selectRecent(place)} place={place} recent={true} saved={savedByPlaceId.get(place.id)} />
               ))}
               {renderSearchState()}
             </>
           ) : recentPlaces.length > 0 ? (
             <>
-              <Text accessibilityRole="header" style={styles.heading}>
-                Recent
-              </Text>
-              {recentPlaces.map((place) => (
-                <SearchResultRow key={place.id} onPress={() => selectRecent(place)} onRemove={() => forgetPlace(place)} place={place} recent={true} />
+              <View style={styles.recentHeader}>
+                <Text accessibilityRole="header" style={[styles.heading, styles.recentHeading]}>Recent</Text>
+                <PressableScale accessibilityLabel="Clear recent searches" accessibilityRole="button" hitSlop={8} onPress={clearHistory} style={styles.clearHistory} testID="search-clear-history">
+                  <Text style={styles.clearHistoryText}>Clear</Text>
+                </PressableScale>
+              </View>
+              {(recentsExpanded ? recentPlaces : recentPlaces.slice(0, VISIBLE_RECENTS)).map((place) => (
+                <SearchResultRow near={near} key={place.id} onPress={() => selectRecent(place)} onRemove={() => forgetPlace(place)} place={place} recent={true} />
               ))}
+              {recentPlaces.length > VISIBLE_RECENTS ? (
+                <ShowMoreRow expanded={recentsExpanded} hiddenCount={recentPlaces.length - VISIBLE_RECENTS} noun="recent search" onToggle={() => setRecentsExpanded((open) => !open)} testID="search-recents-more" />
+              ) : null}
             </>
           ) : null}
         </ScrollView>
@@ -654,6 +701,14 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   savedIcon: {
     backgroundColor: 'transparent',
   },
+  showMore: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 20 },
+  showMoreText: { color: colors.primary, fontFamily: fontFamilies.extraBold, fontSize: 13 },
+  recentHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 20 },
+  recentHeading: { flex: 1 },
+  clearHistory: { paddingVertical: 4 },
+  clearHistoryText: { color: colors.primary, fontFamily: fontFamilies.extraBold, fontSize: 13 },
+  resultIconColumn: { width: 48, alignItems: 'center', gap: 3 },
+  resultDistance: { color: colors.mutedInk, fontFamily: fontFamilies.bold, fontSize: 10 },
   resultIcon: {
     width: 40,
     height: 40,

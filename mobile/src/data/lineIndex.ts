@@ -150,7 +150,10 @@ export function searchLineIndex(index: readonly IndexedLine[], query: string): I
   const code = compactCode(tokens.join(''));
   const scored = candidates.flatMap((line) => {
     const codes = lineCodes(line);
-    const nameWords = normalize(`${line.routeName} ${line.agencyDisplayName}`).split(' ');
+    // A bus's long name is just where it runs ("Jamaica - Hempstead"), so a bus is found by its code:
+    // searching a place like "Jamaica" then lists that place, not every bus ending there.
+    // Rail, subway and ferry names are what riders call them ("Port Jefferson Branch").
+    const nameWords = normalize(AGENCY_MODE[line.agencyId] === 'bus' ? line.agencyDisplayName : `${line.routeName} ${line.agencyDisplayName}`).split(' ');
     let score = 0;
     if (codes.includes(code)) score = 100;
     // "S7" finds S74, S76, S78 (but "1" alone shouldn't list every route starting with 1).

@@ -8,7 +8,7 @@ import { useTransitLiveMap } from '../data/TransitLiveContext';
 import type { RouteDetail } from '../data/transit';
 import { sortSavedLocations, type SavedLocation } from '../data/userData';
 import { useNow } from '../hooks/useNow';
-import { useAppSettings, useTheme, useThemedStyles } from '../theme/AppSettings';
+import { useAppSettings, useThemedStyles } from '../theme/AppSettings';
 import { useLayoutEase, useNativeDriver } from '../theme/motion';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
@@ -85,7 +85,6 @@ export function TransitSheet({
   scrollY,
 }: TransitSheetProps) {
   const styles = useThemedStyles(createStyles);
-  const { colors } = useTheme();
   const liveMap = useTransitLiveMap();
   // Re-applies live data every 30 s so countdowns age and past departures drop between polls.
   const now = useNow(30_000);
