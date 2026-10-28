@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Animated, Platform, StyleSheet, useWindowDimensions, View, type NativeScrollEvent, type NativeSyntheticEvent, type ScrollView, type StyleProp, type ViewStyle } from 'react-native';
+import { Animated, Platform, StyleSheet, useWindowDimensions, View, type NativeScrollEvent, type NativeSyntheticEvent, type ScrollViewInstance, type StyleProp, type ViewStyle } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAppSettings, useThemedStyles } from '../theme/AppSettings';
@@ -66,7 +66,7 @@ export function DetailMapPage({
   const insets = useSafeAreaInsets();
   const { reducedMotionActive } = useAppSettings();
   const [scrollY] = useState(() => new Animated.Value(0));
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const scrollOffset = useRef(0);
   useEffect(() => {
     const id = scrollY.addListener(({ value }) => {
