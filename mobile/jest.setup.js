@@ -61,6 +61,8 @@ jest.mock('firebase/firestore', () => {
   const mockListeners = new Set();
   const ref = (_db, ...segments) => ({ path: segments.join('/') });
   const snapshotOf = (collectionPath) => ({
+    exists: () => mockDocs.has(collectionPath),
+    data: () => mockDocs.get(collectionPath),
     docs: [...mockDocs]
       .filter(([path]) => path.startsWith(`${collectionPath}/`) && !path.slice(collectionPath.length + 1).includes('/'))
       .reverse()

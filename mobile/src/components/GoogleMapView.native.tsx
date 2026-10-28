@@ -5,7 +5,7 @@ import MapView, { Marker, PROVIDER_GOOGLE, Polygon, Polyline, type Camera, type 
 import type { MapLine } from '../data/lineLayers';
 import { googleMapStyle } from '../data/mapStyle';
 import { themedRouteColor } from '../data/routeColors';
-import { SERVICE_AREA_BOUNDS } from '../data/serviceArea';
+import { MAP_EXPLORATION_BOUNDS, SERVICE_AREA_BOUNDS } from '../data/serviceArea';
 import { addressAfterName } from '../data/placesSearch';
 import { metersPerPixelForSpan, SAVED_PIN, savedPlaceColor, stackSavedPins } from '../data/savedPlacePin';
 import { locationPoint, savedPlaceName, type SavedLocation } from '../data/userData';
@@ -26,8 +26,8 @@ const PIN_SETTLE_MS = 600;
 function SavedPlacePin({ color, icon }: { color: string; icon: IconName | null }) {
   const { colors } = useTheme();
   return (
-    <View style={[pinStyles.badge, { backgroundColor: color, borderColor: colors.ring }]}>
-      {icon ? <Icon color={colors.ring} filled={true} name={icon} size={16} /> : null}
+    <View style={[pinStyles.badge, { backgroundColor: color, borderColor: colors.savedPlaceBorder }]}>
+      {icon ? <Icon color={colors.ring} name={icon} size={16} /> : null}
     </View>
   );
 }
@@ -97,12 +97,12 @@ type GoogleMapViewProps = {
 function clampToServiceArea(region: Region): Region {
   return {
     ...region,
-    latitude: Math.min(Math.max(region.latitude, SERVICE_AREA_BOUNDS.south), SERVICE_AREA_BOUNDS.north),
-    longitude: Math.min(Math.max(region.longitude, SERVICE_AREA_BOUNDS.west), SERVICE_AREA_BOUNDS.east),
+    latitude: Math.min(Math.max(region.latitude, MAP_EXPLORATION_BOUNDS.south), MAP_EXPLORATION_BOUNDS.north),
+    longitude: Math.min(Math.max(region.longitude, MAP_EXPLORATION_BOUNDS.west), MAP_EXPLORATION_BOUNDS.east),
   };
 }
 
-/** Real Google Maps view, defaulting to the user's location and panning only within NYC/Nassau/Suffolk. */
+/** Real Google Maps view, centered locally with room to explore the surrounding region. */
 export function GoogleMapView({ initialCamera, lines = [], location, onCameraChange, onLongPress, onPress, onOrientationChange, onSavedLocationPress, onUserMoveEnd, onUserPan, padding, recenterRequest = 0, reorientRequest = 0, savedLocations = [], simulatedLocation = false, testID = 'google-map-view' }: GoogleMapViewProps) {
   const mapRef = useRef<MapView>(null);
   // Places hidden, and recolored in the dark theme (see mapStyle.ts).
@@ -177,7 +177,7 @@ export function GoogleMapView({ initialCamera, lines = [], location, onCameraCha
   // Custom markers are snapshotted; keep them live briefly after they change (a pin joining or
   // leaving a stack shows or drops its icon) so the change is in the snapshot.
   const stacking = savedPins.map((pin) => (pin.leader ? '1' : '0')).join('');
-  const pinLook = useMemo(() => ({ savedLocations, color: colors.primary, stacking }), [savedLocations, colors.primary, stacking]);
+  const pinLook = useMemo(() => ({ savedLocations, color: colors.primary, border: colors.savedPlaceBorder, stacking }), [savedLocations, colors.primary, colors.savedPlaceBorder, stacking]);
   const [settledLook, setSettledLook] = useState<typeof pinLook | null>(null);
   const pinsRendering = settledLook !== pinLook;
   useEffect(() => {

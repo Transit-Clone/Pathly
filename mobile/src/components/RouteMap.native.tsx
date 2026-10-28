@@ -4,7 +4,7 @@ import MapView, { Marker, Polyline, PROVIDER_GOOGLE, type Region } from 'react-n
 
 import { formatAge, visibleTrains } from '../data/liveTrains';
 import { googleMapStyle } from '../data/mapStyle';
-import { approachingVehicle, directionArrowAt, focusStopIndex, metersPerPixel, splitPathAtStop, withAlpha } from '../data/routeDirection';
+import { approachingVehicle, directionArrowAt, focusStopIndex, metersPerPixel, riderNearStop, splitPathAtStop, withAlpha } from '../data/routeDirection';
 import { stopRevealZoom, zoomForRegion } from '../data/stopDeclutter';
 import type { RouteLiveVehicle } from '../data/transitLive';
 import type { Coordinates } from '../hooks/useCurrentLocation';
@@ -54,6 +54,8 @@ type RouteMapProps = {
   focusStopName?: string;
   /** Vehicle glyph and label (train vs bus). */
   mode?: TransitMode;
+  /** Tapping a stop's name (shown once its dot is tapped) opens the line at that stop. */
+  onOpenStop?: (stop: GeometryStop) => void;
   /** Called when the rider drags the map, so the location button can drop its selected state. */
   onUserPan?: () => void;
   /** Detailed track geometry when known (e.g. GTFS shapes); otherwise the line joins the stops. */
@@ -88,7 +90,7 @@ function regionFor(stops: readonly GeometryStop[], focusStop: GeometryStop | und
 }
 
 /** Real route map: actual stop positions, the real line, and live vehicles — for any route with a live feed. */
-export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusStopId, focusStopName, mode = 'rail', onUserPan, path, showRouteRequest = 0, stops, testID = 'route-map', userLocation, vehicles, walkPath }: RouteMapProps) {
+export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusStopId, focusStopName, mode = 'rail', onOpenStop, onUserPan, path, showRouteRequest = 0, stops, testID = 'route-map', userLocation, vehicles, walkPath }: RouteMapProps) {
   const mapRef = useRef<MapView>(null);
   // Places hidden, and recolored in the dark theme (see mapStyle.ts).
   const { colors, isDark } = useTheme();
@@ -148,17 +150,25 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
   const vehicleLabel = mode === 'bus' ? 'Bus' : 'Train';
   const vehicleIcon = mode === 'bus' ? 'bus' : mode === 'subway' ? 'subway' : 'rail';
 
+  // The rider, when they're near their stop: framed with it so they see the walk there.
+  const nearRider = userLocation && focusStop && riderNearStop(userLocation, focusStop) ? userLocation : null;
   // Set once the map has framed an approaching vehicle (below).
   const framedVehicle = useRef(false);
-  // The nearest stop often resolves after the page opens; follow it until the rider pans.
+  // The nearest stop (and whether the rider is near it) often resolves after the page opens; follow
+  // them until the rider pans. Keyed on near/far, not every GPS fix.
   useEffect(() => {
     if (!focusStop || riderMovedMap.current || framedVehicle.current) return;
+    if (nearRider) {
+      mapRef.current?.fitToCoordinates([{ latitude: focusStop.lat, longitude: focusStop.lon }, nearRider], { edgePadding: ROUTE_FIT_PADDING, animated: true });
+      return;
+    }
     mapRef.current?.animateToRegion(regionFor(stops, focusStop), FOCUS_ANIMATION_MS);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the stop's identity, not the stops array
-  }, [focusStop?.stopId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the stop's identity and the rider being near
+  }, [focusStop?.stopId, nearRider != null]);
 
   // Once a live vehicle shows up on its way to the rider's stop, the map glides out (once) to show
-  // the stop, the vehicle, and the rider together, unless the rider has moved the map already.
+  // the stop and that vehicle (and the rider, when they're near the stop), unless the rider has
+  // moved the map already.
   useEffect(() => {
     if (framedVehicle.current || riderMovedMap.current || !focusStop) return;
     const vehicle = approachingVehicle(line.behindPoints, shownVehicles);
@@ -167,7 +177,7 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
     mapRef.current?.fitToCoordinates([
       { latitude: focusStop.lat, longitude: focusStop.lon },
       { latitude: vehicle.lat, longitude: vehicle.lon },
-      ...(userLocation ? [userLocation] : []),
+      ...(nearRider ? [nearRider] : []),
     ], { edgePadding: ROUTE_FIT_PADDING, animated: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-checked as vehicles report; the rest is read then
   }, [focusStop?.stopId, vehicles]);
@@ -242,6 +252,7 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
             anchor={CENTER_ANCHOR}
             coordinate={{ latitude: stop.lat, longitude: stop.lon }}
             testID={`route-stop-${stop.name}`}
+            onCalloutPress={onOpenStop ? () => onOpenStop(stop) : undefined}
             title={stop.name}
             tracksViewChanges={tracksStopViews}
             zIndex={focused ? 1 : 0}
@@ -272,7 +283,7 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
         <Marker anchor={VEHICLE_ANCHOR} coordinate={{ latitude: point.lat, longitude: point.lon }} testID={`route-vehicle-${vehicle.tripId}`} title={vehicleLabel} zIndex={2}>
           <View style={styles.vehicleBox}>
             <View style={styles.vehicleBadge} testID={`route-vehicle-badge-${vehicle.tripId}`}>
-              <Icon color={color} filled={true} name={vehicleIcon} size={22} />
+              <Icon color={color} name={vehicleIcon} size={22} />
             </View>
             {vehicle.updatedAt != null ? (
               <View style={[styles.ageBadge, { backgroundColor: color }]} testID={`route-vehicle-age-badge-${vehicle.tripId}`}>

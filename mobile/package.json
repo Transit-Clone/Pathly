@@ -13,8 +13,8 @@
     "test": "jest --runInBand",
     "test:watch": "jest --watch",
     "typecheck": "tsc --noEmit",
-    "build": "expo export --platform all --output-dir dist",
-    "build:web": "expo export --platform web --output-dir dist"
+    "build": "expo export --platform all --output-dir dist --clear",
+    "build:web": "expo export --platform web --output-dir dist --clear"
   },
   "dependencies": {
     "@expo-google-fonts/nunito": "^0.4.2",

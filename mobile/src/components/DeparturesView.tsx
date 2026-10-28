@@ -82,7 +82,7 @@ export function DeparturesView({ directionIndex, onBack, route }: DeparturesView
         <ThemedStatusBar />
         <View style={styles.header}>
           <PressableScale accessibilityLabel="Back" accessibilityRole="button" onPress={onBack} style={styles.backButton} testID="departures-back"><Icon name="back" size={26} /></PressableScale>
-          <RouteBadge agency={route.agency} color={route.color} shortName={route.shortName} withModeIcon={true} />
+          <RouteBadge agency={route.agency} color={route.color} shortName={route.shortName} />
           <View style={styles.headerCopy}>
             <FitText accessibilityRole="header" style={styles.title} testID="departures-destination">{directionDestination(direction.direction)}</FitText>
             <Text numberOfLines={1} style={styles.subtitle} testID="departures-stop">{`From ${direction.stopName}`}</Text>

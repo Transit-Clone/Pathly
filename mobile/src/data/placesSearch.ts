@@ -19,7 +19,30 @@ export type SearchPlace = {
   /** The agency whose stop this is (its badges' agency), for Pathly stops. */
   agency?: string;
   source?: 'google' | 'pathly';
+  /** How far from the rider, for a suggestion Google measured (one with no `location` yet). */
+  distanceMeters?: number;
 };
+
+const METERS_PER_MILE = 1609.344;
+
+/** How far a result is, straight line, from where the rider is searching around; null when unknown. */
+export function placeDistanceMeters(place: SearchPlace, near: { latitude: number; longitude: number } | null | undefined): number | null {
+  if (place.location && near) {
+    const toRadians = (degrees: number) => (degrees * Math.PI) / 180;
+    const dLat = toRadians(place.location.latitude - near.latitude);
+    const dLng = toRadians(place.location.longitude - near.longitude);
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRadians(near.latitude)) * Math.cos(toRadians(place.location.latitude)) * Math.sin(dLng / 2) ** 2;
+    return 2 * 6_371_000 * Math.asin(Math.sqrt(a));
+  }
+  return place.distanceMeters ?? null;
+}
+
+/** "0.3 mi", "4.2 mi", "18 mi": enough to tell the right Main St from one across the island. */
+export function formatDistanceAway(meters: number): string {
+  const miles = meters / METERS_PER_MILE;
+  if (miles < 0.1) return '<0.1 mi';
+  return miles < 10 ? `${miles.toFixed(1)} mi` : `${Math.round(miles)} mi`;
+}
 
 /** A Google suggestion's kind from its place types: the first transit type it has, else a plain place. */
 export function placeKindForTypes(types: readonly string[] | undefined): PlaceKind {
@@ -95,6 +118,8 @@ type AutocompleteResponse = {
       placeId: string;
       text?: { text: string };
       types?: string[];
+      /** From `origin`, when the request gave one. */
+      distanceMeters?: number;
       structuredFormat?: { mainText?: { text: string }; secondaryText?: { text: string } };
     };
   }[];
@@ -104,6 +129,8 @@ type AutocompleteOptions = {
   input: string;
   sessionToken: string;
   signal?: AbortSignal;
+  /** Where the rider is: Google then says how far each suggestion is (no extra cost). */
+  origin?: { latitude: number; longitude: number } | null;
 };
 
 /**
@@ -111,13 +138,14 @@ type AutocompleteOptions = {
  * Pathly can't route outside its network, so out-of-area places are never offered.
  * Widening SERVICE_AREA_BOUNDS widens search along with the map.
  */
-export async function autocompletePlaces({ input, sessionToken, signal }: AutocompleteOptions): Promise<SearchPlace[]> {
+export async function autocompletePlaces({ input, sessionToken, signal, origin }: AutocompleteOptions): Promise<SearchPlace[]> {
   const response = await fetch(`${PLACES_BASE_URL}/places:autocomplete`, {
     method: 'POST',
     headers: headers(getPlacesApiKey()),
     body: JSON.stringify({
       input,
       sessionToken,
+      ...(origin ? { origin: { latitude: origin.latitude, longitude: origin.longitude } } : {}),
       includedRegionCodes: ['us'],
       locationRestriction: {
         rectangle: {
@@ -133,13 +161,14 @@ export async function autocompletePlaces({ input, sessionToken, signal }: Autoco
   const data = (await response.json()) as AutocompleteResponse;
   return (data.suggestions ?? []).flatMap(({ placePrediction }) => {
     if (!placePrediction) return [];
-    const { placeId, structuredFormat, text, types } = placePrediction;
+    const { distanceMeters, placeId, structuredFormat, text, types } = placePrediction;
     return [{
       id: placeId,
       title: structuredFormat?.mainText?.text ?? text?.text ?? '',
       subtitle: structuredFormat?.secondaryText?.text ?? '',
       kind: placeKindForTypes(types),
       source: 'google' as const,
+      ...(typeof distanceMeters === 'number' ? { distanceMeters } : {}),
     }];
   });
 }

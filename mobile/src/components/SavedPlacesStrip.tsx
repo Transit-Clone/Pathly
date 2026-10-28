@@ -8,7 +8,9 @@ import type { Palette } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { Icon, type IconName } from './Icon';
 import { PressableScale } from './PressableScale';
+import { afterClick } from './afterClick';
 import { SavedPlaceBadge } from './SavedPlaceBadge';
+import { radii } from '../theme/shape';
 
 /** Matches the search page's content width. */
 const MAX_PAGE_WIDTH = 540;
@@ -89,7 +91,7 @@ export function SavedPlacesStrip({ onAdd, onSelect, places }: SavedPlacesStripPr
   });
   if (onAdd) {
     const missing = (['Home', 'Work'] as const).filter((label) => !findLabeledLocation(places, label));
-    cards.unshift(...missing.map((label): StripCard => ({
+    cards.push(...missing.map((label): StripCard => ({
       key: `set-${label}`,
       icon: label === 'Home' ? 'home' : 'work',
       title: label,
@@ -125,7 +127,7 @@ export function SavedPlacesStrip({ onAdd, onSelect, places }: SavedPlacesStripPr
     if (startX == null) return;
     const dx = event.nativeEvent.pageX - startX;
     if (Math.abs(dx) <= DRAG_THRESHOLD) {
-      card.onPress();
+      afterClick(card.onPress);
       return;
     }
     scrollRef.current?.scrollTo({ x: Math.max(0, scrollX.current - dx), animated: true });
@@ -191,7 +193,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     paddingVertical: 8,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 28,
+    borderRadius: radii.card,
     backgroundColor: colors.surface,
   },
   cardMuted: { borderStyle: 'dashed' },

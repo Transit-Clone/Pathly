@@ -4,6 +4,7 @@ import { useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
 import { PressableScale } from './PressableScale';
+import { radii } from '../theme/shape';
 
 type ConfirmDialogProps = {
   body: string;
@@ -44,11 +45,11 @@ export function ConfirmDialog({ body, cancelLabel = 'Cancel', confirmLabel, dest
 
 const createStyles = (colors: Palette) => StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, backgroundColor: colors.scrim },
-  card: { width: '100%', maxWidth: 360, padding: 20, borderRadius: 20, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.2, shadowRadius: 20, elevation: 12 },
+  card: { width: '100%', maxWidth: 360, padding: 20, borderRadius: radii.card, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.2, shadowRadius: 20, elevation: 12 },
   title: { color: colors.ink, ...typography.sectionHeading, fontSize: 18 },
   body: { marginTop: 6, color: colors.mutedInk, ...typography.body, fontSize: 15 },
   actions: { flexDirection: 'row', gap: 10, marginTop: 18 },
-  button: { flex: 1, minHeight: 46, alignItems: 'center', justifyContent: 'center', borderRadius: 23 },
+  button: { flex: 1, minHeight: 46, alignItems: 'center', justifyContent: 'center', borderRadius: radii.pill },
   cancelButton: { backgroundColor: colors.background },
   confirmButton: { backgroundColor: colors.primary },
   destructiveButton: { backgroundColor: colors.red },

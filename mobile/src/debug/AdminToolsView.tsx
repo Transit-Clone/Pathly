@@ -16,6 +16,7 @@ import { appNow, useDebug } from './DebugContext';
 import { mockTimePresets, parseMockTime } from './mockTimes';
 import { MOCK_LOCATION_PRESETS } from './presets';
 import { getRequestLog, subscribeRequestLog, type RequestLogEntry } from './requestLog';
+import { radii } from '../theme/shape';
 
 type AgencyStatus = {
   agencyId: string;
@@ -222,8 +223,8 @@ export function AdminToolsView({ onBack, onPickMockLocation }: AdminToolsViewPro
 
 const createStyles = (colors: Palette) => StyleSheet.create({
   customTime: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 15, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border },
-  input: { flex: 1, minHeight: 40, paddingHorizontal: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 10, color: colors.ink, backgroundColor: colors.background, ...typography.body },
-  smallButton: { alignSelf: 'flex-start', minHeight: 36, justifyContent: 'center', paddingHorizontal: 14, marginVertical: 6, borderRadius: 18, backgroundColor: colors.primary },
+  input: { flex: 1, minHeight: 40, paddingHorizontal: 10, borderWidth: 1, borderColor: colors.border, borderRadius: radii.control, color: colors.ink, backgroundColor: colors.background, ...typography.body },
+  smallButton: { alignSelf: 'flex-start', minHeight: 36, justifyContent: 'center', paddingHorizontal: 14, marginVertical: 6, borderRadius: radii.pill, backgroundColor: colors.primary },
   smallButtonText: { color: colors.onPrimary, fontFamily: fontFamilies.extraBold, fontSize: 13 },
   requestRow: { paddingHorizontal: 15, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.border },
   requestHead: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 36 },
@@ -231,7 +232,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   requestFailed: { color: colors.red },
   requestName: { flex: 1, color: colors.ink, ...typography.bodyStrong, fontSize: 14 },
   requestMs: { color: colors.mutedInk, ...typography.metadata },
-  json: { marginTop: 6, padding: 10, borderRadius: 10, backgroundColor: colors.background, color: colors.ink, fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }), fontSize: 11 },
+  json: { marginTop: 6, padding: 10, borderRadius: radii.control, backgroundColor: colors.background, color: colors.ink, fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }), fontSize: 11 },
   bad: { color: colors.red },
   feedback: { marginTop: 16, color: colors.primary, ...typography.bodyStrong, textAlign: 'center' },
 });

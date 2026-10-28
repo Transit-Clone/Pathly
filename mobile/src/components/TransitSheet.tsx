@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Platform, StyleSheet, Text, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type ScrollView } from 'react-native';
+import { Animated, Platform, StyleSheet, Text, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { applyRouteLive } from '../data/applyRouteLive';
@@ -8,7 +8,7 @@ import { useTransitLiveMap } from '../data/TransitLiveContext';
 import type { RouteDetail } from '../data/transit';
 import { sortSavedLocations, type SavedLocation } from '../data/userData';
 import { useNow } from '../hooks/useNow';
-import { useAppSettings, useTheme, useThemedStyles } from '../theme/AppSettings';
+import { useAppSettings, useThemedStyles } from '../theme/AppSettings';
 import { useLayoutEase, useNativeDriver } from '../theme/motion';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
@@ -19,6 +19,7 @@ import { TransitCard } from './TransitCard';
 import { PressableScale } from './PressableScale';
 import { RecentTripCard } from './RecentTripCard';
 import { SHEET_AT_REST_TOLERANCE, SheetHandle } from './SheetHandle';
+import { radii } from '../theme/shape';
 
 export type TransitTabId = 'nearby' | 'recents' | 'favorites';
 
@@ -30,8 +31,6 @@ type TransitSheetProps = {
   /** Every real nearby route for the rider's current location, across every configured agency (nearbyTransit.ts) — not a fixed handful of hand-picked lines. */
   nearbyRoutes: readonly RouteDetail[];
   nearbyStatus: 'loading' | 'loaded' | 'error';
-  /** A re-search is in flight (e.g. for a new map center) while the current list stays visible. */
-  nearbyRefreshing?: boolean;
   onOpenSavedLocation: (location: SavedLocation) => void;
   /** Starts saving a new place; offered under Favorites -> Places when set. */
   onAddSavedPlace?: () => void;
@@ -71,7 +70,6 @@ export function TransitSheet({
   activeTab,
   findRoute,
   mapHeight,
-  nearbyRefreshing = false,
   nearbyRoutes,
   nearbyStatus,
   onOpenSavedLocation,
@@ -87,7 +85,6 @@ export function TransitSheet({
   scrollY,
 }: TransitSheetProps) {
   const styles = useThemedStyles(createStyles);
-  const { colors } = useTheme();
   const liveMap = useTransitLiveMap();
   // Re-applies live data every 30 s so countdowns age and past departures drop between polls.
   const now = useNow(30_000);
@@ -293,7 +290,6 @@ export function TransitSheet({
               ) : null}
 
               <View onLayout={(event) => recordSectionLayout('nearby', event)} style={styles.cardStack} testID="nearby-routes">
-                {nearbyRefreshing ? <ActivityIndicator accessibilityLabel="Updating nearby transit" color={colors.primary} style={styles.nearbyRefreshing} testID="nearby-refreshing" /> : null}
                 {nearbyCards.map((route) => (
                   <View key={route.id} onLayout={(event) => recordCardLayout('nearby', route.id, event)} testID={`card-slot-${route.id}`}>
                     <TransitCard
@@ -383,8 +379,8 @@ export function TransitSheet({
 const createStyles = (colors: Palette) => StyleSheet.create({
   sheet: {
     overflow: 'hidden',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderTopLeftRadius: radii.sheet,
+    borderTopRightRadius: radii.sheet,
     backgroundColor: colors.surface,
     shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: -5 },
@@ -428,7 +424,6 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   tabContent: {},
   cardStack: { gap: 0 },
   nearbyEmpty: { alignItems: 'center', paddingVertical: 20, paddingHorizontal: 20, gap: 8 },
-  nearbyRefreshing: { paddingVertical: 8 },
   nearbyEmptyText: { color: colors.mutedInk, ...typography.metadata, textAlign: 'center' },
   sectionHeading: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 },
   sectionLabel: { color: colors.mutedInk, ...typography.label },

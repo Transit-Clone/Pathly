@@ -45,6 +45,12 @@ describe('line search on the device', () => {
     expect(names('express bus')).toEqual(['busco:X27']);
     expect(names('sbs')).toEqual(expect.arrayContaining(['mn:M15-SBS', 'si:S79-SBS']));
   });
+
+  it("doesn't list buses for a place on their route: those are where they run, not their names", () => {
+    expect(names('bay ridge')).toEqual([]);
+    expect(names('richmond')).toEqual([]);
+    expect(names('staten island')).toEqual(['siferry:SIF']);
+  });
 });
 
 describe('line search duplicates', () => {

@@ -27,6 +27,7 @@ const glyphs = {
   edit: ['create-outline', 'create'],
   expand: ['chevron-down', 'chevron-down'],
   fare: ['pricetag-outline', 'pricetag'],
+  feedback: ['chatbubble-ellipses-outline', 'chatbubble-ellipses'],
   favorite: ['star-outline', 'star'],
   filter: ['funnel-outline', 'funnel'],
   ferry: ['boat-outline', 'boat'],
@@ -72,6 +73,10 @@ export type IconName = keyof typeof glyphs | keyof typeof materialGlyphs;
 
 type IconProps = {
   color?: string;
+  /**
+   * Pathly's icons are filled (solid shapes read better at small sizes and match the mascot's
+   * rounded look). Pass false only for an "off" state, like an unselected toggle.
+   */
   filled?: boolean;
   name: IconName;
   size?: number;
@@ -91,7 +96,7 @@ export function iconGlyph(name: keyof typeof glyphs, filled = true): { fontFamil
   return { fontFamily: Object.keys(font ?? {})[0] ?? 'ionicons', text: String.fromCodePoint(code) };
 }
 
-export function Icon({ color, filled = false, name, size = 22, style, testID }: IconProps) {
+export function Icon({ color, filled = true, name, size = 22, style, testID }: IconProps) {
   const { colors } = useTheme();
   const shared = {
     accessibilityElementsHidden: true,

@@ -42,6 +42,7 @@ import {
   type TravelModeOption,
   type TripPreference,
 } from './tripPlanning';
+import { addLiveStatus } from './tripLive';
 import { addTripStops, matchTripStops } from './tripStops';
 
 const CALLABLE_RUNTIME_SERVICE_ACCOUNT = 'pathly-callable-runtime@pathly-b7f0f.iam.gserviceaccount.com';
@@ -105,6 +106,18 @@ const RATE_LIMITS = {
 // City bus timetables load from Cloud Storage on first use, which the budget leaves room for.
 const TRIP_STOPS_BUDGET_MS = 3_000;
 let tripStopMatcher = matchTripStops;
+// Live feeds are usually already cached by route status polling; a slow one isn't waited on long.
+const TRIP_LIVE_BUDGET_MS = 2_500;
+let tripLiveLookup: Parameters<typeof addLiveStatus>[3];
+/** Unit-test dependency injection only. */
+export function setTripLiveLookupForTests(lookup: typeof tripLiveLookup): void {
+  tripLiveLookup = lookup;
+}
+let tripAlertsLookup: Parameters<typeof addLiveStatus>[5];
+/** Unit-test dependency injection only. */
+export function setTripAlertsLookupForTests(lookup: typeof tripAlertsLookup): void {
+  tripAlertsLookup = lookup;
+}
 /** Unit-test dependency injection only. */
 export function setTripStopMatcherForTests(matcher: typeof matchTripStops | undefined): void {
   tripStopMatcher = matcher ?? matchTripStops;
@@ -581,7 +594,8 @@ export function requiredPlanTripRequest(data: unknown, nowMs = Date.now()): Plan
  * Client call: httpsCallable(functions, 'planTrip')({ origin, destination, time, preference, modes, lessWalking? }).
  */
 export const planTrip = onCall<PlanTripRequest, Promise<{ itineraries: Itinerary[] }>>(
-  { ...protectedCallableOptions, secrets: [googleMapsApiKey], timeoutSeconds: 30 },
+  // The bus feeds' keys too: the live check reads NYC, Suffolk, and NICE buses (tripLive.ts).
+  { ...protectedCallableOptions, secrets: [googleMapsApiKey, swiftlyApiKey, mtaBusTimeApiKey], timeoutSeconds: 30 },
   async (request) => {
     await enforceCallableSecurity(request, 'planTrip', RATE_LIMITS.planTrip);
     const nowMs = Date.now();
@@ -622,7 +636,9 @@ export const planTrip = onCall<PlanTripRequest, Promise<{ itineraries: Itinerary
     // matched within the budget simply goes without.
     const agencies = new Set(itineraries.flatMap((itinerary) => itinerary.steps.flatMap((step) => (step.kind === 'transit' ? agencyIdsForStep(step) : []))));
     for (const agencyId of agencies) await prepareAgencyStaticData(agencyId);
-    return { itineraries: await addTripStops(itineraries, TRIP_STOPS_BUDGET_MS, tripStopMatcher) };
+    const withStops = await addTripStops(itineraries, TRIP_STOPS_BUDGET_MS, tripStopMatcher);
+    // Then each leg against the agencies' live feeds: cancelled trips, live times, missed connections.
+    return { itineraries: await addLiveStatus(withStops, TRIP_LIVE_BUDGET_MS, nowMs, tripLiveLookup, undefined, tripAlertsLookup) };
   },
 );
 

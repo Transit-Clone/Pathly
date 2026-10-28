@@ -29,6 +29,7 @@ import { PressableScale } from './PressableScale';
 import { RouteBadge } from './RouteBadge';
 import { SupportCard } from './SupportCard';
 import { TripMap } from './TripMap';
+import { radii } from '../theme/shape';
 
 const MAP_HEIGHT = 390;
 const METERS_PER_MILE = 1609.344;
@@ -179,7 +180,7 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
       style={styles.endButton}
       testID="enroute-end"
     >
-      <Icon color={colors.onPrimary} filled={true} name="stop" size={20} />
+      <Icon color={colors.onPrimary} name="stop" size={20} />
       <Text style={styles.endText}>END</Text>
     </PressableScale>
   );
@@ -236,7 +237,7 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
               />
             ) : guidance.phase === 'arrived' ? (
               <Mascot motion="pop" pose="celebrate" size={52} testID="enroute-arrived-mascot" />
-            ) : <View style={styles.walkIcon}><Icon color={colors.ink} filled={true} name="travel" size={24} /></View>}
+            ) : <View style={styles.walkIcon}><Icon color={colors.ink} name="travel" size={24} /></View>}
             <View style={styles.currentCopy}>
               <Text style={styles.currentAction} testID="enroute-current-action">{guidance.currentAction}</Text>
               {guidance.headsign ? <Text style={styles.headsign}>{guidance.headsign}</Text> : null}
@@ -255,7 +256,7 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
           ) : null}
           {hurryCopy ? (
             <View accessibilityLiveRegion="assertive" style={styles.hurryNotice} testID="enroute-hurry-up">
-              <Icon color={colors.highlightInk} filled={true} name="travel" size={20} />
+              <Icon color={colors.highlightInk} name="travel" size={20} />
               <View style={styles.hurryCopy}>
                 <Text style={styles.hurryTitle}>{hurryCopy.title}</Text>
                 <Text style={styles.locationNoticeText}>{hurryCopy.body}</Text>
@@ -389,19 +390,19 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   content: { paddingHorizontal: 16, paddingTop: 22, paddingBottom: 52 },
   recoveryViewport: { flex: 1, alignItems: 'center', backgroundColor: colors.background },
   recoverySafeArea: { width: '100%', maxWidth: 540, flex: 1, padding: 16, backgroundColor: colors.canvas },
-  recoveryCard: { marginTop: 80, alignItems: 'center', padding: 24, borderWidth: 1, borderColor: colors.border, borderRadius: 24, backgroundColor: colors.surface },
+  recoveryCard: { marginTop: 80, alignItems: 'center', padding: 24, borderWidth: 1, borderColor: colors.border, borderRadius: radii.card, backgroundColor: colors.surface },
   recoveryIcon: { width: 60, height: 60, alignItems: 'center', justifyContent: 'center', borderRadius: 30, backgroundColor: colors.amberSoft },
   recoveryEyebrow: { marginTop: 18, color: colors.warning, ...typography.label },
   recoveryTitle: { marginTop: 5, color: colors.ink, ...typography.sectionHeading, fontSize: 22, textAlign: 'center' },
   recoveryBody: { marginTop: 10, color: colors.mutedInk, ...typography.body, lineHeight: 22, textAlign: 'center' },
-  recoveryPrimary: { minHeight: 50, alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 22, borderRadius: 25, backgroundColor: colors.primary },
+  recoveryPrimary: { minHeight: 50, alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 22, borderRadius: radii.pill, backgroundColor: colors.primary },
   recoveryPrimaryText: { color: colors.onPrimary, ...typography.bodyStrong },
   recoveryEnd: { minHeight: 44, alignItems: 'center', justifyContent: 'center', marginTop: 8, paddingHorizontal: 20 },
   recoveryEndText: { color: colors.red, ...typography.bodyStrong },
   topBar: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 8, paddingHorizontal: 16 },
   endButton: { minWidth: 104, height: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 18, borderRadius: 26, backgroundColor: colors.red, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 7 },
   endText: { color: colors.onPrimary, fontFamily: fontFamilies.extraBold, fontSize: 16, letterSpacing: 0.7 },
-  guidanceCard: { padding: 18, borderWidth: 1, borderColor: colors.border, borderRadius: 22, backgroundColor: colors.surface },
+  guidanceCard: { padding: 18, borderWidth: 1, borderColor: colors.border, borderRadius: radii.card, backgroundColor: colors.surface },
   phaseRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   phase: { color: colors.primary, ...typography.label },
   arrival: { color: colors.ink, ...typography.bodyStrong },
@@ -411,32 +412,32 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   currentAction: { color: colors.ink, ...typography.sectionHeading, fontSize: 21 },
   headsign: { marginTop: 2, color: colors.mutedInk, ...typography.body },
   stepMetadata: { marginTop: 4, color: colors.primary, ...typography.metadata, fontVariant: ['tabular-nums'] },
-  nextCard: { marginTop: 17, padding: 13, borderRadius: 16, backgroundColor: colors.surfaceMuted },
+  nextCard: { marginTop: 17, padding: 13, borderRadius: radii.card, backgroundColor: colors.surfaceMuted },
   nextLabel: { color: colors.mutedInk, ...typography.label },
   nextAction: { marginTop: 3, color: colors.ink, ...typography.bodyStrong, fontSize: 16 },
   remaining: { marginTop: 2, color: colors.primary, ...typography.metadata },
-  locationNotice: { marginTop: 13, flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, borderRadius: 13, backgroundColor: colors.amberSoft },
+  locationNotice: { marginTop: 13, flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, borderRadius: radii.control, backgroundColor: colors.amberSoft },
   locationNoticeText: { flex: 1, color: colors.ink, ...typography.metadata },
-  hurryNotice: { marginTop: 13, flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 13, backgroundColor: colors.highlightSoft },
+  hurryNotice: { marginTop: 13, flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: radii.control, backgroundColor: colors.highlightSoft },
   hurryCopy: { flex: 1, gap: 2 },
   hurryTitle: { color: colors.ink, ...typography.bodyStrong },
-  tripSummary: { marginTop: 14, padding: 17, borderRadius: 20, backgroundColor: colors.surfaceMuted },
+  tripSummary: { marginTop: 14, padding: 17, borderRadius: radii.card, backgroundColor: colors.surfaceMuted },
   summaryLabel: { color: colors.mutedInk, ...typography.label },
   summaryDestination: { marginTop: 2, color: colors.ink, ...typography.sectionHeading, fontSize: 18 },
   summaryOrigin: { marginTop: 2, color: colors.mutedInk, ...typography.body },
-  demoPanel: { marginTop: 14, padding: 15, borderWidth: 1, borderColor: colors.accent, borderRadius: 20, backgroundColor: colors.blueSoft },
+  demoPanel: { marginTop: 14, padding: 15, borderWidth: 1, borderColor: colors.accent, borderRadius: radii.card, backgroundColor: colors.blueSoft },
   demoHeadingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   demoLabel: { color: colors.primary, ...typography.label },
   demoTitle: { color: colors.ink, ...typography.bodyStrong, fontSize: 16 },
-  demoReset: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 15, backgroundColor: colors.surface },
+  demoReset: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 7, borderRadius: radii.pill, backgroundColor: colors.surface },
   demoResetText: { color: colors.primary, ...typography.metadata },
   checkpointList: { gap: 8, paddingVertical: 12 },
-  checkpoint: { maxWidth: 170, paddingHorizontal: 11, paddingVertical: 8, borderWidth: 1, borderColor: colors.border, borderRadius: 14, backgroundColor: colors.surface },
+  checkpoint: { maxWidth: 170, paddingHorizontal: 11, paddingVertical: 8, borderWidth: 1, borderColor: colors.border, borderRadius: radii.control, backgroundColor: colors.surface },
   selectedCheckpoint: { borderColor: colors.primary, backgroundColor: colors.primary },
   checkpointText: { color: colors.ink, ...typography.metadata },
   selectedCheckpointText: { color: colors.onPrimary },
   demoActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
-  demoStep: { minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 11, borderRadius: 20, backgroundColor: colors.surface },
+  demoStep: { minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 11, borderRadius: radii.control, backgroundColor: colors.surface },
   demoStepText: { color: colors.primary, ...typography.bodyStrong, fontSize: 13 },
   demoCount: { color: colors.mutedInk, ...typography.metadata },
   disabled: { opacity: 0.4 },

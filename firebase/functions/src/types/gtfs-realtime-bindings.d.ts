@@ -11,6 +11,8 @@ declare module 'gtfs-realtime-bindings' {
       stopId?: string | null;
       arrival?: StopTimeEvent | null;
       departure?: StopTimeEvent | null;
+      /** GTFS-RT StopTimeUpdate.ScheduleRelationship (0 SCHEDULED, 1 SKIPPED, 2 NO_DATA). */
+      scheduleRelationship?: number | null;
     }
 
     interface TripDescriptor {
@@ -18,6 +20,8 @@ declare module 'gtfs-realtime-bindings' {
       routeId?: string | null;
       directionId?: number | null;
       startDate?: string | null;
+      /** GTFS-RT TripDescriptor.ScheduleRelationship (0 SCHEDULED … 3 CANCELED). */
+      scheduleRelationship?: number | null;
     }
 
     interface TripUpdate {

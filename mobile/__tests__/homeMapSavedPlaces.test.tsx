@@ -5,6 +5,7 @@ import { GoogleMapView as NativeGoogleMapView } from '../src/components/GoogleMa
 import { GoogleMapView as WebGoogleMapView } from '../src/components/GoogleMapView.web';
 import { placeFromName, placeToLocation, type SavedLocation } from '../src/data/userData';
 import { AppSettingsProvider } from '../src/theme/AppSettings';
+import { MAP_EXPLORATION_BOUNDS, SERVICE_AREA_BOUNDS } from '../src/data/serviceArea';
 
 jest.mock('@react-google-maps/api', () => {
   const { View } = require('react-native');
@@ -28,6 +29,14 @@ function settings(child: React.ReactNode) {
 }
 
 describe('home map saved-place markers', () => {
+  it('allows browsing beyond service coverage and gives web a soft boundary', () => {
+    const screen = render(settings(<WebGoogleMapView location={{ latitude: 40.7, longitude: -73.9 }} />));
+    expect(screen.getByTestId('web-google-map').props.options).toMatchObject({ restriction: { latLngBounds: MAP_EXPLORATION_BOUNDS, strictBounds: false }, minZoom: 8 });
+    expect(MAP_EXPLORATION_BOUNDS.north).toBeGreaterThan(SERVICE_AREA_BOUNDS.north);
+    expect(MAP_EXPLORATION_BOUNDS.south).toBeLessThan(SERVICE_AREA_BOUNDS.south);
+    expect(MAP_EXPLORATION_BOUNDS.east).toBeGreaterThan(SERVICE_AREA_BOUNDS.east);
+    expect(MAP_EXPLORATION_BOUNDS.west).toBeLessThan(SERVICE_AREA_BOUNDS.west);
+  });
   beforeAll(() => {
     class Point { constructor(public x: number, public y: number) {} }
     Object.assign(globalThis, { google: { maps: { Point, SymbolPath: { CIRCLE: 'circle' } } } });

@@ -162,11 +162,12 @@ export function pickTrip(candidates: readonly Candidate[], stopCount: number): C
 }
 
 /**
- * A bus leg with no exact match: the scheduled trip nearest Google's departure, within
- * BUS_PATTERN_WINDOW_SECONDS, whose stop count agrees with Google's. Its stops are the route's
+ * A leg with no exact match (a bus off its timetable, or a train or ferry Google timed from live
+ * data): the scheduled trip nearest Google's departure, within BUS_PATTERN_WINDOW_SECONDS, whose
+ * stop count agrees with Google's, so an express isn't taken for a local. Its stops are the route's
  * stops between the two; their times are spread between Google's departure and arrival.
  */
-export function pickBusPattern(candidates: readonly Candidate[], stopCount: number): Candidate | undefined {
+export function pickStopPattern(candidates: readonly Candidate[], stopCount: number): Candidate | undefined {
   return [...candidates]
     .filter((candidate) => candidate.offsetSeconds <= BUS_PATTERN_WINDOW_SECONDS)
     .filter((candidate) => stopCount <= 0 || Math.abs(candidate.between.length - (stopCount - 1)) <= 1)
@@ -178,12 +179,22 @@ export function pickBusPattern(candidates: readonly Candidate[], stopCount: numb
  * undefined when none fits. A city bus is looked for in every borough feed at once; the first
  * feed (in order) with a match wins.
  */
-type TripMatch = { stops: TripStop[]; tripId?: string; departures?: TripDeparture[] };
+type TripMatch = { stops: TripStop[]; tripId?: string; departures?: TripDeparture[]; live?: LiveTripRef };
+
+/**
+ * Where a matched leg's trip is found in its agency's live feed (tripLive.ts): by `tripId` when one
+ * scheduled trip clearly fits, else by line, stops, and the live time nearest Google's departure.
+ */
+export type LiveTripRef = { agencyId: AgencyId; routeId: string; tripId?: string; boardStopId: string; alightStopId: string };
+
+/** Each matched step's live-feed reference, kept off the step itself so it never reaches the app. */
+export const liveTripRefs = new WeakMap<TransitStep, LiveTripRef>();
 
 export async function matchTripStops(step: TransitStep): Promise<TripMatch | undefined> {
   const agencies = agencyIdsForStep(step).filter(isAgencyAvailable);
   const matches = await Promise.all(agencies.map((agencyId) => matchInAgency(agencyId, step).catch(() => undefined)));
-  return matches.find((match) => match !== undefined);
+  // A feed whose timetable gave stops beats one that only knows where to look live.
+  return matches.find((match) => match !== undefined && match.stops.length > 0) ?? matches.find((match) => match !== undefined);
 }
 
 async function matchInAgency(agencyId: AgencyId, step: TransitStep): Promise<TripMatch | undefined> {
@@ -217,7 +228,9 @@ async function matchInAgency(agencyId: AgencyId, step: TransitStep): Promise<Tri
         const departs = gtfsTimeToSeconds(boardTime.departureTime);
         for (const day of days) {
           const offsetSeconds = Math.abs(departs - day.seconds);
-          if (offsetSeconds > (step.mode === 'bus' ? BUS_PATTERN_WINDOW_SECONDS : DEPARTURE_WINDOW_SECONDS)) continue;
+          // Every mode looks this far: an exact trip still needs DEPARTURE_WINDOW_SECONDS (below),
+          // but a nearby one tells the live check which line, stops, and direction the leg rides.
+          if (offsetSeconds > BUS_PATTERN_WINDOW_SECONDS) continue;
           if (!isServiceRunningOn(agencyId, trip.serviceId, day.dateKey, day.dayOfWeek)) continue;
           const sequence = [...(byTrip.get(boardTime.tripId) ?? [])].sort(bySequence);
           const alight = sequence
@@ -245,8 +258,14 @@ async function matchInAgency(agencyId: AgencyId, step: TransitStep): Promise<Tri
   }
 
   const exact = pickTrip(candidates.filter((candidate) => candidate.offsetSeconds <= DEPARTURE_WINDOW_SECONDS), step.stopCount);
-  const best = exact ?? (step.mode === 'bus' ? pickBusPattern(candidates, step.stopCount) : undefined);
-  if (!best) return undefined;
+  const best = exact ?? pickStopPattern(candidates, step.stopCount);
+  // Google often times a leg from live data, minutes off every scheduled trip (or between two):
+  // no stops then, but the nearest trip still says where the live check should look.
+  const nearest = best ?? [...candidates].sort((a, b) => a.score - b.score)[0];
+  const live = nearest?.routeId && nearest.boardStopId && nearest.alightStopId
+    ? { agencyId, routeId: nearest.routeId, boardStopId: nearest.boardStopId, alightStopId: nearest.alightStopId, ...(exact ? { tripId: exact.tripId } : {}) }
+    : undefined;
+  if (!best) return live ? { stops: [], live } : undefined;
 
   // An exact trip keeps its scheduled times; a bus pattern's are spread between Google's times.
   const arrivalMs = Date.parse(step.to.time);
@@ -265,7 +284,7 @@ async function matchInAgency(agencyId: AgencyId, step: TransitStep): Promise<Tri
     stops.push({ name: (parent ?? stop).name, location: { lat: stop.lat, lng: stop.lon }, time: stopTime(time) });
   }
   const departures = await departureOptions(agencyId, best, departureMs);
-  return { stops, ...(exact ? { tripId: exact.tripId } : {}), ...(departures.length > 1 ? { departures } : {}) };
+  return { stops, ...(exact ? { tripId: exact.tripId } : {}), ...(departures.length > 1 ? { departures } : {}), ...(live ? { live } : {}) };
 }
 
 /**
@@ -317,9 +336,10 @@ export async function addTripStops<T extends { steps: { kind: string }[] }>(itin
   await Promise.all(steps.map(async (step) => {
     const result = await Promise.race([match(step).catch(() => undefined), deadline]);
     if (result && result !== 'timeout') {
-      step.stops = result.stops;
+      if (result.stops.length > 0) step.stops = result.stops;
       if (result.tripId) step.tripId = result.tripId;
       if (result.departures) step.departures = result.departures;
+      if (result.live) liveTripRefs.set(step, result.live);
     }
   }));
   if (timer) clearTimeout(timer);

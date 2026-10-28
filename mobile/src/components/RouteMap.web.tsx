@@ -5,7 +5,7 @@ import { StyleSheet, View } from 'react-native';
 import { GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_SCRIPT_ID } from '../data/googleMapsLoaderConfig';
 import { formatAge, visibleTrains } from '../data/liveTrains';
 import { googleMapStyle } from '../data/mapStyle';
-import { approachingVehicle, directionArrowAt, focusStopIndex, metersPerPixel, splitPathAtStop } from '../data/routeDirection';
+import { approachingVehicle, directionArrowAt, focusStopIndex, metersPerPixel, riderNearStop, splitPathAtStop } from '../data/routeDirection';
 import { stopRevealZoom } from '../data/stopDeclutter';
 import type { RouteLiveVehicle } from '../data/transitLive';
 import type { Coordinates } from '../hooks/useCurrentLocation';
@@ -86,6 +86,8 @@ type RouteMapProps = {
   focusStopName?: string;
   /** Vehicle label (train vs bus). */
   mode?: TransitMode;
+  /** Tapping a stop's name (shown once its dot is tapped) opens the line at that stop. */
+  onOpenStop?: (stop: GeometryStop) => void;
   /** Called when the rider drags the map, so the location button can drop its selected state. */
   onUserPan?: () => void;
   /** Detailed track geometry when known (e.g. GTFS shapes); otherwise the line joins the stops. */
@@ -102,7 +104,7 @@ type RouteMapProps = {
 /** Real route map: actual stop positions, the real line, and live vehicles — for any route with a live feed. */
 const arrowOffset = () => ({ x: -DIRECTION_ARROW_BOX / 2, y: -DIRECTION_ARROW_BOX / 2 });
 
-export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusStopId, focusStopName, mode = 'rail', onUserPan, path, showRouteRequest = 0, stops, testID = 'route-map', userLocation, vehicles, walkPath }: RouteMapProps) {
+export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusStopId, focusStopName, mode = 'rail', onOpenStop, onUserPan, path, showRouteRequest = 0, stops, testID = 'route-map', userLocation, vehicles, walkPath }: RouteMapProps) {
   const { isLoaded } = useJsApiLoader({
     id: GOOGLE_MAPS_SCRIPT_ID,
     googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY ?? '',
@@ -146,52 +148,69 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
   const polylineOptions = useMemo(() => ({ strokeColor: color, strokeWeight: LINE_WIDTH, zIndex: 1 }), [color]);
   const behindPolylineOptions = useMemo(() => ({ strokeColor: color, strokeOpacity: BEHIND_LINE_OPACITY, strokeWeight: LINE_WIDTH, zIndex: 0 }), [color]);
 
-  // Opens on the rider's nearest stop when known, otherwise fits every stop with some breathing room.
+  // The rider, when they're near their stop: framed with it so they see the walk there.
+  const nearRider = userLocation && focusStop && riderNearStop(userLocation, focusStop) ? { lat: userLocation.latitude, lng: userLocation.longitude } : null;
+  const frameStop = (target: google.maps.Map, stop: GeometryStop, extra: readonly google.maps.LatLngLiteral[]) => {
+    const points = [{ lat: stop.lat, lng: stop.lon }, ...extra];
+    if (points.length === 1) {
+      target.panTo(points[0]!);
+      if ((target.getZoom() ?? 0) < FOCUS_ZOOM) target.setZoom(FOCUS_ZOOM);
+      return;
+    }
+    const camera = cameraToFit(target, points, ROUTE_FIT_PADDING, FOCUS_ZOOM + 3);
+    if (camera) {
+      glideCancel.current?.();
+      glideCancel.current = glideMapTo(target, camera.centerAt, camera.zoom);
+      return;
+    }
+    const bounds = new google.maps.LatLngBounds();
+    for (const point of points) bounds.extend(point);
+    target.fitBounds(bounds, ROUTE_FIT_PADDING);
+  };
+  const glideCancel = useRef<(() => void) | null>(null);
+
+  // Opens on the rider's nearest stop when known (with the rider, if they're close by), otherwise
+  // fits every stop with some breathing room.
   const onLoad = useCallback((loadedMap: google.maps.Map) => {
     setMap(loadedMap);
     zoomSource.current = loadedMap;
     if (focusStop) {
       loadedMap.setCenter({ lat: focusStop.lat, lng: focusStop.lon });
       loadedMap.setZoom(FOCUS_ZOOM);
+      if (nearRider) {
+        const bounds = new google.maps.LatLngBounds();
+        bounds.extend({ lat: focusStop.lat, lng: focusStop.lon });
+        bounds.extend(nearRider);
+        loadedMap.fitBounds(bounds, ROUTE_FIT_PADDING);
+      }
       return;
     }
+    // The whole line, clear of the controls over the map's top.
     const bounds = new google.maps.LatLngBounds();
-    for (const stop of stops) bounds.extend({ lat: stop.lat, lng: stop.lon });
-    loadedMap.fitBounds(bounds, 32);
+    for (const point of path ?? stops) bounds.extend({ lat: point.lat, lng: point.lon });
+    loadedMap.fitBounds(bounds, ROUTE_FIT_PADDING);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot camera setup on load
   }, [stops]);
 
   // Set once the map has framed an approaching vehicle (below).
   const framedVehicle = useRef(false);
-  // The nearest stop often resolves after the page opens; follow it until the rider drags.
+  // The nearest stop (and whether the rider is near it) often resolves after the page opens; follow
+  // them until the rider drags. Keyed on near/far, not every GPS fix.
   useEffect(() => {
     if (!map || !focusStop || riderMovedMap.current || framedVehicle.current) return;
-    map.panTo({ lat: focusStop.lat, lng: focusStop.lon });
-    if ((map.getZoom() ?? 0) < FOCUS_ZOOM) map.setZoom(FOCUS_ZOOM);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the stop's identity, not the stops array
-  }, [map, focusStop?.stopId]);
+    frameStop(map, focusStop, nearRider ? [nearRider] : []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the stop's identity and the rider being near
+  }, [map, focusStop?.stopId, nearRider != null]);
 
   // Once a live vehicle shows up on its way to the rider's stop, the map glides out (once) to show
-  // the stop, the vehicle, and the rider together, unless the rider has moved the map already.
-  const glideCancel = useRef<(() => void) | null>(null);
+  // the stop and that vehicle (and the rider, when they're near the stop), unless the rider has
+  // moved the map already.
   useEffect(() => {
     if (framedVehicle.current || riderMovedMap.current || !map || !focusStop) return;
     const vehicle = approachingVehicle(line.behindPoints, shownVehicles);
     if (!vehicle) return;
     framedVehicle.current = true;
-    const points = [
-      { lat: focusStop.lat, lng: focusStop.lon },
-      { lat: vehicle.lat, lng: vehicle.lon },
-      ...(userLocation ? [{ lat: userLocation.latitude, lng: userLocation.longitude }] : []),
-    ];
-    const camera = cameraToFit(map, points, ROUTE_FIT_PADDING, FOCUS_ZOOM + 3);
-    if (camera) {
-      glideCancel.current = glideMapTo(map, camera.centerAt, camera.zoom);
-      return;
-    }
-    const bounds = new google.maps.LatLngBounds();
-    for (const point of points) bounds.extend(point);
-    map.fitBounds(bounds, ROUTE_FIT_PADDING);
+    frameStop(map, focusStop, [{ lat: vehicle.lat, lng: vehicle.lon }, ...(nearRider ? [nearRider] : [])]);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-checked as vehicles report; the rest is read then
   }, [map, focusStop?.stopId, vehicles]);
   useEffect(() => () => glideCancel.current?.(), []);
@@ -276,7 +295,19 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
             // A compact label instead of Google's InfoWindow, whose close button overlapped the name.
             <OverlayViewF getPixelPositionOffset={labelOffset} mapPaneName={OVERLAY_MOUSE_TARGET} position={{ lat: selectedStop.lat, lng: selectedStop.lon }}>
               <div
+                aria-label={onOpenStop ? `Open ${selectedStop.name}` : undefined}
+                onClick={onOpenStop ? (event) => {
+                  event.stopPropagation();
+                  onOpenStop(selectedStop);
+                } : undefined}
+                // Google's map listens below React's root, so a tap here would also reach the map
+                // (closing the label before it can open the stop) unless the map is told to skip it.
+                ref={(element) => {
+                  if (element) google.maps.OverlayView.preventMapHitsAndGesturesFrom(element);
+                }}
+                role={onOpenStop ? 'button' : undefined}
                 style={{
+                  cursor: onOpenStop ? 'pointer' : 'default',
                   padding: '6px 12px',
                   borderRadius: 999,
                   background: '#FFFFFF',
@@ -289,6 +320,7 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
                 }}
               >
                 {selectedStop.name}
+                {onOpenStop ? <span style={{ marginLeft: 6, color }}>›</span> : null}
               </div>
             </OverlayViewF>
           ) : null}
@@ -297,7 +329,7 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
             // Same blue "you are here" dot as the home map.
             <Marker
               clickable={false}
-              icon={{ path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: '#4285F4', fillOpacity: 1, strokeColor: '#FFFFFF', strokeWeight: 2 }}
+              icon={{ path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: colors.location, fillOpacity: 1, strokeColor: '#FFFFFF', strokeWeight: 2 }}
               position={{ lat: userLocation.latitude, lng: userLocation.longitude }}
               title="Your location"
               zIndex={3}

@@ -1,8 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StatusBar } from 'expo-status-bar';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { AccessibilityInfo, useColorScheme } from 'react-native';
+import { AccessibilityInfo, Platform, useColorScheme } from 'react-native';
 
+import { SAVED_PLACE_COLOR_HEX } from '../data/savedPlacePin';
+import type { SavedPlaceColor } from '../data/userData';
 import { darkColors, highContrastDarkColors, highContrastLightColors, lightColors, type Palette } from './colors';
 
 export type Appearance = 'light' | 'dark' | 'system';
@@ -15,13 +17,17 @@ export const TEXT_SCALE: Record<TextSize, number> = { compact: 0.9, default: 1, 
 /** Display settings are the device's, not the account's, so they apply on the sign-in screen too. */
 export const DISPLAY_SETTINGS_KEY = 'pathly.display.v1';
 
-type DisplaySettings = { appearance: Appearance; reducedMotion: boolean; textSize: TextSize; highContrast: boolean };
+/** The home map's explore dot: the theme's own purple, or one of the saved-place colors. */
+export type MapDotColor = 'default' | SavedPlaceColor;
+
+type DisplaySettings = { appearance: Appearance; reducedMotion: boolean; textSize: TextSize; highContrast: boolean; mapDotColor: MapDotColor };
 
 type AppSettingsValue = {
   appearance: Appearance;
   colors: Palette;
   highContrast: boolean;
   isDark: boolean;
+  mapDotColor: MapDotColor;
   /** True when either the app toggle or the device asks for reduced motion. */
   reducedMotionActive: boolean;
   reducedMotion: boolean;
@@ -31,6 +37,7 @@ type AppSettingsValue = {
   textScale: number;
   setAppearance: (appearance: Appearance) => void;
   setHighContrast: (value: boolean) => void;
+  setMapDotColor: (value: MapDotColor) => void;
   setReducedMotion: (value: boolean) => void;
   setTextSize: (value: TextSize) => void;
 };
@@ -57,6 +64,7 @@ function parseDisplaySettings(text: string | null): Partial<DisplaySettings> {
     if (typeof saved.reducedMotion === 'boolean') settings.reducedMotion = saved.reducedMotion;
     if (saved.textSize === 'compact' || saved.textSize === 'default' || saved.textSize === 'large') settings.textSize = saved.textSize;
     if (typeof saved.highContrast === 'boolean') settings.highContrast = saved.highContrast;
+    if (saved.mapDotColor === 'default' || (typeof saved.mapDotColor === 'string' && Object.hasOwn(SAVED_PLACE_COLOR_HEX, saved.mapDotColor))) settings.mapDotColor = saved.mapDotColor as MapDotColor;
     return settings;
   } catch {
     return {};
@@ -74,7 +82,7 @@ type AppSettingsProviderProps = {
 /** App preferences every screen reads (appearance, motion, text size, contrast), saved on the device. */
 export function AppSettingsProvider({ children, initialAppearance = 'light', initialReducedMotion = false, initialTextSize = 'default', initialHighContrast = false }: AppSettingsProviderProps) {
   const systemScheme = useColorScheme();
-  const [settings, setSettings] = useState<DisplaySettings>({ appearance: initialAppearance, reducedMotion: initialReducedMotion, textSize: initialTextSize, highContrast: initialHighContrast });
+  const [settings, setSettings] = useState<DisplaySettings>({ appearance: initialAppearance, reducedMotion: initialReducedMotion, textSize: initialTextSize, highContrast: initialHighContrast, mapDotColor: 'default' });
   const [deviceReducedMotion, setDeviceReducedMotion] = useState(false);
   // A choice made before the saved settings finish loading wins over them.
   const changedBeforeLoad = useRef(false);
@@ -116,13 +124,15 @@ export function AppSettingsProvider({ children, initialAppearance = 'light', ini
   }, []);
 
   const value = useMemo<AppSettingsValue>(() => {
-    const { appearance, highContrast, reducedMotion, textSize } = settings;
+    const { appearance, highContrast, mapDotColor, reducedMotion, textSize } = settings;
     const scheme = resolveScheme(appearance, systemScheme);
+    const palette = paletteFor(scheme, highContrast);
     return {
       appearance,
-      colors: paletteFor(scheme, highContrast),
+      colors: mapDotColor === 'default' ? palette : { ...palette, searchCenter: SAVED_PLACE_COLOR_HEX[mapDotColor] },
       highContrast,
       isDark: scheme === 'dark',
+      mapDotColor,
       reducedMotion,
       reducedMotionActive: reducedMotion || deviceReducedMotion,
       scheme,
@@ -130,10 +140,20 @@ export function AppSettingsProvider({ children, initialAppearance = 'light', ini
       textScale: TEXT_SCALE[textSize],
       setAppearance: (next) => update({ appearance: next }),
       setHighContrast: (next) => update({ highContrast: next }),
+      setMapDotColor: (next) => update({ mapDotColor: next }),
       setReducedMotion: (next) => update({ reducedMotion: next }),
       setTextSize: (next) => update({ textSize: next }),
     };
   }, [deviceReducedMotion, settings, systemScheme, update]);
+
+  // On web, the page itself behind the app: the theme's background, so a screen fading in (or an
+  // overscroll) never flashes the browser's white in dark mode.
+  const pageBackground = value.colors.background;
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    document.documentElement.style.backgroundColor = pageBackground;
+    document.body.style.backgroundColor = pageBackground;
+  }, [pageBackground]);
 
   return <AppSettingsContext.Provider value={value}>{children}</AppSettingsContext.Provider>;
 }
@@ -143,6 +163,7 @@ const fallback: AppSettingsValue = {
   colors: lightColors,
   highContrast: false,
   isDark: false,
+  mapDotColor: 'default',
   reducedMotion: false,
   reducedMotionActive: false,
   scheme: 'light',
@@ -150,6 +171,7 @@ const fallback: AppSettingsValue = {
   textScale: 1,
   setAppearance: () => undefined,
   setHighContrast: () => undefined,
+  setMapDotColor: () => undefined,
   setReducedMotion: () => undefined,
   setTextSize: () => undefined,
 };

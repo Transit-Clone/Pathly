@@ -1,10 +1,9 @@
 import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { useRouteColor } from '../data/routeColors';
-import { useTheme, useThemedStyles } from '../theme/AppSettings';
+import { useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies } from '../theme/typography';
-import { Icon } from './Icon';
 
 export type TransitMode = 'subway' | 'bus' | 'rail' | 'ferry';
 
@@ -64,15 +63,17 @@ export function subwayExpressLine(shortName: string): string | null {
 }
 
 const sizes = {
-  small: { height: 28, fontSize: 12, icon: 13, padding: 7 },
-  medium: { height: 36, fontSize: 14, icon: 15, padding: 9 },
-  large: { height: 46, fontSize: 17, icon: 18, padding: 11 },
+  small: { height: 28, fontSize: 12, padding: 7, alertDot: 14 },
+  medium: { height: 36, fontSize: 14, padding: 9, alertDot: 15 },
+  large: { height: 46, fontSize: 17, padding: 11, alertDot: 17 },
   // Route view's sign over its map: big enough to read at a glance, like the bus name beside it.
-  xlarge: { height: 58, fontSize: 30, icon: 22, padding: 14 },
+  xlarge: { height: 58, fontSize: 30, padding: 14, alertDot: 20 },
 } as const;
 
 type RouteBadgeProps = {
   agency: string;
+  /** The line has service alerts: a small yellow dot at the badge's top right. */
+  alert?: boolean;
   color: string;
   /** The vehicle mode, when the agency name alone can't tell (e.g. a planned trip's Google agency). */
   mode?: TransitMode;
@@ -82,11 +83,11 @@ type RouteBadgeProps = {
   textColor?: string;
   style?: StyleProp<ViewStyle>;
   testID?: string;
-  withModeIcon?: boolean;
 };
 
 export function RouteBadge({
   agency,
+  alert = false,
   color,
   mode: modeOverride,
   shortName,
@@ -94,50 +95,52 @@ export function RouteBadge({
   style,
   testID,
   textColor,
-  withModeIcon = false,
 }: RouteBadgeProps) {
   const styles = useThemedStyles(createStyles);
-  const { colors } = useTheme();
   const routeColor = useRouteColor()(color);
   const mode = modeOverride ?? transitModeForAgency(agency);
   const metrics = sizes[size];
-  // Ferries always carry the boat: with the pill shape, it's what sets them apart from buses.
-  const showIcon = mode === 'rail' || mode === 'ferry' || (mode === 'bus' && withModeIcon);
   const expressLine = mode === 'subway' ? subwayExpressLine(shortName) : null;
+  const alertLabel = alert ? ', has service alerts' : '';
+  const alertDot = alert ? (
+    <View style={[styles.alertDot, { width: metrics.alertDot, height: metrics.alertDot, borderRadius: metrics.alertDot / 2 }]} testID={testID ? `${testID}-alert` : 'route-badge-alert'}>
+      <Text style={[styles.alertMark, { fontSize: metrics.alertDot - 5 }]}>!</Text>
+    </View>
+  ) : null;
 
   if (expressLine) {
     // A square turned 45° fills the same box as the line's circle; the letter stays upright.
     const side = Math.round(metrics.height / Math.SQRT2);
     return (
       <View
-        accessibilityLabel={`${expressLine} express ${modeLabels[mode]}`}
+        accessibilityLabel={`${expressLine} express ${modeLabels[mode]}${alertLabel}`}
         accessible={true}
         style={[styles.badge, { width: metrics.height, height: metrics.height }, style]}
         testID={testID}
       >
         <View style={[styles.diamond, { width: side, height: side, backgroundColor: routeColor }]} />
         <Text style={[styles.text, { fontSize: metrics.fontSize }, textColor ? { color: textColor } : null]}>{expressLine}</Text>
+        {alertDot}
       </View>
     );
   }
 
   return (
     <View
-      accessibilityLabel={`${shortName} ${modeLabels[mode]}`}
+      accessibilityLabel={`${shortName} ${modeLabels[mode]}${alertLabel}`}
       accessible={true}
       style={[
         styles.badge,
         { height: metrics.height, minWidth: metrics.height, backgroundColor: routeColor },
         mode === 'subway' && { width: metrics.height, borderRadius: metrics.height / 2 },
-        mode === 'bus' && { paddingHorizontal: metrics.padding, borderRadius: Math.round(metrics.height * 0.4) },
-        mode === 'rail' && { paddingHorizontal: metrics.padding, borderRadius: Math.round(metrics.height * 0.4) },
-        mode === 'ferry' && { paddingHorizontal: metrics.padding, borderRadius: metrics.height / 2 },
+        // Only subway lines get the MTA's round sign; buses, trains and ferries share one text badge.
+        mode !== 'subway' && { paddingHorizontal: metrics.padding, borderRadius: Math.round(metrics.height * 0.4) },
         style,
       ]}
       testID={testID}
     >
-      {showIcon ? <Icon color={textColor ?? colors.white} filled={true} name={mode === 'rail' ? 'rail' : mode === 'ferry' ? 'ferry' : 'bus'} size={metrics.icon} /> : null}
       <Text style={[styles.text, { fontSize: metrics.fontSize }, textColor ? { color: textColor } : null]}>{shortName}</Text>
+      {alertDot}
     </View>
   );
 }
@@ -150,6 +153,17 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     gap: 3,
     flexShrink: 0,
   },
+  alertDot: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: colors.surface,
+    backgroundColor: colors.alertYellow,
+  },
+  alertMark: { color: colors.onAlertYellow, fontFamily: fontFamilies.extraBold, includeFontPadding: false },
   diamond: { position: 'absolute', borderRadius: 2, transform: [{ rotate: '45deg' }] },
   text: {
     color: colors.white,

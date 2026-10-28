@@ -7,6 +7,7 @@ import type { Palette } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { Icon } from './Icon';
 import { PressableScale } from './PressableScale';
+import { radii } from '../theme/shape';
 
 const GROUPS = ['Subway', 'Railroads', 'Bus'] as const;
 
@@ -87,10 +88,10 @@ function SaveButton({ busy, onPress, saved, testID, title }: { busy: boolean; on
 const createStyles = (colors: Palette) => StyleSheet.create({
   intro: { marginTop: 4, marginBottom: 4, color: colors.mutedInk, ...typography.body },
   sectionLabel: { marginTop: 20, marginBottom: 9, color: colors.mutedInk, ...typography.label },
-  card: { overflow: 'hidden', borderWidth: 1, borderColor: colors.border, borderRadius: 18, backgroundColor: colors.surface },
+  card: { overflow: 'hidden', borderWidth: 1, borderColor: colors.border, borderRadius: radii.card, backgroundColor: colors.surface },
   row: { minHeight: 64, flexDirection: 'row', alignItems: 'center', paddingRight: 12, borderBottomWidth: 1, borderBottomColor: colors.border },
   rowMain: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 11, paddingLeft: 15, paddingVertical: 10 },
-  rowIcon: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 11, backgroundColor: colors.blueSoft },
+  rowIcon: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: radii.control, backgroundColor: colors.blueSoft },
   rowCopy: { minWidth: 0, flex: 1 },
   title: { color: colors.ink, ...typography.bodyStrong, fontSize: 15 },
   detail: { marginTop: 2, color: colors.mutedInk, ...typography.metadata, fontSize: 11 },

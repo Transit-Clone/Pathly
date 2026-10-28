@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 
+import { legNotes } from '../data/tripLive';
 import { legDepartureOptions, quickDepartureOptions, retimeItinerary, type DepartureChoices, type LegDepartureOption } from '../data/tripDepartures';
 
 import {
@@ -21,6 +22,12 @@ import { TripMap } from './TripMap';
 
 type PlannedTripDetailViewProps = {
   destination: string;
+  /** The destination's address, for the closing card. */
+  destinationAddress?: string;
+  /** The destination stop's lines, for the closing card's badges. */
+  destinationLines?: TripDetailModel['destinationLines'];
+  /** The live times are recent; when stale (or offline) the live signals are hidden. */
+  liveFresh?: boolean;
   isActive: boolean;
   isFavorite: boolean;
   itinerary: Itinerary;
@@ -72,6 +79,7 @@ export function toTripDetailModel(itinerary: Itinerary, origin: string, destinat
       ? (Date.parse(step.from.time) - Date.parse(previous.to.time)) / 1000 - (pendingWalk?.durationSeconds ?? 0)
       : undefined;
     const options = departures[legs.length] ?? [];
+    const notes = legNotes(step);
     legs.push({
       agency: step.agency.name,
       ...(options.length > 1 ? { departures: options.map(departureRow), quickDepartures: quickDepartureOptions(options).map(departureRow) } : {}),
@@ -92,6 +100,9 @@ export function toTripDetailModel(itinerary: Itinerary, origin: string, destinat
       endTime: formatTripClock(step.to.time),
       ...(walkBefore ? { walkBefore } : {}),
       ...(waitSeconds !== undefined ? { waitBeforeMinutes: Math.max(0, Math.round(waitSeconds / 60)) } : {}),
+      ...(notes.length > 0 ? { notes } : {}),
+      ...(step.live?.status === 'tracked' ? { live: true } : {}),
+      ...(step.alerts && step.alerts.length > 0 ? { alerts: step.alerts } : {}),
     });
     pendingWalk = null;
     previous = step;
@@ -106,6 +117,7 @@ export function toTripDetailModel(itinerary: Itinerary, origin: string, destinat
     durationMinutes: tripMinutes(itinerary.durationSeconds),
     transferCount: itinerary.transfers,
     leaveTime: formatTripClock(itinerary.departureTime),
+    leavesAt: itinerary.departureTime,
     arriveTime: formatTripClock(itinerary.arrivalTime),
     contextLabel: isActive ? 'ACTIVE TRIP' : 'PLANNED TRIP',
     statusLabel: isActive ? 'In progress' : 'Ready',
@@ -114,7 +126,12 @@ export function toTripDetailModel(itinerary: Itinerary, origin: string, destinat
   };
 }
 
-export function PlannedTripDetailView({ destination, isActive, isFavorite, itinerary: planned, onBack, onEnd, onStart, onToggleFavorite, origin, riderLocation }: PlannedTripDetailViewProps) {
+/** Drops the rides' live flags once the live times are stale, so no signal claims they're current. */
+function withoutStaleLive(model: TripDetailModel, liveFresh: boolean): TripDetailModel {
+  return liveFresh ? model : { ...model, legs: model.legs.map(({ live: _live, ...leg }) => leg) };
+}
+
+export function PlannedTripDetailView({ destination, destinationAddress, destinationLines, isActive, liveFresh = true, isFavorite, itinerary: planned, onBack, onEnd, onStart, onToggleFavorite, origin, riderLocation }: PlannedTripDetailViewProps) {
   const { colors } = useTheme();
   // A stop pressed in a leg's stop list; the counter repeats a focus on the same stop.
   const [focusStop, setFocusStop] = useState<{ point: LatLng; key: number } | null>(null);
@@ -147,7 +164,7 @@ export function PlannedTripDetailView({ destination, isActive, isFavorite, itine
           userLocation={userLocation}
         />
       )}
-      model={toTripDetailModel(itinerary, origin, destination, isActive, colors.primary, departures)}
+      model={withoutStaleLive({ ...toTripDetailModel(itinerary, origin, destination, isActive, colors.primary, departures), ...(destinationAddress ? { destinationAddress } : {}), ...(destinationLines?.length ? { destinationLines } : {}) }, liveFresh)}
       onAction={isActive ? onEnd : () => onStart(itinerary)}
       onBack={onBack}
       onCenterOnLocation={() => {

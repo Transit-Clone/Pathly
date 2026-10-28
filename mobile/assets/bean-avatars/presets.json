@@ -1,0 +1,134 @@
+[
+  {
+    "id": "stare",
+    "label": "The stare",
+    "config": {
+      "version": 1,
+      "color": "sage",
+      "eyes": "wide",
+      "mouth": "flat",
+      "hair": "none"
+    }
+  },
+  {
+    "id": "sleepy",
+    "label": "Not a morning bean",
+    "config": {
+      "version": 1,
+      "color": "coral",
+      "eyes": "sleepy",
+      "mouth": "tooth",
+      "hair": "none"
+    }
+  },
+  {
+    "id": "frazzled",
+    "label": "Holding it together",
+    "config": {
+      "version": 1,
+      "color": "lavender",
+      "eyes": "dots",
+      "mouth": "wobble",
+      "hair": "three"
+    }
+  },
+  {
+    "id": "cool",
+    "label": "Too cool",
+    "config": {
+      "version": 1,
+      "color": "gold",
+      "eyes": "shades",
+      "mouth": "flat",
+      "hair": "none"
+    }
+  },
+  {
+    "id": "processing",
+    "label": "Still processing",
+    "config": {
+      "version": 1,
+      "color": "sky",
+      "eyes": "uneven",
+      "mouth": "flat",
+      "hair": "curl"
+    }
+  },
+  {
+    "id": "yawn",
+    "label": "Express nap",
+    "config": {
+      "version": 1,
+      "color": "peach",
+      "eyes": "tiny",
+      "mouth": "yawn",
+      "hair": "none"
+    }
+  },
+  {
+    "id": "official",
+    "label": "Very official",
+    "config": {
+      "version": 1,
+      "color": "teal",
+      "eyes": "dots",
+      "mouth": "mustache",
+      "hair": "comb-over"
+    }
+  },
+  {
+    "id": "growth",
+    "label": "Working on myself",
+    "config": {
+      "version": 1,
+      "color": "pink",
+      "eyes": "side-eye",
+      "mouth": "smirk",
+      "hair": "sprout"
+    }
+  },
+  {
+    "id": "suspicious",
+    "label": "Trust issues",
+    "config": {
+      "version": 1,
+      "color": "lime",
+      "eyes": "suspicious",
+      "mouth": "oh",
+      "hair": "none"
+    }
+  },
+  {
+    "id": "signal",
+    "label": "Looking for service",
+    "config": {
+      "version": 1,
+      "color": "periwinkle",
+      "eyes": "upward",
+      "mouth": "none",
+      "hair": "antenna"
+    }
+  },
+  {
+    "id": "bedhead",
+    "label": "Just woke up",
+    "config": {
+      "version": 1,
+      "color": "clay",
+      "eyes": "squint",
+      "mouth": "tongue",
+      "hair": "tufts"
+    }
+  },
+  {
+    "id": "optimist",
+    "label": "Made the train",
+    "config": {
+      "version": 1,
+      "color": "oat",
+      "eyes": "happy",
+      "mouth": "grin",
+      "hair": "swoop"
+    }
+  }
+]

@@ -1,6 +1,6 @@
 import * as Location from 'expo-location';
 import { useCallback, useEffect, useState } from 'react';
-import { AppState, Linking, Platform, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, AppState, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { useAuth } from '../auth/AuthContext';
 import {
@@ -12,7 +12,8 @@ import {
   shareUserData,
   updateDisplayName,
 } from '../data/accountData';
-import { ROUTE_ALERT_OPTIONS, setRouteAlerts, setRouteAlertsPaused, subscribeToSavedRoutes, type SavedRoute } from '../data/savedRoutes';
+import { searchLineIndex, useLineIndex, type IndexedLine } from '../data/lineIndex';
+import { ROUTE_ALERT_OPTIONS, saveRoute, savedRouteFromLine, setRouteAlerts, setRouteAlertsPaused, subscribeToSavedRoutes, type SavedRoute } from '../data/savedRoutes';
 import { ALL_TRANSIT_MODES, useUserPreferences, WALK_LIMIT_OPTIONS } from '../data/userPreferences';
 import { registerForRouteAlerts } from '../lib/notifications';
 import { useAppSettings, useTheme, useThemedStyles, type TextSize } from '../theme/AppSettings';
@@ -20,8 +21,10 @@ import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
 import { ConfirmDialog } from './ConfirmDialog';
 import { Card, ChoiceRow, createStyles as createProfileStyles, SettingRow, ToggleRow } from './ProfileView';
+import { Icon } from './Icon';
 import { PressableScale } from './PressableScale';
-import type { TransitMode } from './RouteBadge';
+import { badgeLabel, RouteBadge, transitModeForAgency, type TransitMode } from './RouteBadge';
+import { radii } from '../theme/shape';
 
 /** Settings pages behind Profile & Settings; each reports what it did through `onFeedback`. */
 type PageProps = { onFeedback: (message: string) => void };
@@ -151,6 +154,13 @@ export function NotificationSettings({ onFeedback }: PageProps) {
     if (option.value !== 'off') void registerForRouteAlerts(uid);
     onFeedback(`${route.shortName || route.routeName} alerts: ${option.label}`);
   };
+  const addLine = async (line: IndexedLine) => {
+    if (!uid) return;
+    const saved = savedRouteFromLine(line);
+    await saveRoute(uid, saved);
+    void registerForRouteAlerts(uid);
+    onFeedback(`${badgeLabel({ agency: line.agencyDisplayName, shortName: line.shortName })} alerts: All times`);
+  };
   return (
     <>
       <Text style={profile.intro}>Choose which travel updates Pathly should send you.</Text>
@@ -179,7 +189,95 @@ export function NotificationSettings({ onFeedback }: PageProps) {
           />
         ))}
       </Card>
+      {uid ? <AddSavedLine onAdd={addLine} savedIds={savedRoutes.map((route) => route.id)} /> : null}
       <Text style={profile.note} testID="notifications-not-sent">{"Set a line's custom hours from the bell in its route view. Line alerts arrive as push notifications in the Android and iOS app; the web app doesn't receive them."}</Text>
+    </>
+  );
+}
+
+const MAX_LINE_RESULTS = 6;
+
+/** "Add a line" under Saved lines: search every line by code or name and turn its alerts on. */
+function AddSavedLine({ onAdd, savedIds }: { onAdd: (line: IndexedLine) => Promise<void>; savedIds: readonly string[] }) {
+  const { page } = useStyles();
+  const { colors } = useTheme();
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [adding, setAdding] = useState<string | null>(null);
+  const index = useLineIndex(open);
+  const trimmed = query.trim();
+  const results = index && trimmed
+    ? searchLineIndex(index, trimmed).filter((line) => !savedIds.includes(`${line.agencyId}:${line.routeId}`)).slice(0, MAX_LINE_RESULTS)
+    : [];
+  const add = async (line: IndexedLine) => {
+    const id = `${line.agencyId}:${line.routeId}`;
+    setAdding(id);
+    try {
+      await onAdd(line);
+      setQuery('');
+    } catch {
+      // Offline or refused: the line just isn't added, and stays in the results to try again.
+    } finally {
+      setAdding(null);
+    }
+  };
+  const close = () => { setOpen(false); setQuery(''); };
+  return (
+    <>
+      <Card>
+        <SettingRow label="Add a line" onPress={() => setOpen(true)} testID="notifications-add-line" />
+      </Card>
+      <Modal animationType="slide" onRequestClose={close} statusBarTranslucent={true} transparent={true} visible={open}>
+        <View style={page.sheetViewport}>
+          <Pressable accessibilityLabel="Close" onPress={close} style={page.sheetBackdrop} testID="notifications-add-line-backdrop" />
+          <View style={page.sheet} testID="notifications-add-line-panel">
+            <Text style={page.sheetTitle}>Add a line</Text>
+            <Text style={page.lineSubtitle}>Its service alerts start at all times; change that in Saved lines.</Text>
+            <TextInput
+              accessibilityLabel="Search lines"
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoFocus={true}
+              onChangeText={setQuery}
+              placeholder="Line or route, like 51, E, or Port Jefferson"
+              placeholderTextColor={colors.mutedInk}
+              returnKeyType="search"
+              style={[page.input, page.sheetInput]}
+              testID="notifications-add-line-input"
+              value={query}
+            />
+            <ScrollView keyboardShouldPersistTaps="handled" style={page.sheetResults}>
+              {trimmed && !index ? <Text style={page.lineEmpty}>Loading lines…</Text> : null}
+              {trimmed && index && results.length === 0 ? <Text style={page.lineEmpty} testID="notifications-add-line-empty">No lines match</Text> : null}
+              {results.map((line) => {
+                const id = `${line.agencyId}:${line.routeId}`;
+                const label = badgeLabel({ agency: line.agencyDisplayName, shortName: line.shortName });
+                return (
+                  <PressableScale
+                    accessibilityLabel={`Add ${line.agencyDisplayName} ${label}, ${line.routeName}`}
+                    accessibilityRole="button"
+                    disabled={adding != null}
+                    key={id}
+                    onPress={() => void add(line)}
+                    style={page.lineRow}
+                    testID={`notifications-add-line-${line.agencyId}-${line.routeId}`}
+                  >
+                    <RouteBadge agency={line.agencyDisplayName} color={line.color} mode={transitModeForAgency(line.agencyDisplayName)} shortName={label} size="small" />
+                    <View style={page.lineCopy}>
+                      <Text numberOfLines={1} style={page.lineTitle}>{line.routeName || label}</Text>
+                      <Text numberOfLines={1} style={page.lineSubtitle}>{line.agencyDisplayName}</Text>
+                    </View>
+                    {adding === id ? <ActivityIndicator color={colors.primary} size="small" /> : <Icon color={colors.primary} name="add" size={22} />}
+                  </PressableScale>
+                );
+              })}
+            </ScrollView>
+            <PressableScale accessibilityRole="button" onPress={close} style={[page.button, page.primaryButton, page.sheetDone]} testID="notifications-add-line-done">
+              <Text style={page.primaryButtonText}>Done</Text>
+            </PressableScale>
+          </View>
+        </View>
+      </Modal>
     </>
   );
 }
@@ -502,19 +600,31 @@ export function HelpSettings({ onFeedback }: PageProps) {
 }
 
 const createStyles = (colors: Palette) => StyleSheet.create({
+  sheetViewport: { flex: 1, justifyContent: 'flex-end' },
+  sheetBackdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: colors.scrim },
+  sheet: { width: '100%', maxWidth: 540, maxHeight: '80%', alignSelf: 'center', gap: 6, paddingHorizontal: 18, paddingTop: 18, paddingBottom: 30, borderTopLeftRadius: radii.sheet, borderTopRightRadius: radii.sheet, backgroundColor: colors.surface },
+  sheetTitle: { color: colors.ink, ...typography.sectionHeading, fontSize: 18 },
+  sheetInput: { marginTop: 8 },
+  sheetResults: { flexGrow: 0, minHeight: 60 },
+  sheetDone: { marginTop: 8 },
+  lineRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 },
+  lineCopy: { flex: 1, minWidth: 0 },
+  lineTitle: { color: colors.ink, fontFamily: fontFamilies.bold, fontSize: 15 },
+  lineSubtitle: { color: colors.mutedInk, fontFamily: fontFamilies.semibold, fontSize: 12 },
+  lineEmpty: { color: colors.mutedInk, fontFamily: fontFamilies.semibold, fontSize: 13, paddingVertical: 6 },
   editBlock: { padding: 15, gap: 10, borderBottomWidth: 1, borderBottomColor: colors.border },
-  input: { minHeight: 46, paddingHorizontal: 13, borderWidth: 1, borderColor: colors.border, borderRadius: 12, color: colors.ink, backgroundColor: colors.background, ...typography.body, fontSize: 15 },
+  input: { minHeight: 46, paddingHorizontal: 13, borderWidth: 1, borderColor: colors.border, borderRadius: radii.control, color: colors.ink, backgroundColor: colors.background, ...typography.body, fontSize: 15 },
   buttonRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
-  button: { minHeight: 40, minWidth: 84, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, borderRadius: 20 },
+  button: { minHeight: 40, minWidth: 84, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, borderRadius: radii.pill },
   primaryButton: { backgroundColor: colors.primary },
   primaryButtonText: { color: colors.onPrimary, fontFamily: fontFamilies.extraBold, fontSize: 14 },
   secondaryButton: { backgroundColor: colors.background },
   secondaryButtonText: { color: colors.ink, fontFamily: fontFamilies.bold, fontSize: 14 },
   limitChoices: { marginTop: 0, padding: 15, borderBottomWidth: 1, borderBottomColor: colors.border },
-  dangerCard: { gap: 10, marginTop: 16, padding: 15, borderWidth: 1, borderColor: colors.red, borderRadius: 18, backgroundColor: colors.surface },
+  dangerCard: { gap: 10, marginTop: 16, padding: 15, borderWidth: 1, borderColor: colors.red, borderRadius: radii.card, backgroundColor: colors.surface },
   dangerTitle: { color: colors.red, ...typography.bodyStrong, fontSize: 15 },
   dangerBody: { color: colors.mutedInk, ...typography.metadata },
-  dangerButton: { minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 16, backgroundColor: colors.red },
+  dangerButton: { minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: radii.pill, backgroundColor: colors.red },
   dangerButtonText: { color: colors.white, fontFamily: fontFamilies.extraBold, fontSize: 15 },
   disabled: { opacity: 0.5 },
   error: { color: colors.red, ...typography.metadata },

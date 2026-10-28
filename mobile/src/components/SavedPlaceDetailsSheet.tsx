@@ -9,6 +9,7 @@ import { Icon } from './Icon';
 import { PressableScale } from './PressableScale';
 import { SavedPlaceBadge } from './SavedPlaceBadge';
 import { savedLocationIcon, savedPlaceLines } from './SavedPlacesStrip';
+import { radii } from '../theme/shape';
 
 type SavedPlaceDetailsSheetProps = {
   /** The places under the tapped marker (several when markers are stacked); empty hides the sheet. */
@@ -72,7 +73,7 @@ export function SavedPlaceDetailsSheet({ onClose, onEdit, onGo, places }: SavedP
                     style={styles.go}
                     testID={`saved-place-details-go-${place.id}`}
                   >
-                    <Icon color={colors.onPrimary} filled={true} name="go" size={16} />
+                    <Icon color={colors.onPrimary} name="go" size={16} />
                     <Text style={styles.goText}>Go</Text>
                   </PressableScale>
                 </View>
@@ -88,7 +89,7 @@ export function SavedPlaceDetailsSheet({ onClose, onEdit, onGo, places }: SavedP
 const createStyles = (colors: Palette) => StyleSheet.create({
   viewport: { flex: 1, justifyContent: 'flex-end' },
   backdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: colors.scrim },
-  sheet: { width: '100%', maxWidth: 540, maxHeight: '70%', alignSelf: 'center', paddingHorizontal: 18, paddingTop: 18, paddingBottom: 30, borderTopLeftRadius: 24, borderTopRightRadius: 24, backgroundColor: colors.surface },
+  sheet: { width: '100%', maxWidth: 540, maxHeight: '70%', alignSelf: 'center', paddingHorizontal: 18, paddingTop: 18, paddingBottom: 30, borderTopLeftRadius: radii.sheet, borderTopRightRadius: radii.sheet, backgroundColor: colors.surface },
   header: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 6 },
   heading: { flex: 1, color: colors.ink, ...typography.sectionHeading, fontSize: 18 },
   list: { flexGrow: 0 },

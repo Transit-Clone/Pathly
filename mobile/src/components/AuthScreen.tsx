@@ -9,6 +9,7 @@ import { fontFamilies, typography } from '../theme/typography';
 import { GoogleSignInButton } from './GoogleSignInButton';
 import { Mascot } from './Mascot';
 import { PressableScale } from './PressableScale';
+import { radii } from '../theme/shape';
 
 type Mode = 'signIn' | 'signUp';
 
@@ -172,11 +173,11 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   mascot: { marginBottom: 18 },
   heading: { color: colors.ink, ...typography.screenHeading },
   subheading: { marginTop: 8, marginBottom: 28, color: colors.mutedInk, ...typography.body },
-  card: { overflow: 'hidden', borderWidth: 1, borderColor: colors.border, borderRadius: 18, backgroundColor: colors.surface },
+  card: { overflow: 'hidden', borderWidth: 1, borderColor: colors.border, borderRadius: radii.card, backgroundColor: colors.surface },
   input: { minHeight: 52, paddingHorizontal: 16, color: colors.ink, borderBottomWidth: 1, borderBottomColor: colors.border, ...typography.body, fontSize: 15 },
   inputLast: { borderBottomWidth: 0 },
   error: { marginTop: 14, color: colors.red, ...typography.metadata },
-  primaryAction: { minHeight: 52, alignItems: 'center', justifyContent: 'center', marginTop: 20, borderRadius: 16, backgroundColor: colors.primary },
+  primaryAction: { minHeight: 52, alignItems: 'center', justifyContent: 'center', marginTop: 20, borderRadius: radii.pill, backgroundColor: colors.primary },
   primaryActionDisabled: { opacity: 0.5 },
   primaryActionText: { color: colors.onPrimary, fontFamily: fontFamilies.extraBold, fontSize: 15 },
   divider: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 16 },

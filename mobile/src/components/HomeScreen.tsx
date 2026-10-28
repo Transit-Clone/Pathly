@@ -64,9 +64,12 @@ import { SavedPlaceDetailsSheet } from './SavedPlaceDetailsSheet';
 import { SavePlaceSheet, type SavePlaceRequest } from './SavePlaceSheet';
 import { ResumeTripCard } from './ResumeTripCard';
 import { CURRENT_LOCATION_LABEL, initialResultsCriteria, RouteResultsView, type ResultsCriteria } from './RouteResultsView';
+import { useNudgePrompt } from '../data/nudgePrompt';
+import { NudgeBanner } from './NudgeBanner';
 import { SearchHeader } from './SearchHeader';
 import { SearchView } from './SearchView';
 import { TransitSheet, type TransitTabId } from './TransitSheet';
+import { radii } from '../theme/shape';
 
 const TRANSIT_TABS_HEIGHT = 30;
 const TRANSIT_CARD_HEIGHT = 104;
@@ -131,6 +134,7 @@ type RouteDetailScreenProps = {
   isFavorite: boolean;
   onBack: () => void;
   onOpenDepartures: (directionIndex: number) => void;
+  onOpenStop: (stop: TappedStop) => void;
   onOpenTransfer: (transfer: LineTransfer, stop: TappedStop) => void;
   wholeRoute?: boolean;
   onRefreshLocation: () => void;
@@ -142,7 +146,7 @@ type RouteDetailScreenProps = {
 };
 
 /** Reads live transit data itself — must render under TransitLiveProvider, which HomeScreen itself can't consume. */
-function RouteDetailScreen({ alerts, initialDirectionIndex, isFavorite, location, locationKnown, onBack, onOpenDepartures, onOpenTransfer, onRefreshLocation, onToggleFavorite, route, wholeRoute }: RouteDetailScreenProps) {
+function RouteDetailScreen({ alerts, initialDirectionIndex, isFavorite, location, locationKnown, onBack, onOpenDepartures, onOpenStop, onOpenTransfer, onRefreshLocation, onToggleFavorite, route, wholeRoute }: RouteDetailScreenProps) {
   const live = useTransitLive(route.id);
   // Re-applies live data every 30 s so countdowns age and past departures drop between polls.
   const now = useNow(30_000);
@@ -155,6 +159,7 @@ function RouteDetailScreen({ alerts, initialDirectionIndex, isFavorite, location
       locationKnown={locationKnown}
       onBack={onBack}
       onOpenDepartures={onOpenDepartures}
+      onOpenStop={onOpenStop}
       onOpenTransfer={onOpenTransfer}
       onRefreshLocation={onRefreshLocation}
       onToggleFavorite={onToggleFavorite}
@@ -227,6 +232,7 @@ export function HomeScreen() {
     [trip.active],
   );
   const hasResumableTrip = trip.status === 'active' || trip.status === 'recovery';
+  const nudge = useNudgePrompt(hasResumableTrip);
   const homeHeaderInset = hasResumableTrip ? 158 : HEADER_INSET;
   const processedFixRef = useRef<string | null>(null);
   const [followEvidence, setFollowEvidence] = useState<{ sessionId: string; fix: NonNullable<typeof navigationFix> } | null>(null);
@@ -455,6 +461,23 @@ export function HomeScreen() {
   const openTransfer = useCallback((from: Extract<ActiveView, { name: 'route' }>, transfer: LineTransfer, stop: TappedStop) => {
     void fetchRouteAtStop(transfer.agencyId, transfer.routeId, { latitude: stop.lat, longitude: stop.lon }).then(
       (route) => setActiveView((current) => (current === from ? { name: 'route', routeId: route.id, route, previous: from } : current)),
+      () => undefined,
+    );
+  }, []);
+
+  // A stop of the open line (on its map, or a row of the whole line): the line at that stop, in
+  // the direction it was tapped in.
+  const openStop = useCallback((from: Extract<ActiveView, { name: 'route' }>, stop: TappedStop) => {
+    const source = from.route.liveSource;
+    if (!source) return;
+    // Each copy of a line orders its two directions its own way, so the direction carries over by its GTFS id.
+    const tappedDirection1 = stop.directionIndex === source.direction1Index;
+    void fetchRouteAtStop(source.agencyId, source.routeId, { latitude: stop.lat, longitude: stop.lon }).then(
+      (route) => {
+        const direction1Index = route.liveSource?.direction1Index ?? source.direction1Index;
+        const directionIndex = tappedDirection1 ? direction1Index : 1 - direction1Index;
+        setActiveView((current) => (current === from ? { name: 'route', routeId: route.id, route, directionIndex, previous: from } : current));
+      },
       () => undefined,
     );
   }, []);
@@ -807,7 +830,9 @@ export function HomeScreen() {
   if (activeView.name === 'search' && activeView.pickSavedPlace) {
     const { label, replacing, returnTo } = activeView.pickSavedPlace;
     return screen(
+      // Its own instance: nothing typed or pressed on the search page carries into the pick.
       <SearchView
+        key="pick-saved-place"
         near={riderLocation(location, locationStatus)}
         onCancel={() => {
           // Back to the edit sheet as it was left.
@@ -816,8 +841,8 @@ export function HomeScreen() {
         }}
         onSelect={(place) => {
           if (replacing) setSaveRequest({ ...replacing, place, replacing: replacing.replacing ?? replacing.place.id });
-          else if (label) saveNamedPlace(place, label);
-          else setSaveRequest({ place });
+          // Home and Work too are confirmed in the sheet (named already), never saved unseen.
+          else setSaveRequest(label ? { place, label } : { place });
           leaveSavedPlacePick(returnTo);
         }}
         placeholder={replacing ? `Search for the new address for ${replacing.label?.trim() || replacing.place.title}` : label ? `Search for your ${label.toLowerCase()} address` : 'Search for a place to save'}
@@ -874,6 +899,7 @@ export function HomeScreen() {
         isFavorite={savedRouteIds.includes(savedIdFor(route))}
         onBack={closeCurrentView}
         onOpenDepartures={(directionIndex) => setActiveView({ name: 'departures', routeId, route, directionIndex, previous, wholeRoute })}
+        onOpenStop={(stop) => openStop(routeView, stop)}
         onOpenTransfer={(transfer, stop) => openTransfer(routeView, transfer, stop)}
         wholeRoute={wholeRoute}
         onRefreshLocation={() => void refreshLocation()}
@@ -962,6 +988,8 @@ export function HomeScreen() {
     <View style={styles.viewport}>
       <ThemedStatusBar />
       <View style={styles.screen}>
+        {/* The map stays fixed while the sheet scrolls over it; its fixed height keeps the legal credits above the resting sheet. */}
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: mapHeight }} testID="home-map-viewport">
         <GoogleMapView
           initialCamera={homeCamera}
           lines={mapLines}
@@ -973,12 +1001,13 @@ export function HomeScreen() {
           onUserPan={() => setIsLocationCentered(false)}
           onOrientationChange={setMapOrientation}
           onSavedLocationPress={openSavedLocationFromMap}
-          padding={{ top: homeHeaderInset, bottom: height - mapHeight }}
+          padding={{ top: homeHeaderInset, bottom: 0 }}
           recenterRequest={recenterRequest}
           reorientRequest={reorientRequest}
           savedLocations={savedLocations}
           simulatedLocation={locationMocked}
         />
+        </View>
         {searchCenter ? (
           // Fixed at the center of the visible map (below the header, above the resting sheet):
           // the point Nearby is currently searching around.
@@ -1072,15 +1101,18 @@ export function HomeScreen() {
                 />
               </View>
             ) : null}
-            {/* Line layers, under the profile button. */}
-            <MapControlButton
-              accessibilityLabel="Lines on the map"
-              icon="modes"
-              onPress={() => setLayersOpen(true)}
-              selected={lineChoice.groups.length > 0 || lineChoice.routes.length > 0}
-              style={styles.layersButton}
-              testID="line-layers-button"
-            />
+            {/* An occasional ask (feedback or a tip) beside the line layers button, under the profile button. */}
+            <View pointerEvents="box-none" style={styles.underSearch}>
+              {nudge.kind ? <NudgeBanner kind={nudge.kind} onAct={nudge.act} onDismiss={nudge.dismiss} style={styles.nudge} /> : <View pointerEvents="none" style={styles.nudge} />}
+              <MapControlButton
+                accessibilityLabel="Lines on the map"
+                icon="modes"
+                onPress={() => setLayersOpen(true)}
+                selected={lineChoice.groups.length > 0 || lineChoice.routes.length > 0}
+                style={styles.layersButton}
+                testID="line-layers-button"
+              />
+            </View>
           </View>
         </SafeAreaView>
 
@@ -1089,7 +1121,6 @@ export function HomeScreen() {
           findRoute={findRoute}
           mapHeight={mapHeight}
           nearbyRoutes={nearbyRoutes}
-          nearbyRefreshing={nearbyStatus.status === 'loaded' && nearbyStatus.refreshing === true}
           nearbyStatus={nearbyStatus.status}
           onAddSavedPlace={uid ? () => addSavedPlace('favorites') : undefined}
           onOpenRecentTrip={openRecentTrip}
@@ -1147,7 +1178,9 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   header: { paddingTop: 10, paddingHorizontal: 16 },
   resumeCardWrap: { marginTop: 8 },
   // Centered under the 54 px profile button.
-  layersButton: { alignSelf: 'flex-end', marginTop: 10, marginRight: 4 },
+  underSearch: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 },
+  nudge: { flex: 1 },
+  layersButton: { marginRight: 4 },
   locationButton: {
     position: 'absolute',
     right: 16,
@@ -1192,8 +1225,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     borderRightColor: 'transparent',
     borderTopColor: colors.mutedInk,
   },
-  // Solid purple with a white ring, matching the GPS dot's look so it reads as a map point.
-  tapCoords: { position: 'absolute', alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 16, backgroundColor: colors.ink, zIndex: 4 },
+  tapCoords: { position: 'absolute', alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 14, borderRadius: radii.pill, backgroundColor: colors.ink, zIndex: 4 },
   tapCoordsText: { color: colors.surface, fontFamily: fontFamilies.bold, fontSize: 13 },
   searchCenter: {
     position: 'absolute',
@@ -1203,7 +1235,8 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     height: SEARCH_CENTER_SIZE,
     borderWidth: 3,
     borderRadius: SEARCH_CENTER_SIZE / 2,
-    borderColor: colors.ring,
+    // White in both themes, like the rider's location dot.
+    borderColor: '#FFFFFF',
     backgroundColor: colors.searchCenter,
     shadowColor: colors.searchCenter,
     shadowOpacity: 0.32,
@@ -1225,7 +1258,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     gap: 6,
     paddingVertical: 6,
     paddingHorizontal: 12,
-    borderRadius: 16,
+    borderRadius: radii.pill,
     backgroundColor: 'rgba(0,0,0,0.6)',
     maxWidth: '100%',
   },

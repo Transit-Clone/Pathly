@@ -49,7 +49,22 @@ export type TransitStep = {
    * trip calls at the same stops in between.
    */
   departures?: TripDeparture[];
+  /** What the agency's live feed says about this leg's trip (tripLive.ts); absent when it says nothing. */
+  live?: LegLive;
+  /** The connection into this leg from the previous one, when it's tight or already missed (tripLive.ts). */
+  connection?: LegConnection;
+  /** The line's service alerts in effect now or starting soon (gtfsAlerts.ts); absent when there are none. */
+  alerts?: LegAlert[];
 };
+/** One of a leg's line's service alerts: what route status sends, minus its internal `kind`. */
+export type LegAlert = { id: string; header: string; description: string | null; label: string; warning: boolean; upcoming: boolean };
+/**
+ * 'tracked': live times (`delaySeconds` is the live time against the planned one, late when
+ * positive); 'cancelled': the trip won't run; 'skips-stop': it won't stop where the rider boards or gets off.
+ */
+export type LegLive = { status: 'tracked' | 'cancelled' | 'skips-stop'; departs?: string; arrives?: string; delaySeconds?: number };
+/** `spareSeconds`: time left over after the walk between the legs; negative when already missed. */
+export type LegConnection = { status: 'tight' | 'missed'; spareSeconds: number };
 export type TripDeparture = { departs: string; arrives: string; stopTimes?: string[] };
 export type TripStep = WalkStep | TransitStep;
 export type TripFare = { text: string; cents: number; currency: string; estimated: boolean };

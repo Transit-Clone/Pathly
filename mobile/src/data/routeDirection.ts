@@ -9,6 +9,18 @@ export function distanceMeters(a: LatLon, b: LatLon): number {
   return Math.hypot(x, y) * METERS_PER_DEGREE;
 }
 
+/**
+ * A rider this close to their stop (straight line) is framed with it on the route map; one farther
+ * off isn't. About an hour's walk on streets, matching how far the walk there is drawn
+ * (getWalkingPathToStop in firebase/functions/src/gtfsDiscovery.ts).
+ */
+const RIDER_NEAR_STOP_METERS = 4_000;
+
+/** Whether the rider (real GPS) is close enough to `stop` that the map should show both. */
+export function riderNearStop(rider: { latitude: number; longitude: number }, stop: LatLon): boolean {
+  return distanceMeters({ lat: rider.latitude, lon: rider.longitude }, stop) <= RIDER_NEAR_STOP_METERS;
+}
+
 /** Compass bearing from `a` to `b`, in degrees clockwise from north (0–360). */
 export function bearingDegrees(a: LatLon, b: LatLon): number {
   const x = (b.lon - a.lon) * Math.cos(((a.lat + b.lat) / 2) * (Math.PI / 180));
