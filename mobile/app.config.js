@@ -10,24 +10,23 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: 'com.pathly.prototype',
-      config: {
-        googleMapsApiKey: process.env.GOOGLE_MAPS_IOS_API_KEY,
-      },
     },
     android: {
       package: 'com.pathly.prototype',
       predictiveBackGestureEnabled: false,
-      config: {
-        googleMaps: {
-          apiKey: process.env.GOOGLE_MAPS_ANDROID_API_KEY,
-        },
-      },
     },
     web: {
       bundler: 'metro',
       output: 'single',
     },
     plugins: [
+      [
+        'react-native-maps',
+        {
+          iosGoogleMapsApiKey: process.env.GOOGLE_MAPS_IOS_API_KEY,
+          androidGoogleMapsApiKey: process.env.GOOGLE_MAPS_ANDROID_API_KEY,
+        },
+      ],
       [
         'expo-splash-screen',
         {
