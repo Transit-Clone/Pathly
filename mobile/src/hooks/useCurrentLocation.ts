@@ -1,6 +1,6 @@
 import * as Location from 'expo-location';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, Platform, type AppStateStatus } from 'react-native';
+import { AppState, Platform } from 'react-native';
 
 import { NAVIGATION_THRESHOLDS, type NavigationFix } from '../data/enrouteNavigation';
 import { SERVICE_AREA_FALLBACK } from '../data/serviceArea';
@@ -177,7 +177,7 @@ export function useCurrentLocation(navigating = false) {
   // position on every background/inactive -> active transition; the existing watch continues.
   useEffect(() => {
     if (mocked) return undefined;
-    let previousState: AppStateStatus = AppState.currentState;
+    let previousState: string | null | undefined = AppState.currentState;
     const listener = AppState.addEventListener('change', (nextState) => {
       const returnedToForeground = nextState === 'active' && previousState !== 'active';
       previousState = nextState;

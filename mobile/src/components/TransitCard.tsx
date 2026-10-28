@@ -10,6 +10,7 @@ import {
   type GestureResponderEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  type ScrollViewInstance,
 } from 'react-native';
 
 import { useRouteColor } from '../data/routeColors';
@@ -89,7 +90,7 @@ export function TransitCard({ onPress, route, saved = false }: TransitCardProps)
   const { width } = useWindowDimensions();
   const pageWidth = Math.min(width, 540) - CARD_HORIZONTAL_MARGIN * 2;
   const [activePage, setActivePage] = useState(0);
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
 
   const updatePage = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     setActivePage(Math.round(event.nativeEvent.contentOffset.x / pageWidth));

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type KeyboardTypeOptions, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type KeyboardTypeOptions, type NativeScrollEvent, type NativeSyntheticEvent, type ScrollViewInstance } from 'react-native';
 
 import { useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
@@ -43,7 +43,7 @@ export function WheelColumn({ accessibilityLabel, disabled = false, items, keybo
     const index = wheelItemFor(items, text);
     if (index >= 0 && index !== selectedIndex) onSelect(index);
   };
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const webSettleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => {
     if (webSettleTimer.current) clearTimeout(webSettleTimer.current);

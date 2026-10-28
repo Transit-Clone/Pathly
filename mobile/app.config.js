@@ -27,6 +27,7 @@ module.exports = {
       output: 'single',
     },
     plugins: [
+      'expo-status-bar',
       'expo-web-browser',
       'expo-sharing',
       ['expo-notifications', { color: '#0B4F9C' }],

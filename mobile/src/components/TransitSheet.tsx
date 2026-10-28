@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Platform, StyleSheet, Text, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type ScrollView } from 'react-native';
+import { Animated, Platform, StyleSheet, Text, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type ScrollViewInstance } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { applyRouteLive } from '../data/applyRouteLive';
@@ -119,7 +119,7 @@ export function TransitSheet({
     Animated.spring(indicatorX, { toValue, speed: 18, bounciness: 4, useNativeDriver }).start();
   }, [activeIndex, indicatorX, reducedMotionActive, tabWidth]);
 
-  const pageScrollRef = useRef<ScrollView>(null);
+  const pageScrollRef = useRef<ScrollViewInstance>(null);
   const scrollOffset = useRef(0);
   const expandedOffset = Math.max(0, mapHeight - EXPANDED_TOP);
   // The sheet is rebuilt at the top each time Home is shown (e.g. back from a route), but

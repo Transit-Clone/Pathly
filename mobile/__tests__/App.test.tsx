@@ -754,7 +754,7 @@ describe('Pathly prototype navigation', () => {
   });
 
   it('lists a planned trip step by step: walk, ride, transfer with the wait, ride', async () => {
-    const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
+    const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
     const screen = await openResults();
     fireEvent.press(screen.getByTestId(`search-result-view-${LIRR_TRIP.id}`));
 

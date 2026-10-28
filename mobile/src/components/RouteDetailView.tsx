@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type GestureResponderEvent } from 'react-native';
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type GestureResponderEvent, type ScrollViewInstance } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useDebug } from '../debug/DebugContext';
@@ -412,7 +412,7 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
 
   // The departure tiles scroll on their own. Native and web touch/trackpad scroll the ScrollView
   // directly; a web mouse drag is turned into a scroll here, while a plain click still taps.
-  const tilesScrollRef = useRef<ScrollView>(null);
+  const tilesScrollRef = useRef<ScrollViewInstance>(null);
   const tilesScrollX = useRef(0);
   const tilesDragStartX = useRef<number | null>(null);
   const handleTilesPressIn = (event: GestureResponderEvent) => {
