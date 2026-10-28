@@ -12,9 +12,6 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: 'com.pathly.prototype',
-      config: {
-        googleMapsApiKey: process.env.GOOGLE_MAPS_IOS_API_KEY,
-      },
     },
     android: {
       package: 'com.pathly.prototype',
@@ -23,11 +20,6 @@ module.exports = {
         backgroundColor: '#0B4F9C',
       },
       predictiveBackGestureEnabled: false,
-      config: {
-        googleMaps: {
-          apiKey: process.env.GOOGLE_MAPS_ANDROID_API_KEY,
-        },
-      },
     },
     web: {
       bundler: 'metro',
@@ -38,6 +30,13 @@ module.exports = {
       'expo-web-browser',
       'expo-sharing',
       ['expo-notifications', { color: '#0B4F9C' }],
+      [
+        'react-native-maps',
+        {
+          iosGoogleMapsApiKey: process.env.GOOGLE_MAPS_IOS_API_KEY,
+          androidGoogleMapsApiKey: process.env.GOOGLE_MAPS_ANDROID_API_KEY,
+        },
+      ],
       [
         'expo-splash-screen',
         {
