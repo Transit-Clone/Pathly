@@ -4,7 +4,7 @@ Hand-authored SVGs based on the approved minimal bean direction, not cropped ima
 
 ## Included
 
-- 12 body colors, 12 eye styles, 12 mouths (including none), 10 hair options (including bald): 17,280 combinations.
+- 12 body colors, 12 eye styles, 12 mouths (including none), 9 rounded hair options (including bald): 15,552 combinations.
 - One transparent 128 x 128 coordinate system, shared by all parts. Eyes, mouth, and hair occupy fixed regions so any combination fits.
 - 12 named starter presets, complete SVG exports, individual transparent part SVGs, and a body SVG in `mobile/assets/bean-avatars/`.
 - `BeanAvatarImage.tsx`: reusable React Native/web renderer using the existing `react-native-svg` dependency.
@@ -45,7 +45,7 @@ Store the compact versioned choices in the signed-in user's existing Firestore d
 
 New profile documents receive one saved random bean. Signup and profile backfill share an idempotent transaction so overlapping creation cannot replace a bean. Existing profiles stay unchanged.
 
-Flow: tap profile picture (or Customize your bean in settings) → edit local draft → Save. Cancel discards the draft. Save merges only `avatar` into the user document, updates the shared profile state, and keeps the editor open with retry on write failure. Account switching clears the previous user's picture. Signed-out users must sign in before editing or saving.
+Flow: tap profile picture (or Customize your Pathling in settings) → edit local draft → Save. Cancel discards the draft. Save merges only `avatar` into the user document, updates the shared profile state, and keeps the editor open with retry on write failure. Account switching clears the previous user's picture. Signed-out users must sign in before editing or saving.
 
 `userProfile.ts` subscribes to the user document and merges avatar writes after ensuring the document exists. `AuthContext` shares the picture across screens, guards state by account ID, and exposes loading/error/retry/save. Existing owner-only `/users/{uid}` Firestore rules permit this field. Unknown or malformed configs pass through `normalizeBeanAvatar`; missing avatars show the default bean. Firebase Auth provider photos remain intact.
 

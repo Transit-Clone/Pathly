@@ -7,6 +7,14 @@ export const NYCT_AGENCY = 'MTA New York City Transit';
 export const NICE_AGENCY = 'Nassau Inter-County Express';
 export const MTA_BUS_COMPANY_AGENCY = 'MTA Bus Company';
 export const NYC_FERRY_AGENCY = 'NYC Ferry';
+/** Google's agency for MTA buses on Staten Island (and some express routes), seen 2026-10-28. */
+export const MTA_AGENCY = 'MTA';
+
+/** NYC Ferry, also when Google adds its operator ("NYC Ferry by Hornblower"). */
+export const isNycFerry = (agency: string) => agency.toLowerCase().startsWith('nyc ferry');
+/** NYC DOT's Staten Island Ferry: Google names its agency "New York City Department of Transportation". */
+export const isStatenIslandFerry = (step: Pick<TransitStep, 'agency' | 'mode' | 'line'>) =>
+  step.mode === 'ferry' && (/department of transportation|nyc dot/i.test(step.agency.name) || /staten island ferry/i.test(step.line.name));
 
 /** Google's name for MTA Bus Company varies in case ("Mta Bus Company"). */
 const isMtaBusCompany = (agency: string) => agency.toLowerCase() === MTA_BUS_COMPANY_AGENCY.toLowerCase();
@@ -21,11 +29,12 @@ export const isSuffolk = (agency: string) => agency === 'Suffolk County Transit'
 export function agencyIdsForStep(step: Pick<TransitStep, 'agency' | 'mode'>): AgencyId[] {
   const name = step.agency.name;
   if (name === LIRR_AGENCY) return ['lirr'];
-  if (name === NYCT_AGENCY && step.mode === 'subway') return ['subway'];
-  if ((name === NYCT_AGENCY && step.mode === 'bus') || isMtaBusCompany(name)) return [...MTA_BUS_AGENCY_IDS];
+  // The Staten Island Railway comes as an NYCT rail line; its timetable is the subway feed's SI.
+  if (name === NYCT_AGENCY && (step.mode === 'subway' || step.mode === 'rail')) return ['subway'];
+  if (((name === NYCT_AGENCY || name === MTA_AGENCY) && step.mode === 'bus') || isMtaBusCompany(name)) return [...MTA_BUS_AGENCY_IDS];
   if (name === NICE_AGENCY) return ['nice'];
   if (isSuffolk(name)) return ['suffolk'];
-  if (name === NYC_FERRY_AGENCY) return ['nycferry'];
+  if (isNycFerry(name)) return ['nycferry'];
   // Any other ferry: NYC Ferry, or NYC DOT's Staten Island Ferry.
   if (step.mode === 'ferry') return ['nycferry', 'siferry'];
   return [];

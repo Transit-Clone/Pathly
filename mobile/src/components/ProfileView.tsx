@@ -1,5 +1,5 @@
 import { useCallback, useState, type ReactNode } from 'react';
-import { Linking, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Linking, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { signOutUser } from '../auth/authService';
@@ -19,10 +19,12 @@ import { PressableScale } from './PressableScale';
 import { Toast, type ToastMessage } from './Toast';
 import { SavedPlaceBadge } from './SavedPlaceBadge';
 import { savedLocationIcon, savedPlaceLines } from './SavedPlacesStrip';
-import { AccessibilitySettings, AccountSettings, HelpSettings, NotificationSettings, PrivacySettings, TravelSettings } from './SettingsPages';
+import { AccessibilitySettings, AccountSettings, contactSupport, HelpSettings, NotificationSettings, PrivacySettings, TravelSettings } from './SettingsPages';
 import { radii } from '../theme/shape';
 import { BeanAvatar } from '../avatars/BeanAvatarImage';
 import { BeanAvatarEditor } from '../avatars/BeanAvatarEditor';
+import { DestinationPinEditor } from './DestinationPinEditor';
+import { DestinationPinMarker } from './DestinationPinMarker';
 
 type ProfileViewProps = {
   onBack: () => void;
@@ -47,9 +49,11 @@ type SavedPlacesSettingsProps = NonNullable<ProfileViewProps['savedPlaces']>;
 function SavedPlacesSettings({ locations, onAdd, onEdit }: SavedPlacesSettingsProps) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
-  const missing = (['Home', 'Work'] as const).filter((label) => !findLabeledLocation(locations, label));
-  const sorted = sortSavedLocations(locations);
-  const groups = savedPlaceGroups(locations);
+  // Home, then Work, always the first two rows (a saved one, or a row to set it), whatever list they're in.
+  const anchors = (['Home', 'Work'] as const).map((label) => ({ label, location: findLabeledLocation(locations, label) }));
+  const anchorIds = new Set(anchors.flatMap(({ location }) => (location ? [location.id] : [])));
+  const sorted = sortSavedLocations(locations).filter((location) => !anchorIds.has(location.id));
+  const groups = savedPlaceGroups(sorted);
   const inGroup = (location: SavedLocation, name: string) => location.address.group?.trim().toLowerCase() === name.toLowerCase();
   const row = (location: SavedLocation) => {
     const { title, subtitle } = savedPlaceLines(location);
@@ -64,9 +68,8 @@ function SavedPlacesSettings({ locations, onAdd, onEdit }: SavedPlacesSettingsPr
   const ungrouped = sorted.filter((location) => !location.address.group?.trim());
   return (
     <>
-      <Text style={styles.intro}>Keep common destinations one tap away. Tap a place to change its name, address, icon or color, or to put it in a list like Restaurants.</Text>
       <Card>
-        {missing.map((label) => (
+        {anchors.map(({ label, location }) => location ? row(location) : (
           <PressableScale accessibilityHint={`Searches for your ${label.toLowerCase()} address`} accessibilityLabel={`Set ${label.toLowerCase()}`} accessibilityRole="button" key={label} onPress={() => onAdd(label)} style={styles.settingRow} testID={`saved-set-${label.toLowerCase()}`}>
             <View style={styles.rowIcon}><Icon name={label === 'Home' ? 'home' : 'work'} size={19} /></View>
             <View style={styles.rowCopy}><Text style={styles.settingText}>{label}</Text><Text style={styles.settingDetail}>Set location</Text></View>
@@ -85,22 +88,37 @@ function SavedPlacesSettings({ locations, onAdd, onEdit }: SavedPlacesSettingsPr
     </>
   );
 }
-type SettingsRoute = 'hub' | 'avatar' | 'appearance' | 'account' | 'notifications' | 'accessibility' | 'privacy' | 'travel' | 'places' | 'maps' | 'help';
+type SettingsRoute = 'hub' | 'avatar' | 'pin' | 'appearance' | 'account' | 'notifications' | 'accessibility' | 'privacy' | 'travel' | 'places' | 'maps' | 'help' | 'faq' | 'about';
 
-/** The hub's sections, in the order riders tend to need them; each row says what's inside. */
-const groups = ['ACCOUNT', 'TRIPS', 'DISPLAY', 'ALERTS & PRIVACY', 'SUPPORT'] as const;
-
-const routes: readonly { id: Exclude<SettingsRoute, 'hub'>; title: string; detail: string; icon: IconName; group: typeof groups[number] }[] = [
-  { id: 'account', title: 'Account details', detail: 'Name, email and password', icon: 'person', group: 'ACCOUNT' },
-  { id: 'places', title: 'Saved places', detail: 'Home, work and your lists', icon: 'place', group: 'ACCOUNT' },
-  { id: 'travel', title: 'Travel preferences', detail: 'Modes, walking and transfers', icon: 'travel', group: 'TRIPS' },
-  { id: 'maps', title: 'Official maps', detail: 'MTA maps, saved for offline', icon: 'map', group: 'TRIPS' },
-  { id: 'appearance', title: 'Appearance', detail: 'Light, dark or match your device', icon: 'appearance', group: 'DISPLAY' },
-  { id: 'accessibility', title: 'Accessibility', detail: 'Text size, motion, contrast, step-free', icon: 'accessibility', group: 'DISPLAY' },
-  { id: 'notifications', title: 'Notifications', detail: 'Service alerts and lines you follow', icon: 'bell', group: 'ALERTS & PRIVACY' },
-  { id: 'privacy', title: 'Privacy', detail: 'Location, analytics and your data', icon: 'privacy', group: 'ALERTS & PRIVACY' },
-  { id: 'help', title: 'Help & About', detail: 'FAQ, contact and policies', icon: 'help', group: 'SUPPORT' },
+/**
+ * The hub's rows, in order, as unlabeled cards: you and how the app looks and behaves, then your
+ * places and data, then support. `support` opens a sheet rather than a page.
+ */
+type HubRow = { id: Exclude<SettingsRoute, 'hub' | 'avatar' | 'pin' | 'help' | 'faq'> | 'support'; title: string; detail: string; icon: IconName };
+const hubCards: readonly (readonly HubRow[])[] = [
+  [
+    { id: 'account', title: 'Account', detail: 'Name, email and password', icon: 'person' },
+    { id: 'appearance', title: 'Display', detail: 'Theme, map dot and destination pin', icon: 'appearance' },
+    { id: 'notifications', title: 'Notifications', detail: 'Service alerts and lines you follow', icon: 'bell' },
+  ],
+  [
+    { id: 'travel', title: 'Preferences', detail: 'Modes, walking and transfers', icon: 'travel' },
+    { id: 'accessibility', title: 'Accessibility', detail: 'Text size, motion, contrast, step-free', icon: 'accessibility' },
+    { id: 'places', title: 'Saved Places', detail: 'Home, work and your lists', icon: 'place' },
+    { id: 'maps', title: 'Offline Maps', detail: 'MTA maps, saved for offline', icon: 'map' },
+  ],
+  [
+    { id: 'privacy', title: 'Location & Privacy', detail: 'Location, analytics and your data', icon: 'privacy' },
+    { id: 'support', title: 'Support', detail: 'Help, FAQ, contact us and feedback', icon: 'help' },
+    { id: 'about', title: 'About', detail: 'Version, policies and credits', icon: 'info' },
+  ],
 ];
+/** Page titles, for the hub's rows and the pages reached from Support. */
+const pageTitles: Partial<Record<SettingsRoute, string>> = {
+  ...Object.fromEntries(hubCards.flat().map((row) => [row.id, row.title])),
+  help: 'Help',
+  faq: 'FAQ',
+};
 
 export function Header({ onBack, testID = 'settings-back', title }: { onBack: () => void; testID?: string; title: string }) {
   const styles = useThemedStyles(createStyles);
@@ -185,13 +203,25 @@ export function ProfileView({ initialRoute, onBack, onOpenAdminTools, savedPlace
   const setFeedback = useCallback((text: string) => setFeedbackMessage(text ? { text, id: Date.now() } : null), []);
   const hideFeedback = useCallback(() => setFeedbackMessage(null), []);
   const openRoute = (nextRoute: SettingsRoute) => { setFeedback(''); setRoute(nextRoute); };
+  const [supportOpen, setSupportOpen] = useState(false);
+  const supportOptions: readonly { id: string; title: string; detail: string; icon: IconName; onPress: () => void }[] = [
+    { id: 'help', title: 'Help', detail: 'Policies, terms and getting support', icon: 'help', onPress: () => openRoute('help') },
+    { id: 'faq', title: 'FAQ', detail: 'Answers to common questions', icon: 'info', onPress: () => openRoute('faq') },
+    { id: 'contact', title: 'Contact Us', detail: 'Email the Pathly team', icon: 'feedback', onPress: () => void contactSupport(setFeedback) },
+    { id: 'feedback', title: 'Send feedback', detail: 'Tell us what to fix or add', icon: 'edit', onPress: () => void Linking.openURL(FEEDBACK_FORM_URL).catch(() => undefined) },
+    { id: 'donate', title: 'Support Pathly', detail: STUDENT_DISCLAIMER, icon: 'heart', onPress: openDonationPage },
+  ];
 
   if (route === 'avatar') {
-    return <BeanAvatarEditor onCancel={() => openRoute('hub')} onSaved={() => { openRoute('hub'); setFeedback('Your bean is saved.'); }} />;
+    return <BeanAvatarEditor onCancel={() => openRoute('hub')} onSaved={() => { openRoute('hub'); setFeedback('Your Pathling is saved.'); }} />;
+  }
+
+  if (route === 'pin') {
+    return <DestinationPinEditor onCancel={() => openRoute('appearance')} onSaved={() => { openRoute('appearance'); setFeedback('Your pin is saved.'); }} />;
   }
 
   if (route !== 'hub') {
-    const title = routes.find((item) => item.id === route)?.title ?? 'Settings';
+    const title = pageTitles[route] ?? 'Settings';
     return (
       <ScreenTransition key={route}>
       <View style={styles.viewport}>
@@ -199,7 +229,7 @@ export function ProfileView({ initialRoute, onBack, onOpenAdminTools, savedPlace
           <ThemedStatusBar />
           <Header onBack={() => openRoute('hub')} title={title} />
           <ScrollView contentContainerStyle={styles.pageContent} key={route} showsVerticalScrollIndicator={false}>
-            {route === 'appearance' ? <><Text style={styles.intro}>Choose how Pathly looks. System follows your device&apos;s light or dark setting.</Text><Card><ChoiceRow label="Theme" onSelect={(label) => { const option = appearanceOptions.find((item) => item.label === label); if (option) { setAppearance(option.value); setFeedback(`Appearance set to ${label}`); } }} options={appearanceOptions.map((item) => item.label)} selected={appearanceOptions.find((item) => item.value === appearance)?.label ?? 'Light'} testPrefix="appearance" /></Card><Card><MapDotColorRow onFeedback={setFeedback} /></Card></> : null}
+            {route === 'appearance' ? <><Card><ChoiceRow label="Theme" onSelect={(label) => { const option = appearanceOptions.find((item) => item.label === label); if (option) { setAppearance(option.value); setFeedback(`Appearance set to ${label}`); } }} options={appearanceOptions.map((item) => item.label)} selected={appearanceOptions.find((item) => item.value === appearance)?.label ?? 'Light'} testPrefix="appearance" /></Card><Card><MapDotColorRow onFeedback={setFeedback} /></Card><Card><PressableScale accessibilityHint="Change your destination pin's color and face" accessibilityLabel="Customize your destination pin" accessibilityRole="button" onPress={() => openRoute('pin')} style={styles.settingRow} testID="appearance-destination-pin"><DestinationPinMarker /><View style={styles.rowCopy}><Text style={styles.settingText}>Destination pin</Text><Text style={styles.settingDetail}>Marks where you&apos;re headed on trip maps.</Text></View><Icon name="forward" color={colors.mutedInk} size={20} /></PressableScale></Card></> : null}
             {route === 'account' ? <AccountSettings onFeedback={setFeedback} /> : null}
             {route === 'notifications' ? <NotificationSettings onFeedback={setFeedback} /> : null}
             {route === 'accessibility' ? <AccessibilitySettings onFeedback={setFeedback} /> : null}
@@ -207,7 +237,8 @@ export function ProfileView({ initialRoute, onBack, onOpenAdminTools, savedPlace
             {route === 'travel' ? <TravelSettings onFeedback={setFeedback} /> : null}
             {route === 'places' ? (savedPlaces ? <SavedPlacesSettings {...savedPlaces} /> : <Text style={styles.intro}>Sign in to save places like home and work.</Text>) : null}
             {route === 'maps' ? <OfficialMapsSettings onFeedback={setFeedback} /> : null}
-            {route === 'help' ? <><HelpSettings onFeedback={setFeedback} /><View style={styles.versionCard}><Mascot pose="happy" size={56} style={styles.aboutMascot} /><Text style={styles.versionName}>Pathly Prototype</Text><Text style={styles.version}>Version 0.1.0</Text><Text style={styles.aboutNote} testID="about-disclaimer">{"Pathly is a free transit app built by a team of students. It isn't affiliated with or endorsed by the MTA, NYC DOT, or any transit agency, so always check posted service changes. Agency names and logos belong to their respective agencies. Tips are optional and go toward live data and server costs."}</Text></View></> : null}
+            {route === 'help' || route === 'faq' ? <HelpSettings initialOpen={route === 'faq' ? 'faq' : null} onFeedback={setFeedback} /> : null}
+            {route === 'about' ? <><View style={styles.versionCard}><Mascot pose="happy" size={56} style={styles.aboutMascot} /><Text style={styles.versionName}>Pathly Prototype</Text><Text style={styles.version}>Version 0.1.0</Text><Text style={styles.aboutNote} testID="about-disclaimer">{"Pathly is a free transit app built by a team of students. It isn't affiliated with or endorsed by the MTA, NYC DOT, or any transit agency, so always check posted service changes. Agency names and logos belong to their respective agencies. Tips are optional and go toward live data and server costs."}</Text></View></> : null}
           </ScrollView>
         </SafeAreaView>
         <Toast message={feedback} onHidden={hideFeedback} />
@@ -223,12 +254,27 @@ export function ProfileView({ initialRoute, onBack, onOpenAdminTools, savedPlace
         <ThemedStatusBar />
         <Header onBack={onBack} testID="profile-back" title="Profile & Settings" />
         <ScrollView contentContainerStyle={styles.pageContent} showsVerticalScrollIndicator={false}>
-          <PressableScale accessibilityRole="button" accessibilityLabel="Customize your profile bean" accessibilityHint="Change your bean’s color, eyes, mouth and hair" onPress={() => openRoute('avatar')} style={styles.accountCard} testID="profile-edit-avatar"><View style={[styles.avatar, { backgroundColor: colors.surfaceMuted }]}><BeanAvatar config={avatar} size={58} testID="profile-bean-avatar" /></View><View style={styles.rowCopy}><Text style={styles.name}>{user?.displayName || 'Pathly Rider'}</Text>{since ? <Text style={styles.guest} testID="profile-since">{since}</Text> : null}</View><Icon name="forward" color={colors.mutedInk} size={20} /></PressableScale>
-          {groups.map((group) => <View key={group}><Text style={styles.sectionLabel}>{group}</Text><Card>{routes.filter((item) => item.group === group).map((item) => <PressableScale accessibilityHint={item.detail} accessibilityLabel={item.title} accessibilityRole="button" key={item.id} onPress={() => openRoute(item.id)} style={styles.settingRow} testID={`settings-row-${item.id}`}><View style={styles.rowIcon}><Icon name={item.icon} size={19} /></View><View style={styles.rowCopy}><Text style={styles.settingText}>{item.title}</Text></View><Icon color={colors.mutedInk} name="forward" size={20} /></PressableScale>)}{group === 'SUPPORT' ? <PressableScale accessibilityHint="Opens Pathly's feedback form" accessibilityLabel="Submit feedback" accessibilityRole="link" onPress={() => void Linking.openURL(FEEDBACK_FORM_URL).catch(() => undefined)} style={styles.settingRow} testID="settings-row-feedback"><View style={styles.rowIcon}><Icon name="feedback" size={19} /></View><View style={styles.rowCopy}><Text style={styles.settingText}>Submit feedback</Text></View><Icon color={colors.mutedInk} name="forward" size={20} /></PressableScale> : null}{group === 'SUPPORT' ? <PressableScale accessibilityHint="Opens Pathly's donation page" accessibilityLabel="Support Pathly" accessibilityRole="link" onPress={openDonationPage} style={styles.settingRow} testID="settings-row-support"><View style={[styles.rowIcon, styles.supportIcon]}><Icon color={colors.highlightInk} name="heart" size={19} /></View><View style={styles.rowCopy}><Text style={styles.settingText}>Support Pathly</Text><Text style={styles.settingDetail}>{STUDENT_DISCLAIMER}</Text></View><Icon color={colors.mutedInk} name="forward" size={20} /></PressableScale> : null}</Card></View>)}
-          {onOpenAdminTools ? <View><Text style={styles.sectionLabel}>ADMIN</Text><Card><PressableScale accessibilityLabel="Admin tools" accessibilityRole="button" onPress={onOpenAdminTools} style={styles.settingRow} testID="settings-row-admin"><View style={styles.rowIcon}><Icon name="crosshair" size={19} /></View><View style={styles.rowCopy}><Text style={styles.settingText}>Admin tools</Text></View><Icon color={colors.mutedInk} name="forward" size={20} /></PressableScale></Card></View> : null}
+          <PressableScale accessibilityRole="button" accessibilityLabel="Customize your profile bean" accessibilityHint="Change your Pathling’s color, eyes, mouth and hair" onPress={() => openRoute('avatar')} style={styles.accountCard} testID="profile-edit-avatar"><View style={[styles.avatar, { backgroundColor: colors.surfaceMuted }]}><BeanAvatar config={avatar} size={58} testID="profile-bean-avatar" /></View><View style={styles.rowCopy}><Text style={styles.name}>{user?.displayName || 'Pathly Rider'}</Text>{since ? <Text style={styles.guest} testID="profile-since">{since}</Text> : null}</View><Icon name="forward" color={colors.mutedInk} size={20} /></PressableScale>
+          {hubCards.map((rows) => <View key={rows[0]!.id} style={styles.hubCard}><Card>{rows.map((item) => <PressableScale accessibilityHint={item.detail} accessibilityLabel={item.title} accessibilityRole="button" key={item.id} onPress={() => (item.id === 'support' ? setSupportOpen(true) : openRoute(item.id))} style={styles.settingRow} testID={`settings-row-${item.id}`}><View style={styles.rowIcon}><Icon name={item.icon} size={19} /></View><View style={styles.rowCopy}><Text style={styles.settingText}>{item.title}</Text></View><Icon color={colors.mutedInk} name={item.id === 'support' ? 'expand' : 'forward'} size={20} /></PressableScale>)}</Card></View>)}
+          {onOpenAdminTools ? <View style={styles.hubCard}><Card><PressableScale accessibilityLabel="Admin tools" accessibilityRole="button" onPress={onOpenAdminTools} style={styles.settingRow} testID="settings-row-admin"><View style={styles.rowIcon}><Icon name="crosshair" size={19} /></View><View style={styles.rowCopy}><Text style={styles.settingText}>Admin tools</Text></View><Icon color={colors.mutedInk} name="forward" size={20} /></PressableScale></Card></View> : null}
           <PressableScale accessibilityRole="button" onPress={() => { void signOutUser(); }} style={styles.signOut} testID="sign-out"><Text style={styles.signOutText}>Sign out</Text></PressableScale>
         </ScrollView>
       </SafeAreaView>
+      {/* Support: every way to get help, from the bottom. */}
+      <Modal animationType="slide" onRequestClose={() => setSupportOpen(false)} transparent={true} visible={supportOpen}>
+        <View style={styles.sheetViewport}>
+          <Pressable accessibilityLabel="Close support" onPress={() => setSupportOpen(false)} style={styles.sheetBackdrop} testID="support-backdrop" />
+          <View style={styles.sheet} testID="support-sheet">
+            <View style={styles.sheetHeader}>
+              <Text accessibilityRole="header" style={styles.sheetTitle}>Support</Text>
+              <PressableScale accessibilityLabel="Close" accessibilityRole="button" hitSlop={8} onPress={() => setSupportOpen(false)} testID="support-close"><Icon name="close" size={26} /></PressableScale>
+            </View>
+            <Card>
+              {supportOptions.map((option) => <PressableScale accessibilityHint={option.detail} accessibilityLabel={option.title} accessibilityRole="button" key={option.id} onPress={() => { setSupportOpen(false); option.onPress(); }} style={styles.settingRow} testID={`support-${option.id}`}><View style={[styles.rowIcon, option.id === 'donate' && styles.supportIcon]}><Icon color={option.id === 'donate' ? colors.highlightInk : undefined} name={option.icon} size={19} /></View><View style={styles.rowCopy}><Text style={styles.settingText}>{option.title}</Text><Text style={styles.settingDetail}>{option.detail}</Text></View><Icon color={colors.mutedInk} name="forward" size={20} /></PressableScale>)}
+            </Card>
+          </View>
+        </View>
+      </Modal>
       <Toast message={feedback} onHidden={hideFeedback} />
     </View>
     </ScreenTransition>
@@ -238,5 +284,7 @@ export function ProfileView({ initialRoute, onBack, onOpenAdminTools, savedPlace
 export const createStyles = (colors: Palette) => StyleSheet.create({
   viewport: { flex: 1, alignItems: 'center', backgroundColor: colors.background }, screen: { width: '100%', maxWidth: 540, flex: 1, paddingHorizontal: 18, backgroundColor: colors.background }, header: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: 12 }, backButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 6, elevation: 2 }, title: { minWidth: 0, flex: 1, color: colors.ink, ...typography.screenHeading, fontSize: 24 }, pageContent: { paddingBottom: 34 },
   intro: { marginTop: 4, marginBottom: 16, color: colors.mutedInk, ...typography.body }, accountCard: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 10, padding: 18, borderRadius: radii.card, backgroundColor: colors.surface }, avatar: { width: 58, height: 58, alignItems: 'center', justifyContent: 'center', borderRadius: 29, backgroundColor: colors.primary }, name: { color: colors.ink, ...typography.sectionHeading, fontSize: 18 }, guest: { marginTop: 3, color: colors.mutedInk, ...typography.metadata }, sectionLabel: { marginTop: 24, marginBottom: 9, color: colors.mutedInk, ...typography.label }, card: { overflow: 'hidden', borderWidth: 1, borderColor: colors.border, borderRadius: 18, backgroundColor: colors.surface }, settingRow: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 15, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }, rowCopy: { minWidth: 0, flex: 1 }, rowIcon: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 11, backgroundColor: colors.blueSoft }, settingText: { color: colors.ink, ...typography.bodyStrong, fontSize: 15 }, settingDetail: { marginTop: 2, color: colors.mutedInk, ...typography.metadata, fontSize: 10 },
-  choiceBlock: { padding: 15, borderBottomWidth: 1, borderBottomColor: colors.border }, swatches: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12 }, swatch: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, borderWidth: 3, borderColor: 'transparent' }, choices: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 }, choice: { minHeight: 36, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 13, borderWidth: 1, borderColor: colors.border, borderRadius: radii.card, backgroundColor: colors.background }, choiceSelected: { borderColor: colors.primary, backgroundColor: colors.blueSoft }, choiceText: { color: colors.mutedInk, ...typography.metadata }, choiceTextSelected: { color: colors.primary, fontFamily: fontFamilies.extraBold }, note: { marginTop: 12, color: colors.mutedInk, ...typography.metadata }, primaryAction: { minHeight: 52, alignItems: 'center', justifyContent: 'center', marginTop: 16, borderRadius: 16, backgroundColor: colors.primary }, primaryActionText: { color: colors.onPrimary, fontFamily: fontFamilies.extraBold, fontSize: 15 }, supportIcon: { backgroundColor: colors.highlightSoft }, aboutMascot: { marginBottom: 10 }, aboutNote: { maxWidth: 320, marginTop: 12, color: colors.mutedInk, ...typography.metadata, lineHeight: 18, textAlign: 'center' }, versionCard: { alignItems: 'center', marginTop: 22, padding: 18 }, versionName: { color: colors.ink, ...typography.bodyStrong }, version: { marginTop: 3, color: colors.mutedInk, ...typography.metadata }, signOut: { minHeight: 52, alignItems: 'center', justifyContent: 'center', marginTop: 22, borderWidth: 1, borderColor: colors.red, borderRadius: 16, backgroundColor: colors.surface }, signOutText: { color: colors.red, fontFamily: fontFamilies.extraBold, fontSize: 15 },
+  choiceBlock: { padding: 15, borderBottomWidth: 1, borderBottomColor: colors.border }, swatches: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12 }, swatch: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, borderWidth: 3, borderColor: 'transparent' }, choices: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 }, choice: { minHeight: 36, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 13, borderWidth: 1, borderColor: colors.border, borderRadius: radii.card, backgroundColor: colors.background }, choiceSelected: { borderColor: colors.primary, backgroundColor: colors.blueSoft }, choiceText: { color: colors.mutedInk, ...typography.metadata }, choiceTextSelected: { color: colors.primary, fontFamily: fontFamilies.extraBold }, note: { marginTop: 12, color: colors.mutedInk, ...typography.metadata }, primaryAction: { minHeight: 52, alignItems: 'center', justifyContent: 'center', marginTop: 16, borderRadius: 16, backgroundColor: colors.primary }, primaryActionText: { color: colors.onPrimary, fontFamily: fontFamilies.extraBold, fontSize: 15 }, supportIcon: { backgroundColor: colors.highlightSoft }, aboutMascot: { marginBottom: 10 }, aboutNote: { maxWidth: 320, marginTop: 12, color: colors.mutedInk, ...typography.metadata, lineHeight: 18, textAlign: 'center' }, versionCard: { alignItems: 'center', marginTop: 22, padding: 18 }, versionName: { color: colors.ink, ...typography.bodyStrong }, version: { marginTop: 3, color: colors.mutedInk, ...typography.metadata }, hubCard: { marginTop: 16 },
+  sheetViewport: { flex: 1, justifyContent: 'flex-end' }, sheetBackdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: colors.scrim }, sheet: { width: '100%', maxWidth: 540, alignSelf: 'center', paddingHorizontal: 18, paddingTop: 18, paddingBottom: 30, borderTopLeftRadius: radii.sheet, borderTopRightRadius: radii.sheet, backgroundColor: colors.background }, sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }, sheetTitle: { color: colors.ink, ...typography.sectionHeading, fontSize: 20 },
+  signOut: { minHeight: 52, alignItems: 'center', justifyContent: 'center', marginTop: 22, borderWidth: 1, borderColor: colors.red, borderRadius: 16, backgroundColor: colors.surface }, signOutText: { color: colors.red, fontFamily: fontFamilies.extraBold, fontSize: 15 },
 });

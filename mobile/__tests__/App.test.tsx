@@ -82,6 +82,12 @@ async function renderHome(): Promise<RenderResult> {
   return screen;
 }
 
+/** A Route Results mode or sort option, opening its popup (Modes or Filters) first if it isn't showing. */
+function resultsOption(screen: ReturnType<typeof render>, testID: string) {
+  if (!screen.queryByTestId(testID)) fireEvent.press(screen.getByTestId(testID.startsWith('mode-') ? 'modes-control' : 'filter-control'));
+  return screen.getByTestId(testID);
+}
+
 describe('Pathly prototype navigation', () => {
   const originalFetch = globalThis.fetch;
 
@@ -109,7 +115,7 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByTestId('loading-screen')).toBeTruthy();
     expect(screen.getByTestId('loading-logo').props.source).toBeTruthy();
     expect(screen.getByLabelText('Pathly is loading')).toBeTruthy();
-    expect(screen.queryByText('Where to?')).toBeNull();
+    expect(screen.queryByText('Search line or address')).toBeNull();
   });
 
   it('renders every selectable route without contacting a backend', async () => {
@@ -117,7 +123,7 @@ describe('Pathly prototype navigation', () => {
     globalThis.fetch = fetchMock as unknown as typeof fetch;
     const screen = await renderHome();
 
-    expect(screen.getByText('Where to?')).toBeTruthy();
+    expect(screen.getByText('Search line or address')).toBeTruthy();
     expect(screen.queryByText('Nearby transit')).toBeNull();
     for (const route of routes) {
       expect(await screen.findByTestId(`route-card-${cardIdFor(route)}`)).toBeTruthy();
@@ -295,7 +301,7 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByTestId('search-loading')).toBeTruthy();
 
     const row = await screen.findByTestId('search-result-stony-brook-university');
-    expect(within(row).getByText('location', { includeHiddenElements: true })).toBeTruthy();
+    expect(within(row).getByText('map-pin-fill', { includeHiddenElements: true })).toBeTruthy();
     expect(within(row).getByText('Stony Brook University')).toBeTruthy();
     expect(within(row).getByText('Stony Brook, NY')).toBeTruthy();
     expect(mockAutocompletePlaces).toHaveBeenCalledTimes(1);
@@ -391,7 +397,7 @@ describe('Pathly prototype navigation', () => {
       // The stop: a rail icon, six of its eight branches as badges, and "+2".
       const stopRow = screen.getByTestId('search-result-stop:lirr:15');
       expect(stopRow.props.accessibilityLabel).toBe('Jamaica, LIRR station, lines BY, FR, HM, and 5 more');
-      expect(within(stopRow).getByText('LIRR station', hidden)).toBeTruthy();
+      expect(within(stopRow).queryByText('LIRR station', hidden)).toBeNull();
       expect(within(stopRow).getByTestId('search-kind-icon-rail', hidden)).toBeTruthy();
       expect(within(screen.getByTestId('search-routes-stop:lirr:15', hidden)).getByLabelText('BY rail', hidden)).toBeTruthy();
       expect(within(stopRow).getByText('+2', hidden)).toBeTruthy();
@@ -417,7 +423,7 @@ describe('Pathly prototype navigation', () => {
 
       // Typing again: the matching recent comes first (once), above stops and Google places.
       fireEvent.changeText(screen.getByTestId('search-input'), 'jamaica');
-      expect(within(screen.getAllByTestId(/^search-result-[^r]/)[0]!).getByText('LIRR station', hidden)).toBeTruthy();
+      expect(screen.getAllByTestId(/^search-result-[^r]/)[0]!.props.accessibilityLabel).toMatch(/^Jamaica, LIRR station/);
       await waitFor(() => expect(screen.getByTestId('search-result-g-jamaica-ave')).toBeTruthy());
       expect(screen.getAllByTestId('search-result-stop:lirr:15')).toHaveLength(1);
       // A non-matching query leaves recents out.
@@ -438,7 +444,7 @@ describe('Pathly prototype navigation', () => {
 
     const recentRows = screen.getAllByTestId(/^search-result-/);
     expect(recentRows[0].props.testID).toBe('search-result-terry-road-smithtown');
-    expect(within(recentRows[0]).getByText('time', { includeHiddenElements: true })).toBeTruthy();
+    expect(within(recentRows[0]).getByText('clock-fill', { includeHiddenElements: true })).toBeTruthy();
     mockAutocompletePlaces.mockClear();
     mockFetchPlaceDetails.mockClear();
     fireEvent.press(recentRows[0]);
@@ -498,8 +504,7 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByLabelText('Trip origin, Times Square')).toBeTruthy();
     expect(screen.getByLabelText('Trip destination, Stony Brook University Main Campus')).toBeTruthy();
     fireEvent.press(screen.getByTestId('swap-endpoints'));
-    fireEvent.press(screen.getByTestId('filter-control'));
-    fireEvent.press(screen.getByTestId('preference-cheapest'));
+    fireEvent.press(resultsOption(screen, 'preference-cheapest'));
     fireEvent.press(screen.getByTestId('leave-time-control'));
     fireEvent.press(screen.getByTestId('leave-mode-depart'));
     fireEvent.press(screen.getByTestId('leave-time-done'));
@@ -513,7 +518,7 @@ describe('Pathly prototype navigation', () => {
     // Depart at, from the current time (rounded up to 5 minutes).
     expect(textOf(screen.getByTestId('leave-time-label'))).toMatch(/^Leave \d{1,2}:\d[05] [AP]M( tomorrow)?$/);
     expect(await screen.findByText('Updated just now')).toBeTruthy();
-    expect(screen.getByTestId('preference-cheapest').props.accessibilityState).toEqual({ selected: true });
+    expect(resultsOption(screen, 'preference-cheapest').props.accessibilityState).toEqual({ selected: true });
     // Both real itineraries, each with its line badges, and no fare Google or the app could know.
     expect(screen.getAllByTestId(/^itinerary-[0-9a-f]{12}$/)).toHaveLength(2);
     expect(screen.getByTestId(`fare-${LIRR_TRIP.id}`).props.children).toBe('Fare N/A');
@@ -613,9 +618,8 @@ describe('Pathly prototype navigation', () => {
       expect(await screen.findByTestId('itinerary-ferryferryfe')).toBeTruthy();
       expect(within(screen.getByTestId('itinerary-ferryferryfe')).getByLabelText('ER ferry', { includeHiddenElements: true })).toBeTruthy();
       const calls = planTripMock().mock.calls.length;
-      fireEvent.press(screen.getByTestId('modes-control'));
-      fireEvent.press(screen.getByTestId('mode-ferry'));
-      expect(screen.getByText('Modes · 3')).toBeTruthy();
+      fireEvent.press(resultsOption(screen, 'mode-ferry'));
+      expect(resultsOption(screen, 'mode-ferry').props.accessibilityState).toEqual({ checked: false });
       await waitFor(() => expect(screen.queryByTestId('itinerary-ferryferryfe')).toBeNull());
       expect(screen.getByTestId(`itinerary-${LIRR_TRIP.id}`)).toBeTruthy();
       // Google has no ferry mode: its request is the same as with every mode on.
@@ -627,35 +631,34 @@ describe('Pathly prototype navigation', () => {
 
   it('filters itineraries by mode, asks for the remaining modes, and orders by preference', async () => {
     const screen = await openResults();
+    // Modes opens its own popup, with every mode on.
     fireEvent.press(screen.getByTestId('modes-control'));
     expect(screen.getByTestId('modes-panel')).toBeTruthy();
     expect(screen.queryByTestId('filter-panel')).toBeNull();
+    expect(resultsOption(screen, 'mode-rail').props.accessibilityState).toEqual({ checked: true });
 
     // Both trips ride the LIRR, so excluding rail hides both, even though Google may return them.
-    fireEvent.press(screen.getByTestId('mode-rail'));
-    expect(screen.getByText('Modes · 3')).toBeTruthy();
+    fireEvent.press(resultsOption(screen, 'mode-rail'));
+    expect(resultsOption(screen, 'mode-rail').props.accessibilityState).toEqual({ checked: false });
     await waitFor(() => expect(planTripMock()).toHaveBeenLastCalledWith(expect.objectContaining({ modes: ['subway', 'bus'] })));
     expect(await screen.findByTestId('results-empty')).toBeTruthy();
     fireEvent.press(screen.getByTestId('results-reset-modes'));
     expect(await screen.findByTestId(`itinerary-${BUS_TRIP.id}`)).toBeTruthy();
 
-    fireEvent.press(screen.getByTestId('mode-bus'));
+    fireEvent.press(resultsOption(screen, 'mode-bus'));
     expect(await screen.findByTestId(`itinerary-${LIRR_TRIP.id}`)).toBeTruthy();
     expect(screen.queryByTestId(`itinerary-${BUS_TRIP.id}`)).toBeNull();
-    fireEvent.press(screen.getByTestId('mode-bus'));
+    fireEvent.press(resultsOption(screen, 'mode-bus'));
 
     // Fewer transfers asks Google for them and orders by transfer count.
     const direct = { ...BUS_TRIP, id: 'directdirect', transfers: 0, arrivalTime: '2026-10-14T16:00:00.000Z' };
     planTripMock().mockResolvedValueOnce({ data: { itineraries: [LIRR_TRIP, direct] } });
-    fireEvent.press(screen.getByTestId('filter-control'));
-    expect(screen.getByTestId('filter-panel')).toBeTruthy();
-    expect(screen.queryByTestId('modes-panel')).toBeNull();
-    fireEvent.press(screen.getByTestId('preference-transfers'));
+    fireEvent.press(resultsOption(screen, 'preference-transfers'));
     await waitFor(() => expect(planTripMock()).toHaveBeenLastCalledWith(expect.objectContaining({ preference: 'transfers' })));
     await waitFor(() => expect(screen.getAllByTestId(/^itinerary-/).map((card) => card.props.testID)).toEqual(['itinerary-directdirect', `itinerary-${LIRR_TRIP.id}`]));
 
     // Fastest orders by arrival; lowest fare by fare, unknown fares last.
-    fireEvent.press(screen.getByTestId('preference-fastest'));
+    fireEvent.press(resultsOption(screen, 'preference-fastest'));
     await waitFor(() => expect(screen.getAllByTestId(/^itinerary-/)[0]!.props.testID).toBe(`itinerary-${LIRR_TRIP.id}`));
   });
 
@@ -666,8 +669,7 @@ describe('Pathly prototype navigation', () => {
     planTripMock().mockResolvedValue({ data: { itineraries: [unpriced, priced(LIRR_TRIP, 2150), priced(BUS_TRIP, 1825)] } });
     try {
       const screen = await openResults();
-      fireEvent.press(screen.getByTestId('filter-control'));
-      fireEvent.press(screen.getByTestId('preference-cheapest'));
+      fireEvent.press(resultsOption(screen, 'preference-cheapest'));
       await waitFor(() => expect(screen.getAllByTestId(/^itinerary-/).map((card) => card.props.testID)).toEqual([`itinerary-${BUS_TRIP.id}`, `itinerary-${LIRR_TRIP.id}`, 'itinerary-unpricedtrip']));
       expect(screen.getByTestId(`fare-${BUS_TRIP.id}`).props.children).toBe('$18.25');
       expect(screen.getByTestId('fare-unpricedtrip').props.children).toBe('Fare N/A');
@@ -928,8 +930,7 @@ describe('Pathly prototype navigation', () => {
     const screen = await renderHome();
     fireEvent.press(screen.getByTestId('search-trigger'));
     await pickPlace(screen, '123 Terry Rd', 'terry-road-smithtown');
-    fireEvent.press(screen.getByTestId('filter-control'));
-    fireEvent.press(screen.getByTestId('preference-cheapest'));
+    fireEvent.press(resultsOption(screen, 'preference-cheapest'));
     fireEvent.press(screen.getByTestId('leave-time-control'));
     fireEvent.press(screen.getByTestId('leave-mode-depart'));
     fireEvent.press(screen.getByTestId('leave-time-done'));
@@ -947,8 +948,7 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByLabelText('Trip origin, Current location')).toBeTruthy();
     // Leave time and the chosen preference survived the round trip.
     expect(textOf(screen.getByTestId('leave-time-label'))).toMatch(/^Leave \d{1,2}:\d[05] [AP]M( tomorrow)?$/);
-    fireEvent.press(screen.getByTestId('filter-control'));
-    expect(screen.getByTestId('preference-cheapest').props.accessibilityState).toEqual(expect.objectContaining({ selected: true }));
+    expect(resultsOption(screen, 'preference-cheapest').props.accessibilityState).toEqual(expect.objectContaining({ selected: true }));
 
     // The origin can go back to the rider's location; it starts with an empty query.
     fireEvent.press(screen.getByTestId('origin-field'));
@@ -1025,7 +1025,7 @@ describe('Pathly prototype navigation', () => {
     fireEvent.press(screen.getByTestId('profile-trigger'));
 
     expect(screen.getByTestId('profile-view')).toBeTruthy();
-    expect(screen.getByText('Account details')).toBeTruthy();
+    expect(screen.getByText('Account')).toBeTruthy();
     expect(screen.getByText('Notifications')).toBeTruthy();
     fireEvent.press(screen.getByTestId('sign-out'));
     expect(signOut).toHaveBeenCalled();
@@ -1119,8 +1119,9 @@ describe('Pathly prototype navigation', () => {
     const screen = await openResults();
     expect(screen.getByTestId('results-map', hidden).props.scrollEnabled).toBe(true);
     const mapViewport = StyleSheet.flatten(screen.getByTestId('results-map-viewport').props.style);
-    const sheetTop = StyleSheet.flatten(screen.getByTestId('results-sheet').props.style).top;
-    expect(mapViewport.height).toBe(sheetTop);
+    // The results sheet scrolls over a fixed map, as on Home.
+    expect(mapViewport.height).toBe(StyleSheet.flatten(screen.getByTestId('results-scroll-map-window').props.style).height);
+    expect(screen.getByTestId('results-scroll').props.pointerEvents).toBe('box-none');
     fireEvent.press(screen.getByTestId(`search-result-view-${LIRR_TRIP.id}`));
     expect(screen.getByTestId('search-trip-map').props.pointerEvents).toBe('auto');
     const scroll = screen.getByTestId('search-trip-scroll');
@@ -1255,7 +1256,7 @@ describe('Pathly prototype navigation', () => {
     const screen = await renderHome();
     fireEvent.press(screen.getByTestId('profile-trigger'));
 
-    for (const id of ['appearance', 'account', 'notifications', 'accessibility', 'privacy', 'travel', 'places', 'help']) {
+    for (const id of ['account', 'appearance', 'notifications', 'travel', 'accessibility', 'places', 'maps', 'privacy', 'support', 'about']) {
       expect(screen.getByTestId(`settings-row-${id}`)).toBeTruthy();
     }
 
@@ -1295,9 +1296,14 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByTestId('settings-places')).toBeTruthy();
     fireEvent.press(screen.getByTestId('settings-back'));
 
-    fireEvent.press(screen.getByTestId('settings-row-help'));
+    fireEvent.press(screen.getByTestId('settings-row-about'));
     expect(screen.getByText('Version 0.1.0')).toBeTruthy();
-    fireEvent.press(screen.getByTestId('help-faq'));
+    fireEvent.press(screen.getByTestId('settings-back'));
+
+    // Support opens a sheet; its FAQ opens the help page with the answers showing.
+    fireEvent.press(screen.getByTestId('settings-row-support'));
+    expect(screen.getByTestId('support-sheet')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('support-faq'));
     expect(screen.getByTestId('help-faq-content')).toBeTruthy();
     fireEvent.press(screen.getByTestId('settings-back'));
 
@@ -1327,8 +1333,7 @@ describe('Pathly prototype navigation', () => {
     // Ferry is off and fewer transfers wins over less walking (Google takes one routing preference).
     expect(planTripMock.mock.calls.at(-1)?.[0]).toMatchObject({ preference: 'transfers', modes: ['subway', 'bus', 'rail'] });
     expect(planTripMock.mock.calls.at(-1)?.[0].lessWalking).toBeUndefined();
-    fireEvent.press(screen.getByTestId('filter-control'));
-    expect(screen.getByTestId('preference-transfers').props.accessibilityState).toMatchObject({ selected: true });
+    expect(resultsOption(screen, 'preference-transfers').props.accessibilityState).toMatchObject({ selected: true });
   });
 
   it("batches each agency's cards into one request, without waiting on another agency", async () => {
@@ -2275,17 +2280,13 @@ describe('Pathly prototype navigation', () => {
     expect(screen.queryByTestId(`route-detail-${PJ_CARD}-header`)).toBeNull();
     expect(within(routeScroll).getByTestId('route-detail-content')).toBeTruthy();
     expect(screen.getByTestId('route-back')).toBeTruthy();
-    expect(screen.getByTestId('route-location')).toBeTruthy();
+    // Locate sits on the live map (bottom right), not with the controls that scroll away.
+    expect(within(routeScroll).queryByTestId('route-location')).toBeNull();
     expect(screen.getByTestId('route-favorite')).toBeTruthy();
 
     fireEvent.scroll(routeScroll, { nativeEvent: { contentOffset: { y: 140 } } });
     fireEvent.scroll(routeScroll, { nativeEvent: { contentOffset: { y: 280 } } });
     fireEvent.scroll(routeScroll, { nativeEvent: { contentOffset: { y: 0 } } });
-
-    await act(async () => {
-      fireEvent.press(screen.getByTestId('route-location'));
-    });
-    expect(screen.getByTestId('route-location').props.accessibilityState).toEqual({ selected: true });
 
     fireEvent.press(screen.getByTestId('route-direction-switch-1'));
     expect(screen.getByTestId('route-detail-destination').props.children).toBe('Port Jefferson');

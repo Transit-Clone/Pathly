@@ -22,14 +22,17 @@ test('NICE gets one color; Suffolk keeps its red (every 30 min) and blue (every 
   assert.equal(displayRouteColor('suffolk', { routeId: '99', shortName: '99', color: '' }), BUS_COLORS.suffolk);
 });
 
-test('rail and ferry lines keep their official colors', () => {
+test('subway and ferry lines keep their official colors; LIRR branches get Pathly shades', () => {
   assert.equal(displayRouteColor('subway', { routeId: 'J', color: '8E5C33' }), '#8E5C33');
-  assert.equal(displayRouteColor('lirr', { routeId: '10', color: '#a626aa' }), '#A626AA');
+  assert.equal(displayRouteColor('lirr', { routeId: '10', color: '#006ec7' }), '#0A3A8C');
+  assert.equal(displayRouteColor('lirr', { routeId: '1', color: 'A626AA' }), '#9B1FA8');
+  // A branch color Pathly has no shade for stays as published.
+  assert.equal(displayRouteColor('lirr', { routeId: '99', color: '123456' }), '#123456');
   assert.equal(displayRouteColor('nycferry', { routeId: 'SG', color: 'D0006F' }), '#D0006F');
   assert.equal(displayRouteColor('subway', { routeId: 'X', color: '' }), '#0B4F9C');
 });
 
-test('planned bus legs get the same colors; rail legs keep Google\'s', () => {
+test('planned bus and LIRR legs get the same colors; subway legs keep Google\'s', () => {
   assert.equal(displayStepColor(['si', 'bk'], { shortName: 'S79-SBS', name: 'Staten Island Mall - Bay Ridge' }), BUS_COLORS.mtaSelectBusService);
   assert.equal(displayStepColor(['si'], { shortName: 'SIM1', name: 'Eltingville - Lower Manhattan' }), BUS_COLORS.mtaExpress);
   assert.equal(displayStepColor(['nice'], { shortName: 'n6' }), BUS_COLORS.nice);
@@ -37,5 +40,6 @@ test('planned bus legs get the same colors; rail legs keep Google\'s', () => {
   assert.equal(displayStepColor(['suffolk'], { shortName: '51', color: '#c63f49' }), BUS_COLORS.suffolkFrequent);
   assert.equal(displayStepColor(['suffolk'], { shortName: '62', color: '#0454a2' }), BUS_COLORS.suffolk);
   assert.equal(displayStepColor(['subway'], { shortName: 'A' }), undefined);
+  assert.equal(displayStepColor(['lirr'], { name: 'Port Jefferson Branch', color: '#006ec7' }), '#0A3A8C');
   assert.equal(displayStepColor([], { shortName: 'Q1' }), undefined);
 });

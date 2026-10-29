@@ -7,11 +7,14 @@
 @keyframes bean-idle{0%,100%{transform:translateY(0) rotate(-1.5deg)}50%{transform:translateY(-5.5px) rotate(1.5deg)}}
 @media(prefers-reduced-motion:reduce){#hero{animation:none}}
 #shuffle{min-height:44px;padding:10px 20px;border-radius:22px;margin:auto}
+:root{--page:#F7FAFF;--surface:#FFFFFF;--ink:#1F2937;--muted:#657386;--border:#DCE7F2;--blue:#0B4F9C;--on-blue:#FFFFFF;--soft:#E6F3FF;background:var(--page);color:var(--ink);color-scheme:light dark}
+.panel,button{background:var(--surface);color:var(--ink);border-color:var(--border)}p,.note,footer,.sample{color:var(--muted)}.primary{background:var(--blue);color:var(--on-blue)}button[aria-pressed="true"]{border-color:var(--blue);background:var(--soft)}button:focus-visible{outline-color:var(--blue)}.status{color:var(--blue)}
+@media(prefers-color-scheme:dark){:root{--page:#000000;--surface:#1B1C1F;--ink:#F2F4F7;--muted:#A0A8B4;--border:#2E3137;--blue:#5B9BF8;--on-blue:#0A1B30;--soft:#14263D}}
 </style>
 <main><h1>Your bean</h1>
 <div class="layout"><aside class="panel preview"><div id="hero" role="img" aria-label="Your customized bean"></div><button class="primary" id="shuffle">Surprise me</button><div class="sizes" id="sizes"></div><div class="dark" id="dark" aria-label="Preview on a dark background"></div><div class="actions"><button class="secondary" id="download">Download SVG</button><button class="secondary" id="copy">Copy settings</button></div><p class="status" id="status" aria-live="polite"></p></aside>
-<div class="panel"><section><h2>Bean color</h2><div class="swatches" id="colors"></div></section><section><h2>Eyes</h2><div class="options" id="eyes"></div></section><section><h2>Mouth</h2><div class="options" id="mouth"></div></section><section><h2>Hair</h2><div class="options" id="hair"></div></section></div></div>
-<footer>Demo only · Changes aren’t saved to your account.</footer></main>
+<div class="panel"><section><h2>Hats</h2><div class="options" id="hats"></div></section><section><h2>Color</h2><div class="swatches" id="colors"></div></section><section><h2>Eyes</h2><div class="options" id="eyes"></div></section><section><h2>Mouth</h2><div class="options" id="mouth"></div></section><section><h2>Hair</h2><div class="options" id="hair"></div></section></div></div>
+<footer>Hat concepts · Not saved to your account.</footer></main>
 <script>
 /** Stable IDs are saved in a user's profile; artwork can evolve without migrating profiles. */
 const BEAN_COLORS = [
@@ -27,6 +30,15 @@ const BEAN_COLORS = [
     { id: 'periwinkle', label: 'Periwinkle', hex: '#96A7ED' },
     { id: 'clay', label: 'Clay', hex: '#DDA18B' },
     { id: 'oat', label: 'Oat', hex: '#DFD3B6' },
+    // Bolder picks, still light enough for the dark face to read on.
+    { id: 'cherry', label: 'Cherry', hex: '#F2384F' },
+    { id: 'tangerine', label: 'Tangerine', hex: '#FF7A1A' },
+    { id: 'sunflower', label: 'Sunflower', hex: '#FFC21A' },
+    { id: 'emerald', label: 'Emerald', hex: '#1FBF6E' },
+    { id: 'aqua', label: 'Aqua', hex: '#18C3D6' },
+    { id: 'cobalt', label: 'Cobalt', hex: '#3D7BFF' },
+    { id: 'grape', label: 'Grape', hex: '#9B5CFF' },
+    { id: 'magenta', label: 'Magenta', hex: '#F03CA8' },
 ];
 const INK = '#242728';
 const WHITE = '#FFFFFF';
@@ -66,12 +78,11 @@ const BEAN_HAIR = [
     { id: 'none', label: 'Bald and bold', svg: '' },
     { id: 'three', label: 'Three whole hairs', svg: line('M65 29L62 15M75 27L77 12M85 29L92 16', 6) },
     { id: 'curl', label: 'One good curl', svg: line('M72 29C56 18 66 7 75 12C83 17 73 23 70 17', 5) },
-    { id: 'tufts', label: 'Bedhead', svg: shape('M70 31Q54 7 67 11Q73 15 73 27Q80 9 90 14Q94 19 78 32Z') },
+    { id: 'tufts', label: 'Bedhead', svg: line('M67 29C55 19 60 10 66 15Q72 19 72 27C76 11 87 11 85 19Q83 25 78 29', 6) },
     { id: 'comb-over', label: 'Carefully arranged', svg: line('M60 30Q67 14 87 18M69 31Q78 21 91 25', 5) },
-    { id: 'zigzag', label: 'Static situation', svg: line('M58 29L64 16L72 27L80 13L88 26', 5) },
-    { id: 'sprout', label: 'Personal growth', svg: line('M75 30V19', 4) + shape('M75 22Q56 22 59 10Q75 9 75 22M75 22Q75 7 90 10Q92 22 75 22Z') },
+    { id: 'zigzag', label: 'Static situation', svg: line('M58 29Q60 15 65 22T75 21Q80 11 88 26', 5) },
     { id: 'swoop', label: 'Main character', svg: shape('M56 31Q60 9 91 16Q88 29 74 28Q82 23 82 21Q65 22 56 31Z') },
-    { id: 'spikes', label: 'On edge', svg: shape('M54 31L58 15L67 25L75 10L81 25L92 16L91 35Z') },
+    { id: 'spikes', label: 'Fluffy', svg: shape('M54 32C47 23 54 15 62 21C61 8 76 7 78 20C87 10 98 19 91 32Z') },
     { id: 'antenna', label: 'Receiving signals', svg: line('M75 28L79 13', 4) + circle(80, 10, 4) },
 ];
 const DEFAULT_BEAN_AVATAR = {
@@ -109,33 +120,47 @@ function randomBeanAvatar() {
 }
 const BEAN_PRESETS = [
     { id: 'stare', label: 'The stare', config: { version: 1, color: 'sage', eyes: 'wide', mouth: 'flat', hair: 'none' } },
-    { id: 'sleepy', label: 'Not a morning bean', config: { version: 1, color: 'coral', eyes: 'sleepy', mouth: 'tooth', hair: 'none' } },
+    { id: 'sleepy', label: 'Not a morning Pathling', config: { version: 1, color: 'coral', eyes: 'sleepy', mouth: 'tooth', hair: 'none' } },
     { id: 'frazzled', label: 'Holding it together', config: { version: 1, color: 'lavender', eyes: 'dots', mouth: 'wobble', hair: 'three' } },
     { id: 'cool', label: 'Too cool', config: { version: 1, color: 'gold', eyes: 'shades', mouth: 'flat', hair: 'none' } },
     { id: 'processing', label: 'Still processing', config: { version: 1, color: 'sky', eyes: 'uneven', mouth: 'flat', hair: 'curl' } },
     { id: 'yawn', label: 'Express nap', config: { version: 1, color: 'peach', eyes: 'tiny', mouth: 'yawn', hair: 'none' } },
     { id: 'official', label: 'Very official', config: { version: 1, color: 'teal', eyes: 'dots', mouth: 'mustache', hair: 'comb-over' } },
-    { id: 'growth', label: 'Working on myself', config: { version: 1, color: 'pink', eyes: 'side-eye', mouth: 'smirk', hair: 'sprout' } },
+    { id: 'growth', label: 'Working on myself', config: { version: 1, color: 'pink', eyes: 'side-eye', mouth: 'smirk', hair: 'curl' } },
     { id: 'suspicious', label: 'Trust issues', config: { version: 1, color: 'lime', eyes: 'suspicious', mouth: 'oh', hair: 'none' } },
     { id: 'signal', label: 'Looking for service', config: { version: 1, color: 'periwinkle', eyes: 'upward', mouth: 'none', hair: 'antenna' } },
     { id: 'bedhead', label: 'Just woke up', config: { version: 1, color: 'clay', eyes: 'squint', mouth: 'tongue', hair: 'tufts' } },
     { id: 'optimist', label: 'Made the train', config: { version: 1, color: 'oat', eyes: 'happy', mouth: 'grin', hair: 'swoop' } },
 ];
 
-let current = randomBeanAvatar();
+/** Hat concepts for approval. Uses the shipped Pathling body and faces, not a new mascot. */
+const BEAN_HAT_CONCEPTS = [
+    { id: 'none', label: 'No hat', svg: '' },
+    { id: 'cap', label: 'Cap', svg: '<g transform="translate(146 0) scale(-1 1)"><path d="M43 36C43 20 55 12 73 12C91 12 103 22 103 36Z" fill="#47678B"/><path d="M44 34Q73 29 101 33C119 32 122 39 112 42Q96 44 85 38Q64 39 44 40Q40 40 44 34Z" fill="#344F72"/></g>' },
+];
+function beanHatPreviewSvg(value, hatId = 'none') {
+    const hat = BEAN_HAT_CONCEPTS.find((option) => option.id === hatId) ?? BEAN_HAT_CONCEPTS[0];
+    const config = normalizeBeanAvatar(value);
+    // Keep the saved hair choice intact, but tuck it away beneath a hat in the preview.
+    return beanAvatarSvg(hat.id === 'none' ? config : { ...config, hair: 'none' }).replace('</svg>', `${hat.svg}</svg>`);
+}
+
+let current = {...randomBeanAvatar(),hat:'cap'};
+const avatarSvg = config => beanHatPreviewSvg(config,config.hat);
 const el = (id) => document.getElementById(id);
 function button(label, contents, action, selected, className){const b=document.createElement('button');b.type='button';b.className=className;b.setAttribute('aria-label',label);b.setAttribute('aria-pressed',String(selected));b.innerHTML=contents;b.onclick=action;return b;}
 function render(){
- el('hero').innerHTML=beanAvatarSvg(current);
- el('sizes').innerHTML=[24,32,48,64].map(size=>'<div class="sample">'+beanAvatarSvg(current).replace('width="128" height="128"','width="'+size+'" height="'+size+'"')+'<span>'+size+' px</span></div>').join('');
- el('dark').innerHTML=beanAvatarSvg(current)+beanAvatarSvg({...current,color:'oat'});
+ el('hero').innerHTML=avatarSvg(current);
+ el('sizes').innerHTML=[24,32,48,64].map(size=>'<div class="sample">'+avatarSvg(current).replace('width="128" height="128"','width="'+size+'" height="'+size+'"')+'<span>'+size+' px</span></div>').join('');
+ el('dark').innerHTML=avatarSvg(current)+avatarSvg({...current,color:'oat'});
+ el('hats').replaceChildren(...BEAN_HAT_CONCEPTS.map(part=>button(part.label,avatarSvg({...current,hat:part.id}),()=>{current.hat=part.id;render()},current.hat===part.id,'option')));
  el('colors').replaceChildren(...BEAN_COLORS.map(c=>button(c.label,'<span style="background:'+c.hex+'"></span>'+c.label,()=>{current.color=c.id;render()},current.color===c.id,'swatch')));
  for(const [field,parts] of [['eyes',BEAN_EYES],['mouth',BEAN_MOUTHS],['hair',BEAN_HAIR]]){
-  el(field).replaceChildren(...parts.map(p=>{const config={...current,eyes:'dots',mouth:'none',hair:'none',[field]:p.id};return button(p.label,beanAvatarSvg(config),()=>{current[field]=p.id;render()},current[field]===p.id,'option')}));
+  el(field).replaceChildren(...parts.map(p=>{const config={...current,eyes:'dots',mouth:'none',hair:'none',hat:field==='hair'?'none':current.hat,[field]:p.id};return button(p.label,avatarSvg(config),()=>{current[field]=p.id;if(field==='hair')current.hat='none';render()},current[field]===p.id,'option')}));
  }
 }
-el('shuffle').onclick=()=>{current=randomBeanAvatar();render();el('status').textContent=''};
-el('download').onclick=()=>{const url=URL.createObjectURL(new Blob([beanAvatarSvg(current)],{type:'image/svg+xml'}));const a=document.createElement('a');a.href=url;a.download='pathly-bean.svg';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);el('status').textContent='SVG downloaded.'};
+el('shuffle').onclick=()=>{current={...randomBeanAvatar(),hat:current.hat};render();el('status').textContent=''};
+el('download').onclick=()=>{const url=URL.createObjectURL(new Blob([avatarSvg(current)],{type:'image/svg+xml'}));const a=document.createElement('a');a.href=url;a.download='pathly-bean.svg';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);el('status').textContent='SVG downloaded.'};
 el('copy').onclick=async()=>{try{await navigator.clipboard.writeText(JSON.stringify(current,null,2));el('status').textContent='Avatar settings copied.'}catch{el('status').textContent='Clipboard unavailable. Your settings: '+JSON.stringify(current)}};
 render();
 </script></html>

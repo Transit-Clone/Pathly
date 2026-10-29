@@ -38,7 +38,9 @@ function renderSettings(initialRoute?: 'places') {
 }
 
 async function openPage(screen: ReturnType<typeof render>, id: string) {
-  fireEvent.press(screen.getByTestId(`settings-row-${id}`));
+  // Help is reached through the Support sheet.
+  if (id === 'help') fireEvent.press(screen.getByTestId('settings-row-support'));
+  fireEvent.press(screen.getByTestId(id === 'help' ? 'support-help' : `settings-row-${id}`));
   await act(async () => undefined);
 }
 
@@ -141,7 +143,7 @@ describe('Settings', () => {
       act(() => result.current.setAppearance('dark'));
       expect(result.current.colors).toBe(highContrastDarkColors);
       act(() => result.current.setReducedMotion(true));
-      await waitFor(async () => expect(JSON.parse((await AsyncStorage.getItem(DISPLAY_SETTINGS_KEY))!)).toEqual({ appearance: 'dark', reducedMotion: true, textSize: 'default', highContrast: true, mapDotColor: 'default' }));
+      await waitFor(async () => expect(JSON.parse((await AsyncStorage.getItem(DISPLAY_SETTINGS_KEY))!)).toEqual({ appearance: 'dark', reducedMotion: true, textSize: 'default', highContrast: true, mapDotColor: 'default', destinationPin: { color: 'red' } }));
 
       const reloaded = renderHook(() => useAppSettings(), { wrapper: ({ children }) => <AppSettingsProvider>{children}</AppSettingsProvider> });
       await waitFor(() => expect(reloaded.result.current.colors).toBe(highContrastDarkColors));

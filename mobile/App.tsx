@@ -6,7 +6,7 @@ import { Nunito_900Black } from '@expo-google-fonts/nunito/900Black';
 import { useFonts } from '@expo-google-fonts/nunito/useFonts';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { Image, StyleSheet, View } from 'react-native';
+import { Image, StyleSheet, useColorScheme, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider, useAuth } from './src/auth/AuthContext';
@@ -15,22 +15,24 @@ import { HomeScreen } from './src/components/HomeScreen';
 import { UserPreferencesProvider } from './src/data/userPreferences';
 import { DebugProvider } from './src/debug/DebugContext';
 import { AppSettingsProvider } from './src/theme/AppSettings';
-import { colors } from './src/theme/colors';
+import { colors, darkColors } from './src/theme/colors';
 
-const pathlyLogo = require('./assets/pathly-logo.png');
+const pathlyMark = require('./assets/pathly-mark.png');
 
+/** The logo alone on the device's light or dark background (saved settings aren't read yet). */
 function LoadingScreen() {
+  const dark = useColorScheme() === 'dark';
   return (
     <View
       accessibilityLabel="Pathly is loading"
       accessibilityRole="progressbar"
-      style={styles.loadingScreen}
+      style={[styles.loadingScreen, { backgroundColor: dark ? darkColors.background : colors.background }]}
       testID="loading-screen"
     >
       <Image
         accessibilityIgnoresInvertColors={true}
         resizeMode="contain"
-        source={pathlyLogo}
+        source={pathlyMark}
         style={styles.loadingLogo}
         testID="loading-logo"
       />
@@ -77,11 +79,10 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.background,
   },
   loadingLogo: {
-    width: '58%',
-    maxWidth: 260,
+    width: '34%',
+    maxWidth: 150,
     aspectRatio: 1,
   },
 });

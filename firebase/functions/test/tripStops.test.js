@@ -111,6 +111,40 @@ test('adds stops within the budget and gives up on slow matches', async () => {
   assert.ok(transitSteps(matched).some((step) => step.stops && step.stops.length > 0));
 });
 
+test('a matched leg carries its line, direction and boarding stop for live vehicles', async () => {
+  const matched = transitSteps(await addTripStops(fixture('routes-sbu-penn.json'), 5_000)).filter((step) => step.liveRoute);
+  assert.ok(matched.length > 0);
+  for (const step of matched) {
+    assert.equal(typeof step.liveRoute.agencyId, 'string');
+    assert.equal(typeof step.liveRoute.routeId, 'string');
+    assert.equal(typeof step.liveRoute.boardStopId, 'string');
+    if (step.tripId) assert.ok(step.liveRoute.directionId === 0 || step.liveRoute.directionId === 1);
+  }
+});
+
+test('a leg Google ends at a stop the timetable gives only another line still finds its own line', async () => {
+  // Google drops the 51 at NYS 112/Wyckoff Ave, a stop Suffolk's timetable lists only for another
+  // line; the 51's own stops there are about 400 m off.
+  const bus = {
+    kind: 'transit',
+    mode: 'bus',
+    agency: { name: 'Suffolk County Transit' },
+    line: { name: '51 - Patchogue RR to Port Jefferson Station', shortName: '51' },
+    headsign: 'Northbound',
+    from: { name: 'Health Sceinces Dr/Patriots Rd', location: { lat: 40.905992, lng: -73.110653 }, time: '2026-10-28T22:30:55Z' },
+    to: { name: 'NYS 112/Wyckoff Ave', location: { lat: 40.927632, lng: -73.049933 }, time: '2026-10-28T23:04:54Z' },
+    stopCount: 33,
+    durationSeconds: 2039,
+  };
+  const result = await matchTripStops(bus);
+  assert.ok(result?.live, 'matched to its line');
+  assert.equal(result.live.boardStopId, '11284047');
+  assert.ok(result.live.directionId === 0 || result.live.directionId === 1);
+  const [step] = transitSteps(await addTripStops([{ steps: [bus] }], 5_000));
+  assert.equal(step.liveRoute.routeId, result.live.routeId);
+  assert.equal(step.liveRoute.directionId, result.live.directionId);
+});
+
 test('a bus running off schedule (Google times buses live) still gets its stops, timed between its own times', async () => {
   const bus = transitSteps(fixture('routes-sbu-mall.json')).find((step) => step.line.shortName === '51');
   const late = { ...shifted(bus, 8), to: { ...bus.to, time: new Date(Date.parse(bus.to.time) + 8 * 60_000).toISOString() } };

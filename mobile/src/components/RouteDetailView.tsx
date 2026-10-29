@@ -31,6 +31,7 @@ import { pointAlong, routeFocus, RouteLines, VehicleMarker, type MapLeg } from '
 import { AgencyLogo } from './AgencyLogo';
 import { badgeLabel, RouteBadge, transitModeForAgency } from './RouteBadge';
 import { MapControlButton } from './MapControlButton';
+import { mapPageMapHeight } from './mapSheetLayout';
 import { PressableScale } from './PressableScale';
 import { afterClick } from './afterClick';
 import { MapSkeleton, PredictionTilesSkeleton, StopListSkeleton } from './Skeleton';
@@ -364,7 +365,7 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
   // Bumped on each location-button press; the live map re-centers on the rider whenever it changes.
   const [centerOnUserRequest, setCenterOnUserRequest] = useState(0);
   const [activeDirectionIndex, setActiveDirectionIndex] = useState(initialDirectionIndex ?? 0);
-  const mapHeight = Math.max(280, Math.min(390, height * 0.58));
+  const mapHeight = mapPageMapHeight(height);
   const pageWidth = Math.min(width, 540) - 36;
   // Tall, narrow fixed-width tiles: about three and a half across on a phone (so a lone
   // departure never fills the row), capped so wider screens show more tiles rather than squares.
@@ -566,6 +567,19 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
 
   // Routes with a `liveSource` get the real map (once its geometry has loaded); every other
   // route still uses the illustrative overlay, since it never had real geometry to fetch.
+  // Only the real Google map pans and zooms (and can center on the rider); illustrated maps stay a static backdrop.
+  const liveMap = !!route.liveSource && geometryStatus.status === 'loaded';
+  // Locate, on the live map just above the resting sheet: where Home and Route Results keep it.
+  const locateButton = (
+    <View pointerEvents="box-none" style={styles.mapLocate}>
+      <MapControlButton accessibilityLabel="Show current location" icon="locate" onPress={() => {
+        setIsLocationCentered(true);
+        onRefreshLocation?.();
+        setCenterOnUserRequest((count) => count + 1);
+      }} selected={isLocationCentered} testID="route-location" />
+    </View>
+  );
+
   const map = !route.liveSource ? (
     <>
       <MapBackdrop
@@ -618,15 +632,10 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
   const controls = (
     <View pointerEvents="box-none" style={styles.topBar}>
       <MapControlButton accessibilityLabel="Back" icon="back" onPress={onBack} testID="route-back" />
-      {/* Every map page's order: Save, then Locate. */}
+      {/* Save and alerts; Locate sits on the map, bottom right, like Home and Route Results. */}
       <View style={styles.topActions}>
         <MapControlButton accessibilityLabel={isFavorite ? 'Remove route from saved' : 'Save route'} icon="favorite" onPress={onToggleFavorite} selected={isFavorite} testID="route-favorite" tint={favoriteTint} variant="save" />
         {alerts ? <MapControlButton accessibilityLabel={alerts.on ? 'Service alerts on' : 'Service alerts off'} icon="bell" onPress={alerts.onOpen} selected={alerts.on} testID="route-alerts" /> : null}
-        <MapControlButton accessibilityLabel="Show current location" icon="locate" onPress={() => {
-          setIsLocationCentered(true);
-          onRefreshLocation?.();
-          setCenterOnUserRequest((count) => count + 1);
-        }} selected={isLocationCentered} testID="route-location" />
       </View>
     </View>
   );
@@ -634,13 +643,12 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
   return (
     <DetailMapPage
       controlsScrollWithMap={true}
-      // Only the real Google map is pannable/zoomable; illustrated maps stay a static backdrop.
-      interactiveMap={!!route.liveSource && geometryStatus.status === 'loaded'}
+      interactiveMap={liveMap}
       contentStyle={styles.content}
       contentTestID="route-detail-content"
       controls={controls}
       handle={{ accessibilityHint: 'Expands or collapses the route details.', accessibilityLabel: 'Route details handle', testID: 'route-sheet-handle' }}
-      map={map}
+      map={liveMap ? <>{map}{locateButton}</> : map}
       mapHeight={mapHeight}
       mapTestID="route-detail-map"
       scrollTestID="route-detail-scroll"
@@ -1169,6 +1177,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     borderRadius: 12,
     backgroundColor: colors.surfaceMuted,
   },
+  mapLocate: { position: 'absolute', right: 16, bottom: 14 },
   sheetBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.35)',
@@ -1176,11 +1185,12 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   transfersSheet: {
     width: '100%',
     maxWidth: 540,
-    maxHeight: '70%',
+    // As tall as every transfer needs; it scrolls only past nearly the full screen.
+    maxHeight: '94%',
     alignSelf: 'center',
     paddingHorizontal: 18,
     paddingTop: 18,
-    paddingBottom: 30,
+    paddingBottom: 34,
     borderTopLeftRadius: radii.sheet,
     borderTopRightRadius: radii.sheet,
     backgroundColor: colors.surface,

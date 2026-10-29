@@ -29,7 +29,7 @@ async function edit(screen: ReturnType<typeof openProfile>) {
 
 function cycleTo(screen: ReturnType<typeof openProfile>, field: string, label: string) {
   fireEvent.press(screen.getByTestId(`bean-tab-${field}`));
-  const category = field === 'color' ? 'Bean color' : field.charAt(0).toUpperCase() + field.slice(1);
+  const category = field === 'color' ? 'Pathling color' : field.charAt(0).toUpperCase() + field.slice(1);
   fireEvent.press(screen.getByLabelText(`${category}: ${label}`));
 }
 

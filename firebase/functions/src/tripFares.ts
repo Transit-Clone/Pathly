@@ -1,5 +1,5 @@
 import { haversineMeters } from './geo';
-import { isSuffolk, LIRR_AGENCY, NYC_FERRY_AGENCY } from './tripAgencies';
+import { isNycFerry, isStatenIslandFerry, isSuffolk, LIRR_AGENCY } from './tripAgencies';
 import type { GtfsStop } from './gtfsFeed';
 import type { FareEstimator, TransitStep, TripFare } from './tripPlanning';
 
@@ -17,6 +17,7 @@ import type { FareEstimator, TransitStep, TripFare } from './tripPlanning';
  *     onto NICE; NICE transfers are accepted on Suffolk buses.
  *   - NYC Ferry: $4.50 one way, $5.00 from October 19, 2026 (NYCEDC board vote, September 2026),
  *     its own ticket with no transfers to or from other systems.
+ *   - Staten Island Ferry: free (NYC DOT).
  */
 
 const OMNY_AGENCIES = new Set(['MTA New York City Transit', 'Mta Bus Company', 'MTA Bus Company', 'MTA', 'Nassau Inter-County Express']);
@@ -160,7 +161,10 @@ export function createFareEstimator(lirrStops: Iterable<GtfsStop>): FareEstimato
         continue;
       }
 
-      if (step.agency.name === NYC_FERRY_AGENCY) {
+      // Free, and it doesn't use up a transfer either.
+      if (isStatenIslandFerry(step)) continue;
+
+      if (isNycFerry(step.agency.name)) {
         // Its own ticket: no OMNY or Suffolk transfer applies in either direction.
         cents += nycFerryFareCents(departsMs);
         continue;

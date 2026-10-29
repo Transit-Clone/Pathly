@@ -23,7 +23,7 @@ const AuthContext = createContext<AuthValue>({
   initializing: true, user: null, refreshUser: () => undefined,
   avatar: { ...DEFAULT_BEAN_AVATAR }, avatarLoading: false, avatarError: false,
   retryAvatar: () => undefined,
-  saveAvatar: async () => { throw new Error('Sign in to save your bean.'); },
+  saveAvatar: async () => { throw new Error('Sign in to save your Pathling.'); },
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -72,7 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
   const saveAvatar = useCallback(async (config: BeanAvatarConfig) => {
     const owner = currentUser.current;
-    if (!owner) throw new Error('Sign in to save your bean.');
+    if (!owner) throw new Error('Sign in to save your Pathling.');
     const avatar = normalizeBeanAvatar(config);
     await saveUserAvatar(owner, avatar);
     if (currentUser.current?.uid === owner.uid) setAvatarState({ uid: owner.uid, avatar, loading: false, error: false });

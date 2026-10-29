@@ -8,6 +8,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = await fs.readFile(path.join(root, 'mobile/src/avatars/beanAvatar.ts'), 'utf8');
 const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
 const kit = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
+const hatSource = await fs.readFile(path.join(root, 'mobile/src/avatars/beanHatPreview.ts'), 'utf8');
+const hatJs = ts.transpileModule(hatSource, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText.replace(/^import .*;\r?\n/gm, '');
 const output = path.join(root, 'mobile/assets/bean-avatars');
 await fs.mkdir(output, { recursive: true });
 for (const preset of kit.BEAN_PRESETS) {
@@ -31,29 +33,35 @@ const html = `<!doctype html>
 @keyframes bean-idle{0%,100%{transform:translateY(0) rotate(-1.5deg)}50%{transform:translateY(-5.5px) rotate(1.5deg)}}
 @media(prefers-reduced-motion:reduce){#hero{animation:none}}
 #shuffle{min-height:44px;padding:10px 20px;border-radius:22px;margin:auto}
+:root{--page:#F7FAFF;--surface:#FFFFFF;--ink:#1F2937;--muted:#657386;--border:#DCE7F2;--blue:#0B4F9C;--on-blue:#FFFFFF;--soft:#E6F3FF;background:var(--page);color:var(--ink);color-scheme:light dark}
+.panel,button{background:var(--surface);color:var(--ink);border-color:var(--border)}p,.note,footer,.sample{color:var(--muted)}.primary{background:var(--blue);color:var(--on-blue)}button[aria-pressed="true"]{border-color:var(--blue);background:var(--soft)}button:focus-visible{outline-color:var(--blue)}.status{color:var(--blue)}
+@media(prefers-color-scheme:dark){:root{--page:#000000;--surface:#1B1C1F;--ink:#F2F4F7;--muted:#A0A8B4;--border:#2E3137;--blue:#5B9BF8;--on-blue:#0A1B30;--soft:#14263D}}
 </style>
 <main><h1>Your bean</h1>
 <div class="layout"><aside class="panel preview"><div id="hero" role="img" aria-label="Your customized bean"></div><button class="primary" id="shuffle">Surprise me</button><div class="sizes" id="sizes"></div><div class="dark" id="dark" aria-label="Preview on a dark background"></div><div class="actions"><button class="secondary" id="download">Download SVG</button><button class="secondary" id="copy">Copy settings</button></div><p class="status" id="status" aria-live="polite"></p></aside>
-<div class="panel"><section><h2>Bean color</h2><div class="swatches" id="colors"></div></section><section><h2>Eyes</h2><div class="options" id="eyes"></div></section><section><h2>Mouth</h2><div class="options" id="mouth"></div></section><section><h2>Hair</h2><div class="options" id="hair"></div></section></div></div>
-<footer>Demo only · Changes aren’t saved to your account.</footer></main>
+<div class="panel"><section><h2>Hats</h2><div class="options" id="hats"></div></section><section><h2>Color</h2><div class="swatches" id="colors"></div></section><section><h2>Eyes</h2><div class="options" id="eyes"></div></section><section><h2>Mouth</h2><div class="options" id="mouth"></div></section><section><h2>Hair</h2><div class="options" id="hair"></div></section></div></div>
+<footer>Hat concepts · Not saved to your account.</footer></main>
 <script>
 ${js.replace(/^export /gm, '')}
-let current = randomBeanAvatar();
+${hatJs.replace(/^export /gm, '')}
+let current = {...randomBeanAvatar(),hat:'cap'};
+const avatarSvg = config => beanHatPreviewSvg(config,config.hat);
 const el = (id) => document.getElementById(id);
 function button(label, contents, action, selected, className){const b=document.createElement('button');b.type='button';b.className=className;b.setAttribute('aria-label',label);b.setAttribute('aria-pressed',String(selected));b.innerHTML=contents;b.onclick=action;return b;}
 function render(){
- el('hero').innerHTML=beanAvatarSvg(current);
- el('sizes').innerHTML=[24,32,48,64].map(size=>'<div class="sample">'+beanAvatarSvg(current).replace('width="128" height="128"','width="'+size+'" height="'+size+'"')+'<span>'+size+' px</span></div>').join('');
- el('dark').innerHTML=beanAvatarSvg(current)+beanAvatarSvg({...current,color:'oat'});
+ el('hero').innerHTML=avatarSvg(current);
+ el('sizes').innerHTML=[24,32,48,64].map(size=>'<div class="sample">'+avatarSvg(current).replace('width="128" height="128"','width="'+size+'" height="'+size+'"')+'<span>'+size+' px</span></div>').join('');
+ el('dark').innerHTML=avatarSvg(current)+avatarSvg({...current,color:'oat'});
+ el('hats').replaceChildren(...BEAN_HAT_CONCEPTS.map(part=>button(part.label,avatarSvg({...current,hat:part.id}),()=>{current.hat=part.id;render()},current.hat===part.id,'option')));
  el('colors').replaceChildren(...BEAN_COLORS.map(c=>button(c.label,'<span style="background:'+c.hex+'"></span>'+c.label,()=>{current.color=c.id;render()},current.color===c.id,'swatch')));
  for(const [field,parts] of [['eyes',BEAN_EYES],['mouth',BEAN_MOUTHS],['hair',BEAN_HAIR]]){
-  el(field).replaceChildren(...parts.map(p=>{const config={...current,eyes:'dots',mouth:'none',hair:'none',[field]:p.id};return button(p.label,beanAvatarSvg(config),()=>{current[field]=p.id;render()},current[field]===p.id,'option')}));
+  el(field).replaceChildren(...parts.map(p=>{const config={...current,eyes:'dots',mouth:'none',hair:'none',hat:field==='hair'?'none':current.hat,[field]:p.id};return button(p.label,avatarSvg(config),()=>{current[field]=p.id;if(field==='hair')current.hat='none';render()},current[field]===p.id,'option')}));
  }
 }
-el('shuffle').onclick=()=>{current=randomBeanAvatar();render();el('status').textContent=''};
-el('download').onclick=()=>{const url=URL.createObjectURL(new Blob([beanAvatarSvg(current)],{type:'image/svg+xml'}));const a=document.createElement('a');a.href=url;a.download='pathly-bean.svg';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);el('status').textContent='SVG downloaded.'};
+el('shuffle').onclick=()=>{current={...randomBeanAvatar(),hat:current.hat};render();el('status').textContent=''};
+el('download').onclick=()=>{const url=URL.createObjectURL(new Blob([avatarSvg(current)],{type:'image/svg+xml'}));const a=document.createElement('a');a.href=url;a.download='pathly-bean.svg';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);el('status').textContent='SVG downloaded.'};
 el('copy').onclick=async()=>{try{await navigator.clipboard.writeText(JSON.stringify(current,null,2));el('status').textContent='Avatar settings copied.'}catch{el('status').textContent='Clipboard unavailable. Your settings: '+JSON.stringify(current)}};
 render();
 </script></html>`;
 await fs.writeFile(path.join(output, 'preview.html'), html);
-console.log(`Exported ${kit.BEAN_PRESETS.length} preset SVGs, 34 part SVGs, body, settings, and interactive preview to ${output}`);
+console.log(`Exported ${kit.BEAN_PRESETS.length} preset SVGs, ${kit.BEAN_EYES.length + kit.BEAN_MOUTHS.length + kit.BEAN_HAIR.length} part SVGs, body, settings, and interactive preview to ${output}`);

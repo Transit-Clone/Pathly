@@ -22,6 +22,8 @@ import type { TransitStep, TripDeparture, TripStop } from './tripPlanning';
 
 const STOP_RADIUS_METERS = 250;
 const NEAREST_STOPS = 4;
+/** How far from Google's alighting point to look for the boarding line's own stops (see matchInAgency). */
+const LINE_STOP_RADIUS_METERS = 600;
 const DEPARTURE_WINDOW_SECONDS = 120;
 /** A runner-up this much closer in time than the best makes the match ambiguous. */
 const CLEAR_WINNER_SECONDS = 60;
@@ -121,6 +123,18 @@ function candidateStops(agencyId: AgencyId, lat: number, lng: number): Set<strin
   return ids;
 }
 
+/** The nearest stops within LINE_STOP_RADIUS_METERS that any of `routeIds` serves. */
+function lineStopsNear(agencyId: AgencyId, lat: number, lng: number, routeIds: Set<string>, routeIndex: Map<string, Set<string>>): Set<string> {
+  const { stopsById } = loadAgencyStaticData(agencyId);
+  const near: { stopId: string; meters: number }[] = [];
+  for (const stop of stopsById.values()) {
+    if (![...(routeIndex.get(stop.stopId) ?? [])].some((routeId) => routeIds.has(routeId))) continue;
+    const meters = haversineMeters(lat, lng, stop.lat, stop.lon);
+    if (meters <= LINE_STOP_RADIUS_METERS) near.push({ stopId: stop.stopId, meters });
+  }
+  return new Set(near.sort((a, b) => a.meters - b.meters).slice(0, NEAREST_STOPS).map((stop) => stop.stopId));
+}
+
 /** `score`: seconds off Google's departure, with a sliver of boarding-stop distance to break ties. */
 export type Candidate = {
   agencyId: AgencyId;
@@ -185,7 +199,7 @@ type TripMatch = { stops: TripStop[]; tripId?: string; departures?: TripDepartur
  * Where a matched leg's trip is found in its agency's live feed (tripLive.ts): by `tripId` when one
  * scheduled trip clearly fits, else by line, stops, and the live time nearest Google's departure.
  */
-export type LiveTripRef = { agencyId: AgencyId; routeId: string; tripId?: string; boardStopId: string; alightStopId: string };
+export type LiveTripRef = { agencyId: AgencyId; routeId: string; tripId?: string; boardStopId: string; alightStopId: string; directionId?: number; stopIdsBetween?: string[] };
 
 /** Each matched step's live-feed reference, kept off the step itself so it never reaches the app. */
 export const liveTripRefs = new WeakMap<TransitStep, LiveTripRef>();
@@ -202,13 +216,21 @@ async function matchInAgency(agencyId: AgencyId, step: TransitStep): Promise<Tri
   if (Number.isNaN(departureMs)) return undefined;
 
   const boarding = candidateStops(agencyId, step.from.location.lat, step.from.location.lng);
-  const alighting = candidateStops(agencyId, step.to.location.lat, step.to.location.lng);
-  if (boarding.size === 0 || alighting.size === 0) return undefined;
+  let alighting = candidateStops(agencyId, step.to.location.lat, step.to.location.lng);
+  if (boarding.size === 0) return undefined;
 
   const routeIndex = await loadGlobalStopRouteIndex(agencyId);
   const routesAt = (stops: Set<string>) => new Set([...stops].flatMap((stopId) => [...(routeIndex.get(stopId) ?? [])]));
-  const alightingRoutes = routesAt(alighting);
-  const routeIds = [...routesAt(boarding)].filter((routeId) => alightingRoutes.has(routeId));
+  const boardingRoutes = routesAt(boarding);
+  let alightingRoutes = routesAt(alighting);
+  let routeIds = [...boardingRoutes].filter((routeId) => alightingRoutes.has(routeId));
+  // Google's stop can be one the timetable lists only for another line (Suffolk's 51 at NYS
+  // 112/Wyckoff Ave), so then the boarding lines' own stops a little farther out are tried.
+  if (routeIds.length === 0) {
+    alighting = lineStopsNear(agencyId, step.to.location.lat, step.to.location.lng, boardingRoutes, routeIndex);
+    alightingRoutes = routesAt(alighting);
+    routeIds = [...boardingRoutes].filter((routeId) => alightingRoutes.has(routeId));
+  }
   if (routeIds.length === 0) return undefined;
 
   const { stopsById, tripsById } = loadAgencyStaticData(agencyId);
@@ -263,7 +285,16 @@ async function matchInAgency(agencyId: AgencyId, step: TransitStep): Promise<Tri
   // no stops then, but the nearest trip still says where the live check should look.
   const nearest = best ?? [...candidates].sort((a, b) => a.score - b.score)[0];
   const live = nearest?.routeId && nearest.boardStopId && nearest.alightStopId
-    ? { agencyId, routeId: nearest.routeId, boardStopId: nearest.boardStopId, alightStopId: nearest.alightStopId, ...(exact ? { tripId: exact.tripId } : {}) }
+    ? {
+      agencyId,
+      routeId: nearest.routeId,
+      boardStopId: nearest.boardStopId,
+      alightStopId: nearest.alightStopId,
+      ...(exact ? { tripId: exact.tripId } : {}),
+      stopIdsBetween: nearest.between.map((time) => time.stopId),
+      // The nearest scheduled trip runs the rider's way even when Google's time matches none exactly.
+      ...(tripsById.get(nearest.tripId)?.directionId !== undefined ? { directionId: tripsById.get(nearest.tripId)!.directionId } : {}),
+    }
     : undefined;
   if (!best) return live ? { stops: [], live } : undefined;
 
@@ -339,7 +370,11 @@ export async function addTripStops<T extends { steps: { kind: string }[] }>(itin
       if (result.stops.length > 0) step.stops = result.stops;
       if (result.tripId) step.tripId = result.tripId;
       if (result.departures) step.departures = result.departures;
-      if (result.live) liveTripRefs.set(step, result.live);
+      if (result.live) {
+        liveTripRefs.set(step, result.live);
+        const { agencyId, routeId, boardStopId, directionId } = result.live;
+        step.liveRoute = directionId === undefined ? { agencyId, routeId, boardStopId } : { agencyId, routeId, boardStopId, directionId };
+      }
     }
   }));
   if (timer) clearTimeout(timer);

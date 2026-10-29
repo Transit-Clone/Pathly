@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AccessibilityInfo, Platform, useColorScheme } from 'react-native';
 
+import { DEFAULT_DESTINATION_PIN, normalizeDestinationPin, type DestinationPinStyle } from '../data/destinationPin';
 import { SAVED_PLACE_COLOR_HEX } from '../data/savedPlacePin';
 import type { SavedPlaceColor } from '../data/userData';
 import { darkColors, highContrastDarkColors, highContrastLightColors, lightColors, type Palette } from './colors';
@@ -20,11 +21,13 @@ export const DISPLAY_SETTINGS_KEY = 'pathly.display.v1';
 /** The home map's explore dot: the theme's own purple, or one of the saved-place colors. */
 export type MapDotColor = 'default' | SavedPlaceColor;
 
-type DisplaySettings = { appearance: Appearance; reducedMotion: boolean; textSize: TextSize; highContrast: boolean; mapDotColor: MapDotColor };
+type DisplaySettings = { appearance: Appearance; reducedMotion: boolean; textSize: TextSize; highContrast: boolean; mapDotColor: MapDotColor; destinationPin: DestinationPinStyle };
 
 type AppSettingsValue = {
   appearance: Appearance;
   colors: Palette;
+  /** The trip maps' destination pin, as the rider customized it. */
+  destinationPin: DestinationPinStyle;
   highContrast: boolean;
   isDark: boolean;
   mapDotColor: MapDotColor;
@@ -36,6 +39,7 @@ type AppSettingsValue = {
   /** TEXT_SCALE for textSize; useThemedStyles applies it to every themed font size. */
   textScale: number;
   setAppearance: (appearance: Appearance) => void;
+  setDestinationPin: (value: DestinationPinStyle) => void;
   setHighContrast: (value: boolean) => void;
   setMapDotColor: (value: MapDotColor) => void;
   setReducedMotion: (value: boolean) => void;
@@ -64,6 +68,7 @@ function parseDisplaySettings(text: string | null): Partial<DisplaySettings> {
     if (typeof saved.reducedMotion === 'boolean') settings.reducedMotion = saved.reducedMotion;
     if (saved.textSize === 'compact' || saved.textSize === 'default' || saved.textSize === 'large') settings.textSize = saved.textSize;
     if (typeof saved.highContrast === 'boolean') settings.highContrast = saved.highContrast;
+    if (saved.destinationPin !== undefined) settings.destinationPin = normalizeDestinationPin(saved.destinationPin);
     if (saved.mapDotColor === 'default' || (typeof saved.mapDotColor === 'string' && Object.hasOwn(SAVED_PLACE_COLOR_HEX, saved.mapDotColor))) settings.mapDotColor = saved.mapDotColor as MapDotColor;
     return settings;
   } catch {
@@ -82,7 +87,7 @@ type AppSettingsProviderProps = {
 /** App preferences every screen reads (appearance, motion, text size, contrast), saved on the device. */
 export function AppSettingsProvider({ children, initialAppearance = 'light', initialReducedMotion = false, initialTextSize = 'default', initialHighContrast = false }: AppSettingsProviderProps) {
   const systemScheme = useColorScheme();
-  const [settings, setSettings] = useState<DisplaySettings>({ appearance: initialAppearance, reducedMotion: initialReducedMotion, textSize: initialTextSize, highContrast: initialHighContrast, mapDotColor: 'default' });
+  const [settings, setSettings] = useState<DisplaySettings>({ appearance: initialAppearance, reducedMotion: initialReducedMotion, textSize: initialTextSize, highContrast: initialHighContrast, mapDotColor: 'default', destinationPin: { ...DEFAULT_DESTINATION_PIN } });
   const [deviceReducedMotion, setDeviceReducedMotion] = useState(false);
   // A choice made before the saved settings finish loading wins over them.
   const changedBeforeLoad = useRef(false);
@@ -124,12 +129,13 @@ export function AppSettingsProvider({ children, initialAppearance = 'light', ini
   }, []);
 
   const value = useMemo<AppSettingsValue>(() => {
-    const { appearance, highContrast, mapDotColor, reducedMotion, textSize } = settings;
+    const { appearance, destinationPin, highContrast, mapDotColor, reducedMotion, textSize } = settings;
     const scheme = resolveScheme(appearance, systemScheme);
     const palette = paletteFor(scheme, highContrast);
     return {
       appearance,
       colors: mapDotColor === 'default' ? palette : { ...palette, searchCenter: SAVED_PLACE_COLOR_HEX[mapDotColor] },
+      destinationPin,
       highContrast,
       isDark: scheme === 'dark',
       mapDotColor,
@@ -139,6 +145,7 @@ export function AppSettingsProvider({ children, initialAppearance = 'light', ini
       textSize,
       textScale: TEXT_SCALE[textSize],
       setAppearance: (next) => update({ appearance: next }),
+      setDestinationPin: (next) => update({ destinationPin: normalizeDestinationPin(next) }),
       setHighContrast: (next) => update({ highContrast: next }),
       setMapDotColor: (next) => update({ mapDotColor: next }),
       setReducedMotion: (next) => update({ reducedMotion: next }),
@@ -161,6 +168,7 @@ export function AppSettingsProvider({ children, initialAppearance = 'light', ini
 const fallback: AppSettingsValue = {
   appearance: 'light',
   colors: lightColors,
+  destinationPin: DEFAULT_DESTINATION_PIN,
   highContrast: false,
   isDark: false,
   mapDotColor: 'default',
@@ -170,6 +178,7 @@ const fallback: AppSettingsValue = {
   textSize: 'default',
   textScale: 1,
   setAppearance: () => undefined,
+  setDestinationPin: () => undefined,
   setHighContrast: () => undefined,
   setMapDotColor: () => undefined,
   setReducedMotion: () => undefined,

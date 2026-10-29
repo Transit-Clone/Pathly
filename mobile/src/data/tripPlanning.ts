@@ -36,6 +36,8 @@ export type TransitStep = {
   tripId?: string;
   /** The same line's scheduled departures between the same two stops, this one included (tripDepartures.ts). */
   departures?: TripDeparture[];
+  /** The leg's GTFS line, direction and boarding stop (backend tripStops.ts), for its live vehicles. */
+  liveRoute?: { agencyId: string; routeId: string; boardStopId: string; directionId?: number };
   /** What the agency's live feed says about this leg's trip (backend tripLive.ts). */
   live?: LegLive;
   /** The connection into this leg from the previous one, when it's tight or already missed. */

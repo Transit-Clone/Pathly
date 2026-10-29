@@ -106,6 +106,17 @@ test('MTA buses: SBS is a local fare, SIM express buses cost $7.25', () => {
   assert.equal(estimate([leg('MTA New York City Transit', { at: OFF_PEAK, mode: 'subway', shortName: '4' }), leg('MTA New York City Transit', { at: later(OFF_PEAK, 40), shortName: 'Bx12' })]).cents, 300);
 });
 
+test('the Staten Island Ferry is free and leaves the OMNY transfer untouched', () => {
+  const at = '2026-10-28T15:00:00Z';
+  const siFerry = (when) => ({ ...leg('New York City Department of Transportation', { at: when, mode: 'ferry', shortName: '' }), line: { name: 'Staten Island Ferry' } });
+  assert.deepEqual(estimate([siFerry(at)]), { text: '$0.00', cents: 0, currency: 'USD', estimated: true });
+  // Subway, ferry, then the SIR within two hours: one $3.00 fare and its free transfer.
+  const trip = [leg('MTA New York City Transit', { at, mode: 'subway', shortName: '1' }), siFerry(later(at, 25)), leg('MTA New York City Transit', { at: later(at, 60), mode: 'rail', shortName: 'SIR' })];
+  assert.equal(estimate(trip).cents, 300);
+  // Google may add NYC Ferry's operator to its name.
+  assert.equal(estimate([leg('NYC Ferry by Hornblower', { at, mode: 'ferry', shortName: 'SG' })]).cents, 500);
+});
+
 test('NYC Ferry costs $4.50, then $5.00 from October 19, 2026, with no transfers', () => {
   const ferry = (at) => leg('NYC Ferry', { at, mode: 'ferry', shortName: 'ER' });
   assert.equal(estimate([ferry('2026-10-18T15:00:00Z')]).cents, 450);

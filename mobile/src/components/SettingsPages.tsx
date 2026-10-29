@@ -13,13 +13,14 @@ import {
   updateDisplayName,
 } from '../data/accountData';
 import { searchLineIndex, useLineIndex, type IndexedLine } from '../data/lineIndex';
-import { ROUTE_ALERT_OPTIONS, saveRoute, savedRouteFromLine, setRouteAlerts, setRouteAlertsPaused, subscribeToSavedRoutes, type SavedRoute } from '../data/savedRoutes';
+import { describeRouteAlerts, ROUTE_ALERT_OPTIONS, saveRoute, savedRouteFromLine, setRouteAlerts, setRouteAlertsPaused, subscribeToSavedRoutes, type SavedRoute } from '../data/savedRoutes';
 import { ALL_TRANSIT_MODES, useUserPreferences, WALK_LIMIT_OPTIONS } from '../data/userPreferences';
 import { registerForRouteAlerts } from '../lib/notifications';
 import { useAppSettings, useTheme, useThemedStyles, type TextSize } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
 import { ConfirmDialog } from './ConfirmDialog';
+import { RouteAlertsPrompt, type RouteAlertsRequest } from './RouteAlertsPrompt';
 import { Card, ChoiceRow, createStyles as createProfileStyles, SettingRow, ToggleRow } from './ProfileView';
 import { Icon } from './Icon';
 import { PressableScale } from './PressableScale';
@@ -87,7 +88,6 @@ export function AccountSettings({ onFeedback }: PageProps) {
 
   return (
     <>
-      <Text style={profile.intro}>Your name and sign-in details for Pathly.</Text>
       <Card>
         {editingName ? (
           <View style={page.editBlock}>
@@ -147,12 +147,22 @@ export function NotificationSettings({ onFeedback }: PageProps) {
     }
     onFeedback('Notification preferences saved');
   };
+  // Custom hours open the route view's hours sheet, so the times can be set (or changed) here too.
+  const [hoursPrompt, setHoursPrompt] = useState<(RouteAlertsRequest & { route: SavedRoute }) | null>(null);
+  const saveLineAlerts = (route: SavedRoute, setting: SavedRoute['alerts'], hours: SavedRoute['alertHours']) => {
+    if (!uid || !setting) return;
+    setRouteAlerts(uid, route.id, setting, hours).catch(() => undefined);
+    if (setting !== 'off') void registerForRouteAlerts(uid);
+    onFeedback(`${route.shortName || route.routeName} alerts: ${describeRouteAlerts(setting, hours)}`);
+  };
   const setLineAlerts = (route: SavedRoute, label: string) => {
     const option = ROUTE_ALERT_OPTIONS.find((candidate) => candidate.label === label);
     if (!uid || !option) return;
-    setRouteAlerts(uid, route.id, option.value, route.alertHours).catch(() => undefined);
-    if (option.value !== 'off') void registerForRouteAlerts(uid);
-    onFeedback(`${route.shortName || route.routeName} alerts: ${option.label}`);
+    if (option.value === 'custom') {
+      setHoursPrompt({ id: route.id, route, setting: 'custom', hours: route.alertHours });
+      return;
+    }
+    saveLineAlerts(route, option.value, route.alertHours);
   };
   const addLine = async (line: IndexedLine) => {
     if (!uid) return;
@@ -163,7 +173,6 @@ export function NotificationSettings({ onFeedback }: PageProps) {
   };
   return (
     <>
-      <Text style={profile.intro}>Choose which travel updates Pathly should send you.</Text>
       <Card>
         <ToggleRow label="Allow notifications" onChange={(value) => set('enabled', value)} testID="toggle-notifications" value={notifications.enabled} />
         {notifications.enabled ? (
@@ -190,7 +199,12 @@ export function NotificationSettings({ onFeedback }: PageProps) {
         ))}
       </Card>
       {uid ? <AddSavedLine onAdd={addLine} savedIds={savedRoutes.map((route) => route.id)} /> : null}
-      <Text style={profile.note} testID="notifications-not-sent">{"Set a line's custom hours from the bell in its route view. Line alerts arrive as push notifications in the Android and iOS app; the web app doesn't receive them."}</Text>
+      <Text style={profile.note} testID="notifications-not-sent">{"Line alerts arrive as push notifications in the Android and iOS app; the web app doesn't receive them."}</Text>
+      <RouteAlertsPrompt
+        onClose={() => setHoursPrompt(null)}
+        onDone={(setting, hours) => { if (hoursPrompt) saveLineAlerts(hoursPrompt.route, setting, hours); setHoursPrompt(null); }}
+        request={hoursPrompt}
+      />
     </>
   );
 }
@@ -297,7 +311,6 @@ export function AccessibilitySettings({ onFeedback }: PageProps) {
   const { preferences, updatePreferences } = useUserPreferences();
   return (
     <>
-      <Text style={profile.intro}>Adjust how Pathly presents text, color, motion, and routes.</Text>
       <Card>
         <ChoiceRow
           label="Text size"
@@ -346,7 +359,6 @@ export function TravelSettings({ onFeedback }: PageProps) {
   };
   return (
     <>
-      <Text style={profile.intro}>Defaults for every new trip search. You can still change them on the results screen.</Text>
       <Card>
         <View style={profile.choiceBlock}>
           <Text style={profile.settingText}>Preferred modes</Text>
@@ -426,7 +438,7 @@ const permissionDetail: Record<PermissionState['status'], string> = {
 export function PrivacySettings({ onFeedback }: PageProps) {
   const { user } = useAuth();
   const { colors } = useTheme();
-  const { page, profile } = useStyles();
+  const { page } = useStyles();
   const { preferences, updatePreferences } = useUserPreferences();
   const { permission, read } = useLocationPermission();
   const [exporting, setExporting] = useState(false);
@@ -488,7 +500,6 @@ export function PrivacySettings({ onFeedback }: PageProps) {
 
   return (
     <>
-      <Text style={profile.intro}>Control location access and the data Pathly keeps for your account.</Text>
       <Card>
         <SettingRow detail={permissionDetail[permission.status]} label="Location access" onPress={permission.status === 'unknown' ? undefined : () => void changeLocation()} testID="privacy-location" />
         <ToggleRow label="Share usage analytics" onChange={(value) => { updatePreferences({ analytics: value }); onFeedback('Analytics preference saved'); }} testID="toggle-analytics" value={preferences.analytics} />
@@ -535,7 +546,17 @@ export function PrivacySettings({ onFeedback }: PageProps) {
 // ---------------------------------------------------------------------------------------------
 // Help & About
 
-type HelpDoc = 'faq' | 'privacy' | 'terms';
+export type HelpDoc = 'faq' | 'privacy' | 'terms';
+
+/** Opens an email to support (or the issue tracker), saying where to write when that can't open. */
+export async function contactSupport(onFeedback: (message: string) => void): Promise<void> {
+  const url = SUPPORT_EMAIL ? `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Pathly support')}` : ISSUES_URL;
+  try {
+    await Linking.openURL(url);
+  } catch {
+    onFeedback(SUPPORT_EMAIL ? `Email ${SUPPORT_EMAIL} for support` : `Report problems at ${ISSUES_URL}`);
+  }
+}
 
 const FAQ: readonly { q: string; a: string }[] = [
   { q: 'Where does Pathly work?', a: 'Pathly plans trips and shows live times for transit around New York and Long Island, including the LIRR, MTA subway and buses, NICE and Suffolk County buses, and NYC Ferry.' },
@@ -562,18 +583,12 @@ const TERMS: readonly string[] = [
 
 export const OSM_COPYRIGHT_URL = 'https://www.openstreetmap.org/copyright';
 
-export function HelpSettings({ onFeedback }: PageProps) {
-  const { page, profile } = useStyles();
-  const [open, setOpen] = useState<HelpDoc | null>(null);
+/** `initialOpen`: a document shown open on arrival (Support's FAQ opens here with the FAQ showing). */
+export function HelpSettings({ initialOpen = null, onFeedback }: PageProps & { initialOpen?: HelpDoc | null }) {
+  const { page } = useStyles();
+  const [open, setOpen] = useState<HelpDoc | null>(initialOpen);
   const toggle = (doc: HelpDoc) => setOpen((current) => (current === doc ? null : doc));
-  const contact = async () => {
-    const url = SUPPORT_EMAIL ? `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Pathly support')}` : ISSUES_URL;
-    try {
-      await Linking.openURL(url);
-    } catch {
-      onFeedback(SUPPORT_EMAIL ? `Email ${SUPPORT_EMAIL} for support` : `Report problems at ${ISSUES_URL}`);
-    }
-  };
+  const contact = () => contactSupport(onFeedback);
   const openOsmCopyright = async () => {
     try {
       await Linking.openURL(OSM_COPYRIGHT_URL);
@@ -583,7 +598,6 @@ export function HelpSettings({ onFeedback }: PageProps) {
   };
   return (
     <>
-      <Text style={profile.intro}>Answers, support, and the policies behind Pathly.</Text>
       <Card>
         <SettingRow label="Frequently asked questions" onPress={() => toggle('faq')} testID="help-faq" />
         {open === 'faq' ? <View style={page.doc} testID="help-faq-content">{FAQ.map((item) => <View key={item.q} style={page.docItem}><Text style={page.docHeading}>{item.q}</Text><Text style={page.docBody}>{item.a}</Text></View>)}</View> : null}

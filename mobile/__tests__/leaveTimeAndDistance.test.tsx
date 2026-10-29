@@ -1,4 +1,4 @@
-import { fireEvent, render } from '@testing-library/react-native';
+import { fireEvent, render, within } from '@testing-library/react-native';
 
 import { LeaveTimeSheet, newYorkMinutesAt } from '../src/components/LeaveTimeSheet';
 import { wheelItemFor } from '../src/components/WheelColumn';
@@ -56,17 +56,15 @@ describe('LeaveTimeSheet', () => {
     expect(wheelItemFor([{ label: 'AM' }, { label: 'PM' }], 'p')).toBe(1);
   });
 
-  it('steps the day, or picks it from the calendar, never before today', () => {
+  it('picks the day from a wheel that starts at today', () => {
     const onConfirm = jest.fn();
     const screen = renderSheet(onConfirm);
-    expect(screen.getByText('Today, Mon, Oct 26')).toBeTruthy();
-    expect(screen.getByTestId('leave-day-previous').props.accessibilityState).toEqual(expect.objectContaining({ disabled: true }));
-    fireEvent.press(screen.getByTestId('leave-day-next'));
+    expect(screen.getByTestId('leave-day-2026-10-26').props.accessibilityState).toEqual(expect.objectContaining({ selected: true }));
+    expect(within(screen.getByTestId('leave-day-2026-10-26')).getByText('Today')).toBeTruthy();
+    expect(screen.queryByTestId('leave-day-2026-10-25')).toBeNull();
+    fireEvent.press(screen.getByTestId('leave-day-2026-10-27'));
     expect(screen.getByTestId('leave-time-done').props.accessibilityHint).toBe('Plans for Leave 4:15 PM tomorrow');
-    fireEvent.press(screen.getByTestId('leave-date'));
-    expect(screen.getByTestId('leave-day-2026-10-25').props.accessibilityState).toEqual(expect.objectContaining({ disabled: true }));
     fireEvent.press(screen.getByTestId('leave-day-2026-10-30'));
-    expect(screen.queryByTestId('leave-calendar')).toBeNull();
     expect(screen.getByTestId('leave-time-done').props.accessibilityHint).toBe('Plans for Leave 4:15 PM Fri, Oct 30');
     fireEvent.press(screen.getByTestId('leave-time-done'));
     expect(onConfirm).toHaveBeenCalledWith({ mode: 'depart', minutes: 16 * 60 + 15, date: '2026-10-30' });
@@ -75,8 +73,7 @@ describe('LeaveTimeSheet', () => {
   it('shows a time already gone today as tomorrow', () => {
     const screen = renderSheet();
     fireEvent.press(screen.getByTestId('leave-hour-3'));
-    expect(screen.getByText('Tomorrow, Tue, Oct 27')).toBeTruthy();
-    expect(screen.getByTestId('leave-day-previous').props.accessibilityState).toEqual(expect.objectContaining({ disabled: true }));
+    expect(screen.getByTestId('leave-day-2026-10-27').props.accessibilityState).toEqual(expect.objectContaining({ selected: true }));
   });
 
   it('closes with the X without changing anything', () => {

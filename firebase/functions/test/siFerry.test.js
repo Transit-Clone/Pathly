@@ -49,6 +49,11 @@ test('the Staten Island Ferry is configured as a timetable-only, on-demand ferry
 test('a planned ferry ride may be on either ferry', () => {
   assert.deepEqual(agencyIdsForStep({ agency: { name: 'NYC Ferry' }, mode: 'ferry' }), ['nycferry']);
   assert.deepEqual(agencyIdsForStep({ agency: { name: 'NYC DOT' }, mode: 'ferry' }), ['nycferry', 'siferry']);
+  assert.deepEqual(agencyIdsForStep({ agency: { name: 'New York City Department of Transportation' }, mode: 'ferry' }), ['nycferry', 'siferry']);
+  // Google's other names on Staten Island trips (2026-10-28): the SIR is an NYCT rail line, and
+  // local and express buses come as "MTA".
+  assert.deepEqual(agencyIdsForStep({ agency: { name: 'MTA New York City Transit' }, mode: 'rail' }), ['subway']);
+  assert.ok(agencyIdsForStep({ agency: { name: 'MTA' }, mode: 'bus' }).includes('si'));
 });
 
 test('byte-order marks are stripped from the first column', () => {

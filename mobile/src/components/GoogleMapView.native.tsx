@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
-import MapView, { Marker, Polygon, Polyline, type Camera, type LongPressEvent, type MapPressEvent, type Region } from 'react-native-maps';
+import MapView, { Marker, Polyline, type Camera, type LongPressEvent, type MapPressEvent, type Region } from 'react-native-maps';
 
 import type { MapLine } from '../data/lineLayers';
 import { googleMapStyle } from '../data/mapStyle';
 import { themedRouteColor } from '../data/routeColors';
-import { MAP_EXPLORATION_BOUNDS, SERVICE_AREA_BOUNDS } from '../data/serviceArea';
+import { MAP_EXPLORATION_BOUNDS } from '../data/serviceArea';
 import { addressAfterName } from '../data/placesSearch';
 import { metersPerPixelForSpan, SAVED_PIN, savedPlaceColor, stackSavedPins } from '../data/savedPlacePin';
 import { locationPoint, savedPlaceName, type SavedLocation } from '../data/userData';
@@ -39,14 +39,6 @@ const pinStyles = StyleSheet.create({
 
 const INITIAL_DELTA = { latitudeDelta: 0.05, longitudeDelta: 0.05 };
 const SNAP_BACK_DURATION_MS = 250;
-
-// react-native-maps has no Rectangle component; a closed 4-point Polygon draws the same outline.
-const SERVICE_AREA_OUTLINE = [
-  { latitude: SERVICE_AREA_BOUNDS.north, longitude: SERVICE_AREA_BOUNDS.west },
-  { latitude: SERVICE_AREA_BOUNDS.north, longitude: SERVICE_AREA_BOUNDS.east },
-  { latitude: SERVICE_AREA_BOUNDS.south, longitude: SERVICE_AREA_BOUNDS.east },
-  { latitude: SERVICE_AREA_BOUNDS.south, longitude: SERVICE_AREA_BOUNDS.west },
-];
 
 /**
  * Where the home map's camera rests, so it can be restored when the map is rebuilt (returning
@@ -209,7 +201,6 @@ export function GoogleMapView({ initialCamera, lines = [], location, onCameraCha
       toolbarEnabled={false}
       userInterfaceStyle={isDark ? 'dark' : 'light'}
     >
-      <Polygon coordinates={SERVICE_AREA_OUTLINE} fillColor="transparent" strokeColor="#0B4F9C" strokeWidth={2} />
       {lines.map((line) => <Polyline coordinates={[...line.path]} key={line.key} strokeColor={themedRouteColor(line.color, isDark)} strokeWidth={3} tappable={false} testID={`map-line-${line.key}`} zIndex={0} />)}
       <HeadingBeamMarker coordinate={location} />
       {savedPins.map(({ saved, position: pinPosition, leader }) => {

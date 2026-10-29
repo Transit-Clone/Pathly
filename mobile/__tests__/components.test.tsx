@@ -29,8 +29,8 @@ describe('Icon', () => {
 
     const outline = screen.getByTestId('outline', { includeHiddenElements: true });
     const filled = screen.getByTestId('filled', { includeHiddenElements: true });
-    expect(outline.props.children).toBe('star-outline');
-    expect(filled.props.children).toBe('star');
+    expect(outline.props.children).toBe('star-bold');
+    expect(filled.props.children).toBe('star-fill');
     expect(screen.queryByTestId('outline')).toBeNull();
   });
 });
@@ -223,7 +223,7 @@ describe('motion', () => {
 
   it('draws the pin as a thumbtack glyph', () => {
     const screen = render(<Icon filled={true} name="pin" testID="pin" />);
-    expect(screen.getByTestId('pin', { includeHiddenElements: true }).props.children).toBe('pin');
+    expect(screen.getByTestId('pin', { includeHiddenElements: true }).props.children).toBe('push-pin-fill');
   });
 });
 

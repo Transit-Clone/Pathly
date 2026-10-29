@@ -11,6 +11,7 @@ import type { RouteLiveVehicle } from '../data/transitLive';
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { useNow } from '../hooks/useNow';
 import { useTheme } from '../theme/AppSettings';
+import { fontFamilies } from '../theme/typography';
 import type { TransitMode } from './RouteBadge';
 import { HeadingBeamMarker } from './HeadingBeamMarker';
 import { Glide } from '../hooks/useGlide';
@@ -53,8 +54,9 @@ function vehicleIconUrl(color: string, age: string | null) {
   const cx = r;
   const cy = VEHICLE_BOX - r;
   const badge = age
-    ? `<circle cx="${VEHICLE_BOX - 12}" cy="12" r="11" fill="${color}"/>
-<text x="${VEHICLE_BOX - 12}" y="15.2" text-anchor="middle" font-family="Nunito, Arial, sans-serif" font-weight="800" font-size="9" fill="#FFFFFF">${age}</text>`
+    // Just the badge's circle: its "5s" is the marker's label (vehicleMarkerLabel), since an image
+    // can't load the app's font and fell back to Arial.
+    ? `<circle cx="${VEHICLE_BOX - 12}" cy="12" r="11" fill="${color}"/>`
     : '';
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${VEHICLE_BOX}" height="${VEHICLE_BOX}" viewBox="0 0 ${VEHICLE_BOX} ${VEHICLE_BOX}">
 <defs><filter id="s" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#16324F" flood-opacity="0.45"/></filter></defs>
@@ -67,6 +69,23 @@ function vehicleIconUrl(color: string, age: string | null) {
 </g>${badge}
 </svg>`;
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+/** A live vehicle's marker icon (Route View and the trip map), anchored on its circle's center. */
+export function vehicleMarkerIcon(color: string, age: string | null): google.maps.Icon {
+  return {
+    url: vehicleIconUrl(color, age),
+    scaledSize: new google.maps.Size(VEHICLE_BOX, VEHICLE_BOX),
+    // Anchor on the circle's center, not the badge-inclusive box's.
+    anchor: new google.maps.Point(VEHICLE_SIZE / 2, VEHICLE_BOX - VEHICLE_SIZE / 2),
+    // The age label's center, on the badge.
+    labelOrigin: new google.maps.Point(VEHICLE_BOX - 12, 12.5),
+  };
+}
+
+/** The vehicle's update age ("5s", "1m") on its badge, in the app's font. */
+export function vehicleMarkerLabel(age: string | null): google.maps.MarkerLabel | undefined {
+  return age ? { text: age, color: '#FFFFFF', fontFamily: fontFamilies.extraBold, fontSize: '9px', fontWeight: '800' } : undefined;
 }
 
 /** Places the stop label's bottom-center just above the dot. */
@@ -345,16 +364,13 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
           ) : null}
           {shownVehicles.map((vehicle) => {
             // Built once per refresh, not per glide frame, so the marker never redraws its icon mid-slide.
-            const icon = {
-              url: vehicleIconUrl(color, vehicle.updatedAt != null ? formatAge(now - vehicle.updatedAt) : null),
-              scaledSize: new google.maps.Size(VEHICLE_BOX, VEHICLE_BOX),
-              // Anchor on the circle's center, not the badge-inclusive box's.
-              anchor: new google.maps.Point(VEHICLE_SIZE / 2, VEHICLE_BOX - VEHICLE_SIZE / 2),
-            };
+            const age = vehicle.updatedAt != null ? formatAge(now - vehicle.updatedAt) : null;
+            const icon = vehicleMarkerIcon(color, age);
+            const label = vehicleMarkerLabel(age);
             // Each vehicle glides to its refreshed spot rather than jumping there.
             return (
               <Glide key={vehicle.tripId} lat={vehicle.lat} lon={vehicle.lon}>
-                {(point) => <Marker icon={icon} position={{ lat: point.lat, lng: point.lon }} title={vehicleLabel} zIndex={2} />}
+                {(point) => <Marker icon={icon} label={label} position={{ lat: point.lat, lng: point.lon }} title={vehicleLabel} zIndex={2} />}
               </Glide>
             );
           })}

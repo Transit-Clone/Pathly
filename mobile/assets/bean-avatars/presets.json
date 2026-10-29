@@ -12,7 +12,7 @@
   },
   {
     "id": "sleepy",
-    "label": "Not a morning bean",
+    "label": "Not a morning Pathling",
     "config": {
       "version": 1,
       "color": "coral",
@@ -84,7 +84,7 @@
       "color": "pink",
       "eyes": "side-eye",
       "mouth": "smirk",
-      "hair": "sprout"
+      "hair": "curl"
     }
   },
   {

@@ -1,7 +1,7 @@
 import type { transit_realtime } from 'gtfs-realtime-bindings';
 
 import { agencyConfig } from './gtfsAgencies';
-import { getRouteAlerts, type RouteAlert } from './gtfsAlerts';
+import { alertLabel, getLineAlerts, type LineAlert } from './gtfsAlerts';
 import { fetchFeedEntities } from './gtfsRealtime';
 import { loadAgencyStaticData } from './gtfsStaticData';
 import type { LegAlert, LegConnection, LegLive, TransitStep, WalkStep } from './tripPlanning';
@@ -160,9 +160,31 @@ export function addConnections(steps: readonly { kind: string }[]): void {
   }
 }
 
+/** A subway stop's platforms ("A27N", "A27S") are the station ("A27") to an alert. */
+const stationOf = (stopId: string) => stopId.replace(/^([A-Z0-9]{3})[NS]$/, '$1');
+
 /**
- * Adds live status to every checkable leg and each matched leg's line alerts (one lookup per line),
- * then judges each itinerary's connections.
+ * Whether a line alert touches this ride: it disrupts service (not a notice or extra service), is
+ * in effect while the ride runs (an upcoming change for another day isn't this trip's), and names
+ * one of the ride's stops when it names stops at all (a boarding change at a stop the ride skips
+ * isn't either).
+ */
+export function alertAffectsLeg(alert: LineAlert, step: TransitStep, ref: LiveTripRef): boolean {
+  if (alert.kind === 'notice' || alert.kind === 'extra') return false;
+  const startSeconds = Date.parse(step.from.time) / 1000;
+  const endSeconds = Date.parse(step.to.time) / 1000;
+  if (Number.isNaN(startSeconds) || Number.isNaN(endSeconds)) return false;
+  const during = alert.periods.length === 0
+    || alert.periods.some((period) => period.start <= endSeconds && (period.end === 0 || period.end >= startSeconds));
+  if (!during) return false;
+  if (alert.stopIds.length === 0) return true;
+  const rideStops = new Set([ref.boardStopId, ...(ref.stopIdsBetween ?? []), ref.alightStopId].map(stationOf));
+  return alert.stopIds.some((stopId) => rideStops.has(stationOf(stopId)));
+}
+
+/**
+ * Adds live status to every checkable leg and the line alerts that touch each matched leg (one
+ * lookup per line), then judges each itinerary's connections.
  */
 export async function addLiveStatus<T extends { steps: { kind: string }[] }>(
   itineraries: T[],
@@ -170,7 +192,7 @@ export async function addLiveStatus<T extends { steps: { kind: string }[] }>(
   nowMs = Date.now(),
   lookup: (ref: LiveTripRef, step: TransitStep) => Promise<LegLive | undefined> = liveTripStatus,
   refFor: (step: TransitStep) => LiveTripRef | undefined = (step) => liveTripRefs.get(step),
-  alertsFor: (ref: LiveTripRef) => Promise<RouteAlert[]> = (ref) => getRouteAlerts(ref.agencyId, ref.routeId, nowMs),
+  alertsFor: (ref: LiveTripRef) => Promise<LineAlert[]> = (ref) => getLineAlerts(ref.agencyId, ref.routeId, nowMs),
 ): Promise<T[]> {
   const checks = itineraries.flatMap((itinerary) => itinerary.steps
     .filter((step): step is TransitStep => step.kind === 'transit')
@@ -183,7 +205,7 @@ export async function addLiveStatus<T extends { steps: { kind: string }[] }>(
   const deadline = new Promise<'timeout'>((resolve) => {
     timer = setTimeout(() => resolve('timeout'), budgetMs);
   });
-  // Alerts belong to the line, not the trip, so every matched leg gets them, however far out.
+  // Alerts are fetched per line, then each matched leg (however far out) keeps those touching it.
   const lines = new Map<string, { ref: LiveTripRef; steps: TransitStep[] }>();
   for (const itinerary of itineraries) {
     for (const step of itinerary.steps) {
@@ -204,8 +226,14 @@ export async function addLiveStatus<T extends { steps: { kind: string }[] }>(
     ...[...lines.values()].map(async ({ ref, steps }) => {
       const alerts = await Promise.race([alertsFor(ref).catch(() => []), deadline]);
       if (alerts === 'timeout' || alerts.length === 0) return;
-      const legAlerts: LegAlert[] = alerts.map(({ id, header, description, label, warning, upcoming }) => ({ id, header, description, label, warning, upcoming }));
-      for (const step of steps) step.alerts = legAlerts;
+      for (const step of steps) {
+        const stepRef = refFor(step) ?? ref;
+        // Labeled as in effect: by the ride's time it is, even if it starts later today.
+        const legAlerts: LegAlert[] = alerts
+          .filter((alert) => alertAffectsLeg(alert, step, stepRef))
+          .map(({ id, header, description, kind, mtaType }) => ({ id, header, description, ...alertLabel(kind, false, mtaType), upcoming: false }));
+        if (legAlerts.length > 0) step.alerts = legAlerts;
+      }
     }),
   ]);
   if (timer) clearTimeout(timer);

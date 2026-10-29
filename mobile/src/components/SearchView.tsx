@@ -170,6 +170,7 @@ function SearchResultRow({ near, onPress, onRemove, place, recent = false, resol
   const { colors } = useTheme();
   const transitKind = saved ? undefined : place.kind && place.kind !== 'place' ? place.kind : undefined;
   const savedLines = saved ? savedPlaceLines(saved) : null;
+  const subtitle = savedLines ? savedLines.subtitle : transitKind ? '' : addressAfterName(place.title, place.subtitle);
   const distance = placeDistanceMeters(place, near);
   const row = (
     <PressableScale
@@ -213,11 +214,8 @@ function SearchResultRow({ near, onPress, onRemove, place, recent = false, resol
             {place.routes.length > MAX_ROW_BADGES ? <Text style={styles.moreRoutes}>{`+${place.routes.length - MAX_ROW_BADGES}`}</Text> : null}
           </View>
         ) : null}
-        {/* A stop: its lines, then what it is; a place: the address that completes its name. */}
-        <Text numberOfLines={1} style={styles.resultSubtitle}>
-          {/* A recent stop shows its mode icon, so its row says it's recent in words. */}
-          {savedLines ? ['Saved', saved?.address.group, savedLines.subtitle].filter(Boolean).join(' · ') : transitKind ? stopKindText(place) : addressAfterName(place.title, place.subtitle)}
-        </Text>
+        {/* A stop: just its lines (its icon says what it is); a place, saved or not: the address that completes its name. */}
+        {subtitle ? <Text numberOfLines={1} style={styles.resultSubtitle}>{subtitle}</Text> : null}
       </View>
     </PressableScale>
   );
