@@ -4,7 +4,7 @@ import MapView, { Marker, Polyline, type Region } from 'react-native-maps';
 
 import { formatAge, visibleTrains } from '../data/liveTrains';
 import { googleMapStyle } from '../data/mapStyle';
-import { bearingToNextStop, splitIndexAtStop, withAlpha } from '../data/routeDirection';
+import { approachingVehicle, directionArrowAt, focusStopIndex, metersPerPixel, riderNearStop, splitPathAtStop, withAlpha } from '../data/routeDirection';
 import { stopRevealZoom, zoomForRegion } from '../data/stopDeclutter';
 import type { RouteLiveVehicle } from '../data/transitLive';
 import type { Coordinates } from '../hooks/useCurrentLocation';
@@ -13,6 +13,9 @@ import { useTheme } from '../theme/AppSettings';
 import { Icon } from './Icon';
 import { NATIVE_MAP_PROVIDER } from './mapProvider';
 import type { TransitMode } from './RouteBadge';
+import { HeadingBeamMarker } from './HeadingBeamMarker';
+import { Glide } from '../hooks/useGlide';
+import { DirectionArrow } from './DirectionArrow';
 
 type GeometryStop = { stopId?: string; name: string; lat: number; lon: number };
 
@@ -23,18 +26,14 @@ const FOCUS_ANIMATION_MS = 400;
 const ROUTE_FIT_PADDING = { top: 90, right: 40, bottom: 60, left: 40 };
 // The line behind the rider's stop (already travelled in this direction) is drawn faint.
 const BEHIND_LINE_ALPHA = 0.35;
-const ARROW_SIZE = 22;
 // Stop dots are exactly as wide as the line, so they sit inside it like beads instead of
 // bulging out of it. Only the rider's own stop is drawn larger, so it stands out.
 const LINE_WIDTH = 8;
 // The walk to the stop, matching TripMap.native.tsx's walking legs.
-const WALK_WIDTH = 4;
-const WALK_DASH = [2, 8];
+// Walks are plain round gray dots, which read from far out over any street.
+const WALK_WIDTH = 6;
+const WALK_DASH = [1, 10];
 const STOP_RING = 1.5;
-// The direction arrow sits this far out from the rider's stop (screen points, so it hugs the dot
-// at any zoom): a tall transparent box anchored at the stop, with the arrow at its far end.
-const ARROW_REACH = 48;
-const ARROW_BOTTOM_ANCHOR = { x: 0.5, y: 1 };
 
 // Vehicle marker geometry: the circle sits bottom-left of a larger box so the age badge can
 // overhang its top-right corner (Android clips marker views to their own bounds).
@@ -52,8 +51,12 @@ type RouteMapProps = {
   directionId?: number;
   /** Stop to open zoomed on and emphasize (the rider's nearest), matched by stopId. */
   focusStopId?: string;
+  /** Matches the rider's stop by name when its id isn't in `stops` (see focusStopIndex). */
+  focusStopName?: string;
   /** Vehicle glyph and label (train vs bus). */
   mode?: TransitMode;
+  /** Tapping a stop's name (shown once its dot is tapped) opens the line at that stop. */
+  onOpenStop?: (stop: GeometryStop) => void;
   /** Called when the rider drags the map, so the location button can drop its selected state. */
   onUserPan?: () => void;
   /** Detailed track geometry when known (e.g. GTFS shapes); otherwise the line joins the stops. */
@@ -88,7 +91,7 @@ function regionFor(stops: readonly GeometryStop[], focusStop: GeometryStop | und
 }
 
 /** Real route map: actual stop positions, the real line, and live vehicles — for any route with a live feed. */
-export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusStopId, mode = 'rail', onUserPan, path, showRouteRequest = 0, stops, testID = 'route-map', userLocation, vehicles, walkPath }: RouteMapProps) {
+export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusStopId, focusStopName, mode = 'rail', onOpenStop, onUserPan, path, showRouteRequest = 0, stops, testID = 'route-map', userLocation, vehicles, walkPath }: RouteMapProps) {
   const mapRef = useRef<MapView>(null);
   // Places hidden, and recolored in the dark theme (see mapStyle.ts).
   const { colors, isDark } = useTheme();
@@ -97,7 +100,7 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
   // True from a location-button press until the rider pans (or asks for the whole route): keeps
   // following fresh GPS fixes.
   const followRider = useRef(false);
-  const focusStop = focusStopId ? stops.find((stop) => stop.stopId === focusStopId) : undefined;
+  const focusStop = stops[focusStopIndex(stops, focusStopId, focusStopName)];
   const [initialRegion] = useState(() => regionFor(stops, focusStop));
   // Custom-view stop markers must render at least once with tracking on (Android otherwise can
   // draw them blank), then stop tracking so static dots aren't re-rasterized every frame.
@@ -121,25 +124,64 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
     return () => clearTimeout(timer);
   }, [dotsShown, tracksStopViews]);
   const now = useNow(1000);
+  // The arrow's drawing only needs snapshotting once (and again when the line's color changes).
+  const [arrowDrawnIn, setArrowDrawnIn] = useState<string | null>(null);
+  const tracksArrowView = arrowDrawnIn !== color;
+  useEffect(() => {
+    const timer = setTimeout(() => setArrowDrawnIn(color), 500);
+    return () => clearTimeout(timer);
+  }, [color]);
   const shownVehicles = visibleTrains(vehicles, directionId, now);
-  // Split at the rider's stop: faint behind it, full strength ahead, with an arrow toward the next stop.
+  // Split at the rider's stop: faint behind it, full strength ahead.
   const line = useMemo(() => {
     const points = path ?? stops;
     const toCoordinates = (part: readonly { lat: number; lon: number }[]) => part.map((point) => ({ latitude: point.lat, longitude: point.lon }));
     const focusIndex = focusStop ? stops.indexOf(focusStop) : -1;
-    if (focusIndex < 0) return { behind: [], ahead: toCoordinates(points), bearing: null };
-    const split = splitIndexAtStop(points, stops, focusIndex);
-    return { behind: toCoordinates(points.slice(0, split + 1)), ahead: toCoordinates(points.slice(split)), bearing: bearingToNextStop(stops, focusIndex) };
+    if (focusIndex < 0) return { behind: [], ahead: toCoordinates(points), aheadPoints: [], behindPoints: [] };
+    const { behind, ahead } = splitPathAtStop(points, stops, focusIndex);
+    return { behind: toCoordinates(behind), ahead: toCoordinates(ahead), aheadPoints: ahead, behindPoints: behind };
   }, [focusStop, path, stops]);
+  // Placed once, for the zoom the map opens at, so zooming never moves it. Zoomed out well past that,
+  // the line's bends would reach it, so it's hidden there instead.
+  const [arrowZoom] = useState(() => Math.round(zoom));
+  const arrow = useMemo(() => {
+    const start = line.aheadPoints[0];
+    return start && arrowZoom > 0 ? directionArrowAt(line.aheadPoints, metersPerPixel(arrowZoom, start.lat)) : null;
+  }, [arrowZoom, line.aheadPoints]);
   const vehicleLabel = mode === 'bus' ? 'Bus' : 'Train';
   const vehicleIcon = mode === 'bus' ? 'bus' : mode === 'subway' ? 'subway' : 'rail';
 
-  // The nearest stop often resolves after the page opens; follow it until the rider pans.
+  // The rider, when they're near their stop: framed with it so they see the walk there.
+  const nearRider = userLocation && focusStop && riderNearStop(userLocation, focusStop) ? userLocation : null;
+  // Set once the map has framed an approaching vehicle (below).
+  const framedVehicle = useRef(false);
+  // The nearest stop (and whether the rider is near it) often resolves after the page opens; follow
+  // them until the rider pans. Keyed on near/far, not every GPS fix.
   useEffect(() => {
-    if (!focusStop || riderMovedMap.current) return;
+    if (!focusStop || riderMovedMap.current || framedVehicle.current) return;
+    if (nearRider) {
+      mapRef.current?.fitToCoordinates([{ latitude: focusStop.lat, longitude: focusStop.lon }, nearRider], { edgePadding: ROUTE_FIT_PADDING, animated: true });
+      return;
+    }
     mapRef.current?.animateToRegion(regionFor(stops, focusStop), FOCUS_ANIMATION_MS);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the stop's identity, not the stops array
-  }, [focusStop?.stopId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the stop's identity and the rider being near
+  }, [focusStop?.stopId, nearRider != null]);
+
+  // Once a live vehicle shows up on its way to the rider's stop, the map glides out (once) to show
+  // the stop and that vehicle (and the rider, when they're near the stop), unless the rider has
+  // moved the map already.
+  useEffect(() => {
+    if (framedVehicle.current || riderMovedMap.current || !focusStop) return;
+    const vehicle = approachingVehicle(line.behindPoints, shownVehicles);
+    if (!vehicle) return;
+    framedVehicle.current = true;
+    mapRef.current?.fitToCoordinates([
+      { latitude: focusStop.lat, longitude: focusStop.lon },
+      { latitude: vehicle.lat, longitude: vehicle.lon },
+      ...(nearRider ? [nearRider] : []),
+    ], { edgePadding: ROUTE_FIT_PADDING, animated: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-checked as vehicles report; the rest is read then
+  }, [focusStop?.stopId, vehicles]);
 
   useEffect(() => {
     if (centerOnUserRequest === 0) return;
@@ -189,35 +231,17 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
       <Polyline coordinates={line.ahead} strokeColor={color} strokeWidth={LINE_WIDTH} testID="route-line" zIndex={1} />
       {walkPath && walkPath.length > 1 ? (
         // The walk to the stop, dotted like TripMap.native.tsx's walking legs.
-        <Polyline
-          coordinates={walkPath.map((point) => ({ latitude: point.lat, longitude: point.lon }))}
-          lineDashPattern={WALK_DASH}
-          strokeColor={colors.mutedInk}
-          strokeWidth={WALK_WIDTH}
-          testID="route-walk"
-          zIndex={2}
-        />
-      ) : null}
-      {line.bearing != null && focusStop ? (
-        // One arrow right beside the rider's stop, pointing at the next stop. The box is
-        // anchored at the stop and turned to that bearing (`flat`, so it turns with the map); the
-        // arrow sits at the box's far end, and the chevron glyph (pointing east) is turned upright.
-        <Marker
-          anchor={ARROW_BOTTOM_ANCHOR}
-          coordinate={{ latitude: focusStop.lat, longitude: focusStop.lon }}
-          flat={true}
-          rotation={line.bearing}
-          tappable={false}
-          testID="route-direction-arrow"
-          tracksViewChanges={tracksStopViews}
-          zIndex={3}
-        >
-          <View pointerEvents="none" style={styles.arrowReach}>
-            <View style={[styles.arrow, { backgroundColor: color }]}>
-              <Icon color="#FFFFFF" name="forward" size={17} style={styles.arrowGlyph} />
-            </View>
-          </View>
-        </Marker>
+        <>
+          <Polyline
+            coordinates={walkPath.map((point) => ({ latitude: point.lat, longitude: point.lon }))}
+            lineCap="round"
+            lineDashPattern={WALK_DASH}
+            strokeColor={colors.mutedInk}
+            strokeWidth={WALK_WIDTH}
+            testID="route-walk"
+            zIndex={2}
+          />
+        </>
       ) : null}
       {stops.map((stop, stopIndex) => {
         const focused = stop === focusStop;
@@ -230,20 +254,38 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
             anchor={CENTER_ANCHOR}
             coordinate={{ latitude: stop.lat, longitude: stop.lon }}
             testID={`route-stop-${stop.name}`}
+            onCalloutPress={onOpenStop ? () => onOpenStop(stop) : undefined}
             title={stop.name}
             tracksViewChanges={tracksStopViews}
             zIndex={focused ? 1 : 0}
           >
-            <View style={[styles.stopDot, { borderColor: passed ? withAlpha(color, BEHIND_LINE_ALPHA) : color }, focused && [styles.focusedStopDot, { backgroundColor: color }]]} testID={`route-dot-${stop.name}`} />
+            <View style={[styles.stopDot, { borderColor: passed ? withAlpha(color, BEHIND_LINE_ALPHA) : color }, focused && [styles.focusedStopDot, { borderColor: color }]]} testID={`route-dot-${stop.name}`} />
           </Marker>
         );
       })}
+      {arrow && zoom >= arrowZoom - 1 ? (
+        // Which way the line runs, beside it just past the rider's stop. Flat, so it turns with the map.
+        <Marker
+          anchor={{ x: 0.5, y: 0.5 }}
+          coordinate={{ latitude: arrow.point.lat, longitude: arrow.point.lon }}
+          flat={true}
+          rotation={arrow.bearing}
+          tappable={false}
+          testID="route-direction-arrow"
+          tracksViewChanges={tracksArrowView}
+          zIndex={1}
+        >
+          <DirectionArrow color={color} />
+        </Marker>
+      ) : null}
       {shownVehicles.map((vehicle) => (
+        // Each vehicle glides to its refreshed spot rather than jumping there.
+        <Glide key={vehicle.tripId} lat={vehicle.lat} lon={vehicle.lon}>{(point) => (
         // Vehicles keep tracking view changes so the ticking age badge re-renders; there are only a few.
-        <Marker key={vehicle.tripId} anchor={VEHICLE_ANCHOR} coordinate={{ latitude: vehicle.lat, longitude: vehicle.lon }} testID={`route-vehicle-${vehicle.tripId}`} title={vehicleLabel} zIndex={2}>
+        <Marker anchor={VEHICLE_ANCHOR} coordinate={{ latitude: point.lat, longitude: point.lon }} testID={`route-vehicle-${vehicle.tripId}`} title={vehicleLabel} zIndex={2}>
           <View style={styles.vehicleBox}>
             <View style={styles.vehicleBadge} testID={`route-vehicle-badge-${vehicle.tripId}`}>
-              <Icon color={color} filled={true} name={vehicleIcon} size={22} />
+              <Icon color={color} name={vehicleIcon} size={22} />
             </View>
             {vehicle.updatedAt != null ? (
               <View style={[styles.ageBadge, { backgroundColor: color }]} testID={`route-vehicle-age-badge-${vehicle.tripId}`}>
@@ -252,7 +294,9 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
             ) : null}
           </View>
         </Marker>
+        )}</Glide>
       ))}
+      {userLocation ? <HeadingBeamMarker coordinate={userLocation} /> : null}
     </MapView>
   );
 }
@@ -263,36 +307,15 @@ const styles = StyleSheet.create({
     height: LINE_WIDTH,
     borderWidth: STOP_RING,
     borderRadius: LINE_WIDTH / 2,
+    // Stop dots stay white in dark mode too.
     backgroundColor: '#FFFFFF',
   },
-  // The rider's nearest stop: larger and filled, with a white ring.
+  // The rider's nearest stop: larger, white, with a thick ring in the route color.
   focusedStopDot: {
     width: 20,
     height: 20,
     borderRadius: 10,
-    borderColor: '#FFFFFF',
-  },
-  arrowReach: {
-    width: ARROW_SIZE,
-    height: ARROW_REACH,
-    alignItems: 'center',
-  },
-  arrowGlyph: {
-    transform: [{ rotate: '-90deg' }],
-  },
-  arrow: {
-    width: ARROW_SIZE,
-    height: ARROW_SIZE,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-    borderRadius: ARROW_SIZE / 2,
-    shadowColor: '#16324F',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.3,
-    shadowRadius: 2,
-    elevation: 3,
+    borderWidth: 4,
   },
   vehicleBox: {
     width: VEHICLE_BOX,

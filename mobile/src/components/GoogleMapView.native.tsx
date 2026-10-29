@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
-import MapView, { Marker, Polygon, type Camera, type LongPressEvent, type MapPressEvent, type Region } from 'react-native-maps';
+import MapView, { Marker, Polygon, Polyline, type Camera, type LongPressEvent, type MapPressEvent, type Region } from 'react-native-maps';
 
+import type { MapLine } from '../data/lineLayers';
 import { googleMapStyle } from '../data/mapStyle';
-import { SERVICE_AREA_BOUNDS } from '../data/serviceArea';
+import { themedRouteColor } from '../data/routeColors';
+import { MAP_EXPLORATION_BOUNDS, SERVICE_AREA_BOUNDS } from '../data/serviceArea';
 import { addressAfterName } from '../data/placesSearch';
-import { metersPerPixelForSpan, SAVED_PIN, stackSavedPins } from '../data/savedPlacePin';
+import { metersPerPixelForSpan, SAVED_PIN, savedPlaceColor, stackSavedPins } from '../data/savedPlacePin';
 import { locationPoint, savedPlaceName, type SavedLocation } from '../data/userData';
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { useTheme } from '../theme/AppSettings';
 import { CurrentLocationMarker } from './CurrentLocationMarker';
+import { HeadingBeamMarker } from './HeadingBeamMarker';
 import { Icon, type IconName } from './Icon';
 import { NATIVE_MAP_PROVIDER } from './mapProvider';
 import { savedLocationIcon } from './SavedPlacesStrip';
@@ -18,26 +21,20 @@ import { savedLocationIcon } from './SavedPlacesStrip';
 const PIN_SETTLE_MS = 600;
 
 /**
- * A saved place's map pin: its icon centered in a round badge, over a short point at the place.
- * The point is drawn over the badge, so its fill covers the badge's ring where they meet and the
- * outline runs around the pin as one shape. A pin stacked under another leaves its icon off.
+ * A saved place's map marker, as in Google Maps: its icon centered in a round badge right on the
+ * place, in the place's color. A marker stacked under another leaves its icon off.
  */
-function SavedPlacePin({ color, icon, ring }: { color: string; icon: IconName | null; ring: string }) {
-  const point = SAVED_PIN.point + 5;
+function SavedPlacePin({ color, icon }: { color: string; icon: IconName | null }) {
+  const { colors } = useTheme();
   return (
-    <View style={pinStyles.pin}>
-      <View style={[pinStyles.badge, { width: SAVED_PIN.size, height: SAVED_PIN.size, borderRadius: SAVED_PIN.size / 2, backgroundColor: color, borderColor: ring }]}>
-        {icon ? <Icon color="#FFFFFF" filled={true} name={icon} size={18} /> : null}
-      </View>
-      <View style={[pinStyles.point, { width: point, height: point, top: SAVED_PIN.size - point / 2 - 1, backgroundColor: color, borderColor: ring }]} />
+    <View style={[pinStyles.badge, { backgroundColor: color, borderColor: colors.savedPlaceBorder }]}>
+      {icon ? <Icon color={colors.ring} name={icon} size={16} /> : null}
     </View>
   );
 }
 
 const pinStyles = StyleSheet.create({
-  pin: { width: SAVED_PIN.size, height: SAVED_PIN.size + SAVED_PIN.point, alignItems: 'center' },
-  badge: { alignItems: 'center', justifyContent: 'center', borderWidth: 2.5 },
-  point: { position: 'absolute', borderRightWidth: 2, borderBottomWidth: 2, transform: [{ rotate: '45deg' }] },
+  badge: { width: SAVED_PIN.size, height: SAVED_PIN.size, alignItems: 'center', justifyContent: 'center', borderRadius: SAVED_PIN.size / 2, borderWidth: 2.5 },
 });
 
 const INITIAL_DELTA = { latitudeDelta: 0.05, longitudeDelta: 0.05 };
@@ -88,7 +85,10 @@ type GoogleMapViewProps = {
   onLongPress?: (point: Coordinates) => void;
   /** Saved destinations with valid coordinates, drawn as tappable pins. */
   savedLocations?: readonly SavedLocation[];
-  onSavedLocationPress?: (location: SavedLocation) => void;
+  /** Transit lines the rider switched on, drawn under everything else. */
+  lines?: readonly MapLine[];
+  /** A marker tapped: its place, and every place stacked with it there (itself included). */
+  onSavedLocationPress?: (location: SavedLocation, stack: readonly SavedLocation[]) => void;
   /** `location` is an admin's mock location, so the system GPS dot is replaced with a drawn one there. */
   simulatedLocation?: boolean;
   testID?: string;
@@ -98,13 +98,13 @@ type GoogleMapViewProps = {
 function clampToServiceArea(region: Region): Region {
   return {
     ...region,
-    latitude: Math.min(Math.max(region.latitude, SERVICE_AREA_BOUNDS.south), SERVICE_AREA_BOUNDS.north),
-    longitude: Math.min(Math.max(region.longitude, SERVICE_AREA_BOUNDS.west), SERVICE_AREA_BOUNDS.east),
+    latitude: Math.min(Math.max(region.latitude, MAP_EXPLORATION_BOUNDS.south), MAP_EXPLORATION_BOUNDS.north),
+    longitude: Math.min(Math.max(region.longitude, MAP_EXPLORATION_BOUNDS.west), MAP_EXPLORATION_BOUNDS.east),
   };
 }
 
-/** Real Google Maps view, defaulting to the user's location and panning only within NYC/Nassau/Suffolk. */
-export function GoogleMapView({ initialCamera, location, onCameraChange, onLongPress, onPress, onOrientationChange, onSavedLocationPress, onUserMoveEnd, onUserPan, padding, recenterRequest = 0, reorientRequest = 0, savedLocations = [], simulatedLocation = false, testID = 'google-map-view' }: GoogleMapViewProps) {
+/** Real Google Maps view, centered locally with room to explore the surrounding region. */
+export function GoogleMapView({ initialCamera, lines = [], location, onCameraChange, onLongPress, onPress, onOrientationChange, onSavedLocationPress, onUserMoveEnd, onUserPan, padding, recenterRequest = 0, reorientRequest = 0, savedLocations = [], simulatedLocation = false, testID = 'google-map-view' }: GoogleMapViewProps) {
   const mapRef = useRef<MapView>(null);
   // Places hidden, and recolored in the dark theme (see mapStyle.ts).
   const { colors, isDark } = useTheme();
@@ -178,7 +178,7 @@ export function GoogleMapView({ initialCamera, location, onCameraChange, onLongP
   // Custom markers are snapshotted; keep them live briefly after they change (a pin joining or
   // leaving a stack shows or drops its icon) so the change is in the snapshot.
   const stacking = savedPins.map((pin) => (pin.leader ? '1' : '0')).join('');
-  const pinLook = useMemo(() => ({ savedLocations, color: colors.primary, stacking }), [savedLocations, colors.primary, stacking]);
+  const pinLook = useMemo(() => ({ savedLocations, color: colors.primary, border: colors.savedPlaceBorder, stacking }), [savedLocations, colors.primary, colors.savedPlaceBorder, stacking]);
   const [settledLook, setSettledLook] = useState<typeof pinLook | null>(null);
   const pinsRendering = settledLook !== pinLook;
   useEffect(() => {
@@ -210,6 +210,8 @@ export function GoogleMapView({ initialCamera, location, onCameraChange, onLongP
       userInterfaceStyle={isDark ? 'dark' : 'light'}
     >
       <Polygon coordinates={SERVICE_AREA_OUTLINE} fillColor="transparent" strokeColor="#0B4F9C" strokeWidth={2} />
+      {lines.map((line) => <Polyline coordinates={[...line.path]} key={line.key} strokeColor={themedRouteColor(line.color, isDark)} strokeWidth={3} tappable={false} testID={`map-line-${line.key}`} zIndex={0} />)}
+      <HeadingBeamMarker coordinate={location} />
       {savedPins.map(({ saved, position: pinPosition, leader }) => {
         const name = savedPlaceName(saved.address);
         const address = addressAfterName(name, saved.address.streetAddress);
@@ -221,17 +223,17 @@ export function GoogleMapView({ initialCamera, location, onCameraChange, onLongP
             accessibilityHint="Opens fresh trip options for this saved place"
             accessibilityLabel={markerLabel}
             accessibilityRole="button"
-            anchor={{ x: 0.5, y: 1 }}
+            anchor={{ x: 0.5, y: 0.5 }}
             coordinate={pinPosition}
             description={saved.address.streetAddress || undefined}
             key={saved.id}
-            onPress={() => onSavedLocationPress?.(saved)}
+            onPress={() => onSavedLocationPress?.(saved, savedPins.filter((pin) => pin.position === pinPosition).map((pin) => pin.saved))}
             testID={`saved-place-marker-${saved.id}`}
             title={name}
             tracksViewChanges={pinsRendering}
             zIndex={leader ? 2 : 1}
           >
-            <SavedPlacePin color={colors.primary} icon={leader ? savedLocationIcon(saved.address) : null} ring={colors.surface} />
+            <SavedPlacePin color={savedPlaceColor(saved.address, colors.primary)} icon={leader ? savedLocationIcon(saved.address) : null} />
           </Marker>
         );
       })}

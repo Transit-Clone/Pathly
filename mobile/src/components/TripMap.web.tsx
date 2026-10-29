@@ -4,20 +4,22 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_SCRIPT_ID } from '../data/googleMapsLoaderConfig';
 import { googleMapStyle } from '../data/mapStyle';
+import { themedRouteColor } from '../data/routeColors';
 import { stopIndexAt, tripMapPoints, viaRevealZooms, type TripMapProps, type TripMapStop } from '../data/tripMap';
 import { useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies } from '../theme/typography';
 import { CurrentLocationMarker } from './CurrentLocationMarker';
-import { Icon } from './Icon';
-import { PressableScale } from './PressableScale';
+import { HeadingBeamMarker } from './HeadingBeamMarker';
+import { centerOffsetFrom, glideMapTo } from './webMapGlide';
 
 const containerStyle = { width: '100%', height: '100%' };
 const baseMapOptions = { disableDefaultUI: true, keyboardShortcuts: false, clickableIcons: false };
 const FALLBACK_CENTER = { lat: 40.75, lng: -73.95 };
 const FIT_PADDING = { top: 90, right: 40, bottom: 60, left: 40 };
 const TRANSIT_WIDTH = 6;
-const WALK_DOT_SCALE = 2.5;
+// Walks are plain round gray dots, which read from far out over any street.
+const WALK_DOT_SCALE = 3.5;
 const FOCUS_ZOOM = 15;
 
 type ProgressState = 'completed' | 'current' | 'upcoming';
@@ -52,7 +54,6 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
   const boundsKey = useMemo(() => bounds.map((point) => `${point.lat},${point.lng}`).join(';'), [bounds]);
   const hasNavigationProgress = navigationProgress != null;
   const [selected, setSelected] = useState<number | null>(null);
-  const [moved, setMoved] = useState(false);
   const [internalFollow, setInternalFollow] = useState(() => navigationProgress != null);
   const following = followUser ?? internalFollow;
   const setFollowing = useCallback((next: boolean) => {
@@ -86,6 +87,18 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
     setZoom(loaded.getZoom() ?? 0);
   }, []);
 
+  // Centers a point in the part of the map that isn't covered (by the results sheet, the header),
+  // not in the whole map: panTo alone would leave it under the sheet, below what's visible.
+  const glideCancel = useRef<(() => void) | null>(null);
+  const centerInView = useCallback((point: google.maps.LatLngLiteral, zoom: number) => {
+    if (!map) return;
+    glideCancel.current?.();
+    const offset = { x: (padding.left - padding.right) / 2, y: (padding.top - padding.bottom) / 2 };
+    // Glides there, a zoom level at a time, rather than jumping.
+    glideCancel.current = glideMapTo(map, (step) => centerOffsetFrom(map, point, step, offset), zoom);
+  }, [map, padding.bottom, padding.left, padding.right, padding.top]);
+  useEffect(() => () => glideCancel.current?.(), []);
+
   const cameraLocation = followLocation === undefined ? userLocation : followLocation;
   const userLatitude = cameraLocation?.lat;
   const userLongitude = cameraLocation?.lng;
@@ -108,9 +121,8 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
       });
       return;
     }
-    map.panTo(rider);
-    if ((map.getZoom() ?? 0) < FOCUS_ZOOM) map.setZoom(FOCUS_ZOOM);
-  }, [followLatitude, followLongitude, map, padding.bottom, padding.left, padding.right, padding.top, userLatitude, userLongitude]);
+    centerInView(rider, Math.max(map.getZoom() ?? 0, FOCUS_ZOOM));
+  }, [centerInView, followLatitude, followLongitude, map, padding.bottom, padding.left, padding.right, padding.top, userLatitude, userLongitude]);
 
   useEffect(() => {
     if (!hasNavigationProgress || !following || userLatitude === undefined || userLongitude === undefined) return;
@@ -122,21 +134,18 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
   if (focusStop && focusStop.key !== handledFocusKey) {
     setHandledFocusKey(focusStop.key);
     setSelected(stopIndexAt(stops, focusStop.point));
-    setMoved(true);
   }
   useEffect(() => {
     if (!map || !focusStop) return;
     programmaticCamera.current = true;
-    map.panTo(focusStop.point);
-    map.setZoom(FOCUS_ZOOM);
-  }, [map, focusStop]);
+    centerInView(focusStop.point, FOCUS_ZOOM);
+  }, [centerInView, map, focusStop]);
 
   // The location button: centered on the rider, with the re-frame button offered to come back.
   const [handledCenterRequest, setHandledCenterRequest] = useState(centerOnUserRequest);
   if (centerOnUserRequest !== handledCenterRequest) {
     setHandledCenterRequest(centerOnUserRequest);
     if (navigationProgress && followUser === undefined) setInternalFollow(true);
-    if (userLocation) setMoved(true);
   }
   const centerRequestForEffect = useRef(centerOnUserRequest);
   useEffect(() => {
@@ -147,16 +156,15 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
     if (navigationProgress && userLatitude !== undefined && userLongitude !== undefined) followCamera();
     else {
       programmaticCamera.current = true;
-      map.panTo(userLocation);
-      if ((map.getZoom() ?? 0) < FOCUS_ZOOM) map.setZoom(FOCUS_ZOOM);
+      centerInView(userLocation, Math.max(map.getZoom() ?? 0, FOCUS_ZOOM));
     }
-  }, [centerOnUserRequest, followCamera, map, navigationProgress, onFollowModeChange, userLatitude, userLocation, userLongitude]);
+  }, [centerInView, centerOnUserRequest, followCamera, map, navigationProgress, onFollowModeChange, userLatitude, userLocation, userLongitude]);
 
   if (!isLoaded) return <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.mapLand }]} testID={testID} />;
 
   const selectedStop = selected !== null ? stops[selected] : undefined;
   // Walking: a row of dots instead of a solid line.
-  const walkIcons = [{ icon: { path: google.maps.SymbolPath.CIRCLE, scale: WALK_DOT_SCALE, fillColor: colors.mutedInk, fillOpacity: 1, strokeOpacity: 0 }, offset: '0', repeat: '10px' }];
+  const walkIcons = [{ icon: { path: google.maps.SymbolPath.CIRCLE, scale: WALK_DOT_SCALE, fillColor: colors.mutedInk, fillOpacity: 1, strokeWeight: 0 }, offset: '0', repeat: '13px' }];
   return (
     <View style={StyleSheet.absoluteFill} testID={testID}>
       <GoogleMap
@@ -164,7 +172,6 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
         mapContainerStyle={containerStyle}
         onClick={interactive ? () => setSelected(null) : undefined}
         onDragStart={interactive ? () => {
-          setMoved(true);
           setFollowing(false);
           onUserPan?.();
         } : undefined}
@@ -175,7 +182,6 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
         onZoomChanged={() => {
           setZoom(zoomSource.current?.getZoom() ?? 0);
           if (interactive && !programmaticCamera.current) {
-            setMoved(true);
             setFollowing(false);
             onUserPan?.();
           }
@@ -191,9 +197,9 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
             ...walkIcons[0],
             icon: {
               ...walkIcons[0]!.icon,
-              fillColor: completed ? colors.mutedInk : leg.color ?? colors.mutedInk,
+              fillColor: colors.mutedInk,
               fillOpacity: completed ? 0.45 : 1,
-              scale: current ? 3.25 : completed ? 2 : WALK_DOT_SCALE,
+              scale: current ? 4.25 : completed ? 2.5 : WALK_DOT_SCALE,
             },
           }] : undefined;
           return (
@@ -202,7 +208,7 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
               options={leg.walk
                 ? { strokeOpacity: 0, icons: progressWalkIcons, zIndex: current ? 3 : 1, clickable: false }
                 : {
-                  strokeColor: completed ? colors.mutedInk : leg.color ?? colors.primary,
+                  strokeColor: completed ? colors.mutedInk : themedRouteColor(leg.color ?? colors.primary, isDark),
                   strokeOpacity: completed ? 0.45 : 1,
                   strokeWeight: completed ? 4 : current ? 8 : TRANSIT_WIDTH,
                   zIndex: current ? 3 : 2,
@@ -219,9 +225,9 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
             icon={{
               path: google.maps.SymbolPath.CIRCLE,
               scale: stop.kind === 'via' ? 3.5 : 6,
-              fillColor: stop.kind === 'start' ? colors.success : stop.kind === 'end' ? colors.primary : '#FFFFFF',
+              fillColor: stop.kind === 'start' ? colors.tripStart : stop.kind === 'end' ? colors.primary : '#FFFFFF',
               fillOpacity: 'state' in stop && stop.state === 'completed' ? 0.48 : 1,
-              strokeColor: stop.kind === 'stop' || stop.kind === 'via' ? stop.color ?? colors.primary : '#FFFFFF',
+              strokeColor: stop.kind === 'stop' || stop.kind === 'via' ? themedRouteColor(stop.color ?? colors.primary, isDark) : stop.kind === 'start' ? colors.ring : '#FFFFFF',
               strokeOpacity: 'state' in stop && stop.state === 'completed' ? 0.48 : 1,
               strokeWeight: stop.kind === 'via' ? 2 : 3,
             }}
@@ -231,6 +237,7 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
             zIndex={stop.kind === 'via' ? 2 : 3}
           />
         )))}
+        {userLocation ? <HeadingBeamMarker coordinate={{ latitude: userLocation.lat, longitude: userLocation.lng }} /> : null}
         {userLocation ? (
           <OverlayViewF getPixelPositionOffset={locationOffset} mapPaneName={FLOAT_PANE} position={userLocation}>
             <View pointerEvents="none" style={userLocationStale ? styles.staleLocation : undefined} testID={`${testID}-user-location`}>
@@ -244,22 +251,6 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
           </OverlayViewF>
         ) : null}
       </GoogleMap>
-      {interactive && moved ? (
-        <PressableScale
-          accessibilityLabel="Show the whole trip"
-          accessibilityRole="button"
-          onPress={() => {
-            setMoved(false);
-            setSelected(null);
-            setFollowing(false);
-            frame();
-          }}
-          style={[styles.reframe, { top: padding.top, right: 14 }]}
-          testID={`${testID}-reframe`}
-        >
-          <Icon color={colors.primary} name="fit" size={22} />
-        </PressableScale>
-      ) : null}
     </View>
   );
 }
@@ -267,6 +258,5 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
 const createStyles = (colors: Palette) => StyleSheet.create({
   label: { maxWidth: 240, paddingVertical: 6, paddingHorizontal: 10, borderRadius: 12, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 6 },
   labelText: { color: colors.ink, fontFamily: fontFamilies.bold, fontSize: 13, whiteSpace: 'nowrap' } as object,
-  reframe: { position: 'absolute', width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.18, shadowRadius: 8 },
   staleLocation: { opacity: 0.45 },
 });

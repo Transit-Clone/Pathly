@@ -26,7 +26,7 @@ export function readCsv<T>(dataDir: string, filename: string): T[] {
 }
 
 type RouteRow = { route_id: string; route_short_name: string; route_long_name: string; route_color: string };
-type StopRow = { stop_id: string; stop_name: string; stop_lat: string; stop_lon: string; parent_station?: string };
+type StopRow = { stop_id: string; stop_name: string; stop_lat: string; stop_lon: string; parent_station?: string; wheelchair_boarding?: string };
 type TripRow = { trip_id: string; route_id: string; trip_headsign: string; direction_id: string; service_id: string; peak_offpeak?: string; shape_id?: string };
 type ShapeRow = { shape_id: string; shape_pt_lat: string; shape_pt_lon: string; shape_pt_sequence: string };
 export type StopTimeRow = { trip_id: string; stop_id: string; arrival_time: string; departure_time: string; stop_sequence: string };
@@ -37,7 +37,8 @@ type CalendarRow = {
 };
 type CalendarDateRow = { service_id: string; date: string; exception_type: string };
 
-export type GtfsStop = { stopId: string; name: string; lat: number; lon: number; parentStation: string | null };
+/** `wheelchair`: stops.txt's wheelchair_boarding (1 yes, 2 no), null when the feed doesn't say. */
+export type GtfsStop = { stopId: string; name: string; lat: number; lon: number; parentStation: string | null; wheelchair?: boolean | null };
 /** `peakOffpeak` is LIRR's own real schedule classification (trips.txt's peak_offpeak column) — null for agencies whose trips.txt doesn't have that column (e.g. subway, which doesn't have peak/off-peak fares at all). */
 export type GtfsTrip = { tripId: string; routeId: string; headsign: string; directionId: number; serviceId: string; peakOffpeak: boolean | null; shapeId: string | null };
 export type ShapePoint = { lat: number; lon: number };
@@ -75,6 +76,7 @@ export function readAgencyStaticData(dataDir: string): AgencyStaticData {
       lat: Number(row.stop_lat),
       lon: Number(row.stop_lon),
       parentStation: row.parent_station || null,
+      wheelchair: row.wheelchair_boarding === '1' ? true : row.wheelchair_boarding === '2' ? false : null,
     });
   }
 
@@ -89,6 +91,13 @@ export function readAgencyStaticData(dataDir: string): AgencyStaticData {
       peakOffpeak: row.peak_offpeak === undefined ? null : row.peak_offpeak === '1',
       shapeId: row.shape_id || null,
     });
+  }
+  // MTA's borough bus feeds list other boroughs' routes with no trips (the Bronx feed lists every
+  // SIM express bus); such a copy can't be described or ridden, and listed first it would hide the
+  // feed that runs the line. A route belongs to the feeds that run it.
+  if (tripsById.size > 0) {
+    const routesWithTrips = new Set([...tripsById.values()].map((trip) => trip.routeId));
+    for (const routeId of routesById.keys()) if (!routesWithTrips.has(routeId)) routesById.delete(routeId);
   }
 
   const calendarByService = new Map<string, GtfsCalendar>();

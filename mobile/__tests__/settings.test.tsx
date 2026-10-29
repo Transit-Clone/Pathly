@@ -12,6 +12,7 @@ import { ProfileView } from '../src/components/ProfileView';
 import { ISSUES_URL } from '../src/components/SettingsPages';
 import type { Itinerary } from '../src/data/tripPlanning';
 import { filterItinerariesByWalk } from '../src/data/tripPlanning';
+import { resetLineIndexForTests } from '../src/data/lineIndex';
 import { recordSearch, saveLocation } from '../src/data/userData';
 import { DEFAULT_PREFERENCES, parsePreferences, preferencesKey, UserPreferencesProvider } from '../src/data/userPreferences';
 import { AppSettingsProvider, DISPLAY_SETTINGS_KEY, scaleTypography, useAppSettings } from '../src/theme/AppSettings';
@@ -81,7 +82,7 @@ describe('Settings', () => {
     it('saves toggles per rider and says alerts are not sent yet', async () => {
       const screen = renderSettings();
       await openPage(screen, 'notifications');
-      expect(screen.getByTestId('notifications-not-sent')).toHaveTextContent(/doesn't send push alerts yet/);
+      expect(screen.getByTestId('notifications-not-sent')).toHaveTextContent(/push notifications in the Android and iOS app/);
       fireEvent(screen.getByTestId('toggle-service-alerts'), 'valueChange', false);
       await waitFor(async () => expect(JSON.parse((await AsyncStorage.getItem(preferencesKey(UID)))!).notifications.serviceAlerts).toBe(false));
       screen.unmount();
@@ -92,6 +93,26 @@ describe('Settings', () => {
       // Turning notifications off hides the individual kinds.
       fireEvent(again.getByTestId('toggle-notifications'), 'valueChange', false);
       expect(again.queryByTestId('toggle-service-alerts')).toBeNull();
+    });
+
+    it('searches for a line in a popup and adds it with alerts on, unstarred', async () => {
+      resetLineIndexForTests([
+        { agencyId: 'suffolk', agencyDisplayName: 'Suffolk County Transit', routeId: '51', shortName: '51', routeName: 'Patchogue RR to Port Jefferson', color: '#C43D4B' },
+        { agencyId: 'lirr', agencyDisplayName: 'LIRR', routeId: '10', shortName: 'Port Jefferson Branch', routeName: 'Port Jefferson Branch', color: '#006EC7' },
+      ]);
+      const screen = renderSettings();
+      await openPage(screen, 'notifications');
+      fireEvent.press(screen.getByTestId('notifications-add-line'));
+      fireEvent.changeText(screen.getByTestId('notifications-add-line-input'), 'port jeff');
+      // The branch by its name; not the 51 bus, whose name only says it runs there.
+      expect(screen.queryByTestId('notifications-add-line-suffolk-51')).toBeNull();
+      await act(async () => {
+        fireEvent.press(screen.getByTestId('notifications-add-line-lirr-10'));
+      });
+      const saved = (await getDocs(collection({} as never, 'users', UID, 'savedRoutes'))).docs.map((entry) => entry.data());
+      expect(saved).toContainEqual(expect.objectContaining({ routeId: '10', agencyId: 'lirr', alerts: 'all', favorite: false }));
+      expect(screen.getByText('PJ alerts: All times')).toBeTruthy();
+      resetLineIndexForTests();
     });
   });
 
@@ -120,7 +141,7 @@ describe('Settings', () => {
       act(() => result.current.setAppearance('dark'));
       expect(result.current.colors).toBe(highContrastDarkColors);
       act(() => result.current.setReducedMotion(true));
-      await waitFor(async () => expect(JSON.parse((await AsyncStorage.getItem(DISPLAY_SETTINGS_KEY))!)).toEqual({ appearance: 'dark', reducedMotion: true, textSize: 'default', highContrast: true }));
+      await waitFor(async () => expect(JSON.parse((await AsyncStorage.getItem(DISPLAY_SETTINGS_KEY))!)).toEqual({ appearance: 'dark', reducedMotion: true, textSize: 'default', highContrast: true, mapDotColor: 'default' }));
 
       const reloaded = renderHook(() => useAppSettings(), { wrapper: ({ children }) => <AppSettingsProvider>{children}</AppSettingsProvider> });
       await waitFor(() => expect(reloaded.result.current.colors).toBe(highContrastDarkColors));
@@ -296,7 +317,7 @@ describe('Settings', () => {
       const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
       const screen = renderSettings();
       await openPage(screen, 'help');
-      expect(screen.getByText('Walking distances use map data © OpenStreetMap contributors')).toBeTruthy();
+      expect(screen.getByText('Map data © OpenStreetMap')).toBeTruthy();
       await act(async () => {
         fireEvent.press(screen.getByTestId('help-osm'));
       });

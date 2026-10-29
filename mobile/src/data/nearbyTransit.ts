@@ -2,9 +2,9 @@
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { callable } from '../lib/firebase';
 import { whenWarm } from './backendWarmup';
-import type { LiveSource, RouteDetail, TransitDirection } from './transit';
+import { preferredDirectionIndex, type LiveSource, type RouteDetail, type TransitDirection } from './transit';
 
-type DiscoveredDirection = { stopId: string; name: string; headsign: string | null } | null;
+type DiscoveredDirection = { stopId: string; name: string; headsign: string | null; distanceMeters?: number; stopsAhead?: number | null } | null;
 
 export type DiscoveredRoute = {
   agencyId: LiveSource['agencyId'];
@@ -93,26 +93,95 @@ export function discoveredRouteToRouteDetail(discovered: DiscoveredRoute): Route
     minutes: 0,
     stopName: primary?.name ?? other?.name ?? 'Unknown stop',
     stopId: primary?.stopId,
+    distanceMeters: primary?.distanceMeters,
+    stopsAhead: primary?.stopsAhead ?? undefined,
     unavailable: true,
   });
+  // Direction 1 comes first unless direction 0 is clearly the one to ride: on the Staten Island
+  // Ferry's St. George side, or at the end of a line (see preferredDirectionIndex).
+  const byDirectionId: [TransitDirection, TransitDirection] = [directionFor(direction1, direction0), directionFor(direction0, direction1)];
+  const direction1Index = preferredDirectionIndex(byDirectionId) === 1 ? 1 : 0;
+  const lead = direction1Index === 0 ? direction1 ?? direction0 : direction0;
 
   return {
     agency: discovered.agencyDisplayName,
     alert: 'No delays reported on this route.',
     color: discovered.color,
-    destination: direction1?.headsign ?? direction0?.headsign ?? discovered.routeName,
-    direction: direction1?.headsign ?? direction0?.headsign ?? discovered.routeName,
-    directions: [directionFor(direction1, direction0), directionFor(direction0, direction1)],
+    destination: lead?.headsign ?? discovered.routeName,
+    direction: lead?.headsign ?? discovered.routeName,
+    directions: direction1Index === 0 ? byDirectionId : [byDirectionId[1], byDirectionId[0]],
     id: `${discovered.agencyId}:${discovered.routeId}`,
     liveSource: {
       agencyId: discovered.agencyId,
       routeId: discovered.routeId,
       direction1StopId: direction1?.stopId ?? fallbackStopId,
       direction0StopId: direction0?.stopId ?? fallbackStopId,
-      direction1Index: 0,
+      direction1Index,
     },
     predictions: [],
     routeName: discovered.routeName,
     shortName: discovered.shortName,
+  };
+}
+
+const searchTransitRoutesCallable = callable<{ query: string; lat: number; lon: number }, { routes: DiscoveredRoute[] }>('searchTransitRoutes');
+const describeTransitRouteCallable = callable<{ agencyId: string; routeId: string; lat: number; lon: number }, { route: DiscoveredRoute }>('describeTransitRoute');
+
+const warmLineSearchCallable = callable<{ warmup: true }, unknown>('describeTransitRoute');
+let lineSearchWarmed = false;
+
+/**
+ * Starts the instance that describes a searched line, as the search page opens (once per app
+ * session), so a tapped line opens without waiting on a cold start. A failure is ignored.
+ */
+export function warmLineSearch(): void {
+  if (lineSearchWarmed) return;
+  lineSearchWarmed = true;
+  warmLineSearchCallable({ warmup: true }).catch(() => {
+    lineSearchWarmed = false;
+  });
+}
+
+const lineSearchCache = new Map<string, Promise<readonly DiscoveredRoute[]>>();
+
+/**
+ * Lines whose name matches a search ("1", "B46", "Port Jefferson"), best match first, at their
+ * stops nearest `near`. Answers are kept for the session (by query and rough location), and a
+ * failed call (a cold instance timing out) is tried once more before giving up.
+ */
+export function searchTransitRoutes(query: string, near: Coordinates): Promise<readonly DiscoveredRoute[]> {
+  const key = `${query.toLowerCase()}|${near.latitude.toFixed(2)},${near.longitude.toFixed(2)}`;
+  const cached = lineSearchCache.get(key);
+  if (cached) return cached;
+  const ask = () => searchTransitRoutesCallable({ query, lat: near.latitude, lon: near.longitude }).then(({ data }) => data.routes);
+  const promise = ask().catch(() => ask());
+  lineSearchCache.set(key, promise);
+  promise.catch(() => lineSearchCache.delete(key));
+  return promise;
+}
+
+/** A line found in search, described at its stops nearest the rider (to open in route view). */
+export async function describeTransitLine(agencyId: LiveSource['agencyId'], routeId: string, near: Coordinates): Promise<DiscoveredRoute> {
+  const { data } = await describeTransitRouteCallable({ agencyId, routeId, lat: near.latitude, lon: near.longitude });
+  return data.route;
+}
+
+/**
+ * One line opened at a particular stop (a stop row or transfer badge in route view): its route
+ * view stays on the stop nearest `at`, wherever the rider is. Its id carries the point, so the
+ * same line at two stations is two route views (and two live entries), each with its own times.
+ */
+export async function fetchRouteAtStop(agencyId: LiveSource['agencyId'], routeId: string, at: Coordinates): Promise<RouteDetail> {
+  const { data } = await describeTransitRouteCallable({ agencyId, routeId, lat: at.latitude, lon: at.longitude });
+  return routeDetailAt(data.route, at);
+}
+
+/** `discoveredRouteToRouteDetail`, pinned to the stops nearest `at` rather than the rider. */
+export function routeDetailAt(discovered: DiscoveredRoute, at: Coordinates): RouteDetail {
+  const route = discoveredRouteToRouteDetail(discovered);
+  return {
+    ...route,
+    id: `${route.id}@${at.latitude.toFixed(5)},${at.longitude.toFixed(5)}`,
+    liveSource: { ...route.liveSource!, anchor: at },
   };
 }

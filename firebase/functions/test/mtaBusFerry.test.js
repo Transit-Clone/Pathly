@@ -8,6 +8,7 @@ const { findNearbyTransit } = require('../lib/gtfsDiscovery');
 const { getStopPredictions } = require('../lib/gtfsSchedule');
 const { availableAgencyIds, resetGtfsStaticDataForTests, setAgencyDataForTests } = require('../lib/gtfsStaticData');
 const { getRouteStatus } = require('../lib/gtfsStatus');
+const { BUS_COLORS: BUS_COLORS_HEX } = require('../lib/routeColors');
 
 const fixture = (agency) => path.join(__dirname, 'fixtures', 'gtfs', agency);
 const FIRST_AVE_23 = { lat: 40.737, lng: -73.9789 };
@@ -42,8 +43,8 @@ test('Manhattan buses show up nearby, the SBS under its full name', async () => 
   assert.deepEqual(buses.map((route) => route.shortName).sort(), ['M15', 'M15-SBS']);
   assert.equal(buses[0].agencyDisplayName, 'MTA Bus');
   // A local bus takes MTA's local-bus color (routeColors.ts), whatever its GTFS color.
-  assert.equal(buses.find((route) => route.shortName === 'M15').color, '#006CB7');
-  assert.equal(buses.find((route) => route.shortName === 'M15-SBS').color, '#00AEEF');
+  assert.equal(buses.find((route) => route.shortName === 'M15').color, BUS_COLORS_HEX.mtaLocal);
+  assert.equal(buses.find((route) => route.shortName === 'M15-SBS').color, BUS_COLORS_HEX.mtaSelectBusService);
 });
 
 test('an on-demand agency with no data on this instance is left out', async () => {
@@ -108,6 +109,35 @@ test('all-caps bus stop names and headsigns are recased for riders', () => {
   assert.equal(displayTransitName('W 23RD ST/MCDONALD AV'), 'W 23rd St/McDonald Av');
   assert.equal(displayTransitName("JFK AIRPORT O'BRIEN PL"), "JFK Airport O'Brien Pl");
   assert.equal(displayTransitName('Penn Station'), 'Penn Station');
+});
+
+test('lowercase and half-styled stop names are recased, agency styling and acronyms kept', () => {
+  const { displayTransitName } = require('../lib/transitNames');
+  // Raw names from the Staten Island bus feed (2026-10-28).
+  assert.equal(displayTransitName('staten island expwy/wooley av'), 'Staten Island Expwy/Wooley Av');
+  assert.equal(displayTransitName('McCLEAN AV/LINWOOD AV'), 'McClean Av/Linwood Av');
+  assert.equal(displayTransitName('fdr dr n/e 20 st'), 'FDR Dr N/E 20 St');
+  assert.equal(displayTransitName('ARTHUR KILL RD/West Service Rd'), 'Arthur Kill Rd/West Service Rd');
+  assert.equal(displayTransitName('West Shore ep/SIE(N)'), 'West Shore Ep/SIE(N)');
+  assert.equal(displayTransitName('Gowanus Exp./78 Street (S.B.)'), 'Gowanus Exp./78 Street (S.B.)');
+  assert.equal(displayTransitName('richmond av/sumner av'), 'Richmond Av/Sumner Av');
+  assert.equal(displayTransitName('Eltingville - Lower Manhattan Express'), 'Eltingville - Lower Manhattan Express');
+  assert.equal(displayTransitName('Elmont-UBS Arena'), 'Elmont-UBS Arena');
+  assert.equal(displayTransitName('Jamaica'), 'Jamaica');
+});
+
+test("another borough's trip-less copy of a route is dropped, so search opens the feed that runs it", () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const { readAgencyStaticData } = require('../lib/gtfsFeed');
+  // The Bronx feed lists every SIM express bus with no trips; Staten Island's runs them.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pathly-gtfs-'));
+  for (const file of fs.readdirSync(fixture('mn'))) fs.copyFileSync(path.join(fixture('mn'), file), path.join(dir, file));
+  fs.appendFileSync(path.join(dir, 'routes.txt'), 'SIM1,MTA NYCT,SIM1,Eltingville - Lower Manhattan Express,3,00933C,FFFFFF\n');
+  const { routesById } = readAgencyStaticData(dir);
+  assert.equal(routesById.has('SIM1'), false);
+  assert.equal(routesById.has('M15'), true);
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test('bus stop names reach riders recased', async () => {

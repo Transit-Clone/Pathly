@@ -10,6 +10,7 @@ import {
   setDoc,
   type Timestamp,
   type Unsubscribe,
+  updateDoc,
 } from 'firebase/firestore';
 
 import { db } from '../lib/firebase';
@@ -43,11 +44,25 @@ export type Location = {
   label?: string;
   /** The icon the rider picked for a saved place; otherwise one follows from its name. */
   icon?: SavedPlaceIcon;
+  /** The marker color the rider picked for a saved place; otherwise the brand blue. */
+  color?: SavedPlaceColor;
+  /** The rider's list this saved place is in ("Restaurants"); every place in a list shares its icon and color. */
+  group?: string;
 };
 
 /** Icons a rider can pick for a saved place (firestore.rules allows exactly these). */
 export const SAVED_PLACE_ICONS = ['home', 'work', 'school', 'place', 'favorite', 'heart', 'cafe', 'restaurant', 'cart', 'fitness', 'people', 'medical'] as const;
 export type SavedPlaceIcon = (typeof SAVED_PLACE_ICONS)[number];
+
+/** Marker colors a rider can pick for a saved place (firestore.rules allows exactly these). */
+export const SAVED_PLACE_COLORS = ['blue', 'red', 'orange', 'yellow', 'green', 'teal', 'purple', 'pink', 'gray'] as const;
+export type SavedPlaceColor = (typeof SAVED_PLACE_COLORS)[number];
+
+/** The longest saved-place list name (firestore.rules allows this many characters). */
+export const MAX_GROUP_NAME = 30;
+
+/** How a saved place looks and where it's filed: picked by the rider, or left to its defaults. */
+export type SavedPlaceStyle = { icon?: SavedPlaceIcon; color?: SavedPlaceColor; group?: string };
 
 /** The longest saved-place label (firestore.rules allows this many characters). */
 export const MAX_PLACE_LABEL = 40;
@@ -123,9 +138,10 @@ export function findSavedLocation(saved: readonly SavedLocation[], place: Search
   return nameMatches.length === 1 ? nameMatches[0] : undefined;
 }
 
-function writeEntry(uid: string, collectionName: string, dateField: string, place: SearchPlace, type: LocationType, label?: string, icon?: SavedPlaceIcon) {
+function writeEntry(uid: string, collectionName: string, dateField: string, place: SearchPlace, type: LocationType, label?: string, style: SavedPlaceStyle = {}) {
+  const { icon, color, group } = style;
   return setDoc(doc(db, 'users', uid, collectionName, placeKey(place.id)), {
-    address: { ...placeToLocation(place, type), ...(label ? { label } : {}), ...(icon ? { icon } : {}) },
+    address: { ...placeToLocation(place, type), ...(label ? { label } : {}), ...(icon ? { icon } : {}), ...(color ? { color } : {}), ...(group ? { group } : {}) },
     [dateField]: serverTimestamp(),
   });
 }
@@ -144,6 +160,20 @@ export function sortSavedLocations(saved: readonly SavedLocation[]): SavedLocati
   return saved.map((entry, index) => ({ entry, index }))
     .sort((a, b) => rank(a.entry) - rank(b.entry) || a.index - b.index)
     .map(({ entry }) => entry);
+}
+
+/** The rider's lists, by name, each with the icon and color its places share (from its first place). */
+export function savedPlaceGroups(saved: readonly SavedLocation[]): { name: string; icon?: SavedPlaceIcon; color?: SavedPlaceColor; count: number }[] {
+  const groups = new Map<string, { name: string; icon?: SavedPlaceIcon; color?: SavedPlaceColor; count: number }>();
+  for (const entry of saved) {
+    const name = entry.address.group?.trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    const group = groups.get(key);
+    if (group) group.count += 1;
+    else groups.set(key, { name, icon: entry.address.icon, color: entry.address.color, count: 1 });
+  }
+  return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** The saved place labelled Home or Work, if there is one. */
@@ -196,13 +226,35 @@ export function saveLocation(uid: string, place: SearchPlace, type: LocationType
 
 /**
  * Saves a place under the rider's own label. Home and Work are one each, so a place that held the
- * label before is dropped from saved places (it was only saved as that label).
+ * label before is dropped from saved places (it was only saved as that label). `replacing` is the
+ * place this one moves from, when the rider changed a saved place's address: the old entry goes.
+ * A place in a list brings the list's other places to its icon and color, so the list stays one look.
  */
-export async function saveLabeledLocation(uid: string, place: SearchPlace, label: string, saved: readonly SavedLocation[], icon?: SavedPlaceIcon) {
+export async function saveLabeledLocation(uid: string, place: SearchPlace, label: string, saved: readonly SavedLocation[], style: SavedPlaceStyle = {}, replacing?: string) {
   const trimmed = label.trim().slice(0, MAX_PLACE_LABEL);
+  const group = style.group?.trim().slice(0, MAX_GROUP_NAME) || undefined;
   const previous = UNIQUE_LABELS.includes(trimmed.toLowerCase()) ? findLabeledLocation(saved, trimmed) : undefined;
-  await writeEntry(uid, SAVED_LOCATIONS, 'dateSaved', place, 'Destination', trimmed || undefined, icon);
-  if (previous && previous.address.placeId !== place.id) await removeSavedLocation(uid, previous.address.placeId);
+  await writeEntry(uid, SAVED_LOCATIONS, 'dateSaved', place, 'Destination', trimmed || undefined, { ...style, group });
+  if (replacing && replacing !== place.id) await removeSavedLocation(uid, replacing);
+  if (previous && previous.address.placeId !== place.id && previous.address.placeId !== replacing) await removeSavedLocation(uid, previous.address.placeId);
+  if (group) {
+    const members = saved.filter((entry) => (
+      entry.address.group?.trim().toLowerCase() === group.toLowerCase()
+      && entry.address.placeId !== place.id && entry.address.placeId !== replacing
+      && (entry.address.icon !== style.icon || entry.address.color !== style.color || entry.address.group !== group)
+    ));
+    // updateDoc replaces the whole address map, so a cleared icon or color goes too.
+    await Promise.all(members.map((entry) => updateDoc(
+      doc(db, 'users', uid, SAVED_LOCATIONS, placeKey(entry.address.placeId)),
+      { address: withStyle(entry.address, { icon: style.icon, color: style.color, group }) },
+    )));
+  }
+}
+
+/** A location with its icon, color and list replaced (an unset one dropped rather than written as undefined). */
+function withStyle(location: Location, style: SavedPlaceStyle): Location {
+  const { icon: _icon, color: _color, group: _group, ...rest } = location;
+  return { ...rest, ...(style.icon ? { icon: style.icon } : {}), ...(style.color ? { color: style.color } : {}), ...(style.group ? { group: style.group } : {}) };
 }
 
 export function removeSavedLocation(uid: string, placeId: string) {

@@ -8,6 +8,9 @@ import type { Palette } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { Icon, type IconName } from './Icon';
 import { PressableScale } from './PressableScale';
+import { afterClick } from './afterClick';
+import { SavedPlaceBadge } from './SavedPlaceBadge';
+import { radii } from '../theme/shape';
 
 /** Matches the search page's content width. */
 const MAX_PAGE_WIDTH = 540;
@@ -44,6 +47,8 @@ export function savedLocationIcon(location: Location): IconName {
 type StripCard = {
   key: string;
   icon: IconName;
+  /** A saved place, drawn with its own badge (color and icon). */
+  location?: Location;
   title: string;
   subtitle: string;
   label: string;
@@ -75,6 +80,7 @@ export function SavedPlacesStrip({ onAdd, onSelect, places }: SavedPlacesStripPr
     return {
       key: place.id,
       icon: savedLocationIcon(place.address),
+      location: place.address,
       title,
       subtitle,
       label: subtitle ? `${title}, ${subtitle}` : title,
@@ -85,7 +91,7 @@ export function SavedPlacesStrip({ onAdd, onSelect, places }: SavedPlacesStripPr
   });
   if (onAdd) {
     const missing = (['Home', 'Work'] as const).filter((label) => !findLabeledLocation(places, label));
-    cards.unshift(...missing.map((label): StripCard => ({
+    cards.push(...missing.map((label): StripCard => ({
       key: `set-${label}`,
       icon: label === 'Home' ? 'home' : 'work',
       title: label,
@@ -121,7 +127,7 @@ export function SavedPlacesStrip({ onAdd, onSelect, places }: SavedPlacesStripPr
     if (startX == null) return;
     const dx = event.nativeEvent.pageX - startX;
     if (Math.abs(dx) <= DRAG_THRESHOLD) {
-      card.onPress();
+      afterClick(card.onPress);
       return;
     }
     scrollRef.current?.scrollTo({ x: Math.max(0, scrollX.current - dx), animated: true });
@@ -157,9 +163,13 @@ export function SavedPlacesStrip({ onAdd, onSelect, places }: SavedPlacesStripPr
           style={[styles.card, card.muted && styles.cardMuted, { width: cardWidth }]}
           testID={card.testID}
         >
-          <View style={styles.icon}>
-            <Icon color={colors.primary} filled={!card.muted} name={card.icon} size={18} />
-          </View>
+          {card.location ? (
+            <SavedPlaceBadge icon={card.icon} location={card.location} size={38} />
+          ) : (
+            <View style={styles.icon}>
+              <Icon color={colors.primary} filled={!card.muted} name={card.icon} size={18} />
+            </View>
+          )}
           <View style={styles.copy}>
             <Text numberOfLines={1} style={styles.name}>{card.title}</Text>
             {card.subtitle ? <Text numberOfLines={1} style={styles.address}>{card.subtitle}</Text> : null}
@@ -183,7 +193,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     paddingVertical: 8,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 28,
+    borderRadius: radii.card,
     backgroundColor: colors.surface,
   },
   cardMuted: { borderStyle: 'dashed' },

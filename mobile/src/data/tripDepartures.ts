@@ -34,8 +34,10 @@ function departuresOf(step: TransitStep): TripDeparture[] {
 
 function retimeStep(step: TransitStep, option: TripDeparture): TransitStep {
   const shift = ms(option.departs) - ms(step.from.time);
+  // Another trip: the planned one's live status and connection no longer apply.
+  const { live: _live, connection: _connection, ...rest } = step;
   return {
-    ...step,
+    ...rest,
     from: { ...step.from, time: option.departs },
     to: { ...step.to, time: option.arrives },
     durationSeconds: Math.max(0, (ms(option.arrives) - ms(option.departs)) / 1000),
@@ -61,6 +63,11 @@ function walksBefore(steps: readonly TripStep[]): number[] {
     }
   }
   return walks;
+}
+
+function withoutConnection(step: TransitStep): TransitStep {
+  const { connection: _connection, ...rest } = step;
+  return rest;
 }
 
 type Retimed = { itinerary: Itinerary; earliest: number[] };
@@ -97,8 +104,10 @@ function retime(itinerary: Itinerary, choices: DepartureChoices, nowMs: number):
           ? firstMakeable(canMake + (walkMs > 0 ? 0 : TRANSFER_BUFFER_MS)) ?? firstMakeable(canMake) ?? planned
           : ms(planned.departs) >= canMake ? planned : firstMakeable(canMake) ?? planned;
     }
-    const retimed = option.departs === step.from.time && option.arrives === step.to.time ? step : retimeStep(step, option);
-    if (retimed !== step) shifted = true;
+    const kept = option.departs === step.from.time && option.arrives === step.to.time;
+    // After a moved leg, the planned connection into this one no longer holds either way.
+    const retimed = !kept ? retimeStep(step, option) : shifted && step.connection ? withoutConnection(step) : step;
+    if (!kept) shifted = true;
     previousArrival = ms(retimed.to.time);
     return retimed;
   });

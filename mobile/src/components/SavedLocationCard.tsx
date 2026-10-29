@@ -6,7 +6,9 @@ import type { Palette } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { Icon } from './Icon';
 import { PressableScale } from './PressableScale';
+import { SavedPlaceBadge } from './SavedPlaceBadge';
 import { savedLocationIcon, savedPlaceLines } from './SavedPlacesStrip';
+import { radii } from '../theme/shape';
 
 type SavedLocationCardProps = {
   location: SavedLocation;
@@ -53,9 +55,7 @@ export function SavedLocationCard({ location, onOpen, testID }: SavedLocationCar
       style={styles.card}
       testID={testID}
     >
-      <View style={styles.iconWrap}>
-        <Icon color={colors.primary} filled={true} name={savedLocationIcon(location.address)} size={20} />
-      </View>
+      <SavedPlaceBadge icon={savedLocationIcon(location.address)} location={location.address} size={36} />
       <View style={styles.text}>
         <Text numberOfLines={1} style={styles.name}>{title}</Text>
         {subtitle ? <Text numberOfLines={1} style={styles.address}>{subtitle}</Text> : null}
@@ -74,7 +74,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     paddingVertical: 12,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 16,
+    borderRadius: radii.card,
     backgroundColor: colors.surface,
     shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 2 },

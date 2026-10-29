@@ -64,6 +64,6 @@ describe('saved places', () => {
     expect(screen.getByTestId('save-place-icon-home').props.accessibilityState).toEqual({ selected: true });
     fireEvent.press(screen.getByTestId('save-place-icon-fitness'));
     fireEvent.press(screen.getByTestId('save-place-confirm'));
-    expect(onSave).toHaveBeenCalledWith('Home', 'fitness');
+    expect(onSave).toHaveBeenCalledWith('Home', { icon: 'fitness', color: undefined, group: undefined });
   });
 });

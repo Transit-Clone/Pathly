@@ -22,8 +22,8 @@ describe('Icon', () => {
   it('renders the solid glyph for a filled toggle and stays hidden from accessibility', () => {
     const screen = render(
       <>
-        <Icon name="favorite" testID="outline" />
-        <Icon filled={true} name="favorite" testID="filled" />
+        <Icon filled={false} name="favorite" testID="outline" />
+        <Icon name="favorite" testID="filled" />
       </>,
     );
 
@@ -45,12 +45,12 @@ describe('RouteBadge', () => {
     expect(transitModeForAgency('Staten Island Ferry')).toBe('ferry');
   });
 
-  it('draws a ferry as a pill with a boat, announced as a ferry', () => {
+  it('draws a ferry as the shared text badge, announced as a ferry', () => {
     const screen = render(<RouteBadge agency="NYC Ferry" color="#00839C" shortName="ER" size="large" testID="ferry" />);
     const badge = screen.getByTestId('ferry');
     expect(badge.props.accessibilityLabel).toBe('ER ferry');
-    expect(StyleSheet.flatten(badge.props.style).borderRadius).toBe(23);
-    expect(screen.getByText('boat', { includeHiddenElements: true })).toBeTruthy();
+    expect(StyleSheet.flatten(badge.props.style).borderRadius).toBe(18);
+    expect(screen.queryByText('boat', { includeHiddenElements: true })).toBeNull();
   });
 
   it.each([
@@ -75,8 +75,8 @@ describe('RouteBadge', () => {
     const rail = StyleSheet.flatten(screen.getByTestId('rail').props.style);
 
     expect(subway).toMatchObject({ height: 46, width: 46, borderRadius: 23 });
-    expect(bus).toMatchObject({ height: 46, borderRadius: 12 });
-    expect(rail).toMatchObject({ height: 46, borderRadius: 4 });
+    expect(bus).toMatchObject({ height: 46, borderRadius: 18 });
+    expect(rail).toMatchObject({ height: 46, borderRadius: 18 });
   });
 });
 
@@ -138,7 +138,7 @@ describe('loading placeholders', () => {
     expect(group.props.accessible).toBe(true);
     expect(screen.getAllByTestId('nearby-placeholder-card')).toHaveLength(3);
     for (const card of screen.getAllByTestId('nearby-placeholder-card')) {
-      expect(StyleSheet.flatten(card.props.style)).toEqual(expect.objectContaining({ height: 104, borderRadius: 14, backgroundColor: lightColors.skeleton }));
+      expect(StyleSheet.flatten(card.props.style)).toEqual(expect.objectContaining({ height: 104, borderRadius: 20, backgroundColor: lightColors.skeleton }));
     }
     expect(loop).toHaveBeenCalledTimes(1);
     screen.unmount();
@@ -244,7 +244,7 @@ describe('RouteMap', () => {
     const screen = render(<RouteMap color="#A626AA" focusStopId="0" stops={stops} vehicles={[]} walkPath={walkPath} />);
     const walk = screen.getByTestId('route-walk', { includeHiddenElements: true });
     expect(walk.props.coordinates).toEqual(walkPath.map((point) => ({ latitude: point.lat, longitude: point.lon })));
-    expect(walk.props.lineDashPattern).toEqual([2, 8]);
+    expect(walk.props.lineDashPattern).toEqual([1, 10]);
   });
 });
 
@@ -259,7 +259,7 @@ describe('badgeLabel', () => {
     expect(badgeLabel({ agency: 'NICE Bus', shortName: 'Roosevelt Field Shuttle Line' })).toBe('RFS');
     // A single route code is shown whole: "S" would read as the S shuttle, not the SIM3C.
     expect(badgeLabel({ agency: 'MTA Bus Company', shortName: 'SIM3C' })).toBe('SIM3C');
-    expect(badgeLabel({ agency: 'MTA New York City Transit', shortName: 'Q44-SBS' })).toBe('Q44-SBS');
+    expect(badgeLabel({ agency: 'MTA New York City Transit', shortName: 'Q44-SBS' })).toBe('Q44+');
   });
 });
 
@@ -279,5 +279,14 @@ describe('SavedPlacesStrip', () => {
   it('shows nothing without saved places', () => {
     const screen = render(<AppSettingsProvider><SavedPlacesStrip onSelect={jest.fn()} places={[]} /></AppSettingsProvider>);
     expect(screen.queryByTestId('search-saved-places')).toBeNull();
+  });
+
+  it('puts saved destinations before unset Home and Work shortcuts', () => {
+    const screen = render(<AppSettingsProvider><SavedPlacesStrip onAdd={jest.fn()} onSelect={jest.fn()} places={[place('gym', 'Gym')]} /></AppSettingsProvider>);
+    const strip = screen.getByTestId('search-saved-places');
+    const ids = strip.findAll((node: { props: { testID?: string } }) => typeof node.props.testID === 'string' && /^(search-saved-place-|search-set-|search-add-saved-place)/.test(node.props.testID))
+      .map((node: { props: { testID?: string } }) => node.props.testID);
+    const unique = [...new Set(ids)];
+    expect(unique).toEqual(['search-saved-place-gym', 'search-set-home', 'search-set-work', 'search-add-saved-place']);
   });
 });

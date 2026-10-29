@@ -7,6 +7,9 @@ module.exports = defineConfig([
   {
     rules: {
       'react/jsx-boolean-value': ['error', 'always'],
+      // tsc already checks namespace members, and this rule misreads SDK 58's compiled enums
+      // (e.g. Notifications.AndroidImportance).
+      'import/namespace': 'off',
     },
   },
 ]);

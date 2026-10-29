@@ -21,9 +21,42 @@ export type TransitDirection = {
   stopName: string;
   /** The real nearest stop's own id (matches a RouteGeometry stop's `stopId`) — set alongside `stopName` once a `liveSource` route's nearest-stop lookup resolves, so callers can match it against real route geometry by id rather than by display name. Absent for routes with no `liveSource`, or before the first successful lookup. */
   stopId?: string;
+  /** Straight-line meters from the rider to `stopId`, when the backend reported it. */
+  distanceMeters?: number;
+  /** Stops this direction still serves after `stopId` (0 at the end of the line), when known. */
+  stopsAhead?: number;
   /** True when this route has a `liveSource` but real data hasn't loaded (or failed to) — `minutes`/`live` are stale placeholders in that case and shouldn't be shown; UI should show a loading/unavailable state instead. Absent for routes with no `liveSource` (always-static, `minutes` is legitimate illustrative data). */
   unavailable?: boolean;
 };
+
+/**
+ * Beyond this gap between the two directions' stops, the rider is clearly at one end of the line
+ * (a Staten Island Ferry terminal, say), so the direction leaving from the near end comes first.
+ * Smaller gaps are just the two sides of one street or station.
+ */
+const DIRECTION_STOPS_APART_METERS = 800;
+/** A direction this close to its last stop is one the rider is unlikely to board. */
+const NEAR_LINE_END_FRACTION = 0.25;
+const NEAR_LINE_END_STOPS = 2;
+
+/**
+ * Which direction a card or route page should open on, or null to keep the usual order:
+ * - the one leaving from the clearly nearer stop (ferry terminals), else
+ * - the one with the line still ahead, when the other is at or near its last stop — at Whitehall
+ *   St, the 1 heading uptown rather than the one stop left to South Ferry.
+ */
+export function preferredDirectionIndex(directions: readonly TransitDirection[]): 0 | 1 | null {
+  const [first, second] = directions;
+  if (!first || !second) return null;
+  if (first.distanceMeters != null && second.distanceMeters != null && Math.abs(first.distanceMeters - second.distanceMeters) >= DIRECTION_STOPS_APART_METERS) {
+    return first.distanceMeters < second.distanceMeters ? 0 : 1;
+  }
+  if (first.stopsAhead == null || second.stopsAhead == null) return null;
+  const nearEnd = (ahead: number, other: number) => ahead < other && ahead <= Math.max(NEAR_LINE_END_STOPS, (ahead + other) * NEAR_LINE_END_FRACTION);
+  if (nearEnd(first.stopsAhead, second.stopsAhead)) return 1;
+  if (nearEnd(second.stopsAhead, first.stopsAhead)) return 0;
+  return null;
+}
 
 export type RoutePrediction = {
   live: boolean;
@@ -32,10 +65,38 @@ export type RoutePrediction = {
   peakOffpeak?: boolean | null;
   /** Minutes a tracked trip is running behind its timetable (negative: ahead); null or absent when unknown or not tracked. */
   delayMinutes?: number | null;
+  /** Where this trip ends, when known: some of a direction's trips stop short of its usual terminal. */
+  headsign?: string | null;
 };
 
-/** One MTA service alert in effect on a route (delays, reroutes, suspensions, planned work). */
-export type ServiceAlert = { id: string; header: string; description: string | null };
+/**
+ * A departure's own end stop, when it isn't the direction's usual one (an S76 ending at Clove Rd
+ * rather than Oakwood): its time card says so. Null when it goes the usual way, or isn't known.
+ */
+export function differentEndStop(prediction: { headsign?: string | null }, usualDestination: string): string | null {
+  const own = prediction.headsign?.trim();
+  if (!own) return null;
+  const simplify = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const usual = simplify(usualDestination);
+  const mine = simplify(own);
+  // "Penn Station" and "New York Penn Station" are the same terminal.
+  return !usual || mine === usual || mine.includes(usual) || usual.includes(mine) ? null : own;
+}
+
+/**
+ * One service alert on a route (delays, detours, suspensions, planned work), in effect now or
+ * starting soon. `label`, `warning` and `upcoming` are absent from functions deployed before them.
+ */
+export type ServiceAlert = {
+  id: string;
+  header: string;
+  description: string | null;
+  /** A short name for it: "Detour in effect", "Upcoming service change". */
+  label?: string;
+  /** Disrupts service now, so it's shown in warning yellow; otherwise neutral. */
+  warning?: boolean;
+  upcoming?: boolean;
+};
 
 export function minuteLabel(minutes: number): string {
   return minutes === 1 ? 'minute' : 'minutes';
@@ -99,6 +160,11 @@ export type LiveSource = {
   direction0StopId: string;
   /** Which `directions` index is GTFS direction_id 1 (the other index is implicitly direction_id 0). */
   direction1Index: 0 | 1;
+  /**
+   * A fixed point to resolve the nearest stop from instead of the rider's location: set when a
+   * line is opened from a stop in route view (a stop row or transfer badge), so it stays at that stop.
+   */
+  anchor?: { latitude: number; longitude: number };
 };
 
 export type RouteDetail = {
@@ -393,7 +459,8 @@ export const allNearbyRoutes = [
 export type RoutePreference = 'fastest' | 'transfers' | 'walking' | 'cheapest';
 export type TripTimeChoice =
   | { mode: 'now' }
-  | { mode: 'depart' | 'arrive'; minutes: number };
+  /** `date`: the New York day ("2026-10-29") it's for; without one, the clock time's next occurrence. */
+  | { mode: 'depart' | 'arrive'; minutes: number; date?: string };
 
 const MINUTES_PER_DAY = 24 * 60;
 
@@ -410,7 +477,7 @@ export function formatClockTime(minutes: number) {
 
 export function formatTripTimeChoice(choice: TripTimeChoice) {
   if (choice.mode === 'now') return 'Leave now';
-  return `${choice.mode === 'depart' ? 'Depart' : 'Arrive by'} ${formatClockTime(choice.minutes)}`;
+  return `${choice.mode === 'depart' ? 'Leave' : 'Arrive by'} ${formatClockTime(choice.minutes)}`;
 }
 
 export type ScheduledStop = { name: string; time: string };

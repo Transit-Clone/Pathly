@@ -4,6 +4,8 @@ module.exports = {
     slug: 'pathly',
     version: '0.1.0',
     orientation: 'portrait',
+    // Icon, adaptive icon, splash, and favicon are drawn by scripts/make-icons.mjs.
+    icon: './assets/icon.png',
     scheme: 'pathly',
     userInterfaceStyle: 'automatic',
     platforms: ['ios', 'android', 'web'],
@@ -13,14 +15,22 @@ module.exports = {
     },
     android: {
       package: 'com.pathly.prototype',
+      adaptiveIcon: {
+        foregroundImage: './assets/adaptive-icon.png',
+        backgroundColor: '#0B4F9C',
+      },
       predictiveBackGestureEnabled: false,
     },
     web: {
       bundler: 'metro',
+      favicon: './assets/favicon.png',
       output: 'single',
     },
     plugins: [
       'expo-status-bar',
+      'expo-web-browser',
+      'expo-sharing',
+      ['expo-notifications', { color: '#0B4F9C' }],
       [
         'react-native-maps',
         {
@@ -31,9 +41,14 @@ module.exports = {
       [
         'expo-splash-screen',
         {
-          backgroundColor: '#F7FAFF',
-          image: './assets/pathly-logo.png',
-          imageWidth: 220,
+          // The mascot alone on brand blue, in light and dark mode alike.
+          backgroundColor: '#0B4F9C',
+          image: './assets/splash-icon.png',
+          imageWidth: 160,
+          dark: {
+            backgroundColor: '#0B4F9C',
+            image: './assets/splash-icon.png',
+          },
           resizeMode: 'contain',
         },
       ],

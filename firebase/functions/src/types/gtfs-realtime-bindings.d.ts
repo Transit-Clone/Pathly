@@ -11,6 +11,8 @@ declare module 'gtfs-realtime-bindings' {
       stopId?: string | null;
       arrival?: StopTimeEvent | null;
       departure?: StopTimeEvent | null;
+      /** GTFS-RT StopTimeUpdate.ScheduleRelationship (0 SCHEDULED, 1 SKIPPED, 2 NO_DATA). */
+      scheduleRelationship?: number | null;
     }
 
     interface TripDescriptor {
@@ -18,6 +20,8 @@ declare module 'gtfs-realtime-bindings' {
       routeId?: string | null;
       directionId?: number | null;
       startDate?: string | null;
+      /** GTFS-RT TripDescriptor.ScheduleRelationship (0 SCHEDULED … 3 CANCELED). */
+      scheduleRelationship?: number | null;
     }
 
     interface TripUpdate {
@@ -51,6 +55,7 @@ declare module 'gtfs-realtime-bindings' {
     interface EntitySelector {
       agencyId?: string | null;
       routeId?: string | null;
+      stopId?: string | null;
     }
 
     interface Alert {
@@ -58,6 +63,8 @@ declare module 'gtfs-realtime-bindings' {
       informedEntity?: EntitySelector[] | null;
       headerText?: TranslatedString | null;
       descriptionText?: TranslatedString | null;
+      /** GTFS-RT Alert.Effect (1 NO_SERVICE … 9 STOP_MOVED). */
+      effect?: number | null;
     }
 
     interface FeedEntity {

@@ -61,8 +61,16 @@ test('an agency without a Pathly timetable gets no stops', async () => {
   assert.equal(await matchTripStops(step), undefined);
 });
 
-test('a departure 10 minutes off every scheduled trip gets no stops', async () => {
-  assert.equal(await matchTripStops(shifted(lirrSteps[0], 10)), undefined);
+test('a departure 10 minutes off every scheduled trip still gets its stops from the nearest trip, and where to look live', async () => {
+  const exact = await matchTripStops(lirrSteps[0]);
+  const result = await matchTripStops(shifted(lirrSteps[0], 10));
+  // Google timed it from live data: the same stops as the timetable's trip, but no exact trip id.
+  assert.deepEqual(result.stops.map((stop) => stop.name), exact.stops.map((stop) => stop.name));
+  assert.ok(result.stops.length > 0);
+  assert.equal(result.tripId, undefined);
+  assert.equal(result.live.agencyId, 'lirr');
+  assert.equal(result.live.tripId, undefined);
+  assert.ok(result.live.routeId && result.live.boardStopId && result.live.alightStopId);
 });
 
 test('two trips about equally close to the departure are ambiguous and get no stops', () => {

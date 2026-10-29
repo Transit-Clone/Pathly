@@ -1,22 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import MapView, { Marker, Polyline, type MapPressEvent, type Region } from 'react-native-maps';
+import MapView, { Marker, Polyline, type LatLng, type MapPressEvent, type Region } from 'react-native-maps';
 
 import { googleMapStyle } from '../data/mapStyle';
+import { themedRouteColor } from '../data/routeColors';
 import { zoomForRegion } from '../data/stopDeclutter';
 import { stopIndexAt, tripMapPoints, viaRevealZooms, type TripMapProps, type TripMapStop } from '../data/tripMap';
 import { useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies } from '../theme/typography';
 import { CurrentLocationMarker } from './CurrentLocationMarker';
-import { Icon } from './Icon';
+import { HeadingBeamMarker } from './HeadingBeamMarker';
 import { NATIVE_MAP_PROVIDER } from './mapProvider';
-import { PressableScale } from './PressableScale';
 
 const FIT_PADDING = { top: 90, right: 40, bottom: 60, left: 40 };
 const TRANSIT_WIDTH = 6;
-const WALK_WIDTH = 4;
-const WALK_DASH = [2, 8];
+// Walks are plain round gray dots, wide enough to read from far out.
+const WALK_WIDTH = 6;
+const WALK_DASH = [1, 10];
 const FOCUS_ZOOM = 15;
 const FOCUS_DURATION_MS = 350;
 
@@ -26,6 +27,19 @@ type ProgressState = 'completed' | 'current' | 'upcoming';
  * A planned trip on a real map: each leg in its line's color, walking dotted, a marker at every
  * stop. Interactive maps pan and zoom, label a tapped stop, and offer to re-frame the whole trip.
  */
+/**
+ * The camera center that puts `point` in the middle of the map's uncovered part (`shiftX`/`shiftY`
+ * px off the full map's middle, toward the larger padding) at FOCUS_ZOOM. Centered on the point
+ * itself, it would sit under the results sheet, below what's visible.
+ */
+function centerInView(point: LatLng, shiftX: number, shiftY: number): LatLng {
+  const degreesPerPixel = 360 / (256 * 2 ** FOCUS_ZOOM);
+  return {
+    latitude: point.latitude - shiftY * degreesPerPixel * Math.cos((point.latitude * Math.PI) / 180),
+    longitude: point.longitude + shiftX * degreesPerPixel,
+  };
+}
+
 export function TripMap({ centerOnUserRequest = 0, destination, focusStop, followLocation, followUser, interactive = false, itinerary, navigationProgress, onFollowModeChange, onUserPan, origin, padding = FIT_PADDING, testID = 'trip-map', userLocation, userLocationStale = false }: TripMapProps) {
   const mapRef = useRef<MapView>(null);
   const styles = useThemedStyles(createStyles);
@@ -40,7 +54,6 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
   const coordinatesKey = useMemo(() => coordinates.map((point) => `${point.latitude},${point.longitude}`).join(';'), [coordinates]);
   const hasNavigationProgress = navigationProgress != null;
   const [selected, setSelected] = useState<number | null>(null);
-  const [moved, setMoved] = useState(false);
   const [mapReady, setMapReady] = useState(false);
   const [internalFollow, setInternalFollow] = useState(() => navigationProgress != null);
   const following = followUser ?? internalFollow;
@@ -72,7 +85,6 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
   const onRegionChangeComplete = (region: Region, details?: { isGesture?: boolean }) => {
     setZoom(zoomForRegion(region.longitudeDelta, mapWidth || windowWidth));
     if (interactive && details?.isGesture) {
-      setMoved(true);
       setFollowing(false);
       onUserPan?.();
     }
@@ -89,6 +101,9 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
   const userLongitude = cameraLocation?.lng;
   const followLatitude = navigationProgress?.followTarget?.lat;
   const followLongitude = navigationProgress?.followTarget?.lng;
+  const shiftX = (padding.right - padding.left) / 2;
+  const shiftY = (padding.bottom - padding.top) / 2;
+  const inView = useCallback((point: LatLng) => centerInView(point, shiftX, shiftY), [shiftX, shiftY]);
   const followCamera = useCallback((animated: boolean) => {
     if (userLatitude === undefined || userLongitude === undefined) return;
     const rider = { latitude: userLatitude, longitude: userLongitude };
@@ -108,8 +123,8 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
       );
       return;
     }
-    mapRef.current?.animateCamera({ center: rider, zoom: FOCUS_ZOOM }, { duration: animated ? FOCUS_DURATION_MS : 0 });
-  }, [followLatitude, followLongitude, padding.bottom, padding.left, padding.right, padding.top, userLatitude, userLongitude]);
+    mapRef.current?.animateCamera({ center: inView(rider), zoom: FOCUS_ZOOM }, { duration: animated ? FOCUS_DURATION_MS : 0 });
+  }, [followLatitude, followLongitude, inView, padding.bottom, padding.left, padding.right, padding.top, userLatitude, userLongitude]);
 
   // Frames the whole trip (or both endpoints while it loads) whenever it changes.
   const frameKey = `${itinerary?.id ?? ''}:${coordinatesKey}`;
@@ -133,19 +148,17 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
   if (focusStop && focusStop.key !== handledFocusKey) {
     setHandledFocusKey(focusStop.key);
     setSelected(stopIndexAt(stops, focusStop.point));
-    setMoved(true);
   }
   useEffect(() => {
     if (!focusStop) return;
-    mapRef.current?.animateCamera({ center: { latitude: focusStop.point.lat, longitude: focusStop.point.lng }, zoom: FOCUS_ZOOM }, { duration: FOCUS_DURATION_MS });
-  }, [focusStop]);
+    mapRef.current?.animateCamera({ center: inView({ latitude: focusStop.point.lat, longitude: focusStop.point.lng }), zoom: FOCUS_ZOOM }, { duration: FOCUS_DURATION_MS });
+  }, [focusStop, inView]);
 
   // The location button: centered on the rider, with the re-frame button offered to come back.
   const [handledCenterRequest, setHandledCenterRequest] = useState(centerOnUserRequest);
   if (centerOnUserRequest !== handledCenterRequest) {
     setHandledCenterRequest(centerOnUserRequest);
     if (navigationProgress && followUser === undefined) setInternalFollow(true);
-    if (userLocation) setMoved(true);
   }
   const centerRequestForEffect = useRef(centerOnUserRequest);
   useEffect(() => {
@@ -154,8 +167,8 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
     if (navigationProgress) onFollowModeChange?.(true);
     if (!userLocation) return;
     if (navigationProgress && userLatitude !== undefined && userLongitude !== undefined) followCamera(true);
-    else mapRef.current?.animateCamera({ center: { latitude: userLocation.lat, longitude: userLocation.lng }, zoom: FOCUS_ZOOM }, { duration: FOCUS_DURATION_MS });
-  }, [centerOnUserRequest, followCamera, navigationProgress, onFollowModeChange, userLatitude, userLocation, userLongitude]);
+    else mapRef.current?.animateCamera({ center: inView({ latitude: userLocation.lat, longitude: userLocation.lng }), zoom: FOCUS_ZOOM }, { duration: FOCUS_DURATION_MS });
+  }, [centerOnUserRequest, followCamera, inView, navigationProgress, onFollowModeChange, userLatitude, userLocation, userLongitude]);
 
   const selectedStop = selected !== null ? stops[selected] : undefined;
 
@@ -167,7 +180,6 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
           setMapReady(true);
         }}
         onPanDrag={interactive ? () => {
-          setMoved(true);
           setFollowing(false);
           onUserPan?.();
         } : undefined}
@@ -199,9 +211,10 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
             <Polyline
               key={`leg-${index}`}
               coordinates={leg.path.map((point) => ({ latitude: point.lat, longitude: point.lng }))}
+              lineCap={leg.walk ? 'round' : undefined}
               lineDashPattern={leg.walk ? WALK_DASH : undefined}
-              strokeColor={completed ? colors.mutedInk : leg.walk ? colors.mutedInk : leg.color ?? colors.primary}
-              strokeWidth={completed ? (leg.walk ? 3 : 4) : current ? (leg.walk ? 6 : 8) : leg.walk ? WALK_WIDTH : TRANSIT_WIDTH}
+              strokeColor={completed || leg.walk ? colors.mutedInk : themedRouteColor(leg.color ?? colors.primary, isDark)}
+              strokeWidth={completed ? 4 : current ? 8 : leg.walk ? WALK_WIDTH : TRANSIT_WIDTH}
               testID={progressState ? `${testID}-progress-${progressState}-${index}` : leg.walk ? `trip-map-walk-${index}` : `trip-map-transit-${index}`}
               zIndex={current ? 3 : leg.walk ? 1 : 2}
             />
@@ -222,13 +235,15 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
               style={[
                 stop.kind === 'via' ? styles.viaDot : styles.dot,
                 'state' in stop && stop.state === 'completed' && styles.completedStop,
-                stop.kind === 'start' && { backgroundColor: colors.success },
+                // The start ringed like the rider's location dot, but gray.
+                stop.kind === 'start' && { backgroundColor: colors.tripStart, borderColor: colors.ring },
                 stop.kind === 'end' && { backgroundColor: colors.primary },
-                (stop.kind === 'stop' || stop.kind === 'via') && { backgroundColor: colors.white, borderColor: stop.color ?? colors.primary },
+                (stop.kind === 'stop' || stop.kind === 'via') && { backgroundColor: colors.white, borderColor: themedRouteColor(stop.color ?? colors.primary, isDark) },
               ]}
             />
           </Marker>
         )))}
+        {userLocation ? <HeadingBeamMarker coordinate={{ latitude: userLocation.lat, longitude: userLocation.lng }} /> : null}
         {userLocation ? (
           <Marker
             anchor={{ x: 0.5, y: 0.5 }}
@@ -250,22 +265,6 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
           </Marker>
         ) : null}
       </MapView>
-      {interactive && moved ? (
-        <PressableScale
-          accessibilityLabel="Show the whole trip"
-          accessibilityRole="button"
-          onPress={() => {
-            setMoved(false);
-            setSelected(null);
-            setFollowing(false);
-            frame();
-          }}
-          style={[styles.reframe, { top: padding.top, right: 14 }]}
-          testID={`${testID}-reframe`}
-        >
-          <Icon color={colors.primary} name="fit" size={22} />
-        </PressableScale>
-      ) : null}
     </View>
   );
 }
@@ -276,6 +275,5 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   viaDot: { width: 9, height: 9, borderWidth: 2, borderColor: '#FFFFFF', borderRadius: 5 },
   label: { maxWidth: 240, paddingVertical: 6, paddingHorizontal: 10, borderRadius: 12, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 6, elevation: 4 },
   labelText: { color: colors.ink, fontFamily: fontFamilies.bold, fontSize: 13 },
-  reframe: { position: 'absolute', width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.18, shadowRadius: 8, elevation: 5 },
   staleLocation: { opacity: 0.45 },
 });

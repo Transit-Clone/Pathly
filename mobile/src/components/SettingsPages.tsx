@@ -1,6 +1,6 @@
 import * as Location from 'expo-location';
 import { useCallback, useEffect, useState } from 'react';
-import { AppState, Linking, Platform, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, AppState, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { useAuth } from '../auth/AuthContext';
 import {
@@ -12,14 +12,19 @@ import {
   shareUserData,
   updateDisplayName,
 } from '../data/accountData';
+import { searchLineIndex, useLineIndex, type IndexedLine } from '../data/lineIndex';
+import { ROUTE_ALERT_OPTIONS, saveRoute, savedRouteFromLine, setRouteAlerts, setRouteAlertsPaused, subscribeToSavedRoutes, type SavedRoute } from '../data/savedRoutes';
 import { ALL_TRANSIT_MODES, useUserPreferences, WALK_LIMIT_OPTIONS } from '../data/userPreferences';
+import { registerForRouteAlerts } from '../lib/notifications';
 import { useAppSettings, useTheme, useThemedStyles, type TextSize } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
 import { ConfirmDialog } from './ConfirmDialog';
 import { Card, ChoiceRow, createStyles as createProfileStyles, SettingRow, ToggleRow } from './ProfileView';
+import { Icon } from './Icon';
 import { PressableScale } from './PressableScale';
-import type { TransitMode } from './RouteBadge';
+import { badgeLabel, RouteBadge, transitModeForAgency, type TransitMode } from './RouteBadge';
+import { radii } from '../theme/shape';
 
 /** Settings pages behind Profile & Settings; each reports what it did through `onFeedback`. */
 type PageProps = { onFeedback: (message: string) => void };
@@ -113,7 +118,7 @@ export function AccountSettings({ onFeedback }: PageProps) {
       </Card>
       <Text style={profile.sectionLabel}>SECURITY</Text>
       <Card>
-        <SettingRow detail={resetSentTo ? `Reset link sent to ${resetSentTo}` : 'Email me a link to choose a new password'} label="Password" onPress={() => void resetPassword()} testID="account-password" />
+        <SettingRow detail={resetSentTo ? `Reset link sent to ${resetSentTo}` : undefined} label="Reset password" onPress={() => void resetPassword()} testID="account-password" />
       </Card>
     </>
   );
@@ -126,9 +131,35 @@ export function NotificationSettings({ onFeedback }: PageProps) {
   const { profile } = useStyles();
   const { preferences, updatePreferences } = useUserPreferences();
   const { notifications } = preferences;
+  const { user } = useAuth();
+  const uid = user?.uid;
+  // Each saved line's own alert setting, stored with it on the account (the backend reads it).
+  const [savedRoutes, setSavedRoutes] = useState<readonly SavedRoute[]>([]);
+  useEffect(() => {
+    if (!uid) return undefined;
+    return subscribeToSavedRoutes(uid, setSavedRoutes);
+  }, [uid]);
   const set = (key: keyof typeof notifications, value: boolean) => {
     updatePreferences({ notifications: { [key]: value } });
+    if (uid && (key === 'enabled' || key === 'serviceAlerts')) {
+      const next = { ...notifications, [key]: value };
+      setRouteAlertsPaused(uid, !(next.enabled && next.serviceAlerts)).catch(() => undefined);
+    }
     onFeedback('Notification preferences saved');
+  };
+  const setLineAlerts = (route: SavedRoute, label: string) => {
+    const option = ROUTE_ALERT_OPTIONS.find((candidate) => candidate.label === label);
+    if (!uid || !option) return;
+    setRouteAlerts(uid, route.id, option.value, route.alertHours).catch(() => undefined);
+    if (option.value !== 'off') void registerForRouteAlerts(uid);
+    onFeedback(`${route.shortName || route.routeName} alerts: ${option.label}`);
+  };
+  const addLine = async (line: IndexedLine) => {
+    if (!uid) return;
+    const saved = savedRouteFromLine(line);
+    await saveRoute(uid, saved);
+    void registerForRouteAlerts(uid);
+    onFeedback(`${badgeLabel({ agency: line.agencyDisplayName, shortName: line.shortName })} alerts: All times`);
   };
   return (
     <>
@@ -137,13 +168,116 @@ export function NotificationSettings({ onFeedback }: PageProps) {
         <ToggleRow label="Allow notifications" onChange={(value) => set('enabled', value)} testID="toggle-notifications" value={notifications.enabled} />
         {notifications.enabled ? (
           <>
-            <ToggleRow detail="Changes and delays on saved routes" label="Service alerts" onChange={(value) => set('serviceAlerts', value)} testID="toggle-service-alerts" value={notifications.serviceAlerts} />
-            <ToggleRow detail="Leave-time and transfer reminders" label="Trip reminders" onChange={(value) => set('tripReminders', value)} testID="toggle-trip-reminders" value={notifications.tripReminders} />
-            <ToggleRow detail="Major incidents near your trip" label="Disruption updates" onChange={(value) => set('disruptions', value)} testID="toggle-disruptions" value={notifications.disruptions} />
+            <ToggleRow label="Service alerts" onChange={(value) => set('serviceAlerts', value)} testID="toggle-service-alerts" value={notifications.serviceAlerts} />
+            <ToggleRow label="Trip reminders" onChange={(value) => set('tripReminders', value)} testID="toggle-trip-reminders" value={notifications.tripReminders} />
+            <ToggleRow label="Disruption updates" onChange={(value) => set('disruptions', value)} testID="toggle-disruptions" value={notifications.disruptions} />
           </>
         ) : null}
       </Card>
-      <Text style={profile.note} testID="notifications-not-sent">Pathly doesn&apos;t send push alerts yet. Your choices are saved to this device and will apply when alerts arrive.</Text>
+      <Text style={profile.sectionLabel}>SAVED LINES</Text>
+      <Card>
+        {savedRoutes.length === 0 ? (
+          <SettingRow label="No saved lines yet" testID="notifications-no-saved-lines" />
+        ) : savedRoutes.map((route) => (
+          <ChoiceRow
+            key={route.id}
+            label={route.shortName && route.shortName !== route.routeName ? `${route.shortName} · ${route.routeName}` : route.routeName}
+            onSelect={(label) => setLineAlerts(route, label)}
+            options={ROUTE_ALERT_OPTIONS.map((option) => option.label)}
+            selected={ROUTE_ALERT_OPTIONS.find((option) => option.value === (route.alerts === 'peak' ? 'custom' : route.alerts))?.label ?? 'Never'}
+            testPrefix={`line-alerts-${route.id}`}
+          />
+        ))}
+      </Card>
+      {uid ? <AddSavedLine onAdd={addLine} savedIds={savedRoutes.map((route) => route.id)} /> : null}
+      <Text style={profile.note} testID="notifications-not-sent">{"Set a line's custom hours from the bell in its route view. Line alerts arrive as push notifications in the Android and iOS app; the web app doesn't receive them."}</Text>
+    </>
+  );
+}
+
+const MAX_LINE_RESULTS = 6;
+
+/** "Add a line" under Saved lines: search every line by code or name and turn its alerts on. */
+function AddSavedLine({ onAdd, savedIds }: { onAdd: (line: IndexedLine) => Promise<void>; savedIds: readonly string[] }) {
+  const { page } = useStyles();
+  const { colors } = useTheme();
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [adding, setAdding] = useState<string | null>(null);
+  const index = useLineIndex(open);
+  const trimmed = query.trim();
+  const results = index && trimmed
+    ? searchLineIndex(index, trimmed).filter((line) => !savedIds.includes(`${line.agencyId}:${line.routeId}`)).slice(0, MAX_LINE_RESULTS)
+    : [];
+  const add = async (line: IndexedLine) => {
+    const id = `${line.agencyId}:${line.routeId}`;
+    setAdding(id);
+    try {
+      await onAdd(line);
+      setQuery('');
+    } catch {
+      // Offline or refused: the line just isn't added, and stays in the results to try again.
+    } finally {
+      setAdding(null);
+    }
+  };
+  const close = () => { setOpen(false); setQuery(''); };
+  return (
+    <>
+      <Card>
+        <SettingRow label="Add a line" onPress={() => setOpen(true)} testID="notifications-add-line" />
+      </Card>
+      <Modal animationType="slide" onRequestClose={close} statusBarTranslucent={true} transparent={true} visible={open}>
+        <View style={page.sheetViewport}>
+          <Pressable accessibilityLabel="Close" onPress={close} style={page.sheetBackdrop} testID="notifications-add-line-backdrop" />
+          <View style={page.sheet} testID="notifications-add-line-panel">
+            <Text style={page.sheetTitle}>Add a line</Text>
+            <Text style={page.lineSubtitle}>Its service alerts start at all times; change that in Saved lines.</Text>
+            <TextInput
+              accessibilityLabel="Search lines"
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoFocus={true}
+              onChangeText={setQuery}
+              placeholder="Line or route, like 51, E, or Port Jefferson"
+              placeholderTextColor={colors.mutedInk}
+              returnKeyType="search"
+              style={[page.input, page.sheetInput]}
+              testID="notifications-add-line-input"
+              value={query}
+            />
+            <ScrollView keyboardShouldPersistTaps="handled" style={page.sheetResults}>
+              {trimmed && !index ? <Text style={page.lineEmpty}>Loading lines…</Text> : null}
+              {trimmed && index && results.length === 0 ? <Text style={page.lineEmpty} testID="notifications-add-line-empty">No lines match</Text> : null}
+              {results.map((line) => {
+                const id = `${line.agencyId}:${line.routeId}`;
+                const label = badgeLabel({ agency: line.agencyDisplayName, shortName: line.shortName });
+                return (
+                  <PressableScale
+                    accessibilityLabel={`Add ${line.agencyDisplayName} ${label}, ${line.routeName}`}
+                    accessibilityRole="button"
+                    disabled={adding != null}
+                    key={id}
+                    onPress={() => void add(line)}
+                    style={page.lineRow}
+                    testID={`notifications-add-line-${line.agencyId}-${line.routeId}`}
+                  >
+                    <RouteBadge agency={line.agencyDisplayName} color={line.color} mode={transitModeForAgency(line.agencyDisplayName)} shortName={label} size="small" />
+                    <View style={page.lineCopy}>
+                      <Text numberOfLines={1} style={page.lineTitle}>{line.routeName || label}</Text>
+                      <Text numberOfLines={1} style={page.lineSubtitle}>{line.agencyDisplayName}</Text>
+                    </View>
+                    {adding === id ? <ActivityIndicator color={colors.primary} size="small" /> : <Icon color={colors.primary} name="add" size={22} />}
+                  </PressableScale>
+                );
+              })}
+            </ScrollView>
+            <PressableScale accessibilityRole="button" onPress={close} style={[page.button, page.primaryButton, page.sheetDone]} testID="notifications-add-line-done">
+              <Text style={page.primaryButtonText}>Done</Text>
+            </PressableScale>
+          </View>
+        </View>
+      </Modal>
     </>
   );
 }
@@ -177,11 +311,11 @@ export function AccessibilitySettings({ onFeedback }: PageProps) {
           selected={textSizeOptions.find((item) => item.value === textSize)?.label ?? 'Default'}
           testPrefix="text-size"
         />
-        <ToggleRow detail="Stop pulsing live signals and other animation" label="Reduce motion" onChange={(value) => { setReducedMotion(value); onFeedback(value ? 'Motion reduced' : 'Motion restored'); }} testID="toggle-reduced-motion" value={reducedMotion} />
-        <ToggleRow detail="Darker text and stronger borders and colors" label="High contrast" onChange={(value) => { setHighContrast(value); onFeedback(value ? 'High contrast on' : 'High contrast off'); }} testID="toggle-high-contrast" value={highContrast} />
-        <ToggleRow detail="Remember that you need accessible stations and vehicles" label="Step-free routes" onChange={(value) => { updatePreferences({ stepFree: value }); onFeedback('Step-free preference saved'); }} testID="toggle-step-free" value={preferences.stepFree} />
+        <ToggleRow label="Reduce motion" onChange={(value) => { setReducedMotion(value); onFeedback(value ? 'Motion reduced' : 'Motion restored'); }} testID="toggle-reduced-motion" value={reducedMotion} />
+        <ToggleRow label="High contrast" onChange={(value) => { setHighContrast(value); onFeedback(value ? 'High contrast on' : 'High contrast off'); }} testID="toggle-high-contrast" value={highContrast} />
+        <ToggleRow label="Step-free routes" onChange={(value) => { updatePreferences({ stepFree: value }); onFeedback('Step-free preference saved'); }} testID="toggle-step-free" value={preferences.stepFree} />
       </Card>
-      <Text style={profile.note} testID="step-free-note">Google&apos;s transit planner doesn&apos;t report step-free access, so trips aren&apos;t filtered for it yet. Check station accessibility with the agency before you go.</Text>
+      <Text style={profile.note} testID="step-free-note">Station access comes from the MTA and can change when an elevator is out. Every bus and ferry is step-free. Google&apos;s transit planner doesn&apos;t report step-free access, so trips aren&apos;t filtered for it yet.</Text>
     </>
   );
 }
@@ -227,8 +361,8 @@ export function TravelSettings({ onFeedback }: PageProps) {
             })}
           </View>
         </View>
-        <ToggleRow detail="Off asks for trips with less walking" label="Allow walking" onChange={(value) => { updatePreferences({ travel: { allowWalking: value } }); onFeedback('Travel preferences saved'); }} testID="toggle-walking" value={travel.allowWalking} />
-        <ToggleRow detail="Start results sorted by fewest transfers" label="Fewer transfers" onChange={(value) => { updatePreferences({ travel: { fewerTransfers: value } }); onFeedback('Travel preferences saved'); }} testID="toggle-fewer-transfers" value={travel.fewerTransfers} />
+        <ToggleRow label="Allow walking" onChange={(value) => { updatePreferences({ travel: { allowWalking: value } }); onFeedback('Travel preferences saved'); }} testID="toggle-walking" value={travel.allowWalking} />
+        <ToggleRow label="Fewer transfers" onChange={(value) => { updatePreferences({ travel: { fewerTransfers: value } }); onFeedback('Travel preferences saved'); }} testID="toggle-fewer-transfers" value={travel.fewerTransfers} />
         <SettingRow detail={walkLimitLabel(travel.maxWalkMinutes)} label="Maximum walking time" onPress={() => setPickingLimit((open) => !open)} testID="walking-limit" />
         {pickingLimit ? (
           <View style={[profile.choices, page.limitChoices]} testID="walking-limit-picker">
@@ -357,9 +491,9 @@ export function PrivacySettings({ onFeedback }: PageProps) {
       <Text style={profile.intro}>Control location access and the data Pathly keeps for your account.</Text>
       <Card>
         <SettingRow detail={permissionDetail[permission.status]} label="Location access" onPress={permission.status === 'unknown' ? undefined : () => void changeLocation()} testID="privacy-location" />
-        <ToggleRow detail="Pathly doesn't collect usage analytics yet; this saves your choice for when it does" label="Share usage analytics" onChange={(value) => { updatePreferences({ analytics: value }); onFeedback('Analytics preference saved'); }} testID="toggle-analytics" value={preferences.analytics} />
-        <SettingRow detail={exporting ? 'Preparing your data…' : 'Searches, recent destinations, and saved places as JSON'} label="Download your data" onPress={() => void download()} testID="privacy-download" />
-        <SettingRow detail="Permanently remove your account and its data" label="Delete account" onPress={() => { setDeleteOpen((open) => !open); setDeleteError(''); }} testID="privacy-delete" />
+        <ToggleRow label="Share usage analytics" onChange={(value) => { updatePreferences({ analytics: value }); onFeedback('Analytics preference saved'); }} testID="toggle-analytics" value={preferences.analytics} />
+        <SettingRow detail={exporting ? 'Preparing your data…' : undefined} label="Download your data" onPress={() => void download()} testID="privacy-download" />
+        <SettingRow label="Delete account" onPress={() => { setDeleteOpen((open) => !open); setDeleteError(''); }} testID="privacy-delete" />
       </Card>
       {deleteOpen ? (
         <View style={page.dangerCard} testID="delete-account-panel">
@@ -451,34 +585,46 @@ export function HelpSettings({ onFeedback }: PageProps) {
     <>
       <Text style={profile.intro}>Answers, support, and the policies behind Pathly.</Text>
       <Card>
-        <SettingRow detail="Trip planning, live times, and saved places" label="Frequently asked questions" onPress={() => toggle('faq')} testID="help-faq" />
+        <SettingRow label="Frequently asked questions" onPress={() => toggle('faq')} testID="help-faq" />
         {open === 'faq' ? <View style={page.doc} testID="help-faq-content">{FAQ.map((item) => <View key={item.q} style={page.docItem}><Text style={page.docHeading}>{item.q}</Text><Text style={page.docBody}>{item.a}</Text></View>)}</View> : null}
-        <SettingRow detail={SUPPORT_EMAIL ? `Email ${SUPPORT_EMAIL}` : 'Report a problem on GitHub'} label="Contact support" onPress={() => void contact()} testID="help-contact" />
-        <SettingRow detail="What Pathly keeps and why" label="Privacy policy" onPress={() => toggle('privacy')} testID="help-privacy" />
+        <SettingRow label="Contact support" onPress={() => void contact()} testID="help-contact" />
+        <SettingRow label="Privacy policy" onPress={() => toggle('privacy')} testID="help-privacy" />
         {open === 'privacy' ? <View style={page.doc} testID="help-privacy-content">{PRIVACY.map((line) => <Text key={line} style={[page.docBody, page.docItem]}>{line}</Text>)}</View> : null}
         <SettingRow label="Terms of use" onPress={() => toggle('terms')} testID="help-terms" />
         {open === 'terms' ? <View style={page.doc} testID="help-terms-content">{TERMS.map((line) => <Text key={line} style={[page.docBody, page.docItem]}>{line}</Text>)}</View> : null}
         {/* Nearby's walking distances come from OpenStreetMap, whose license (ODbL) requires this credit. */}
-        <SettingRow detail="Walking distances use map data © OpenStreetMap contributors" label="Map data" onPress={() => void openOsmCopyright()} testID="help-osm" />
+        <SettingRow label="Map data © OpenStreetMap" onPress={() => void openOsmCopyright()} testID="help-osm" />
       </Card>
     </>
   );
 }
 
 const createStyles = (colors: Palette) => StyleSheet.create({
+  sheetViewport: { flex: 1, justifyContent: 'flex-end' },
+  sheetBackdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: colors.scrim },
+  sheet: { width: '100%', maxWidth: 540, maxHeight: '80%', alignSelf: 'center', gap: 6, paddingHorizontal: 18, paddingTop: 18, paddingBottom: 30, borderTopLeftRadius: radii.sheet, borderTopRightRadius: radii.sheet, backgroundColor: colors.surface },
+  sheetTitle: { color: colors.ink, ...typography.sectionHeading, fontSize: 18 },
+  sheetInput: { marginTop: 8 },
+  sheetResults: { flexGrow: 0, minHeight: 60 },
+  sheetDone: { marginTop: 8 },
+  lineRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 },
+  lineCopy: { flex: 1, minWidth: 0 },
+  lineTitle: { color: colors.ink, fontFamily: fontFamilies.bold, fontSize: 15 },
+  lineSubtitle: { color: colors.mutedInk, fontFamily: fontFamilies.semibold, fontSize: 12 },
+  lineEmpty: { color: colors.mutedInk, fontFamily: fontFamilies.semibold, fontSize: 13, paddingVertical: 6 },
   editBlock: { padding: 15, gap: 10, borderBottomWidth: 1, borderBottomColor: colors.border },
-  input: { minHeight: 46, paddingHorizontal: 13, borderWidth: 1, borderColor: colors.border, borderRadius: 12, color: colors.ink, backgroundColor: colors.background, ...typography.body, fontSize: 15 },
+  input: { minHeight: 46, paddingHorizontal: 13, borderWidth: 1, borderColor: colors.border, borderRadius: radii.control, color: colors.ink, backgroundColor: colors.background, ...typography.body, fontSize: 15 },
   buttonRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
-  button: { minHeight: 40, minWidth: 84, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, borderRadius: 20 },
+  button: { minHeight: 40, minWidth: 84, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, borderRadius: radii.pill },
   primaryButton: { backgroundColor: colors.primary },
   primaryButtonText: { color: colors.onPrimary, fontFamily: fontFamilies.extraBold, fontSize: 14 },
   secondaryButton: { backgroundColor: colors.background },
   secondaryButtonText: { color: colors.ink, fontFamily: fontFamilies.bold, fontSize: 14 },
   limitChoices: { marginTop: 0, padding: 15, borderBottomWidth: 1, borderBottomColor: colors.border },
-  dangerCard: { gap: 10, marginTop: 16, padding: 15, borderWidth: 1, borderColor: colors.red, borderRadius: 18, backgroundColor: colors.surface },
+  dangerCard: { gap: 10, marginTop: 16, padding: 15, borderWidth: 1, borderColor: colors.red, borderRadius: radii.card, backgroundColor: colors.surface },
   dangerTitle: { color: colors.red, ...typography.bodyStrong, fontSize: 15 },
   dangerBody: { color: colors.mutedInk, ...typography.metadata },
-  dangerButton: { minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 16, backgroundColor: colors.red },
+  dangerButton: { minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: radii.pill, backgroundColor: colors.red },
   dangerButtonText: { color: colors.white, fontFamily: fontFamilies.extraBold, fontSize: 15 },
   disabled: { opacity: 0.5 },
   error: { color: colors.red, ...typography.metadata },

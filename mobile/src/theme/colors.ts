@@ -28,10 +28,32 @@ export const lightColors = {
   amber: '#F97316',
   amberSoft: '#FFF0E6',
   routeGreen: '#13795B',
+  /**
+   * Pathly's warm accent, used sparingly for delight only: saved stars, arrival, and Support.
+   * `highlight` is a fill (with `onHighlight` text); `highlightInk` is its icon color on surfaces.
+   * Never used for transit lines, alerts, or anything a rider has to read quickly.
+   */
+  highlight: '#FFC23D',
+  onHighlight: '#3D2A00',
+  highlightSoft: '#FFF4D6',
+  highlightInk: '#B86E00',
+  /** A service disruption (detour, delays, suspension): a yellow fill with dark text, like a road sign. */
+  alertYellow: '#FFD64F',
+  onAlertYellow: '#3B2A00',
   shadow: '#16324F',
   scrim: 'rgba(22, 50, 79, 0.32)',
-  locationHalo: 'rgba(167, 216, 255, 0.46)',
+  /** The rider's own location dot and heading beam, the same blue on every map and theme. */
+  location: '#4285F4',
+  locationHalo: 'rgba(66, 133, 244, 0.22)',
   white: '#FFFFFF',
+  /** The outline around pins, badges and map dots: white on the light map, black on the dark one. */
+  ring: '#FFFFFF',
+  /** Saved-place badge borders, independent of their icon color. */
+  savedPlaceBorder: '#FFFFFF',
+  /** Where a trip starts, on its map: gray, so it never reads as the rider's blue location dot. */
+  tripStart: '#9AA0A6',
+  /** Round buttons floating on the map (locate, layers): lighter than the dark map in dark mode. */
+  mapControl: '#FFFFFF',
   mapLand: '#EFEBE3',
   mapRoad: '#FFFFFF',
   mapRoadMajor: '#FFFFFF',
@@ -47,7 +69,7 @@ export type Palette = { readonly [Key in keyof typeof lightColors]: string };
 
 export const darkColors: Palette = {
   primary: '#5B9BF8',
-  searchCenter: '#A78BFA',
+  searchCenter: '#9B5CFF',
   onPrimary: '#0A1B30',
   accent: '#2F5E93',
   background: '#000000',
@@ -73,10 +95,21 @@ export const darkColors: Palette = {
   amber: '#FB923C',
   amberSoft: '#35210F',
   routeGreen: '#2FAE83',
+  highlight: '#FFC94D',
+  onHighlight: '#2A1D00',
+  highlightSoft: '#3A2D0E',
+  highlightInk: '#FFC94D',
+  alertYellow: '#F2C230',
+  onAlertYellow: '#2A1D00',
   shadow: '#000000',
   scrim: 'rgba(0, 0, 0, 0.6)',
-  locationHalo: 'rgba(91, 155, 248, 0.32)',
+  location: '#4285F4',
+  locationHalo: 'rgba(66, 133, 244, 0.3)',
   white: '#FFFFFF',
+  ring: '#000000',
+  savedPlaceBorder: '#737980',
+  tripStart: '#8A9099',
+  mapControl: '#3A3D43',
   mapLand: '#1D1F22',
   mapRoad: '#34373C',
   mapRoadMajor: '#45494F',
@@ -110,6 +143,7 @@ export const highContrastLightColors: Palette = {
   amber: '#B54708',
   warning: '#B54708',
   routeGreen: '#0B5C44',
+  highlightInk: '#8A5200',
   mapLabel: '#2F3B4A',
 };
 

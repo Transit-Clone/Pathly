@@ -13,6 +13,12 @@ export type DirectionPrediction = {
    * trip_ids match the timetable's. Null for a timetable departure, or when it can't be told.
    */
   delayMinutes: number | null;
+  /**
+   * Where this trip ends: its timetable headsign, or else the last stop the live feed lists for
+   * it. A direction's trips don't all go as far (an S76 short-turning at Clove Rd), so each
+   * departure says its own. Null when neither is known.
+   */
+  headsign: string | null;
 };
 export type StopPredictions = {
   towardDirection1: readonly DirectionPrediction[];
@@ -56,7 +62,7 @@ function serviceDayAt(utcDate: Date): ServiceDay {
   return { dateKey, dayOfWeek: utcDate.getUTCDay() };
 }
 
-type Entry = { tripId: string; minutes: number; peakOffpeak: boolean | null; delayMinutes: number | null };
+type Entry = { tripId: string; minutes: number; peakOffpeak: boolean | null; delayMinutes: number | null; headsign: string | null };
 /** A tracked trip at the asked-for stop, before its delay is resolved. */
 type LiveEntry = Entry & { stopId: string; atMs: number };
 
@@ -92,6 +98,13 @@ export async function getStopPredictions(
 ): Promise<StopPredictions> {
   const config = agencyConfig(agencyId);
   const now = Date.now();
+  const { tripsById, stopsById } = loadAgencyStaticData(agencyId);
+  const liveHeadsign = (trip: GtfsTripStatus): string | null => {
+    const timetable = tripsById.get(trip.tripId)?.headsign;
+    if (timetable) return timetable;
+    const lastStopId = trip.stops.at(-1)?.stopId;
+    return (lastStopId && stopsById.get(lastStopId)?.name) || null;
+  };
   const direction1Live: LiveEntry[] = [];
   const direction0Live: LiveEntry[] = [];
 
@@ -104,14 +117,14 @@ export async function getStopPredictions(
       if (minutes < 0) continue;
       // Terminals can serve both directions from one stop_id; the trip's own direction decides then.
       const isDirection1 = direction1StopId === direction0StopId ? trip.directionId === 1 : stop.stopId === direction1StopId;
-      (isDirection1 ? direction1Live : direction0Live).push({ tripId: trip.tripId, minutes, peakOffpeak: trip.peakOffpeak, delayMinutes: feedDelayMinutes(stop.delaySeconds), stopId: stop.stopId, atMs });
+      (isDirection1 ? direction1Live : direction0Live).push({ tripId: trip.tripId, minutes, peakOffpeak: trip.peakOffpeak, delayMinutes: feedDelayMinutes(stop.delaySeconds), headsign: liveHeadsign(trip), stopId: stop.stopId, atMs });
     } else {
       const stop = trip.stops.find((candidate) => candidate.stopId === direction1StopId);
       if (!stop?.scheduledTime) continue;
       const atMs = new Date(stop.scheduledTime).getTime();
       const minutes = Math.round((atMs - now) / 60_000);
       if (minutes < 0) continue;
-      (trip.directionId === 1 ? direction1Live : direction0Live).push({ tripId: trip.tripId, minutes, peakOffpeak: trip.peakOffpeak, delayMinutes: feedDelayMinutes(stop.delaySeconds), stopId: stop.stopId, atMs });
+      (trip.directionId === 1 ? direction1Live : direction0Live).push({ tripId: trip.tripId, minutes, peakOffpeak: trip.peakOffpeak, delayMinutes: feedDelayMinutes(stop.delaySeconds), headsign: liveHeadsign(trip), stopId: stop.stopId, atMs });
     }
   }
 
@@ -121,7 +134,6 @@ export async function getStopPredictions(
   const direction1Static: Entry[] = [];
   const direction0Static: Entry[] = [];
   const seenTripIds = new Set([...direction1Live, ...direction0Live].map((entry) => entry.tripId));
-  const { tripsById } = loadAgencyStaticData(agencyId);
   const { byStop, byTrip } = await loadRouteStopTimes(agencyId, routeId);
   // A shuttle's trip ends at the other terminal: arriving there isn't a departure from it.
   const endsTripHere = (stopTime: { tripId: string; stopSequence: number }) => config.terminalShuttle === true
@@ -161,7 +173,7 @@ export async function getStopPredictions(
         if (minutes < 0) continue;
 
         const isDirection1 = config.directionalStops && direction1StopId !== direction0StopId ? stopId === direction1StopId : trip.directionId === 1;
-        (isDirection1 ? direction1Static : direction0Static).push({ tripId: stopTime.tripId, minutes, peakOffpeak: trip.peakOffpeak, delayMinutes: null });
+        (isDirection1 ? direction1Static : direction0Static).push({ tripId: stopTime.tripId, minutes, peakOffpeak: trip.peakOffpeak, delayMinutes: null, headsign: trip.headsign || null });
       }
     }
   };
@@ -178,8 +190,8 @@ export async function getStopPredictions(
     const lastLive = Math.max(-1, ...live.map((entry) => entry.minutes));
     const padding = config.realtimeTripIdsMatchStatic ? staticEntries : staticEntries.filter((entry) => entry.minutes > lastLive);
     const merged: DirectionPrediction[] = [
-      ...live.map((entry) => ({ minutes: entry.minutes, live: true, peakOffpeak: entry.peakOffpeak, delayMinutes: entry.delayMinutes })),
-      ...padding.map((entry) => ({ minutes: entry.minutes, live: false, peakOffpeak: entry.peakOffpeak, delayMinutes: null })),
+      ...live.map((entry) => ({ minutes: entry.minutes, live: true, peakOffpeak: entry.peakOffpeak, delayMinutes: entry.delayMinutes, headsign: entry.headsign })),
+      ...padding.map((entry) => ({ minutes: entry.minutes, live: false, peakOffpeak: entry.peakOffpeak, delayMinutes: null, headsign: entry.headsign })),
     ];
     merged.sort((a, b) => a.minutes - b.minutes);
     return merged.slice(0, limit);

@@ -7,7 +7,13 @@ import { applyRouteLive } from '../data/applyRouteLive';
 import { NEARBY_CACHE_KEY, readCache, writeCache } from '../data/deviceCache';
 import { guidanceForNavigation, type TripEndpointReference } from '../data/enrouteNavigation';
 import type { RecentTripV1 } from '../data/navigationStorage';
-import { discoveredRouteToRouteDetail, fetchNearbyTransit, filterOutPinnedDuplicates, type DiscoveredRoute } from '../data/nearbyTransit';
+import { describeTransitLine, discoveredRouteToRouteDetail, fetchNearbyTransit, fetchRouteAtStop, filterOutPinnedDuplicates, type DiscoveredRoute } from '../data/nearbyTransit';
+import type { IndexedLine } from '../data/lineIndex';
+import { SERVICE_AREA_FALLBACK } from '../data/serviceArea';
+import type { LineTransfer } from '../data/routeGeometry';
+import { removeSavedRoute, saveRoute, savedRouteFrom, savedRouteToRouteDetail, setRouteAlerts, setRouteFavorite, subscribeToSavedRoutes, type AlertHours, type RouteAlertSetting, type SavedRoute } from '../data/savedRoutes';
+import { registerForRouteAlerts } from '../lib/notifications';
+import { EMPTY_LINE_LAYERS, lineLayerRouteKey, loadMapLines, readLineLayerChoice, writeLineLayerChoice, type LineLayerChoice, type LineLayerRoute, type MapLine } from '../data/lineLayers';
 import type { SearchPlace } from '../data/placesSearch';
 import { TransitLiveProvider, useTransitLive } from '../data/TransitLiveContext';
 import { riderLocation, type Itinerary, type ResumePlanRequest } from '../data/tripPlanning';
@@ -21,7 +27,8 @@ import {
   type SavedLocation,
   saveLabeledLocation,
   savedPlaceName,
-  type SavedPlaceIcon,
+  savedPlaceGroups,
+  type SavedPlaceStyle,
 } from '../data/userData';
 import {
   routes,
@@ -35,25 +42,34 @@ import { pinnedSpotLabel } from '../debug/presets';
 import { useCurrentLocation, type Coordinates } from '../hooks/useCurrentLocation';
 import { useActiveTrip } from '../hooks/useActiveTrip';
 import { useNow } from '../hooks/useNow';
-import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
+import { ThemedStatusBar, useThemedStyles } from '../theme/AppSettings';
 import { ScreenTransition } from '../theme/motion';
 import type { Palette } from '../theme/colors';
 import { fontFamilies } from '../theme/typography';
 import { ConfirmDialog } from './ConfirmDialog';
+import { Mascot } from './Mascot';
 import { CurrentLocationButton } from './CurrentLocationButton';
 import { DeparturesView } from './DeparturesView';
 import { EnrouteNavigationView, EnrouteRecoveryView, type EnrouteLocationState } from './EnrouteNavigationView';
 import { GoogleMapView, type HomeMapCamera } from './GoogleMapView';
+import { LineLayersSheet } from './LineLayersSheet';
+import { MapControlButton } from './MapControlButton';
 import { PressableScale } from './PressableScale';
 import { ProfileView } from './ProfileView';
 import { useUserPreferences } from '../data/userPreferences';
-import { RouteDetailView } from './RouteDetailView';
+import { MapPickerView } from './MapPickerView';
+import { RouteAlertsPrompt, type RouteAlertsRequest } from './RouteAlertsPrompt';
+import { RouteDetailView, type TappedStop } from './RouteDetailView';
+import { SavedPlaceDetailsSheet } from './SavedPlaceDetailsSheet';
 import { SavePlaceSheet, type SavePlaceRequest } from './SavePlaceSheet';
 import { ResumeTripCard } from './ResumeTripCard';
 import { CURRENT_LOCATION_LABEL, initialResultsCriteria, RouteResultsView, type ResultsCriteria } from './RouteResultsView';
+import { useNudgePrompt } from '../data/nudgePrompt';
+import { NudgeBanner } from './NudgeBanner';
 import { SearchHeader } from './SearchHeader';
 import { SearchView } from './SearchView';
 import { TransitSheet, type TransitTabId } from './TransitSheet';
+import { radii } from '../theme/shape';
 
 const TRANSIT_TABS_HEIGHT = 30;
 const TRANSIT_CARD_HEIGHT = 104;
@@ -69,17 +85,21 @@ const NEARBY_SEARCH_DEBOUNCE_MS = 600;
 const NEARBY_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 /** Choosing a place to save: straight away under `label` when set, else named in SavePlaceSheet. */
-type SavedPlacePick = { label?: 'Home' | 'Work'; returnTo: 'search' | 'favorites' | 'settings' };
+// `replacing`: a saved place's edit sheet, waiting on the new address the search picks for it.
+type SavedPlacePick = { label?: 'Home' | 'Work'; returnTo: 'search' | 'favorites' | 'settings'; replacing?: SavePlaceRequest };
 type ResultsViewState = { name: 'results'; criteria: ResultsCriteria; returnTo: 'search' | 'favorites' | 'home' };
 
 type ActiveView =
   | { name: 'home' }
   // `editing`: changing one endpoint of an open Route Results, which this search returns to.
-  | { name: 'search'; editing?: { field: 'origin' | 'destination'; results: ResultsViewState }; pickMockLocation?: boolean; pickSavedPlace?: SavedPlacePick }
+  // `pickOnMap`: "Choose on map" is open over this search, and its pin is chosen like a result.
+  | { name: 'search'; editing?: { field: 'origin' | 'destination'; results: ResultsViewState }; pickMockLocation?: boolean; pickSavedPlace?: SavedPlacePick; pickOnMap?: boolean }
   // `route` is the snapshot opened, so the page never depends on the route still being nearby.
-  | { name: 'route'; routeId: string; route: RouteDetail; directionIndex?: number }
+  // `previous`: where Back goes (search, or the route a stop or transfer was tapped on); else Home.
+  // `wholeRoute`: the whole line, opened from search rather than at a stop.
+  | { name: 'route'; routeId: string; route: RouteDetail; directionIndex?: number; previous?: ActiveView; wholeRoute?: boolean }
   // "More departures" for one direction of an opened route; back returns to that route and direction.
-  | { name: 'departures'; routeId: string; route: RouteDetail; directionIndex: number }
+  | { name: 'departures'; routeId: string; route: RouteDetail; directionIndex: number; previous?: ActiveView; wholeRoute?: boolean }
   | ResultsViewState
   | { name: 'enroute' }
   | { name: 'profile'; route?: 'places' }
@@ -114,29 +134,37 @@ type RouteDetailScreenProps = {
   isFavorite: boolean;
   onBack: () => void;
   onOpenDepartures: (directionIndex: number) => void;
+  onOpenStop: (stop: TappedStop) => void;
+  onOpenTransfer: (transfer: LineTransfer, stop: TappedStop) => void;
+  wholeRoute?: boolean;
   onRefreshLocation: () => void;
   onToggleFavorite: () => void;
+  alerts?: { on: boolean; onOpen: () => void };
   route: RouteDetail;
   location: Coordinates;
   locationKnown: boolean;
 };
 
 /** Reads live transit data itself — must render under TransitLiveProvider, which HomeScreen itself can't consume. */
-function RouteDetailScreen({ initialDirectionIndex, isFavorite, location, locationKnown, onBack, onOpenDepartures, onRefreshLocation, onToggleFavorite, route }: RouteDetailScreenProps) {
+function RouteDetailScreen({ alerts, initialDirectionIndex, isFavorite, location, locationKnown, onBack, onOpenDepartures, onOpenStop, onOpenTransfer, onRefreshLocation, onToggleFavorite, route, wholeRoute }: RouteDetailScreenProps) {
   const live = useTransitLive(route.id);
   // Re-applies live data every 30 s so countdowns age and past departures drop between polls.
   const now = useNow(30_000);
   return (
     <RouteDetailView
+      alerts={alerts}
       initialDirectionIndex={initialDirectionIndex}
       isFavorite={isFavorite}
       location={location}
       locationKnown={locationKnown}
       onBack={onBack}
       onOpenDepartures={onOpenDepartures}
+      onOpenStop={onOpenStop}
+      onOpenTransfer={onOpenTransfer}
       onRefreshLocation={onRefreshLocation}
       onToggleFavorite={onToggleFavorite}
       route={applyRouteLive(route, live, now)}
+      wholeRoute={wholeRoute}
     />
   );
 }
@@ -150,7 +178,6 @@ function DeparturesScreen({ directionIndex, onBack, route }: { directionIndex: n
 
 export function HomeScreen() {
   const styles = useThemedStyles(createStyles);
-  const { colors } = useTheme();
   // `null` means startup has not chosen a screen yet. Once UID-scoped hydration resolves, a
   // restored trip opens directly; every user navigation then records an explicit view choice.
   const [requestedView, setActiveView] = useState<ActiveView | null>(null);
@@ -159,12 +186,24 @@ export function HomeScreen() {
   const [tripTime, setTripTime] = useState<TripTimeChoice>({ mode: 'now' });
   const [arrivedDestination, setArrivedDestination] = useState<string | null>(null);
   const [tripStartFailed, setTripStartFailed] = useState(false);
-  // One "Save" star replaces pin + favorite: saved routes lead Nearby and fill Favorites -> Routes.
-  // Nothing is saved by default.
-  const [savedRouteIds, setSavedRouteIds] = useState<readonly string[]>([]);
   // A trip's star saves its destination to the account (Firestore), listed under Favorites -> Places.
   const { user } = useAuth();
   const uid = user?.uid;
+  // One "Save" star replaces pin + favorite: saved routes lead Nearby and fill Favorites -> Routes.
+  // Real lines are saved to the account (with their alert setting), so they show anywhere and
+  // the backend can push their alerts; the demo catalog's illustrative routes stay on this device.
+  // Nothing is saved by default.
+  const [accountRoutes, setAccountRoutes] = useState<readonly SavedRoute[]>([]);
+  const [localSavedRouteIds, setLocalSavedRouteIds] = useState<readonly string[]>([]);
+  useEffect(() => {
+    if (!uid) return undefined;
+    return subscribeToSavedRoutes(uid, setAccountRoutes);
+  }, [uid]);
+  // Starred lines only; a line kept just for its alerts isn't a favorite.
+  const savedRouteIds = useMemo(() => [...accountRoutes.filter((route) => route.favorite).map((route) => route.id), ...localSavedRouteIds], [accountRoutes, localSavedRouteIds]);
+  const accountRouteDetails = useMemo(() => new Map(accountRoutes.map((route) => [route.id, savedRouteToRouteDetail(route)])), [accountRoutes]);
+  // Right after saving a line: "When should we alert you?" (null when closed).
+  const [alertsPrompt, setAlertsPrompt] = useState<(RouteAlertsRequest & { route: RouteDetail }) | null>(null);
   // New searches start from the rider's travel preferences; a ref keeps the open callbacks stable.
   const travelPreferences = useUserPreferences().preferences.travel;
   const travelPreferencesRef = useRef(travelPreferences);
@@ -186,13 +225,14 @@ export function HomeScreen() {
   ), [requestedView, trip.status]);
   const [savedLocations, setSavedLocations] = useState<readonly SavedLocation[]>([]);
   const { height } = useWindowDimensions();
-  const { location, mocked: locationMocked, navigationFix, navigationStale, refresh: refreshLocation, status: locationStatus } = useCurrentLocation();
+  const { location, mocked: locationMocked, navigationFix, navigationStale, refresh: refreshLocation, status: locationStatus } = useCurrentLocation(trip.active != null);
   const { isAdmin, mockLocation, overlays, setMockLocation } = useDebug();
   const resumeGuidance = useMemo(
     () => (trip.active ? guidanceForNavigation(trip.active.plan, trip.active.cursor) : null),
     [trip.active],
   );
   const hasResumableTrip = trip.status === 'active' || trip.status === 'recovery';
+  const nudge = useNudgePrompt(hasResumableTrip);
   const homeHeaderInset = hasResumableTrip ? 158 : HEADER_INSET;
   const processedFixRef = useRef<string | null>(null);
   const [followEvidence, setFollowEvidence] = useState<{ sessionId: string; fix: NonNullable<typeof navigationFix> } | null>(null);
@@ -245,6 +285,13 @@ export function HomeScreen() {
   }
   const nearbyPoint = searchCenter ?? location;
   const exploring = searchCenter != null;
+  // An open route keeps the stops it opened with: live data stays anchored where the rider was,
+  // so a new fix (or a "nearer" stop) never swaps the stop or walking path under them.
+  const viewingRoute = activeView.name === 'route' || activeView.name === 'departures';
+  const [routeAnchor, setRouteAnchor] = useState<Coordinates | null>(null);
+  if (viewingRoute && !routeAnchor) setRouteAnchor(nearbyPoint);
+  if (!viewingRoute && routeAnchor) setRouteAnchor(null);
+  const livePoint = viewingRoute && routeAnchor ? routeAnchor : nearbyPoint;
   // On launch, the last nearby list shows at once (marked as updating) while the fresh search,
   // possibly against a cold backend, runs.
   useEffect(() => {
@@ -285,9 +332,57 @@ export function HomeScreen() {
   // the exact same real line as one that's currently pinned (so it isn't shown twice) — a
   // pure filter over `allDiscoveredRoutes`, re-evaluated on save/unsave without a network call.
   const nearbyRoutes = useMemo(() => {
-    const savedRoutes = savedRouteIds.map((id) => routes.find((route) => route.id === id)).filter((route): route is RouteDetail => route != null);
+    const savedRoutes = savedRouteIds.map((id) => routes.find((route) => route.id === id) ?? accountRouteDetails.get(id)).filter((route): route is RouteDetail => route != null);
     return filterOutPinnedDuplicates(allDiscoveredRoutes, savedRoutes);
-  }, [allDiscoveredRoutes, savedRouteIds]);
+  }, [accountRouteDetails, allDiscoveredRoutes, savedRouteIds]);
+  // Saved lines found by the nearby search (or with no live source to place them) lead Nearby.
+  const savedNearbyRouteIds = useMemo(() => {
+    const discovered = new Set(allDiscoveredRoutes.map((route) => (route.liveSource ? `${route.liveSource.agencyId}:${route.liveSource.routeId}` : route.id)));
+    return new Set(savedRouteIds.filter((id) => {
+      const route = routes.find((candidate) => candidate.id === id) ?? accountRouteDetails.get(id);
+      return !route?.liveSource || discovered.has(`${route.liveSource.agencyId}:${route.liveSource.routeId}`);
+    }));
+  }, [accountRouteDetails, allDiscoveredRoutes, savedRouteIds]);
+
+  // The home map's line layers: what's switched on (kept on this device) and the lines it draws.
+  const [lineChoice, setLineChoice] = useState<LineLayerChoice>(EMPTY_LINE_LAYERS);
+  const [mapLines, setMapLines] = useState<readonly MapLine[]>([]);
+  const [layersOpen, setLayersOpen] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void readLineLayerChoice().then((choice) => {
+      if (!cancelled) setLineChoice((current) => (current === EMPTY_LINE_LAYERS ? choice : current));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    void loadMapLines(lineChoice).then((lines) => {
+      if (!cancelled) setMapLines(lines);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [lineChoice]);
+  const changeLineChoice = useCallback((choice: LineLayerChoice) => {
+    setLineChoice(choice);
+    void writeLineLayerChoice(choice);
+  }, []);
+  // Lines offered one by one: saved lines first, then nearby ones, each once.
+  const layerCandidates = useMemo(() => {
+    const savedRoutes = savedRouteIds.map((id) => routes.find((route) => route.id === id) ?? accountRouteDetails.get(id)).filter((route): route is RouteDetail => route != null);
+    const seen = new Set<string>();
+    return [...savedRoutes, ...nearbyRoutes].flatMap((route): (LineLayerRoute & { agency: string })[] => {
+      if (!route.liveSource) return [];
+      const candidate = { agencyId: route.liveSource.agencyId, routeId: route.liveSource.routeId, shortName: route.shortName, color: route.color, agency: route.agency };
+      const key = lineLayerRouteKey(candidate);
+      if (seen.has(key)) return [];
+      seen.add(key);
+      return [candidate];
+    });
+  }, [accountRouteDetails, nearbyRoutes, savedRouteIds]);
 
   // Resolves either kind of id a card/pin/favorite can hold: the demo catalog's own (routeById)
   // or a dynamically-discovered one — so opening, pinning, or favoriting works the same way
@@ -295,14 +390,97 @@ export function HomeScreen() {
   // the pin-filtered `nearbyRoutes` — a just-pinned route must stay resolvable by id even
   // though it's no longer shown in the Nearby section itself.
   const findRoute = useCallback(
-    (routeId: string): RouteDetail | undefined => routes.find((route) => route.id === routeId) ?? allDiscoveredRoutes.find((route) => route.id === routeId),
-    [allDiscoveredRoutes],
+    (routeId: string): RouteDetail | undefined => routes.find((route) => route.id === routeId)
+      ?? allDiscoveredRoutes.find((route) => route.id === routeId)
+      // A saved line far from here still opens, from what was saved with it.
+      ?? accountRouteDetails.get(routeId),
+    [accountRouteDetails, allDiscoveredRoutes],
   );
+
+  // The id a route is saved under: its real line ("lirr:10"), whichever stop or card it was
+  // opened from; a demo route without live data keeps its own.
+  const savedIdFor = (route: RouteDetail) => (route.liveSource ? `${route.liveSource.agencyId}:${route.liveSource.routeId}` : route.id);
+  // A line's star and its alerts are separate: each can be on without the other. Both live on the
+  // line's one record, which goes away once neither is on.
+  const toggleSavedRoute = useCallback((route: RouteDetail) => {
+    const id = route.liveSource ? `${route.liveSource.agencyId}:${route.liveSource.routeId}` : route.id;
+    const saved = route.liveSource && uid ? savedRouteFrom(route, 'off') : null;
+    if (!saved || !uid) {
+      setLocalSavedRouteIds((current) => toggleItem(current, id));
+      return;
+    }
+    // The listener shows the change; a rejected write leaves the star as it was.
+    const existing = accountRoutes.find((entry) => entry.id === id);
+    if (!existing) saveRoute(uid, saved).catch(() => undefined);
+    else if (!existing.favorite) setRouteFavorite(uid, id, true).catch(() => undefined);
+    else if (existing.alerts === 'off') removeSavedRoute(uid, id).catch(() => undefined);
+    else setRouteFavorite(uid, id, false).catch(() => undefined);
+  }, [accountRoutes, uid]);
+  const chooseRouteAlerts = useCallback((setting: RouteAlertSetting, hours?: AlertHours) => {
+    const prompt = alertsPrompt;
+    setAlertsPrompt(null);
+    if (!prompt || !uid) return;
+    if (setting === prompt.setting && setting !== 'custom') return;
+    const existing = accountRoutes.find((entry) => entry.id === prompt.id);
+    if (existing) {
+      // Alerts off on a line that isn't starred: nothing left to keep.
+      if (setting === 'off' && !existing.favorite) removeSavedRoute(uid, prompt.id).catch(() => undefined);
+      else setRouteAlerts(uid, prompt.id, setting, hours).catch(() => undefined);
+    } else {
+      const record = savedRouteFrom(prompt.route, setting, false);
+      if (record) saveRoute(uid, { ...record, ...(setting === 'custom' && hours ? { alertHours: hours } : {}) }).catch(() => undefined);
+    }
+    if (setting !== 'off') void registerForRouteAlerts(uid);
+  }, [accountRoutes, alertsPrompt, uid]);
+  // Route view's bell: the line's alert setting, to change, starred or not.
+  const routeAlertsFor = (route: RouteDetail) => {
+    if (!route.liveSource || !uid) return undefined;
+    const id = savedIdFor(route);
+    const saved = accountRoutes.find((entry) => entry.id === id);
+    const setting = saved?.alerts ?? 'off';
+    return {
+      on: setting !== 'off',
+      onOpen: () => setAlertsPrompt({ id, route, setting, hours: saved?.alertHours }),
+    };
+  };
 
   const openRoute = useCallback((routeId: string) => {
     const route = findRoute(routeId);
     if (route) setActiveView({ name: 'route', routeId, route });
   }, [findRoute]);
+
+  // A line opened from search: the whole line, Back returns to the search.
+  // A line picked in search: described at its stops nearest the rider, then opened whole.
+  const openSearchedLine = useCallback(async (line: IndexedLine) => {
+    const described = await describeTransitLine(line.agencyId, line.routeId, riderLocation(location, locationStatus) ?? SERVICE_AREA_FALLBACK);
+    const route = discoveredRouteToRouteDetail(described);
+    setActiveView((current) => (current?.name === 'search' ? { name: 'route', routeId: route.id, route, wholeRoute: true, previous: { name: 'search' } } : current));
+  }, [location, locationStatus]);
+  // A transfer badge: that line, at the stop it was tapped on. Opens once its stops are known;
+  // ignored if the rider has left this page meanwhile.
+  const openTransfer = useCallback((from: Extract<ActiveView, { name: 'route' }>, transfer: LineTransfer, stop: TappedStop) => {
+    void fetchRouteAtStop(transfer.agencyId, transfer.routeId, { latitude: stop.lat, longitude: stop.lon }).then(
+      (route) => setActiveView((current) => (current === from ? { name: 'route', routeId: route.id, route, previous: from } : current)),
+      () => undefined,
+    );
+  }, []);
+
+  // A stop of the open line (on its map, or a row of the whole line): the line at that stop, in
+  // the direction it was tapped in.
+  const openStop = useCallback((from: Extract<ActiveView, { name: 'route' }>, stop: TappedStop) => {
+    const source = from.route.liveSource;
+    if (!source) return;
+    // Each copy of a line orders its two directions its own way, so the direction carries over by its GTFS id.
+    const tappedDirection1 = stop.directionIndex === source.direction1Index;
+    void fetchRouteAtStop(source.agencyId, source.routeId, { latitude: stop.lat, longitude: stop.lon }).then(
+      (route) => {
+        const direction1Index = route.liveSource?.direction1Index ?? source.direction1Index;
+        const directionIndex = tappedDirection1 ? direction1Index : 1 - direction1Index;
+        setActiveView((current) => (current === from ? { name: 'route', routeId: route.id, route, directionIndex, previous: from } : current));
+      },
+      () => undefined,
+    );
+  }, []);
 
   const mapHeight = Math.max(
     MINIMUM_MAP_HEIGHT,
@@ -381,30 +559,43 @@ export function HomeScreen() {
     else if (returnTo === 'settings') setActiveView({ name: 'profile', route: 'places' });
     else setActiveView({ name: 'search' });
   }, [showFavorites]);
-  const saveNamedPlace = useCallback((place: SearchPlace, label: string, icon?: SavedPlaceIcon) => {
+  const saveNamedPlace = useCallback((place: SearchPlace, label: string, style?: SavedPlaceStyle, replacing?: string) => {
     if (!uid) return;
     // As with the star, the listener shows the write; a rejected one just leaves the list as it was.
-    saveLabeledLocation(uid, place, label, savedLocations, icon).catch(() => undefined);
+    saveLabeledLocation(uid, place, label, savedLocations, style, replacing).catch(() => undefined);
   }, [savedLocations, uid]);
   const editSavedPlace = useCallback((location: SavedLocation) => {
     const { address } = location;
-    setSaveRequest({ place: locationToPlace(address), label: savedPlaceName(address), icon: address.icon, editing: true });
+    setSaveRequest({ place: locationToPlace(address), label: savedPlaceName(address), style: { icon: address.icon, color: address.color, group: address.group }, editing: true });
   }, []);
+  const savePlaceGroups = useMemo(() => savedPlaceGroups(savedLocations), [savedLocations]);
   const savePlaceSheet = (
     <SavePlaceSheet
+      groups={savePlaceGroups}
       onCancel={() => setSaveRequest(null)}
+      onChangeAddress={(draft) => {
+        setSaveRequest(null);
+        setActiveView({ name: 'search', pickSavedPlace: { returnTo: 'settings', replacing: draft } });
+      }}
       onRemove={() => {
-        if (uid && saveRequest) removeSavedLocation(uid, saveRequest.place.id).catch(() => undefined);
+        // A place whose address was being changed is still saved under its old one.
+        if (uid && saveRequest) removeSavedLocation(uid, saveRequest.replacing ?? saveRequest.place.id).catch(() => undefined);
         setSaveRequest(null);
       }}
-      onSave={(label, icon) => {
-        if (saveRequest) saveNamedPlace(saveRequest.place, label, icon ?? saveRequest.icon);
+      onSave={(label, style) => {
+        if (saveRequest) saveNamedPlace(saveRequest.place, label, style, saveRequest.replacing);
         setSaveRequest(null);
       }}
       request={saveRequest}
     />
   );
-  const openSavedLocationFromMap = useCallback((location: SavedLocation) => {
+  // A saved place's marker opens its details first (with every place stacked under it); Go plans the trip.
+  const [mapPlaces, setMapPlaces] = useState<readonly SavedLocation[]>([]);
+  const openSavedLocationFromMap = useCallback((location: SavedLocation, stack: readonly SavedLocation[]) => {
+    setMapPlaces(stack.length > 0 ? stack : [location]);
+  }, []);
+  const goToSavedPlaceFromMap = useCallback((location: SavedLocation) => {
+    setMapPlaces([]);
     const place = locationToPlace(location.address);
     setSelectedTrip(null);
     setActiveView({ name: 'results', criteria: initialResultsCriteria(place.title, place, travelPreferencesRef.current), returnTo: 'home' });
@@ -467,6 +658,11 @@ export function HomeScreen() {
   }, [activeDestinationLabel, activeSessionId, advanceTrip, fixAccuracy, fixCapturedAt, fixLatitude, fixLongitude, fixSource, mockFixKey, navigationFix]);
 
   const closeCurrentView = useCallback(() => {
+    if (activeView.name === 'search' && activeView.pickOnMap) {
+      setActiveView({ ...activeView, pickOnMap: false });
+      return;
+    }
+
     if (activeView.name === 'admin') {
       setActiveView({ name: 'profile' });
       return;
@@ -495,8 +691,13 @@ export function HomeScreen() {
     }
 
     if (activeView.name === 'departures') {
-      const { directionIndex, route, routeId } = activeView;
-      setActiveView({ name: 'route', routeId, route, directionIndex });
+      const { directionIndex, previous, route, routeId, wholeRoute } = activeView;
+      setActiveView({ name: 'route', routeId, route, directionIndex, previous, wholeRoute });
+      return;
+    }
+
+    if (activeView.name === 'route' && activeView.previous) {
+      setActiveView(activeView.previous);
       return;
     }
 
@@ -524,9 +725,10 @@ export function HomeScreen() {
     : allDiscoveredRoutes;
   const activeLiveRouteIds = activeView.name === 'home' ? visibleRouteIds : openedRoute ? [openedRoute.id] : [];
   const screen = (node: ReactNode) => (
-    <TransitLiveProvider activeRouteIds={activeLiveRouteIds} extraRoutes={liveRoutes} location={nearbyPoint}>
+    <TransitLiveProvider activeRouteIds={activeLiveRouteIds} extraRoutes={liveRoutes} location={livePoint}>
       <ScreenTransition key={transitionKey}>{node}</ScreenTransition>
       {savePlaceSheet}
+      <RouteAlertsPrompt onClose={() => setAlertsPrompt(null)} onDone={chooseRouteAlerts} request={alertsPrompt} />
     </TransitLiveProvider>
   );
 
@@ -543,7 +745,7 @@ export function HomeScreen() {
   if (trip.status === 'hydrating') {
     return screen(
       <View accessibilityLabel="Restoring your trips" style={styles.hydration} testID="active-trip-hydration">
-        <ActivityIndicator color={colors.primary} size="large" />
+        <Mascot motion="bob" pose="thinking" size={72} />
         <Text style={styles.hydrationText}>Restoring your trips…</Text>
       </View>,
     );
@@ -598,6 +800,19 @@ export function HomeScreen() {
     }
   }
 
+  if (activeView.name === 'search' && activeView.pickOnMap) {
+    const search = activeView;
+    const pick = (place: SearchPlace) => {
+      if (search.editing) {
+        const { field, results } = search.editing;
+        setActiveView({ ...results, criteria: { ...results.criteria, [field]: place.title, [field === 'origin' ? 'originPlace' : 'destinationPlace']: place } });
+      } else {
+        showRouteResults(place);
+      }
+    };
+    return screen(<MapPickerView location={riderLocation(location, locationStatus) ?? location} onCancel={closeCurrentView} onPick={pick} />);
+  }
+
   if (activeView.name === 'search' && activeView.pickMockLocation) {
     // Admin: any searchable place becomes the mock location.
     return screen(
@@ -613,17 +828,24 @@ export function HomeScreen() {
   }
 
   if (activeView.name === 'search' && activeView.pickSavedPlace) {
-    const { label, returnTo } = activeView.pickSavedPlace;
+    const { label, replacing, returnTo } = activeView.pickSavedPlace;
     return screen(
+      // Its own instance: nothing typed or pressed on the search page carries into the pick.
       <SearchView
+        key="pick-saved-place"
         near={riderLocation(location, locationStatus)}
-        onCancel={() => leaveSavedPlacePick(returnTo)}
-        onSelect={(place) => {
-          if (label) saveNamedPlace(place, label);
-          else setSaveRequest({ place });
+        onCancel={() => {
+          // Back to the edit sheet as it was left.
+          if (replacing) setSaveRequest(replacing);
           leaveSavedPlacePick(returnTo);
         }}
-        placeholder={label ? `Search for your ${label.toLowerCase()} address` : 'Search for a place to save'}
+        onSelect={(place) => {
+          if (replacing) setSaveRequest({ ...replacing, place, replacing: replacing.replacing ?? replacing.place.id });
+          // Home and Work too are confirmed in the sheet (named already), never saved unseen.
+          else setSaveRequest(label ? { place, label } : { place });
+          leaveSavedPlacePick(returnTo);
+        }}
+        placeholder={replacing ? `Search for the new address for ${replacing.label?.trim() || replacing.place.title}` : label ? `Search for your ${label.toLowerCase()} address` : 'Search for a place to save'}
       />
     );
   }
@@ -645,6 +867,7 @@ export function HomeScreen() {
           near={riderLocation(location, locationStatus)}
           initialQuery={current === CURRENT_LOCATION_LABEL ? '' : current}
           onCancel={() => setActiveView(results)}
+          onChooseOnMap={() => setActiveView({ ...activeView, pickOnMap: true })}
           onSelect={(place) => choose(place.title, place)}
           onSelectCurrentLocation={field === 'origin' ? () => choose(CURRENT_LOCATION_LABEL) : undefined}
           savedPlaces={savedLocations}
@@ -656,27 +879,34 @@ export function HomeScreen() {
         near={riderLocation(location, locationStatus)}
         onAddSavedPlace={uid ? (label) => addSavedPlace('search', label) : undefined}
         onCancel={showHome}
+        onChooseOnMap={() => setActiveView({ name: 'search', pickOnMap: true })}
         onSelect={showRouteResults}
+        onSelectLine={openSearchedLine}
         savedPlaces={savedLocations}
       />
     );
   }
 
   if (activeView.name === 'route') {
-    const { routeId } = activeView;
+    const routeView = activeView;
+    const { previous, routeId, wholeRoute } = activeView;
     // Prefer the freshest copy, but keep the opened snapshot if the route has since dropped out
     // of the nearby list (the rider moved), so the page stays open.
     const route = findRoute(routeId) ?? activeView.route;
     return screen(
       <RouteDetailScreen
         initialDirectionIndex={activeView.directionIndex}
-        isFavorite={savedRouteIds.includes(routeId)}
-        onBack={showHome}
-        onOpenDepartures={(directionIndex) => setActiveView({ name: 'departures', routeId, route, directionIndex })}
+        isFavorite={savedRouteIds.includes(savedIdFor(route))}
+        onBack={closeCurrentView}
+        onOpenDepartures={(directionIndex) => setActiveView({ name: 'departures', routeId, route, directionIndex, previous, wholeRoute })}
+        onOpenStop={(stop) => openStop(routeView, stop)}
+        onOpenTransfer={(transfer, stop) => openTransfer(routeView, transfer, stop)}
+        wholeRoute={wholeRoute}
         onRefreshLocation={() => void refreshLocation()}
         location={location}
         locationKnown={locationStatus === 'located'}
-        onToggleFavorite={() => setSavedRouteIds((current) => toggleItem(current, routeId))}
+        onToggleFavorite={() => toggleSavedRoute(route)}
+        alerts={routeAlertsFor(route)}
         route={route}
       />
     );
@@ -758,8 +988,11 @@ export function HomeScreen() {
     <View style={styles.viewport}>
       <ThemedStatusBar />
       <View style={styles.screen}>
+        {/* The map stays fixed while the sheet scrolls over it; its fixed height keeps the legal credits above the resting sheet. */}
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: mapHeight }} testID="home-map-viewport">
         <GoogleMapView
           initialCamera={homeCamera}
+          lines={mapLines}
           location={location}
           onCameraChange={setHomeCamera}
           onLongPress={isAdmin ? setPendingMockPoint : undefined}
@@ -768,12 +1001,13 @@ export function HomeScreen() {
           onUserPan={() => setIsLocationCentered(false)}
           onOrientationChange={setMapOrientation}
           onSavedLocationPress={openSavedLocationFromMap}
-          padding={{ top: homeHeaderInset, bottom: height - mapHeight }}
+          padding={{ top: homeHeaderInset, bottom: 0 }}
           recenterRequest={recenterRequest}
           reorientRequest={reorientRequest}
           savedLocations={savedLocations}
           simulatedLocation={locationMocked}
         />
+        </View>
         {searchCenter ? (
           // Fixed at the center of the visible map (below the header, above the resting sheet):
           // the point Nearby is currently searching around.
@@ -852,8 +1086,8 @@ export function HomeScreen() {
             selected={isLocationCentered}
           />
         </Animated.View>
-        <SafeAreaView edges={['top']} style={styles.safeArea}>
-          <View style={styles.header}>
+        <SafeAreaView edges={['top']} pointerEvents="box-none" style={styles.safeArea}>
+          <View pointerEvents="box-none" style={styles.header}>
             <SearchHeader
               onProfilePress={() => setActiveView({ name: 'profile' })}
               onSearchPress={showSearch}
@@ -867,6 +1101,18 @@ export function HomeScreen() {
                 />
               </View>
             ) : null}
+            {/* An occasional ask (feedback or a tip) beside the line layers button, under the profile button. */}
+            <View pointerEvents="box-none" style={styles.underSearch}>
+              {nudge.kind ? <NudgeBanner kind={nudge.kind} onAct={nudge.act} onDismiss={nudge.dismiss} style={styles.nudge} /> : <View pointerEvents="none" style={styles.nudge} />}
+              <MapControlButton
+                accessibilityLabel="Lines on the map"
+                icon="modes"
+                onPress={() => setLayersOpen(true)}
+                selected={lineChoice.groups.length > 0 || lineChoice.routes.length > 0}
+                style={styles.layersButton}
+                testID="line-layers-button"
+              />
+            </View>
           </View>
         </SafeAreaView>
 
@@ -875,7 +1121,6 @@ export function HomeScreen() {
           findRoute={findRoute}
           mapHeight={mapHeight}
           nearbyRoutes={nearbyRoutes}
-          nearbyRefreshing={nearbyStatus.status === 'loaded' && nearbyStatus.refreshing === true}
           nearbyStatus={nearbyStatus.status}
           onAddSavedPlace={uid ? () => addSavedPlace('favorites') : undefined}
           onOpenRecentTrip={openRecentTrip}
@@ -885,10 +1130,21 @@ export function HomeScreen() {
           onVisibleRouteIdsChange={setVisibleRouteIds}
           recentTrips={trip.recents}
           savedLocations={savedLocations}
+          savedNearbyRouteIds={savedNearbyRouteIds}
           savedRouteIds={savedRouteIds}
           scrollY={homeScrollY}
         />
         {savePlaceSheet}
+        <LineLayersSheet choice={lineChoice} lines={layerCandidates} onChange={changeLineChoice} onClose={() => setLayersOpen(false)} visible={layersOpen} />
+        <SavedPlaceDetailsSheet
+          onClose={() => setMapPlaces([])}
+          onEdit={uid ? (place) => {
+            setMapPlaces([]);
+            editSavedPlace(place);
+          } : undefined}
+          onGo={goToSavedPlaceFromMap}
+          places={mapPlaces}
+        />
         <ConfirmDialog
           body={`${arrivedDestination ?? 'Your destination'} has been added to Recents.`}
           cancelLabel="Stay on Home"
@@ -921,6 +1177,10 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   },
   header: { paddingTop: 10, paddingHorizontal: 16 },
   resumeCardWrap: { marginTop: 8 },
+  // Centered under the 54 px profile button.
+  underSearch: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 },
+  nudge: { flex: 1 },
+  layersButton: { marginRight: 4 },
   locationButton: {
     position: 'absolute',
     right: 16,
@@ -965,8 +1225,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     borderRightColor: 'transparent',
     borderTopColor: colors.mutedInk,
   },
-  // Solid purple with a white ring, matching the GPS dot's look so it reads as a map point.
-  tapCoords: { position: 'absolute', alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 16, backgroundColor: colors.ink, zIndex: 4 },
+  tapCoords: { position: 'absolute', alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 14, borderRadius: radii.pill, backgroundColor: colors.ink, zIndex: 4 },
   tapCoordsText: { color: colors.surface, fontFamily: fontFamilies.bold, fontSize: 13 },
   searchCenter: {
     position: 'absolute',
@@ -976,7 +1235,8 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     height: SEARCH_CENTER_SIZE,
     borderWidth: 3,
     borderRadius: SEARCH_CENTER_SIZE / 2,
-    borderColor: colors.white,
+    // White in both themes, like the rider's location dot.
+    borderColor: '#FFFFFF',
     backgroundColor: colors.searchCenter,
     shadowColor: colors.searchCenter,
     shadowOpacity: 0.32,
@@ -998,7 +1258,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     gap: 6,
     paddingVertical: 6,
     paddingHorizontal: 12,
-    borderRadius: 16,
+    borderRadius: radii.pill,
     backgroundColor: 'rgba(0,0,0,0.6)',
     maxWidth: '100%',
   },

@@ -238,7 +238,7 @@ describe('Home active-trip MVP integration', () => {
     fireEvent.press(screen.getByTestId('enroute-end'));
     fireEvent.press(screen.getByTestId('enroute-end-confirm-confirm'));
     const recent = await screen.findByTestId(/^recent-trip-/);
-    expect(screen.getByText('Ended early')).toBeTruthy();
+    expect(screen.queryByText('Ended early')).toBeNull();
     expect((await currentDocument()).active).toBeNull();
 
     fireEvent.press(recent);

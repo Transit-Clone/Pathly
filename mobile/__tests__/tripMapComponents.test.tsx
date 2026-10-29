@@ -11,6 +11,7 @@ jest.mock('@react-google-maps/api', () => {
   const { View: MockView } = require('react-native');
   const mockMap = {
     fitBounds: jest.fn(),
+    getProjection: jest.fn(() => undefined),
     getZoom: jest.fn(() => 14),
     panTo: jest.fn(),
     setZoom: jest.fn(),
@@ -81,7 +82,7 @@ describe('native active TripMap', () => {
     expect(screen.getByTestId('native-nav-map-user-location', { includeHiddenElements: true }).props.coordinate).toEqual({ latitude: 40.915, longitude: -73.105 });
     expect(StyleSheet.flatten(screen.getByTestId('native-nav-map-user-location-visual', { includeHiddenElements: true }).props.style).opacity).toBe(0.45);
     expect(screen.getByTestId('native-nav-map-progress-completed-0', { includeHiddenElements: true }).props.strokeWidth).toBe(4);
-    expect(screen.getByTestId('native-nav-map-progress-current-1', { includeHiddenElements: true }).props.strokeWidth).toBe(6);
+    expect(screen.getByTestId('native-nav-map-progress-current-1', { includeHiddenElements: true }).props.strokeWidth).toBe(8);
     expect(screen.getByTestId('native-nav-map-progress-upcoming-2', { includeHiddenElements: true }).props.strokeColor).toBe('#F26A21');
   });
 
@@ -221,7 +222,8 @@ describe('native active TripMap', () => {
 
     expect(onFollowModeChange).toHaveBeenLastCalledWith(true);
     expect(maps.mockAnimateCamera).toHaveBeenCalledWith(
-      { center: { latitude: rawLocation.lat, longitude: rawLocation.lng }, zoom: 15 },
+      // Just south of the rider, so they sit in the middle of the map's uncovered part.
+      { center: { latitude: expect.closeTo(rawLocation.lat, 2), longitude: rawLocation.lng }, zoom: 15 },
       { duration: 350 },
     );
     expect(maps.mockFitToCoordinates).not.toHaveBeenCalled();
@@ -305,7 +307,7 @@ describe('web active TripMap', () => {
 
     const lines = screen.getAllByTestId('web-polyline', { includeHiddenElements: true });
     expect(lines[0]!.props.options).toMatchObject({ strokeOpacity: 0.45, strokeWeight: 4 });
-    expect(lines[1]!.props.options.icons[0].icon.scale).toBe(3.25);
+    expect(lines[1]!.props.options.icons[0].icon.scale).toBe(4.25);
     expect(lines[2]!.props.options).toMatchObject({ strokeColor: '#F26A21', strokeOpacity: 1, strokeWeight: 6 });
   });
 
@@ -374,7 +376,8 @@ describe('web active TripMap', () => {
     );
     await waitFor(() => expect(mockMap.panTo).toHaveBeenCalledWith(rawLocation));
     expect(onFollowModeChange).toHaveBeenLastCalledWith(true);
-    expect(mockMap.setZoom).toHaveBeenCalledWith(15);
+    // It glides: the zoom steps in a level after the pan starts, rather than jumping with it.
+    await waitFor(() => expect(mockMap.setZoom).toHaveBeenCalledWith(15));
     expect(mockMap.fitBounds).not.toHaveBeenCalled();
 
     mockMap.panTo.mockClear();

@@ -7,8 +7,10 @@ import { fetchStopDepartures } from '../data/transitLive';
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
+import { FitText } from './FitText';
 import { Icon } from './Icon';
 import { LiveSignal } from './LiveSignal';
+import { Mascot } from './Mascot';
 import { PressableScale } from './PressableScale';
 import { RouteBadge } from './RouteBadge';
 import { DepartureListSkeleton } from './Skeleton';
@@ -80,9 +82,9 @@ export function DeparturesView({ directionIndex, onBack, route }: DeparturesView
         <ThemedStatusBar />
         <View style={styles.header}>
           <PressableScale accessibilityLabel="Back" accessibilityRole="button" onPress={onBack} style={styles.backButton} testID="departures-back"><Icon name="back" size={26} /></PressableScale>
-          <RouteBadge agency={route.agency} color={route.color} shortName={route.shortName} withModeIcon={true} />
+          <RouteBadge agency={route.agency} color={route.color} shortName={route.shortName} />
           <View style={styles.headerCopy}>
-            <Text accessibilityRole="header" numberOfLines={1} style={styles.title} testID="departures-destination">{directionDestination(direction.direction)}</Text>
+            <FitText accessibilityRole="header" style={styles.title} testID="departures-destination">{directionDestination(direction.direction)}</FitText>
             <Text numberOfLines={1} style={styles.subtitle} testID="departures-stop">{`From ${direction.stopName}`}</Text>
           </View>
         </View>
@@ -91,10 +93,12 @@ export function DeparturesView({ directionIndex, onBack, route }: DeparturesView
           <DepartureListSkeleton />
         ) : state.status === 'error' ? (
           <View style={styles.message} testID="departures-unavailable">
+            <Mascot pose="worried" size={64} />
             <Text style={styles.messageText}>Departures unavailable right now.</Text>
           </View>
         ) : state.departures.length === 0 ? (
           <View style={styles.message} testID="departures-empty">
+            <Mascot pose="sleepy" size={64} />
             <Text style={styles.messageText}>No more departures today.</Text>
           </View>
         ) : (
@@ -131,11 +135,11 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   screen: { width: '100%', maxWidth: 540, flex: 1, paddingHorizontal: 18, backgroundColor: colors.background },
   header: { minHeight: 76, flexDirection: 'row', alignItems: 'center', gap: 12 },
   backButton: {
-    width: 44,
-    height: 44,
+    width: 46,
+    height: 46,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 22,
+    borderRadius: 23,
     backgroundColor: colors.surface,
     shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 2 },

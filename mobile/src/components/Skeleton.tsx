@@ -3,6 +3,7 @@ import { Animated, Easing, Platform, StyleSheet, View } from 'react-native';
 
 import { useAppSettings, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
+import { radii } from '../theme/shape';
 
 const PULSE_LOW = 0.45;
 const PULSE_HALF_MS = 800;
@@ -71,7 +72,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     height: 104,
     marginHorizontal: 8,
     marginVertical: 3,
-    borderRadius: 14,
+    borderRadius: radii.card,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
@@ -121,7 +122,7 @@ const createTileStyles = (colors: Palette) => StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     paddingBottom: 24,
-    borderRadius: 20,
+    borderRadius: radii.card,
     backgroundColor: colors.skeleton,
   },
   bar: { borderRadius: 6, backgroundColor: colors.skeletonBar },
@@ -169,7 +170,7 @@ const createItineraryStyles = (colors: Palette) => StyleSheet.create({
     gap: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 12,
+    borderRadius: radii.card,
     backgroundColor: colors.skeleton,
   },
   left: { flex: 1, gap: 9 },

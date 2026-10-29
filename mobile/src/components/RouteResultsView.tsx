@@ -14,7 +14,8 @@ import {
   requestModes,
   formatTripClock,
   lineBadge,
-  nextOccurrence,
+  tripDayLabel,
+  distinctRouteItineraries,
   orderItineraries,
   transitSteps,
   tripMinutes,
@@ -30,14 +31,18 @@ import { ThemedStatusBar, useAppSettings, useTheme, useThemedStyles } from '../t
 import { ScreenTransition, useLayoutEase } from '../theme/motion';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
-import { CurrentLocationButton } from './CurrentLocationButton';
 import { Icon, type IconName } from './Icon';
 import { LeaveTimeSheet } from './LeaveTimeSheet';
+import { LiveSignal } from './LiveSignal';
+import { stopLineBadges } from './SearchView';
 import { PlannedTripDetailView } from './PlannedTripDetailView';
+import { Mascot } from './Mascot';
+import { MapControlButton } from './MapControlButton';
 import { PressableScale } from './PressableScale';
 import { RouteBadge, type TransitMode } from './RouteBadge';
 import { ItinerarySkeleton } from './Skeleton';
 import { TripMap } from './TripMap';
+import { radii } from '../theme/shape';
 
 /** What the rider has chosen on Route Results; kept by HomeScreen so it survives a trip to the search page. */
 export type ResultsCriteria = {
@@ -107,11 +112,13 @@ const ALL_MODES: readonly TransitMode[] = ['subway', 'bus', 'rail', 'ferry'];
 /** The results sheet's top at rest, as a share of the screen; expanded, it stops below the trip card. */
 const SHEET_REST_SHARE = 0.44;
 /** Space kept between the trip card and an expanded sheet. */
-const SHEET_EXPANDED_GAP = 10;
+const SHEET_EXPANDED_GAP = 48;
 /** A drag shorter than this (points) is a tap on the handle. */
 const HANDLE_TAP_SLOP = 6;
 /** Walks at least this long show in a result's steps; shorter ones are just getting between platforms. */
 const SHOWN_WALK_SECONDS = 3 * 60;
+/** Live signals stay on for this long after the last successful update. */
+const LIVE_FRESH_MS = 2 * 60_000;
 
 type OptionsPanel = 'modes' | 'filter' | null;
 
@@ -147,8 +154,9 @@ export function RouteResultsView({
 }: RouteResultsViewProps) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
-  const { fontScale, height, width } = useWindowDimensions();
-  const stackLargeTextMetrics = fontScale >= 1.5 || width <= 360;
+  const { fontScale, height } = useWindowDimensions();
+  // Fare and minutes keep the first row's right side at any width (the badges wrap instead).
+  const stackLargeTextMetrics = fontScale >= 1.5;
   const { destination, enabledModes, origin, preference } = criteria;
   const travelPreferences = useUserPreferences().preferences.travel;
   const setPreference = (next: RoutePreference) => onChangeCriteria({ ...criteria, preference: next });
@@ -166,7 +174,7 @@ export function RouteResultsView({
   const insets = useSafeAreaInsets();
   const { reducedMotionActive } = useAppSettings();
   const [tripCardBottom, setTripCardBottom] = useState(insets.top + 120);
-  const restTop = height * SHEET_REST_SHARE;
+  const restTop = Math.max(height * SHEET_REST_SHARE, Math.min(height - insets.bottom - 128, tripCardBottom + SHEET_EXPANDED_GAP));
   const expandedTop = Math.min(restTop, tripCardBottom + SHEET_EXPANDED_GAP);
   const [sheetTop] = useState(() => new Animated.Value(restTop));
   const sheetExpanded = useRef(false);
@@ -183,6 +191,12 @@ export function RouteResultsView({
     sheetBounds.current = { restTop, expandedTop };
     settleRef.current = settleSheet;
   });
+  useEffect(() => {
+    // A taller trip card or a rotated screen must not leave the map's legal edge
+    // below a sheet still using its previous layout position.
+    sheetTop.stopAnimation();
+    sheetTop.setValue(sheetExpanded.current ? expandedTop : restTop);
+  }, [expandedTop, restTop, sheetTop]);
   // The refs are only read inside gesture callbacks, never while rendering.
   // eslint-disable-next-line react-hooks/refs
   const [handleResponder] = useState(() => PanResponder.create({
@@ -236,13 +250,15 @@ export function RouteResultsView({
     const byMode = filterItinerariesByMode(planned, enabledModes);
     const withinWalk = filterItinerariesByWalk(byMode, maxWalkMinutes);
     return {
-      visibleItineraries: orderItineraries(withinWalk ?? byMode, preference),
+      visibleItineraries: distinctRouteItineraries(orderItineraries(withinWalk ?? byMode, preference)),
       // Every trip walks longer than the rider's limit, so all of them show with a note.
       walkLimitMissed: maxWalkMinutes !== null && withinWalk === null && byMode.length > 0,
     };
   }, [enabledModes, maxWalkMinutes, planned, preference]);
   const modesFiltered = enabledModes.length < ALL_MODES.length;
-  const tomorrow = tripTime.mode !== 'now' && nextOccurrence(tripTime.minutes, new Date(now)).tomorrow;
+  const tripDay = tripTime.mode === 'now' ? '' : tripDayLabel(tripTime, new Date(now));
+  // Live signals only while the last update is fresh: offline, refreshes fail and it ages out.
+  const liveFresh = plan.status === 'loaded' && !plan.refreshing && now - plan.fetchedAt < LIVE_FRESH_MS;
   const updatedLabel = plan.status !== 'loaded'
     ? ''
     : plan.refreshing
@@ -271,6 +287,9 @@ export function RouteResultsView({
       <ScreenTransition key="trip">
       <PlannedTripDetailView
         destination={destination}
+        destinationAddress={criteria.destinationPlace?.subtitle}
+        destinationLines={stopLineBadges(criteria.destinationPlace)}
+        liveFresh={liveFresh}
         isActive={false}
         isFavorite={isDestinationSaved}
         itinerary={selectedItinerary}
@@ -292,6 +311,9 @@ export function RouteResultsView({
     <View style={styles.viewport}>
       <View style={styles.screen} testID="route-results-view">
         <ThemedStatusBar />
+        {/* The map stays fixed while the sheet moves; its fixed height keeps the SDK's logo and
+            legal links above the resting sheet. */}
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: restTop }} testID="results-map-viewport">
         <TripMap
           centerOnUserRequest={centerRequest}
           destination={placePoint(criteria.destinationPlace)}
@@ -300,22 +322,15 @@ export function RouteResultsView({
           itinerary={visibleItineraries[0] ?? null}
           onUserPan={() => setCentered(false)}
           origin={originPoint}
-          padding={{ top: 140, right: 40, bottom: height * 0.58, left: 40 }}
+          padding={{ top: 140, right: 40, bottom: 24, left: 40 }}
           testID="results-map"
           userLocation={userLocation}
         />
+        </View>
 
         <SafeAreaView edges={['top']} onLayout={(event) => setTripCardBottom(event.nativeEvent.layout.y + event.nativeEvent.layout.height)} style={styles.topOverlay}>
           <View style={styles.tripRow}>
-            <PressableScale
-              accessibilityLabel="Back to destination search"
-              accessibilityRole="button"
-              onPress={onBack}
-              style={styles.backButton}
-              testID="results-back"
-            >
-              <Icon name="back" size={26} />
-            </PressableScale>
+            <MapControlButton accessibilityLabel="Back to destination search" icon="back" onPress={onBack} style={styles.backButton} testID="results-back" />
 
             <View style={styles.criteriaCard}>
               <View style={styles.endpointStack}>
@@ -361,8 +376,16 @@ export function RouteResultsView({
           </View>
         </SafeAreaView>
 
-        <View style={styles.mapLocation}>
-          <CurrentLocationButton
+        {/* Refresh, on the map just below the trip card. */}
+        <View pointerEvents="box-none" style={[styles.mapLocation, { top: tripCardBottom + 12 }]}>
+          <MapControlButton accessibilityLabel="Refresh route results" icon="refresh" onPress={refresh} testID="refresh-results" />
+        </View>
+
+        {/* Locate, just above the resting sheet. */}
+        <View pointerEvents="box-none" style={[styles.mapLocation, { bottom: height - restTop + 14 }]}>
+          <MapControlButton
+            accessibilityLabel="Center on current location"
+            icon="locate"
             onPress={() => {
               setCenterRequest((count) => count + 1);
               setCentered(true);
@@ -410,15 +433,6 @@ export function RouteResultsView({
               <Text style={styles.toolbarPillText}>Filter</Text>
             </PressableScale>
             <PressableScale
-              accessibilityLabel="Refresh route results"
-              accessibilityRole="button"
-              onPress={refresh}
-              style={styles.refreshButton}
-              testID="refresh-results"
-            >
-              <Icon name="refresh" size={19} />
-            </PressableScale>
-            <PressableScale
               accessibilityLabel="Change leave time"
               accessibilityRole="button"
               onPress={() => setTimeSheetOpen(true)}
@@ -427,7 +441,7 @@ export function RouteResultsView({
             >
               <Icon color={tripTime.mode === 'now' ? colors.ink : colors.primary} name="time" size={15} />
               <Text numberOfLines={1} style={[styles.leaveTime, tripTime.mode !== 'now' && styles.activePillText]} testID="leave-time-label">
-                {formatTripTimeChoice(tripTime)}{tomorrow ? ' tomorrow' : ''}
+                {formatTripTimeChoice(tripTime)}{tripDay ? ` ${tripDay}` : ''}
               </Text>
             </PressableScale>
           </View>
@@ -485,6 +499,7 @@ export function RouteResultsView({
             {plan.status === 'loading' ? <ItinerarySkeleton /> : null}
             {plan.status === 'problem' && problem ? (
               <View accessibilityLiveRegion="polite" style={styles.emptyResults} testID={`results-${plan.problem}`}>
+                <Mascot pose={plan.problem === 'unavailable' ? 'worried' : 'thinking'} size={64} />
                 <Text style={styles.emptyTitle}>{problem.title}</Text>
                 <Text style={styles.emptyBody}>{problem.body}</Text>
                 {problem.action ? (
@@ -501,6 +516,7 @@ export function RouteResultsView({
             ) : null}
             {plan.status === 'loaded' && planned.length === 0 ? (
               <View accessibilityLiveRegion="polite" style={styles.emptyResults} testID="results-none">
+                <Mascot pose="thinking" size={64} />
                 <Text style={styles.emptyTitle}>No transit trips found</Text>
                 <Text style={styles.emptyBody}>{`There's no transit for this trip at ${tripTime.mode === 'now' ? 'this time' : 'the time you picked'}.`}</Text>
                 <PressableScale accessibilityRole="button" onPress={() => setTimeSheetOpen(true)} style={styles.resetButton} testID="results-change-time">
@@ -533,7 +549,12 @@ export function RouteResultsView({
               const fare = fareLabel(itinerary.fare);
               const leavesIn = Math.round((Date.parse(itinerary.departureTime) - now) / 60_000);
               const span = `${formatTripClock(itinerary.departureTime)} - ${formatTripClock(itinerary.arrivalTime)}`;
-              const timing = tripTime.mode === 'now' ? `${leavesIn > 0 ? `Leaves in ${leavesIn} min` : 'Leave now'} · ${span}` : span;
+              const leaves = leavesIn > 0 ? `Leave within ${leavesIn} min` : 'Leave now';
+              const timing = tripTime.mode === 'now' ? `${leaves} · ${span}` : span;
+              // The first ride's live feed is tracking it, so "Leave within" follows the real vehicle.
+              const leavesLive = liveFresh && tripTime.mode === 'now' && legs[0]?.live?.status === 'tracked';
+              // Like the home cards: a live signal on the minutes when a ride's times come from its live feed.
+              const tripLive = liveFresh && legs.some((leg) => leg.live?.status === 'tracked');
               return (
                 <View key={itinerary.id} style={styles.itinerary} testID={`itinerary-${itinerary.id}`}>
                   <PressableScale
@@ -549,14 +570,15 @@ export function RouteResultsView({
                     <View style={[styles.itineraryTop, stackLargeTextMetrics && styles.itineraryTopLargeText]} testID={`search-result-layout-${itinerary.id}`}>
                       <View style={[styles.segmentColumn, stackLargeTextMetrics && styles.segmentColumnLargeText]}>
                         <View style={styles.segmentRow}>
-                          {legs.length === 0 && parts.length === 0 ? <Icon color={colors.mutedInk} filled={true} name="travel" size={18} /> : null}
+                          {legs.length === 0 && parts.length === 0 ? <Icon color={colors.mutedInk} name="travel" size={18} /> : null}
                           {parts.map((step, partIndex) => (
                             <View key={`${step.kind}-${partIndex}`} style={styles.segmentGroup}>
                               {step.kind === 'walk' ? (
-                                <Icon color={colors.mutedInk} filled={true} name="travel" size={18} testID={`itinerary-walk-${itinerary.id}-${partIndex}`} />
+                                <Icon color={colors.mutedInk} name="travel" size={18} testID={`itinerary-walk-${itinerary.id}-${partIndex}`} />
                               ) : (
                                 <RouteBadge
                                   agency={step.agency.name}
+                                  alert={!!step.alerts?.length}
                                   color={step.line.color ?? colors.primary}
                                   mode={badgeMode(step)}
                                   shortName={lineBadge(step)}
@@ -568,7 +590,19 @@ export function RouteResultsView({
                             </View>
                           ))}
                         </View>
-                        <Text style={styles.nextRide} testID={`schedule-${itinerary.id}`}>{timing}</Text>
+                        {leavesLive ? (
+                          <View accessibilityLabel={`${timing}, live`} accessible={true} style={styles.nextRideLive} testID={`schedule-${itinerary.id}`}>
+                            {/* On a narrow card the times wrap whole onto the next line. */}
+                            <View style={styles.nextRideLeave}>
+                              <Text style={styles.nextRide}>{leaves}</Text>
+                              <LiveSignal color={colors.green} style={styles.nextRideSignal} />
+                              <Text style={styles.nextRide}>{' · '}</Text>
+                            </View>
+                            <Text style={styles.nextRide}>{span}</Text>
+                          </View>
+                        ) : (
+                          <Text style={styles.nextRide} testID={`schedule-${itinerary.id}`}>{timing}</Text>
+                        )}
                       </View>
                       <View style={[styles.summary, stackLargeTextMetrics && styles.summaryLargeText]}>
                         <Text style={styles.fare} testID={`fare-${itinerary.id}`}>{fare}</Text>
@@ -579,6 +613,7 @@ export function RouteResultsView({
                               /^\d/.test(part) ? part : <Text key={partIndex} style={styles.durationUnit}>{part}</Text>
                             ))}
                           </Text>
+                          {tripLive ? <LiveSignal color={colors.green} style={styles.durationSignal} /> : null}
                         </View>
                       </View>
                     </View>
@@ -611,8 +646,8 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   screen: { width: '100%', maxWidth: 540, flex: 1, overflow: 'hidden', backgroundColor: colors.canvas },
   topOverlay: { zIndex: 4 },
   tripRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingTop: 8, paddingHorizontal: 12 },
-  backButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', marginTop: 18, borderRadius: 22, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.14, shadowRadius: 8, elevation: 4 },
-  criteriaCard: { minWidth: 0, flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 14, paddingRight: 9, paddingVertical: 8, borderRadius: 20, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.16, shadowRadius: 12, elevation: 6 },
+  backButton: { marginTop: 17 },
+  criteriaCard: { minWidth: 0, flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 14, paddingRight: 9, paddingVertical: 8, borderRadius: radii.card, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.16, shadowRadius: 12, elevation: 6 },
   endpointStack: { minWidth: 0, flex: 1 },
   endpointRow: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 11 },
   endpointDot: { width: 10, height: 10, borderRadius: 5 },
@@ -624,18 +659,18 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   },
   endpointInput: { minWidth: 0, flex: 1, paddingVertical: 7, color: colors.ink, ...typography.bodyStrong, fontSize: 14 },
   swapButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19, backgroundColor: colors.blueSoft },
-  mapLocation: { position: 'absolute', top: '35%', right: 16, zIndex: 2 },
+  // Sits just above the resting sheet; `bottom` is set from the screen height.
+  mapLocation: { position: 'absolute', right: 16, zIndex: 2, gap: 10 },
   resultsSheetInner: { flex: 1 },
   dragHandle: { height: 24, alignItems: 'center', justifyContent: 'center' },
   dragHandleGrip: { width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border },
-  resultsSheet: { position: 'absolute', right: 0, bottom: 0, left: 0, overflow: 'hidden', borderTopLeftRadius: 26, borderTopRightRadius: 26, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: -5 }, shadowOpacity: 0.12, shadowRadius: 16, elevation: 12 },
+  resultsSheet: { position: 'absolute', right: 0, bottom: 0, left: 0, overflow: 'hidden', borderTopLeftRadius: radii.sheet, borderTopRightRadius: radii.sheet, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: -5 }, shadowOpacity: 0.12, shadowRadius: 16, elevation: 12 },
   controls: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 2, paddingHorizontal: 14 },
   // Modes, Filter, and the leave time share the row equally; a long leave time is cut short.
   toolbarPill: { height: 36, minWidth: 0, flex: 1, flexDirection: 'row', gap: 5, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 18, backgroundColor: colors.surface },
   toolbarPillText: { color: colors.ink, fontFamily: fontFamilies.bold, fontSize: 10 },
   leaveControl: { minWidth: 0, height: 36, flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 8, borderRadius: 18, borderColor: colors.border, borderWidth: 1, backgroundColor: colors.surface },
   leaveTime: { flexShrink: 1, color: colors.ink, ...typography.bodyStrong, fontSize: 10 },
-  refreshButton: { width: 40, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 },
   preferences: { flexDirection: 'row', gap: 7, paddingTop: 9, paddingHorizontal: 14 },
   preference: { minHeight: 36, flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5, borderWidth: 1, borderColor: colors.border, borderRadius: 18, backgroundColor: colors.surface },
   selectedPreference: { borderColor: colors.primary, backgroundColor: colors.primary },
@@ -648,13 +683,13 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   emptyTitle: { color: colors.ink, ...typography.bodyStrong },
   emptyBody: { maxWidth: 280, color: colors.mutedInk, ...typography.metadata, textAlign: 'center' },
   walkLimitNote: { marginHorizontal: 16, marginBottom: 8, color: colors.mutedInk, ...typography.metadata },
-  resetButton: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 16, borderRadius: 20, backgroundColor: colors.primary },
+  resetButton: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 16, borderRadius: radii.pill, backgroundColor: colors.primary },
   resetText: { color: colors.onPrimary, fontFamily: fontFamilies.extraBold, fontSize: 13 },
   resultHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 12, paddingHorizontal: 16 },
   resultTitle: { color: colors.ink, ...typography.sectionHeading, fontSize: 18 },
   updated: { color: colors.mutedInk, ...typography.metadata, fontSize: 9 },
   results: { gap: 8, padding: 12, paddingTop: 9, paddingBottom: 30 },
-  itinerary: { overflow: 'hidden', borderWidth: 1, borderColor: colors.border, borderRadius: 12, backgroundColor: colors.surface },
+  itinerary: { overflow: 'hidden', borderWidth: 1, borderColor: colors.border, borderRadius: radii.control, backgroundColor: colors.surface },
   itineraryPressable: { paddingHorizontal: 12, paddingVertical: 10 },
   itineraryTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   itineraryTopLargeText: { flexDirection: 'column', alignItems: 'stretch' },
@@ -663,10 +698,14 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   segmentRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4 },
   segmentGroup: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   nextRide: { marginTop: 6, color: colors.mutedInk, ...typography.metadata, fontSize: 10 },
+  nextRideLive: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start' },
+  nextRideLeave: { flexDirection: 'row', alignItems: 'flex-start' },
+  nextRideSignal: { marginTop: 3, marginLeft: 1, transform: [{ scale: 0.8 }] },
   summary: { minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 8 },
   summaryLargeText: { justifyContent: 'space-between' },
   fare: { color: colors.primary, fontFamily: fontFamilies.extraBold, fontSize: 11 },
-  durationGroup: { minWidth: 0, flexShrink: 1, alignItems: 'flex-end' },
+  durationGroup: { minWidth: 0, flexShrink: 1, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'flex-end' },
+  durationSignal: { marginLeft: 2, marginTop: 1 },
   duration: { flexShrink: 1, color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 26, lineHeight: 28, textAlign: 'right' },
   durationUnit: { color: colors.mutedInk, fontFamily: fontFamilies.bold, fontSize: 12 },
 });

@@ -20,6 +20,8 @@ export type DirectionPrediction = {
   peakOffpeak: boolean | null;
   /** Minutes a tracked trip runs behind its timetable; absent from functions deployed before it was added. */
   delayMinutes?: number | null;
+  /** Where this trip ends (its headsign or last stop); absent from functions deployed before it was added. */
+  headsign?: string | null;
 };
 
 type StopPredictions = {

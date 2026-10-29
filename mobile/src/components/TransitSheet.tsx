@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Platform, StyleSheet, Text, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type ScrollViewInstance } from 'react-native';
+import { Animated, Platform, StyleSheet, Text, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type ScrollViewInstance } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { applyRouteLive } from '../data/applyRouteLive';
@@ -8,16 +8,18 @@ import { useTransitLiveMap } from '../data/TransitLiveContext';
 import type { RouteDetail } from '../data/transit';
 import { sortSavedLocations, type SavedLocation } from '../data/userData';
 import { useNow } from '../hooks/useNow';
-import { useAppSettings, useTheme, useThemedStyles } from '../theme/AppSettings';
+import { useAppSettings, useThemedStyles } from '../theme/AppSettings';
 import { useLayoutEase, useNativeDriver } from '../theme/motion';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
-import { Icon } from './Icon';
 import { AddSavedPlaceCard, SavedLocationCard } from './SavedLocationCard';
+import { Mascot } from './Mascot';
 import { NearbySkeleton } from './Skeleton';
 import { TransitCard } from './TransitCard';
 import { PressableScale } from './PressableScale';
 import { RecentTripCard } from './RecentTripCard';
+import { SHEET_AT_REST_TOLERANCE, SheetHandle } from './SheetHandle';
+import { radii } from '../theme/shape';
 
 export type TransitTabId = 'nearby' | 'recents' | 'favorites';
 
@@ -29,8 +31,6 @@ type TransitSheetProps = {
   /** Every real nearby route for the rider's current location, across every configured agency (nearbyTransit.ts) — not a fixed handful of hand-picked lines. */
   nearbyRoutes: readonly RouteDetail[];
   nearbyStatus: 'loading' | 'loaded' | 'error';
-  /** A re-search is in flight (e.g. for a new map center) while the current list stays visible. */
-  nearbyRefreshing?: boolean;
   onOpenSavedLocation: (location: SavedLocation) => void;
   /** Starts saving a new place; offered under Favorites -> Places when set. */
   onAddSavedPlace?: () => void;
@@ -40,8 +40,10 @@ type TransitSheetProps = {
   onTabChange: (tab: TransitTabId) => void;
   /** Destinations saved with a trip's star (Firestore savedLocations), under Favorites -> Places. */
   savedLocations: readonly SavedLocation[];
-  /** Routes saved with the star: listed first in Nearby and under Favorites -> Routes. */
+  /** Routes saved with the star: listed first in Nearby when they run near the map's spot, and under Favorites -> Routes. */
   savedRouteIds: readonly string[];
+  /** The saved routes that run near the map's spot (found by the nearby search); others wait under Favorites. */
+  savedNearbyRouteIds?: ReadonlySet<string>;
   /** Completed local trips, newest first and already scoped to the signed-in account. */
   recentTrips: readonly RecentTripV1[];
   scrollY: Animated.Value;
@@ -55,9 +57,6 @@ const TAB_GAP = 4;
 const TRANSIT_CARD_HEIGHT = 104;
 // Expanded = sheet scrolled up to just below the fixed search header (HomeScreen's 80pt top inset).
 const EXPANDED_TOP = 80;
-const DRAG_HANDLE_HEIGHT = 24;
-// Any scroll beyond this counts as "moved off rest", so a handle tap collapses instead of expanding.
-const AT_REST_TOLERANCE = 8;
 
 /** How long after a scroll or layout change the visible cards are recomputed. */
 const VISIBILITY_THROTTLE_MS = 150;
@@ -71,7 +70,6 @@ export function TransitSheet({
   activeTab,
   findRoute,
   mapHeight,
-  nearbyRefreshing = false,
   nearbyRoutes,
   nearbyStatus,
   onOpenSavedLocation,
@@ -82,15 +80,18 @@ export function TransitSheet({
   onVisibleRouteIdsChange,
   recentTrips,
   savedLocations,
+  savedNearbyRouteIds,
   savedRouteIds,
   scrollY,
 }: TransitSheetProps) {
   const styles = useThemedStyles(createStyles);
-  const { colors } = useTheme();
   const liveMap = useTransitLiveMap();
   // Re-applies live data every 30 s so countdowns age and past departures drop between polls.
   const now = useNow(30_000);
+  // A saved line leads Nearby only where it runs nearby (found by the nearby search, about a mile
+  // out); elsewhere it waits under Favorites. Until that search answers, saved lines still show.
   const savedRoutes = savedRouteIds
+    .filter((id) => nearbyStatus !== 'loaded' || !savedNearbyRouteIds || savedNearbyRouteIds.has(id))
     .map((id) => findRoute(id))
     .filter((route): route is RouteDetail => route != null)
     .map((route) => applyRouteLive(route, liveMap.get(route.id) ?? { status: 'error' }, now));
@@ -118,9 +119,6 @@ export function TransitSheet({
     Animated.spring(indicatorX, { toValue, speed: 18, bounciness: 4, useNativeDriver }).start();
   }, [activeIndex, indicatorX, reducedMotionActive, tabWidth]);
 
-  // The handle sits inside the page scroll, so dragging it on native already scrolls the
-  // sheet up and down like the rest of the page; tapping it (and clicking on web, where mouse
-  // drags don't scroll) jumps between the resting and expanded positions.
   const pageScrollRef = useRef<ScrollViewInstance>(null);
   const scrollOffset = useRef(0);
   const expandedOffset = Math.max(0, mapHeight - EXPANDED_TOP);
@@ -209,7 +207,7 @@ export function TransitSheet({
   }, [scheduleVisible]);
 
   const toggleExpanded = () => {
-    const target = scrollOffset.current <= AT_REST_TOLERANCE ? expandedOffset : 0;
+    const target = scrollOffset.current <= SHEET_AT_REST_TOLERANCE ? expandedOffset : 0;
     // Recorded up front: the scrollY listener can't be relied on for natively driven scroll
     // values, and on short lists the page stops short of `target` anyway (still off rest).
     scrollOffset.current = target;
@@ -245,16 +243,12 @@ export function TransitSheet({
         style={styles.sheet}
         testID="transit-sheet"
       >
-        <PressableScale
+        <SheetHandle
           accessibilityHint="Expands or collapses the transit list."
           accessibilityLabel="Transit list handle"
-          accessibilityRole="button"
           onPress={toggleExpanded}
-          style={styles.dragHandle}
           testID="transit-sheet-handle"
-        >
-          <View style={styles.dragHandleGrip} />
-        </PressableScale>
+        />
         <View accessibilityRole="tablist" onLayout={(event) => setTabsWidth(event.nativeEvent.layout.width)} style={styles.tabs}>
           <Animated.View pointerEvents="none" style={[styles.tabIndicator, { width: tabWidth, transform: [{ translateX: indicatorX }] }]} testID="tab-indicator" />
           {tabs.map((tab) => {
@@ -296,7 +290,6 @@ export function TransitSheet({
               ) : null}
 
               <View onLayout={(event) => recordSectionLayout('nearby', event)} style={styles.cardStack} testID="nearby-routes">
-                {nearbyRefreshing ? <ActivityIndicator accessibilityLabel="Updating nearby transit" color={colors.primary} style={styles.nearbyRefreshing} testID="nearby-refreshing" /> : null}
                 {nearbyCards.map((route) => (
                   <View key={route.id} onLayout={(event) => recordCardLayout('nearby', route.id, event)} testID={`card-slot-${route.id}`}>
                     <TransitCard
@@ -308,6 +301,7 @@ export function TransitSheet({
                 {nearbyStatus === 'loading' && nearbyCards.length === 0 ? <NearbySkeleton /> : null}
                 {nearbyStatus !== 'loading' && (nearbyStatus !== 'loaded' || nearbyCards.length === 0) ? (
                   <View accessible={true} style={styles.nearbyEmpty} testID="nearby-routes-empty">
+                    <Mascot pose={nearbyStatus === 'error' ? 'worried' : 'thinking'} size={52} />
                     <Text style={styles.nearbyEmptyText}>
                       {nearbyStatus === 'error' ? 'Could not check for nearby transit right now.' : 'No other nearby transit found.'}
                     </Text>
@@ -323,17 +317,15 @@ export function TransitSheet({
                     key={trip.sessionId}
                     destination={trip.destination.label}
                     endedAt={trip.endedAt}
-                    lines={trip.lines.map((line) => line.shortName ?? line.name)}
                     onOpen={() => onOpenRecentTrip(trip)}
                     origin={trip.origin.label}
-                    outcome={trip.outcome}
                     testID={`recent-trip-${trip.sessionId}`}
                   />
                 ))}
               </View>
             ) : (
               <View style={[styles.tabContent, styles.emptyState, { minHeight: tabContentMinHeight }]} testID="recents-route-content">
-                <View style={styles.emptyIcon}><Icon name="recent" size={30} /></View>
+                <Mascot pose="sleepy" size={64} />
                 <Text style={styles.emptyTitle}>No recent trips yet</Text>
                 <Text style={styles.emptyBody}>Trips you take will show up here.</Text>
               </View>
@@ -372,7 +364,7 @@ export function TransitSheet({
               </View>
             ) : (
               <View style={[styles.tabContent, styles.emptyState, { minHeight: tabContentMinHeight }]} testID="favorites-route-content">
-                <View style={styles.emptyIcon}><Icon name="favorite" size={30} /></View>
+                <Mascot pose="happy" size={64} />
                 <Text style={styles.emptyTitle}>No favorites yet</Text>
                 <Text style={styles.emptyBody}>Tap the star on a route, or save a place like home or work.</Text>
                 {onAddSavedPlace ? <View style={styles.emptyAction}><AddSavedPlaceCard onPress={onAddSavedPlace} /></View> : null}
@@ -387,8 +379,8 @@ export function TransitSheet({
 const createStyles = (colors: Palette) => StyleSheet.create({
   sheet: {
     overflow: 'hidden',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderTopLeftRadius: radii.sheet,
+    borderTopRightRadius: radii.sheet,
     backgroundColor: colors.surface,
     shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: -5 },
@@ -430,20 +422,8 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   // minHeight is applied inline per-render (tabContentMinHeight varies with how many nearby
   // routes are currently found) rather than baked in here.
   tabContent: {},
-  dragHandle: {
-    height: DRAG_HANDLE_HEIGHT,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dragHandleGrip: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.border,
-  },
   cardStack: { gap: 0 },
   nearbyEmpty: { alignItems: 'center', paddingVertical: 20, paddingHorizontal: 20, gap: 8 },
-  nearbyRefreshing: { paddingVertical: 8 },
   nearbyEmptyText: { color: colors.mutedInk, ...typography.metadata, textAlign: 'center' },
   sectionHeading: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 },
   sectionLabel: { color: colors.mutedInk, ...typography.label },
@@ -454,7 +434,6 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     paddingVertical: 20,
   },
   emptyAction: { alignSelf: 'stretch', marginTop: 16 },
-  emptyIcon: { width: 60, height: 60, alignItems: 'center', justifyContent: 'center', borderRadius: 30, backgroundColor: colors.blueSoft },
   emptyTitle: { marginTop: 8, color: colors.ink, ...typography.sectionHeading, fontSize: 16 },
   emptyBody: {
     marginTop: 7,

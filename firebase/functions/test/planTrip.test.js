@@ -4,7 +4,7 @@ const path = require('node:path');
 const test = require('node:test');
 
 const { consumeTokenBucket, resetCallableSecurityForTests, setSharedRateLimitConsumerForTests } = require('../lib/callableSecurity');
-const { planTrip, requiredPlanTripRequest, setTripStopMatcherForTests } = require('../lib');
+const { planTrip, requiredPlanTripRequest, setTripAlertsLookupForTests, setTripStopMatcherForTests } = require('../lib');
 const { SERVICE_AREA_BOUNDS } = require('../lib/serviceArea');
 
 const fixture = (name) => fs.readFileSync(path.join(__dirname, 'fixtures', name), 'utf8');
@@ -23,10 +23,13 @@ test.beforeEach(() => {
   resetCallableSecurityForTests();
   fetchCalls = [];
   originalFetch = global.fetch;
+  // Line alerts come from their own feed; these tests count only the Routes API call.
+  setTripAlertsLookupForTests(async () => []);
 });
 test.afterEach(() => {
   global.fetch = originalFetch;
   setTripStopMatcherForTests(undefined);
+  setTripAlertsLookupForTests(undefined);
   setSharedRateLimitConsumerForTests(undefined);
 });
 

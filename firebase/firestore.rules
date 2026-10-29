@@ -10,7 +10,7 @@ service cloud.firestore {
     function isValidLocation(location) {
       return location is map
         && location.keys().hasAll(['streetAddress', 'name', 'coordinates', 'type', 'placeId'])
-        && location.keys().hasOnly(['streetAddress', 'name', 'coordinates', 'type', 'placeId', 'transit', 'label', 'icon'])
+        && location.keys().hasOnly(['streetAddress', 'name', 'coordinates', 'type', 'placeId', 'transit', 'label', 'icon', 'color', 'group'])
         && location.streetAddress is string && location.streetAddress.size() <= 500
         && location.name is string && location.name.size() <= 200
         && location.placeId is string && location.placeId.size() <= 300
@@ -21,7 +21,11 @@ service cloud.firestore {
         // A saved place's own name (Location.label, MAX_PLACE_LABEL).
         && (!('label' in location) || (location.label is string && location.label.size() >= 1 && location.label.size() <= 40))
         // A saved place's picked icon (Location.icon, SAVED_PLACE_ICONS).
-        && (!('icon' in location) || location.icon in ['home', 'work', 'school', 'place', 'favorite', 'heart', 'cafe', 'restaurant', 'cart', 'fitness', 'people', 'medical']);
+        && (!('icon' in location) || location.icon in ['home', 'work', 'school', 'place', 'favorite', 'heart', 'cafe', 'restaurant', 'cart', 'fitness', 'people', 'medical'])
+        // A saved place's marker color (Location.color, SAVED_PLACE_COLORS).
+        && (!('color' in location) || location.color in ['blue', 'red', 'orange', 'yellow', 'green', 'teal', 'purple', 'pink', 'gray'])
+        // A saved place's list (Location.group, MAX_GROUP_NAME).
+        && (!('group' in location) || (location.group is string && location.group.size() >= 1 && location.group.size() <= 30));
     }
 
     // A saved transit stop's mode, agency, and lines (Location.transit).
@@ -31,6 +35,38 @@ service cloud.firestore {
         && transit.kind in ['subway', 'rail', 'bus', 'ferry']
         && transit.agency is string && transit.agency.size() <= 100
         && transit.routes is list && transit.routes.size() <= 30;
+    }
+
+    function isValidSavedStop(stop) {
+      return stop == null || (stop is map
+        && stop.keys().hasOnly(['stopId', 'name', 'headsign'])
+        && stop.stopId is string && stop.stopId.size() <= 64
+        && stop.name is string && stop.name.size() <= 200
+        && (!('headsign' in stop) || stop.headsign == null || (stop.headsign is string && stop.headsign.size() <= 200)));
+    }
+
+    // A saved line's daily alert window (SavedRoute.alertHours), in minutes after midnight.
+    function isValidAlertHours(hours) {
+      return hours is map && hours.keys().hasOnly(['start', 'end']) && hours.keys().hasAll(['start', 'end'])
+        && hours.start is int && hours.start >= 0 && hours.start < 1440
+        && hours.end is int && hours.end >= 0 && hours.end < 1440;
+    }
+
+    function isValidSavedRoute(route) {
+      return route.keys().hasAll(['agencyId', 'routeId', 'agencyName', 'routeName', 'shortName', 'color', 'alerts', 'dateSaved'])
+        && route.keys().hasOnly(['agencyId', 'routeId', 'agencyName', 'routeName', 'shortName', 'color', 'favorite', 'alerts', 'alertHours', 'dateSaved', 'direction1', 'direction0'])
+        && route.agencyId is string && route.agencyId.size() <= 32
+        && route.routeId is string && route.routeId.size() <= 128
+        && route.agencyName is string && route.agencyName.size() <= 100
+        && route.routeName is string && route.routeName.size() <= 200
+        && route.shortName is string && route.shortName.size() <= 64
+        && route.color is string && route.color.size() <= 16
+        && (!('favorite' in route) || route.favorite is bool)
+        && route.alerts in ['all', 'peak', 'custom', 'off']
+        && (!('alertHours' in route) || isValidAlertHours(route.alertHours))
+        && route.dateSaved is timestamp
+        && (!('direction1' in route) || isValidSavedStop(route.direction1))
+        && (!('direction0' in route) || isValidSavedStop(route.direction0));
     }
 
     // An { address, <dateField> } history entry whose date is the server's write time.
@@ -58,6 +94,12 @@ service cloud.firestore {
       match /savedLocations/{entryId} {
         allow read, delete: if isOwner(uid);
         allow create, update: if isOwner(uid) && isValidEntry('dateSaved');
+      }
+
+      // A saved transit line and its alert setting (mobile/src/data/savedRoutes.ts's SavedRoute).
+      match /savedRoutes/{routeKey} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid) && isValidSavedRoute(request.resource.data);
       }
     }
 
