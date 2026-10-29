@@ -41,13 +41,13 @@ module.exports = {
       [
         'expo-splash-screen',
         {
-          // The mascot alone on brand blue, in light and dark mode alike.
-          backgroundColor: '#0B4F9C',
-          image: './assets/splash-icon.png',
-          imageWidth: 160,
+          // The logo alone on the app's own light or dark background (App.tsx's LoadingScreen).
+          backgroundColor: '#F7FAFF',
+          image: './assets/pathly-mark.png',
+          imageWidth: 140,
           dark: {
-            backgroundColor: '#0B4F9C',
-            image: './assets/splash-icon.png',
+            backgroundColor: '#000000',
+            image: './assets/pathly-mark.png',
           },
           resizeMode: 'contain',
         },

@@ -28,6 +28,12 @@ export type RouteAlert = {
   upcoming: boolean;
 };
 
+/**
+ * A line's alert with what decides whether it touches one ride (tripLive.ts): when it runs, and
+ * the stops it names on the line (empty: the whole line). Never sent to the app as is.
+ */
+export type LineAlert = RouteAlert & { periods: readonly Period[]; stopIds: readonly string[]; mtaType: string | null };
+
 /** Planned work starting within this many days is listed as upcoming. */
 const UPCOMING_DAYS = 7;
 /** Alerts change slowly; this keeps rate-limited providers (Swiftly) from paying per poll. */
@@ -199,6 +205,11 @@ function loadAgencyAlerts(agencyId: AgencyId): Promise<ParsedAlert[]> {
 
 /** Alerts in effect now or starting soon that name this route: warnings first, then the rest, upcoming last. */
 export async function getRouteAlerts(agencyId: AgencyId, routeId: string, nowMs = Date.now()): Promise<RouteAlert[]> {
+  return (await getLineAlerts(agencyId, routeId, nowMs)).map(({ periods: _periods, stopIds: _stopIds, mtaType: _mtaType, ...alert }) => alert);
+}
+
+/** getRouteAlerts with each alert's periods and stops, for judging which rides it touches. */
+export async function getLineAlerts(agencyId: AgencyId, routeId: string, nowMs = Date.now()): Promise<LineAlert[]> {
   const config = agencyConfig(agencyId);
   const mtaAgencies = config.serviceAlertAgencyIds ?? [];
   const ownFeed = config.alertFeedRequests != null;
@@ -217,7 +228,7 @@ export async function getRouteAlerts(agencyId: AgencyId, routeId: string, nowMs 
   }
 
   const nowSeconds = nowMs / 1000;
-  const alerts: RouteAlert[] = [];
+  const alerts: LineAlert[] = [];
   const seen = new Set<string>();
   for (const alert of parsed) {
     if (seen.has(alert.id)) continue;
@@ -233,7 +244,8 @@ export async function getRouteAlerts(agencyId: AgencyId, routeId: string, nowMs 
     seen.add(alert.id);
     const upcoming = when === 'upcoming';
     const kind = alertKind(alert.mtaType, alert.effect, alert.header);
-    alerts.push({ id: alert.id, header: alert.header, description: alert.description, kind, upcoming, ...alertLabel(kind, upcoming, alert.mtaType) });
+    const stopIds = alert.routes.flatMap((informed) => (informed.stopId && (mtaAgencies.length === 0 || mtaAgencies.includes(informed.agencyId ?? '')) ? [informed.stopId] : []));
+    alerts.push({ id: alert.id, header: alert.header, description: alert.description, kind, upcoming, ...alertLabel(kind, upcoming, alert.mtaType), periods: alert.periods, stopIds, mtaType: alert.mtaType });
   }
   const rank = (alert: RouteAlert) => (alert.warning ? 0 : alert.upcoming ? 2 : 1);
   return alerts.map((alert, index) => ({ alert, index })).sort((a, b) => rank(a.alert) - rank(b.alert) || a.index - b.index).map(({ alert }) => alert);

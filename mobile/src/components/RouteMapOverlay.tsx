@@ -7,6 +7,7 @@ import { useRouteColor } from '../data/routeColors';
 import { useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies } from '../theme/typography';
+import { DESTINATION_PIN_HEIGHT, DESTINATION_PIN_WIDTH, DestinationPinMarker } from './DestinationPinMarker';
 import { Icon } from './Icon';
 import { LiveSignal } from './LiveSignal';
 import type { MapProjection } from './MapBackdrop';
@@ -154,16 +155,14 @@ export function VehicleMarker({ color, minutes, mode, point, projection }: Vehic
   );
 }
 
-const PIN_SIZE = 38;
 
 /** Destination pin whose tip sits on the final stop. */
-export function DestinationPin({ color, point, projection }: { color: string; point: Point; projection: MapProjection }) {
-  const styles = useThemedStyles(createStyles);
+export function DestinationPin({ point, projection }: { point: Point; projection: MapProjection }) {
   const { x, y } = projection.project(point);
+  // The rider's own pin (Settings, Appearance), its tip on the destination.
   return (
-    <View style={[styles.pin, { left: x - PIN_SIZE / 2, top: y - PIN_SIZE + 3 }]} testID="map-destination-pin">
-      <View style={styles.pinCore} />
-      <Icon color={color} name="place" size={PIN_SIZE} />
+    <View pointerEvents="none" style={{ position: 'absolute', left: x - DESTINATION_PIN_WIDTH / 2, top: y - DESTINATION_PIN_HEIGHT }} testID="map-destination-pin">
+      <DestinationPinMarker />
     </View>
   );
 }
@@ -198,6 +197,4 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     borderRadius: 11,
   },
   minutesText: { color: '#FFFFFF', fontFamily: fontFamilies.extraBold, fontSize: 10 },
-  pin: { position: 'absolute', width: PIN_SIZE, height: PIN_SIZE, alignItems: 'center' },
-  pinCore: { position: 'absolute', top: 8, width: 14, height: 14, borderRadius: 7, backgroundColor: '#FFFFFF' },
 });

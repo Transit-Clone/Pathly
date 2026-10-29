@@ -19,6 +19,7 @@ import { useClock } from '../hooks/useClock';
 import { useTheme } from '../theme/AppSettings';
 import { SharedTripDetailView, type TripDetailDeparture, type TripDetailLeg, type TripDetailModel, type TripDetailWalk } from './SharedTripDetailView';
 import { TripMap } from './TripMap';
+import { useTripVehicles } from '../hooks/useTripVehicles';
 
 type PlannedTripDetailViewProps = {
   destination: string;
@@ -138,6 +139,8 @@ export function PlannedTripDetailView({ destination, destinationAddress, destina
   // The location button: each press centers the map on the rider, until they drag it.
   const [centerRequest, setCenterRequest] = useState(0);
   const [centered, setCentered] = useState(false);
+  // The rides' live vehicles on the map, so the rider can watch theirs come in.
+  const { vehicles, approachLines } = useTripVehicles(planned, colors.primary);
   const userLocation = riderLocation ? { lat: riderLocation.latitude, lng: riderLocation.longitude } : null;
   // Departures the rider picked from the legs' boxes; the trip's times follow them.
   const [choices, setChoices] = useState<DepartureChoices>(new Map());
@@ -162,6 +165,8 @@ export function PlannedTripDetailView({ destination, destinationAddress, destina
           padding={{ top: 76, right: 24, bottom: 36, left: 24 }}
           testID="search-trip-route-map"
           userLocation={userLocation}
+          approachLines={approachLines}
+          vehicles={vehicles}
         />
       )}
       model={withoutStaleLive({ ...toTripDetailModel(itinerary, origin, destination, isActive, colors.primary, departures), ...(destinationAddress ? { destinationAddress } : {}), ...(destinationLines?.length ? { destinationLines } : {}) }, liveFresh)}

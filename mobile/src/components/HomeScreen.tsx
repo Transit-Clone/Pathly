@@ -69,13 +69,9 @@ import { NudgeBanner } from './NudgeBanner';
 import { SearchHeader } from './SearchHeader';
 import { SearchView } from './SearchView';
 import { TransitSheet, type TransitTabId } from './TransitSheet';
+import { mapPageMapHeight } from './mapSheetLayout';
 import { radii } from '../theme/shape';
 
-const TRANSIT_TABS_HEIGHT = 30;
-const TRANSIT_CARD_HEIGHT = 104;
-const VISIBLE_TRANSIT_CARDS = 3;
-const VISIBLE_CARD_GUTTER = 24;
-const MINIMUM_MAP_HEIGHT = 240;
 // Height reserved for the floating search header at the top of the map.
 const HEADER_INSET = 80;
 // Same footprint as the blue current-location dot (CurrentLocationMarker).
@@ -482,13 +478,7 @@ export function HomeScreen() {
     );
   }, []);
 
-  const mapHeight = Math.max(
-    MINIMUM_MAP_HEIGHT,
-    height
-      - TRANSIT_TABS_HEIGHT
-      - TRANSIT_CARD_HEIGHT * VISIBLE_TRANSIT_CARDS
-      - VISIBLE_CARD_GUTTER,
-  );
+  const mapHeight = mapPageMapHeight(height);
   // The transit menu scrolls over the map in one page scroll; the location button fades out and
   // rides up with it.
   const [homeScrollY] = useState(() => new Animated.Value(0));

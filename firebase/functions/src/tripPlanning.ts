@@ -49,6 +49,8 @@ export type TransitStep = {
    * trip calls at the same stops in between.
    */
   departures?: TripDeparture[];
+  /** The leg's GTFS line, direction and boarding stop (tripStops.ts), so the app can show its live vehicles. */
+  liveRoute?: { agencyId: string; routeId: string; boardStopId: string; directionId?: number };
   /** What the agency's live feed says about this leg's trip (tripLive.ts); absent when it says nothing. */
   live?: LegLive;
   /** The connection into this leg from the previous one, when it's tight or already missed (tripLive.ts). */

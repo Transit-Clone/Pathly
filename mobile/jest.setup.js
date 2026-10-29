@@ -358,6 +358,13 @@ jest.mock('@expo/vector-icons/Ionicons', () => {
   return { __esModule: true, default: MockIcon };
 });
 
+// Icons draw as SVG; in tests each renders its Phosphor glyph name as text so screens can be queried by icon.
+jest.mock('./src/components/PhosphorGlyph', () => {
+  const { Text } = require('react-native');
+  const MockGlyph = ({ name, color, size, ...props }) => <Text {...props} accessibilityElementsHidden={true} importantForAccessibility="no-hide-descendants">{name}</Text>;
+  return { __esModule: true, PhosphorGlyph: MockGlyph };
+});
+
 jest.mock('@expo/vector-icons/MaterialCommunityIcons', () => {
   const { Text } = require('react-native');
   const MockIcon = ({ name, ...props }) => <Text {...props}>{name}</Text>;

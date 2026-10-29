@@ -1,113 +1,121 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import type { ComponentProps } from 'react';
-import type { StyleProp, TextStyle } from 'react-native';
+import type { StyleProp, TextStyle, ViewStyle } from 'react-native';
 
 import { useTheme } from '../theme/AppSettings';
+import { PhosphorGlyph } from './PhosphorGlyph';
+import { phosphorGlyphs, type PhosphorGlyphName } from './phosphorGlyphs';
 
 type IoniconName = ComponentProps<typeof Ionicons>['name'];
 type MaterialIconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
 
+/** Each icon's Phosphor glyph: [off state (Bold outline), on state (Fill)]. */
 const glyphs = {
-  accessibility: ['accessibility-outline', 'accessibility'],
-  add: ['add-circle-outline', 'add-circle'],
-  alert: ['alert-circle-outline', 'alert-circle'],
-  appearance: ['color-palette-outline', 'color-palette'],
-  back: ['chevron-back', 'chevron-back'],
-  bell: ['notifications-outline', 'notifications'],
-  bus: ['bus-outline', 'bus'],
-  cafe: ['cafe-outline', 'cafe'],
-  cart: ['cart-outline', 'cart'],
-  check: ['checkmark', 'checkmark'],
-  close: ['close-circle', 'close-circle'],
-  collapse: ['chevron-up', 'chevron-up'],
+  accessibility: ['person-arms-spread-bold', 'person-arms-spread-fill'],
+  add: ['plus-circle-bold', 'plus-circle-fill'],
+  alert: ['warning-circle-bold', 'warning-circle-fill'],
+  appearance: ['palette-bold', 'palette-fill'],
+  back: ['caret-left-bold', 'caret-left-bold'],
+  bell: ['bell-bold', 'bell-fill'],
+  cafe: ['coffee-bold', 'coffee-fill'],
+  cart: ['shopping-cart-bold', 'shopping-cart-fill'],
+  check: ['check-bold', 'check-bold'],
+  close: ['x-circle-fill', 'x-circle-fill'],
+  collapse: ['caret-up-bold', 'caret-up-bold'],
+  dismiss: ['x-bold', 'x-bold'],
+  download: ['download-simple-bold', 'download-simple-fill'],
+  edit: ['pencil-simple-bold', 'pencil-simple-fill'],
+  expand: ['caret-down-bold', 'caret-down-bold'],
+  fare: ['tag-bold', 'tag-fill'],
+  feedback: ['chat-circle-dots-bold', 'chat-circle-dots-fill'],
+  favorite: ['star-bold', 'star-fill'],
+  filter: ['funnel-bold', 'funnel-fill'],
+  fit: ['frame-corners-bold', 'frame-corners-fill'],
+  flash: ['lightning-bold', 'lightning-fill'],
+  fitness: ['barbell-bold', 'barbell-fill'],
+  forward: ['caret-right-bold', 'caret-right-bold'],
+  go: ['navigation-arrow-bold', 'navigation-arrow-fill'],
+  heart: ['heart-bold', 'heart-fill'],
+  help: ['question-bold', 'question-fill'],
+  info: ['info-bold', 'info-fill'],
+  home: ['house-bold', 'house-fill'],
+  medical: ['first-aid-kit-bold', 'first-aid-kit-fill'],
+  modes: ['stack-bold', 'stack-fill'],
+  ok: ['check-circle-bold', 'check-circle-fill'],
+  people: ['users-bold', 'users-fill'],
+  person: ['user-bold', 'user-fill'],
+  pin: ['push-pin-bold', 'push-pin-fill'],
+  place: ['map-pin-bold', 'map-pin-fill'],
+  privacy: ['shield-check-bold', 'shield-check-fill'],
+  school: ['graduation-cap-bold', 'graduation-cap-fill'],
+  recent: ['clock-bold', 'clock-fill'],
+  refresh: ['arrow-clockwise-bold', 'arrow-clockwise-bold'],
+  restaurant: ['fork-knife-bold', 'fork-knife-fill'],
+  search: ['magnifying-glass-bold', 'magnifying-glass-bold'],
+  stop: ['stop-circle-bold', 'stop-circle-fill'],
+  swap: ['arrows-down-up-bold', 'arrows-down-up-bold'],
+  time: ['clock-bold', 'clock-fill'],
+  transfer: ['arrows-left-right-bold', 'arrows-left-right-bold'],
+  warning: ['warning-bold', 'warning-fill'],
+  wheelchair: ['wheelchair-bold', 'wheelchair-fill'],
+  work: ['briefcase-bold', 'briefcase-fill'],
+} as const satisfies Record<string, readonly [PhosphorGlyphName, PhosphorGlyphName]>;
+
+/** Icons kept from Ionicons, where its shape reads better than Phosphor's: [outline, filled]. */
+const ioniconGlyphs = {
   crosshair: ['locate-outline', 'locate'],
-  dismiss: ['close', 'close'],
-  download: ['download-outline', 'download'],
-  edit: ['create-outline', 'create'],
-  expand: ['chevron-down', 'chevron-down'],
-  fare: ['pricetag-outline', 'pricetag'],
-  feedback: ['chatbubble-ellipses-outline', 'chatbubble-ellipses'],
-  favorite: ['star-outline', 'star'],
-  filter: ['funnel-outline', 'funnel'],
-  ferry: ['boat-outline', 'boat'],
-  fit: ['scan-outline', 'scan'],
-  fitness: ['barbell-outline', 'barbell'],
-  forward: ['chevron-forward', 'chevron-forward'],
-  go: ['navigate-outline', 'navigate'],
-  heart: ['heart-outline', 'heart'],
-  help: ['help-circle-outline', 'help-circle'],
-  info: ['information-circle-outline', 'information-circle'],
-  home: ['home-outline', 'home'],
   locate: ['locate-outline', 'locate'],
   map: ['map-outline', 'map'],
-  medical: ['medkit-outline', 'medkit'],
-  modes: ['layers-outline', 'layers'],
-  ok: ['checkmark-circle-outline', 'checkmark-circle'],
-  people: ['people-outline', 'people'],
-  person: ['person-outline', 'person'],
-  place: ['location-outline', 'location'],
-  privacy: ['shield-checkmark-outline', 'shield-checkmark'],
-  rail: ['train-outline', 'train'],
-  school: ['school-outline', 'school'],
-  recent: ['time-outline', 'time'],
-  refresh: ['refresh', 'refresh'],
-  restaurant: ['restaurant-outline', 'restaurant'],
-  search: ['search', 'search'],
-  stop: ['stop-circle-outline', 'stop-circle'],
-  subway: ['subway-outline', 'subway'],
-  swap: ['swap-vertical', 'swap-vertical'],
-  time: ['time-outline', 'time'],
-  travel: ['walk-outline', 'walk'],
-  warning: ['warning-outline', 'warning'],
-  work: ['briefcase-outline', 'briefcase'],
 } as const satisfies Record<string, readonly [IoniconName, IoniconName]>;
 
-/** Glyphs Ionicons lacks, drawn from Material Community Icons (a true thumbtack for pinning, the wheelchair symbol). */
+/** Transit modes and walking, from Material Community Icons (picked for how clearly they read): [outline, filled]. */
 const materialGlyphs = {
-  pin: ['pin-outline', 'pin'],
-  wheelchair: ['wheelchair-accessibility', 'wheelchair-accessibility'],
+  bus: ['bus', 'bus'],
+  ferry: ['ferry', 'ferry'],
+  rail: ['train', 'train'],
+  subway: ['subway-variant', 'subway-variant'],
+  travel: ['walk', 'walk'],
 } as const satisfies Record<string, readonly [MaterialIconName, MaterialIconName]>;
 
-export type IconName = keyof typeof glyphs | keyof typeof materialGlyphs;
+export type IconName = keyof typeof glyphs | keyof typeof ioniconGlyphs | keyof typeof materialGlyphs;
 
 type IconProps = {
   color?: string;
   /**
-   * Pathly's icons are filled (solid shapes read better at small sizes and match the mascot's
-   * rounded look). Pass false only for an "off" state, like an unselected toggle.
+   * Pathly's icons are filled (solid, rounded shapes read better at small sizes and match the
+   * mascot's look). Pass false only for an "off" state, like an unselected toggle.
    */
   filled?: boolean;
   name: IconName;
   size?: number;
-  style?: StyleProp<TextStyle>;
+  style?: StyleProp<ViewStyle>;
   testID?: string;
 };
 
 /**
- * An icon as a character of its font, for surfaces that draw text rather than views (the web map's
- * marker labels). Null when the font's glyph table isn't available.
+ * An icon's SVG path data on a 256-unit square, for surfaces that draw an image rather than views
+ * (the web map's saved-place markers). Null for the few icons drawn from a font instead.
  */
-export function iconGlyph(name: keyof typeof glyphs, filled = true): { fontFamily: string; text: string } | null {
-  const glyphMap = (Ionicons as unknown as { glyphMap?: Record<string, number> }).glyphMap;
-  const font = (Ionicons as unknown as { font?: Record<string, unknown> }).font;
-  const code = glyphMap?.[glyphs[name][filled ? 1 : 0]];
-  if (code == null) return null;
-  return { fontFamily: Object.keys(font ?? {})[0] ?? 'ionicons', text: String.fromCodePoint(code) };
+export function iconPaths(name: IconName, filled = true): readonly string[] | null {
+  return name in glyphs ? phosphorGlyphs[glyphs[name as keyof typeof glyphs][filled ? 1 : 0]] : null;
 }
 
 export function Icon({ color, filled = true, name, size = 22, style, testID }: IconProps) {
   const { colors } = useTheme();
-  const shared = {
+  const font = {
     accessibilityElementsHidden: true,
     color: color ?? colors.primary,
     importantForAccessibility: 'no-hide-descendants' as const,
     size,
-    style,
+    style: style as StyleProp<TextStyle>,
     testID,
   };
   if (name in materialGlyphs) {
-    return <MaterialCommunityIcons {...shared} name={materialGlyphs[name as keyof typeof materialGlyphs][filled ? 1 : 0]} />;
+    return <MaterialCommunityIcons {...font} name={materialGlyphs[name as keyof typeof materialGlyphs][filled ? 1 : 0]} />;
   }
-  return <Ionicons {...shared} name={glyphs[name as keyof typeof glyphs][filled ? 1 : 0]} />;
+  if (name in ioniconGlyphs) {
+    return <Ionicons {...font} name={ioniconGlyphs[name as keyof typeof ioniconGlyphs][filled ? 1 : 0]} />;
+  }
+  return <PhosphorGlyph color={color ?? colors.primary} name={glyphs[name as keyof typeof glyphs][filled ? 1 : 0]} size={size} style={style} testID={testID} />;
 }

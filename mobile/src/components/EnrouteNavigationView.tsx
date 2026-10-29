@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -25,13 +25,13 @@ import { DetailMapPage } from './DetailMapPage';
 import { Icon } from './Icon';
 import { Mascot } from './Mascot';
 import { MapControlButton } from './MapControlButton';
+import { mapPageMapHeight } from './mapSheetLayout';
 import { PressableScale } from './PressableScale';
 import { RouteBadge } from './RouteBadge';
 import { SupportCard } from './SupportCard';
 import { TripMap } from './TripMap';
 import { radii } from '../theme/shape';
 
-const MAP_HEIGHT = 390;
 const METERS_PER_MILE = 1609.344;
 const FEET_PER_METER = 3.28084;
 
@@ -109,6 +109,7 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
   const now = useClock(30_000);
+  const { height } = useWindowDimensions();
   const guidance = useMemo(() => guidanceForNavigation(plan, cursor), [cursor, plan]);
   const mapProgress = useMemo(() => navigationMapProgress(plan, cursor), [cursor, plan]);
   const currentStep = session.itinerary.steps[cursor.stepIndex];
@@ -209,7 +210,7 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
             userLocationStale={locationState !== 'located'}
           />
         )}
-        mapHeight={MAP_HEIGHT}
+        mapHeight={mapPageMapHeight(height)}
         mapTestID="enroute-map"
         scrollTestID="enroute-scroll"
         testID="enroute-navigation-view"

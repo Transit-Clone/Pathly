@@ -72,6 +72,11 @@ export function approachingVehicle<T extends LatLon>(behind: readonly LatLon[], 
   return best?.vehicle ?? null;
 }
 
+/** Whether `point` is on `path`: within `maxOffMeters` of it, since GPS and the drawn line don't match exactly. */
+export function onPath(path: readonly LatLon[], point: LatLon, maxOffMeters = 250): boolean {
+  return path.length >= 2 && projectOnPath(path, point).distance <= maxOffMeters;
+}
+
 /**
  * `path` cut at the stop `stops[stopIndex]`: the part behind the rider and the part ahead, both
  * ending exactly at the spot on the line nearest the stop. Paths can have points kilometers apart

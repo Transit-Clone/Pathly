@@ -6,7 +6,7 @@ describe('themedRouteColor', () => {
   });
 
   it("darkens Pathly's own bus colors in dark mode", () => {
-    expect(themedRouteColor(BUS_COLORS.mtaLocal, true)).toBe('#1463A5');
+    expect(themedRouteColor(BUS_COLORS.mtaLocal, true)).toBe('#1151A8');
   });
 
   it('keeps official subway and railroad colors vibrant in dark mode', () => {

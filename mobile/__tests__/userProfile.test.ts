@@ -26,7 +26,7 @@ describe('ensureUserProfile', () => {
       await ensureUserProfile(user);
       const initial = (await getDoc(doc(db, 'users', user.uid))).data()?.avatar;
       expect(initial).toEqual(normalizeBeanAvatar(initial));
-      expect(initial.color).toBe('sky');
+      expect(initial.color).toBe('lime');
       random.mockReturnValue(0.9);
       await createUserProfile(user);
       await ensureUserProfile(user);

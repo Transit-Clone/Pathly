@@ -85,6 +85,14 @@ type RouteBadgeProps = {
   testID?: string;
 };
 
+/** Whether a `#RRGGBB` color is light enough that white text on it is hard to read. */
+function isLightColor(color: string): boolean {
+  const hex = /^#([0-9a-f]{6})$/i.exec(color)?.[1];
+  if (!hex) return false;
+  const [r, g, b] = [0, 2, 4].map((offset) => parseInt(hex.slice(offset, offset + 2), 16) / 255);
+  return 0.299 * r! + 0.587 * g! + 0.114 * b! > 0.6;
+}
+
 export function RouteBadge({
   agency,
   alert = false,
@@ -101,6 +109,8 @@ export function RouteBadge({
   const mode = modeOverride ?? transitModeForAgency(agency);
   const metrics = sizes[size];
   const expressLine = mode === 'subway' ? subwayExpressLine(shortName) : null;
+  // The MTA's own signs letter the yellow lines (N, Q, R, W) in black, whatever a feed says.
+  const labelColor = mode === 'subway' && isLightColor(color) ? '#000000' : textColor;
   const alertLabel = alert ? ', has service alerts' : '';
   const alertDot = alert ? (
     <View style={[styles.alertDot, { width: metrics.alertDot, height: metrics.alertDot, borderRadius: metrics.alertDot / 2 }]} testID={testID ? `${testID}-alert` : 'route-badge-alert'}>
@@ -119,7 +129,7 @@ export function RouteBadge({
         testID={testID}
       >
         <View style={[styles.diamond, { width: side, height: side, backgroundColor: routeColor }]} />
-        <Text style={[styles.text, { fontSize: metrics.fontSize }, textColor ? { color: textColor } : null]}>{expressLine}</Text>
+        <Text style={[styles.text, { fontSize: metrics.fontSize }, labelColor ? { color: labelColor } : null]}>{expressLine}</Text>
         {alertDot}
       </View>
     );
@@ -139,7 +149,7 @@ export function RouteBadge({
       ]}
       testID={testID}
     >
-      <Text style={[styles.text, { fontSize: metrics.fontSize }, textColor ? { color: textColor } : null]}>{shortName}</Text>
+      <Text style={[styles.text, { fontSize: metrics.fontSize }, labelColor ? { color: labelColor } : null]}>{shortName}</Text>
       {alertDot}
     </View>
   );

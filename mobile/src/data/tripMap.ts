@@ -1,6 +1,13 @@
 import { stopRevealZoom } from './stopDeclutter';
 import { formatTripClock, type Itinerary, type LatLng } from './tripPlanning';
 import { distanceMeters, type NavigationCursor, type NormalizedNavigationPlan } from './enrouteNavigation';
+import type { RouteLiveVehicle } from './transitLive';
+import type { TransitMode } from '../components/RouteBadge';
+
+/** A live vehicle on one of a trip's rides, colored and drawn like that ride's line. */
+export type TripVehicle = RouteLiveVehicle & { color: string; mode: TransitMode };
+/** A ride's line before the rider boards, drawn faint like Route View's line behind the rider's stop. */
+export type TripApproachLine = { key: string; color: string; path: readonly LatLng[] };
 
 export type TripMapProps = {
   /** The planned trip; omitted while results load, when only the endpoints are shown. */
@@ -28,6 +35,10 @@ export type TripMapProps = {
   userLocationStale?: boolean;
   /** Reports gesture-paused or locate-resumed follow mode. */
   onFollowModeChange?: (following: boolean) => void;
+  /** The rides' live vehicles (useTripVehicles), drawn like Route View's. */
+  vehicles?: readonly TripVehicle[];
+  /** Each ride's line leading up to where the rider boards (useTripVehicles). */
+  approachLines?: readonly TripApproachLine[];
   testID?: string;
 };
 
@@ -138,16 +149,34 @@ export function navigationMapProgress(plan: NormalizedNavigationPlan, cursor: Na
  * so it can be drawn dotted), a marker at the start, at every boarding and alighting point, at
  * each known stop in between, and at the destination, each labeled, and the points to frame.
  */
+/** Within this (meters) a path already reaches a point; farther, the point is added to its end. */
+const JOIN_METERS = 2;
+
+/** `path`, starting at `from` and ending at `to` when it doesn't already. */
+function joinEnds(path: readonly LatLng[], from?: LatLng, to?: LatLng): LatLng[] {
+  const near = (a: LatLng, b: LatLng) => distanceMeters(a, b) <= JOIN_METERS;
+  const joined = [...path];
+  if (from && !near(from, joined[0]!)) joined.unshift(from);
+  if (to && !near(to, joined.at(-1)!)) joined.push(to);
+  return joined;
+}
+
 export function tripMapPoints(itinerary: Itinerary | null | undefined, origin?: LatLng | null, destination?: LatLng | null) {
   const legs: TripMapLeg[] = [];
   const stops: TripMapStop[] = [];
   let transitIndex = 0;
-  for (const step of itinerary?.steps ?? []) {
-    if (step.path.length < 2) continue;
+  const steps = itinerary?.steps ?? [];
+  steps.forEach((step, index) => {
+    if (step.path.length < 2) return;
     if (step.kind === 'walk') {
-      legs.push({ path: step.path, walk: true });
+      // Google's walk ends where its path does, a little off the stop's own point: it's joined to the
+      // stop dots on either side so the walk visibly reaches the stop.
+      const before = steps[index - 1];
+      const after = steps[index + 1];
+      legs.push({ path: joinEnds(step.path, before?.kind === 'transit' ? before.to.location : undefined, after?.kind === 'transit' ? after.from.location : undefined), walk: true });
     } else {
-      legs.push({ path: step.path, walk: false, color: step.line.color });
+      // A ride's line is snapped to the road; it's run on to its stops' dots so it ends on them.
+      legs.push({ path: joinEnds(step.path, step.from.location, step.to.location), walk: false, color: step.line.color });
       const color = step.line.color;
       const leg = transitIndex;
       transitIndex += 1;
@@ -157,7 +186,7 @@ export function tripMapPoints(itinerary: Itinerary | null | undefined, origin?: 
         { point: step.to.location, kind: 'stop', color, leg, label: `${step.to.name} · ${formatTripClock(step.to.time)}` },
       );
     }
-  }
+  });
   const start = itinerary?.steps[0]?.path[0] ?? origin ?? undefined;
   const end = itinerary?.steps.at(-1)?.path.at(-1) ?? destination ?? undefined;
   if (start) stops.unshift({ point: start, kind: 'start', label: 'Start' });

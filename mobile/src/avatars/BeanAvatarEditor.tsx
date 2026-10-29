@@ -23,8 +23,8 @@ export function BeanAvatarEditor(props: Props) {
   if (!user || avatarLoading || avatarError) {
     return <View style={styles.viewport}><SafeAreaView style={styles.screen} edges={['top', 'bottom']}>
       <ThemedStatusBar />
-      <View style={styles.header}><PressableScale accessibilityRole="button" accessibilityLabel="Cancel bean customization" onPress={props.onCancel} style={styles.back}><Icon name="back" size={24} /></PressableScale><Text style={styles.title}>Customize your bean</Text></View>
-      {avatarLoading ? <ActivityIndicator accessibilityLabel="Loading your bean" color={colors.primary} /> : <><Text style={styles.description}>{user ? 'Your bean couldn’t load. Try again before making changes.' : 'Sign in to save your bean.'}</Text>{user ? <PressableScale accessibilityRole="button" onPress={retryAvatar} style={styles.save}><Text style={styles.saveText}>Try again</Text></PressableScale> : null}</>}
+      <View style={styles.header}><PressableScale accessibilityRole="button" accessibilityLabel="Cancel Pathling customization" onPress={props.onCancel} style={styles.back}><Icon name="back" size={24} /></PressableScale><Text style={styles.title}>Customize your Pathling</Text></View>
+      {avatarLoading ? <ActivityIndicator accessibilityLabel="Loading your Pathling" color={colors.primary} /> : <><Text style={styles.description}>{user ? 'Your Pathling couldn’t load. Try again before making changes.' : 'Sign in to save your Pathling.'}</Text>{user ? <PressableScale accessibilityRole="button" onPress={retryAvatar} style={styles.save}><Text style={styles.saveText}>Try again</Text></PressableScale> : null}</>}
     </SafeAreaView></View>;
   }
   return <BeanAvatarDraft key={user.uid} {...props} />;
@@ -59,7 +59,7 @@ function BeanAvatarDraft({ onCancel, onSaved }: Props) {
       await saveAvatar(draft);
       if (mounted.current) onSaved();
     } catch {
-      if (mounted.current) setError('Your bean couldn’t save. Check your connection and try again.');
+      if (mounted.current) setError('Your Pathling couldn’t save. Check your connection and try again.');
     } finally {
       pending.current = false;
       if (mounted.current) setSaving(false);
@@ -70,11 +70,11 @@ function BeanAvatarDraft({ onCancel, onSaved }: Props) {
   return <View style={styles.viewport}><SafeAreaView edges={['top', 'bottom']} style={styles.screen} testID="bean-editor">
     <ThemedStatusBar />
     <View style={styles.header}>
-      <PressableScale accessibilityRole="button" accessibilityLabel="Cancel bean customization" disabled={saving} onPress={onCancel} style={styles.back} testID="bean-cancel"><Icon name="back" size={24} /></PressableScale>
-      <Text style={styles.title}>Customize your bean</Text>
+      <PressableScale accessibilityRole="button" accessibilityLabel="Cancel Pathling customization" disabled={saving} onPress={onCancel} style={styles.back} testID="bean-cancel"><Icon name="back" size={24} /></PressableScale>
+      <Text style={styles.title}>Customize your Pathling</Text>
     </View>
       <View style={styles.preview}>
-        <BeanAvatar config={draft} size={158} animated={true} accessibilityLabel="Your bean preview" testID="bean-preview" />
+        <BeanAvatar config={draft} size={158} animated={true} accessibilityLabel="Your Pathling preview" testID="bean-preview" />
         <PressableScale accessibilityRole="button" accessibilityLabel="Surprise me" disabled={saving} onPress={() => change(randomBeanAvatar())} style={styles.shuffle} testID="bean-randomize"><Text style={styles.shuffleText}>Surprise me</Text></PressableScale>
       </View>
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -82,7 +82,7 @@ function BeanAvatarDraft({ onCancel, onSaved }: Props) {
         {tabs.map((item) => <PressableScale key={item} accessibilityRole="tab" accessibilityState={{ selected: tab === item }} disabled={saving} onPress={() => setTab(item)} style={[styles.tab, tab === item && styles.selected]} testID={`bean-tab-${item.toLowerCase()}`}><Text style={styles.tabText}>{item}</Text></PressableScale>)}
       </View>
       <View style={styles.grid}>
-        {tab === 'Color' ? BEAN_COLORS.map((color) => <PressableScale key={color.id} accessibilityLabel={`Bean color: ${color.label}`} accessibilityRole="button" accessibilityState={{ selected: draft.color === color.id }} disabled={saving} onPress={() => change({ ...draft, color: color.id })} style={[styles.option, draft.color === color.id && styles.selected]} testID={`bean-color-${color.id}`}>
+        {tab === 'Color' ? BEAN_COLORS.map((color) => <PressableScale key={color.id} accessibilityLabel={`Pathling color: ${color.label}`} accessibilityRole="button" accessibilityState={{ selected: draft.color === color.id }} disabled={saving} onPress={() => change({ ...draft, color: color.id })} style={[styles.option, draft.color === color.id && styles.selected]} testID={`bean-color-${color.id}`}>
           <View style={[styles.swatch, { backgroundColor: color.hex }]}>{draft.color === color.id ? <Icon name="check" color="#242728" size={22} /> : null}</View><Text style={styles.optionText}>{color.label}</Text>
         </PressableScale>) : parts.map((part) => <PressableScale key={part.id} accessibilityLabel={`${tab}: ${part.label}`} accessibilityRole="button" accessibilityState={{ selected: draft[field] === part.id }} disabled={saving} onPress={() => change({ ...draft, [field]: part.id })} style={[styles.option, draft[field] === part.id && styles.selected]} testID={`bean-${field}-${part.id}`}>
           <BeanAvatar config={{ ...draft, [field]: part.id }} size={72} />
@@ -91,7 +91,7 @@ function BeanAvatarDraft({ onCancel, onSaved }: Props) {
     </ScrollView>
     <View style={styles.footer}>
       {error ? <Text accessibilityRole="alert" accessibilityLiveRegion="assertive" style={styles.error} testID="bean-save-error">{error}</Text> : null}
-      <PressableScale accessibilityRole="button" accessibilityLabel="Save bean" accessibilityState={{ busy: saving, disabled: saving }} disabled={saving} onPress={() => void save()} style={[styles.save, saving && styles.disabled]} testID="bean-save">{saving ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={styles.saveText}>Save bean</Text>}</PressableScale>
+      <PressableScale accessibilityRole="button" accessibilityLabel="Save Pathling" accessibilityState={{ busy: saving, disabled: saving }} disabled={saving} onPress={() => void save()} style={[styles.save, saving && styles.disabled]} testID="bean-save">{saving ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={styles.saveText}>Save Pathling</Text>}</PressableScale>
     </View>
   </SafeAreaView></View>;
 }

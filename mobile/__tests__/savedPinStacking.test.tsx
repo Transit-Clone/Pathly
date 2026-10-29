@@ -47,6 +47,11 @@ describe('stackSavedPins', () => {
     const svg = decodeURIComponent(savedPinSvgUrl('#0B4F9C', '#FFFFFF'));
     expect(svg.match(/<(path|circle)\b/g)).toEqual(['<circle']);
   });
+
+  it('draws an icon centered in the badge, in the ring color', () => {
+    const svg = decodeURIComponent(savedPinSvgUrl('#0B4F9C', '#FFFFFF', ['M0,0H256V256Z']));
+    expect(svg).toContain('<g transform="translate(7 7) scale(0.0625)" fill="#FFFFFF"><path d="M0,0H256V256Z"/></g>');
+  });
 });
 
 describe('web home map', () => {
@@ -70,8 +75,9 @@ describe('web home map', () => {
     const home = screen.getByTestId('web-Plan a trip to Home');
     const gym = screen.getByTestId('web-Plan a trip to Gym');
     expect(gym.props.position).toEqual(home.props.position);
-    expect(home.props.label).toBeDefined();
-    expect(gym.props.label).toBeUndefined();
+    const drawsIcon = (marker: typeof home) => decodeURIComponent(marker.props.icon.url).includes('<path');
+    expect(drawsIcon(home)).toBe(true);
+    expect(drawsIcon(gym)).toBe(false);
     expect(home.props.zIndex).toBeGreaterThan(gym.props.zIndex);
   });
 });

@@ -89,6 +89,30 @@ function regionFor(stops: readonly GeometryStop[], focusStop: GeometryStop | und
   return focusStop ? { latitude: focusStop.lat, longitude: focusStop.lon, ...FOCUS_DELTA } : regionForStops(stops);
 }
 
+/**
+ * A live vehicle (Route View and the trip map): a white circle with the line's mode glyph and its
+ * position's age, gliding to each refreshed spot rather than jumping there.
+ */
+export function LiveVehicleMarker({ color, mode, now, vehicle, zIndex }: { color: string; mode: TransitMode; now: number; vehicle: RouteLiveVehicle; zIndex: number }) {
+  return (
+    <Glide lat={vehicle.lat} lon={vehicle.lon}>{(point) => (
+      // Vehicles keep tracking view changes so the ticking age badge re-renders; there are only a few.
+      <Marker anchor={VEHICLE_ANCHOR} coordinate={{ latitude: point.lat, longitude: point.lon }} testID={`route-vehicle-${vehicle.tripId}`} title={mode === 'bus' ? 'Bus' : 'Train'} zIndex={zIndex}>
+        <View style={styles.vehicleBox}>
+          <View style={styles.vehicleBadge} testID={`route-vehicle-badge-${vehicle.tripId}`}>
+            <Icon color={color} name={mode === 'bus' ? 'bus' : mode === 'subway' ? 'subway' : mode === 'ferry' ? 'ferry' : 'rail'} size={22} />
+          </View>
+          {vehicle.updatedAt != null ? (
+            <View style={[styles.ageBadge, { backgroundColor: color }]} testID={`route-vehicle-age-badge-${vehicle.tripId}`}>
+              <Text style={styles.ageText} testID={`route-vehicle-age-${vehicle.tripId}`}>{formatAge(now - vehicle.updatedAt)}</Text>
+            </View>
+          ) : null}
+        </View>
+      </Marker>
+    )}</Glide>
+  );
+}
+
 /** Real route map: actual stop positions, the real line, and live vehicles — for any route with a live feed. */
 export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusStopId, focusStopName, mode = 'rail', onOpenStop, onUserPan, path, showRouteRequest = 0, stops, testID = 'route-map', userLocation, vehicles, walkPath }: RouteMapProps) {
   const mapRef = useRef<MapView>(null);
@@ -147,8 +171,6 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
     const start = line.aheadPoints[0];
     return start && arrowZoom > 0 ? directionArrowAt(line.aheadPoints, metersPerPixel(arrowZoom, start.lat)) : null;
   }, [arrowZoom, line.aheadPoints]);
-  const vehicleLabel = mode === 'bus' ? 'Bus' : 'Train';
-  const vehicleIcon = mode === 'bus' ? 'bus' : mode === 'subway' ? 'subway' : 'rail';
 
   // The rider, when they're near their stop: framed with it so they see the walk there.
   const nearRider = userLocation && focusStop && riderNearStop(userLocation, focusStop) ? userLocation : null;
@@ -276,24 +298,7 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
           <DirectionArrow color={color} />
         </Marker>
       ) : null}
-      {shownVehicles.map((vehicle) => (
-        // Each vehicle glides to its refreshed spot rather than jumping there.
-        <Glide key={vehicle.tripId} lat={vehicle.lat} lon={vehicle.lon}>{(point) => (
-        // Vehicles keep tracking view changes so the ticking age badge re-renders; there are only a few.
-        <Marker anchor={VEHICLE_ANCHOR} coordinate={{ latitude: point.lat, longitude: point.lon }} testID={`route-vehicle-${vehicle.tripId}`} title={vehicleLabel} zIndex={2}>
-          <View style={styles.vehicleBox}>
-            <View style={styles.vehicleBadge} testID={`route-vehicle-badge-${vehicle.tripId}`}>
-              <Icon color={color} name={vehicleIcon} size={22} />
-            </View>
-            {vehicle.updatedAt != null ? (
-              <View style={[styles.ageBadge, { backgroundColor: color }]} testID={`route-vehicle-age-badge-${vehicle.tripId}`}>
-                <Text style={styles.ageText} testID={`route-vehicle-age-${vehicle.tripId}`}>{formatAge(now - vehicle.updatedAt)}</Text>
-              </View>
-            ) : null}
-          </View>
-        </Marker>
-        )}</Glide>
-      ))}
+      {shownVehicles.map((vehicle) => <LiveVehicleMarker key={vehicle.tripId} color={color} mode={mode} now={now} vehicle={vehicle} zIndex={2} />)}
       {userLocation ? <HeadingBeamMarker coordinate={userLocation} /> : null}
     </MapView>
   );

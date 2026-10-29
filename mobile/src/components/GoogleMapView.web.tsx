@@ -1,4 +1,4 @@
-import { GoogleMap, Marker, Polyline, Rectangle, useJsApiLoader } from '@react-google-maps/api';
+import { GoogleMap, Marker, Polyline, useJsApiLoader } from '@react-google-maps/api';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -6,13 +6,13 @@ import { GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_SCRIPT_ID } from '../data/googleMaps
 import type { MapLine } from '../data/lineLayers';
 import { googleMapStyle } from '../data/mapStyle';
 import { themedRouteColor } from '../data/routeColors';
-import { MAP_EXPLORATION_BOUNDS, SERVICE_AREA_BOUNDS } from '../data/serviceArea';
+import { MAP_EXPLORATION_BOUNDS } from '../data/serviceArea';
 import { addressAfterName } from '../data/placesSearch';
 import { metersPerPixelAtZoom, SAVED_PIN, savedPinSvgUrl, savedPlaceColor, stackSavedPins } from '../data/savedPlacePin';
 import { locationPoint, savedPlaceName, type SavedLocation } from '../data/userData';
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { useTheme } from '../theme/AppSettings';
-import { iconGlyph, type IconName } from './Icon';
+import { iconPaths } from './Icon';
 import { savedLocationIcon } from './SavedPlacesStrip';
 import { HeadingBeamMarker } from './HeadingBeamMarker';
 import { centerOffsetFrom, glideMapTo } from './webMapGlide';
@@ -33,15 +33,6 @@ const baseMapOptions = {
   minZoom: MIN_ZOOM,
   disableDefaultUI: true,
   clickableIcons: false,
-};
-
-// Outlines the service area; strokeWeight-only (fillOpacity 0) so it reads as a border, not a mask.
-const serviceAreaOutlineOptions = {
-  fillOpacity: 0,
-  strokeColor: '#0B4F9C',
-  strokeOpacity: 0.6,
-  strokeWeight: 2,
-  clickable: false,
 };
 
 /**
@@ -108,16 +99,6 @@ const LONG_PRESS_MS = 600;
  * like native; the bottom is sized to the sheet's top. To keep `center` centered in the
  * visible gap below the header, the map is panned up by half the top padding.
  */
-/** A saved-place pin's icon as a marker label (a star when the icon font isn't available). */
-function pinLabel(icon: IconName, color: string): google.maps.MarkerLabel {
-  const glyph = icon in ICON_FALLBACK ? null : iconGlyph(icon as Parameters<typeof iconGlyph>[0]);
-  return glyph
-    ? { color, fontFamily: glyph.fontFamily, fontSize: '16px', text: glyph.text }
-    : { color, fontSize: '15px', fontWeight: '700', text: '★' };
-}
-/** Icons drawn from a font other than the one marker labels use. */
-const ICON_FALLBACK = { pin: true } as const;
-
 export function GoogleMapView({ initialCamera, lines = [], location, onCameraChange, onLongPress, onPress, onSavedLocationPress, onUserMoveEnd, onUserPan, padding, recenterRequest = 0, savedLocations = [], testID = 'google-map-view' }: GoogleMapViewProps) {
   // The JS API has no long-press event: a press held still for LONG_PRESS_MS counts as one.
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -232,7 +213,6 @@ export function GoogleMapView({ initialCamera, lines = [], location, onCameraCha
           options={mapOptions}
           zoom={initialZoom}
         >
-          <Rectangle bounds={SERVICE_AREA_BOUNDS} options={serviceAreaOutlineOptions} />
           {webLines.map((line) => <Polyline key={line.key} options={line.options} path={line.path} />)}
           {savedPins.map(({ saved, position: pinPosition, leader }) => {
             const name = savedPlaceName(saved.address);
@@ -243,15 +223,12 @@ export function GoogleMapView({ initialCamera, lines = [], location, onCameraCha
             return (
               <Marker
                 clickable={onSavedLocationPress != null}
-                // Centered on the place, as Google Maps marks one; the icon is the label, drawn in
-                // the icon font at the badge's exact center.
+                // Centered on the place, as Google Maps marks one, with the same icon the app shows
+                // drawn into the badge. Only a stack's top pin shows its icon.
                 icon={{
-                  url: savedPinSvgUrl(savedPlaceColor(saved.address, colors.primary), colors.savedPlaceBorder),
+                  url: savedPinSvgUrl(savedPlaceColor(saved.address, colors.primary), colors.savedPlaceBorder, leader ? iconPaths(savedLocationIcon(saved.address)) : null),
                   anchor: new google.maps.Point(SAVED_PIN.size / 2, SAVED_PIN.size / 2),
-                  labelOrigin: new google.maps.Point(SAVED_PIN.size / 2, SAVED_PIN.size / 2),
                 }}
-                // Only a stack's top pin shows its icon: the map draws every label above every pin.
-                label={leader ? pinLabel(savedLocationIcon(saved.address), colors.ring) : undefined}
                 key={saved.id}
                 onClick={() => onSavedLocationPress?.(saved, savedPins.filter((pin) => pin.position === pinPosition).map((pin) => pin.saved))}
                 options={{ optimized: false }}

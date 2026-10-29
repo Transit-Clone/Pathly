@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 
-const { addConnections, addLiveStatus, isSameTrip, legLiveFrom } = require('../lib/tripLive');
+const { addConnections, addLiveStatus, alertAffectsLeg, isSameTrip, legLiveFrom } = require('../lib/tripLive');
 const { normalizeRoutesResponse } = require('../lib/tripPlanning');
 const { matchTripStops } = require('../lib/tripStops');
 
@@ -124,14 +124,14 @@ test("every matched leg carries its line's service alerts, looked up once per li
   const unmatched = transit(60, 70);
   const refs = new Map([[soon, REF], [later, { ...REF, tripId: 'later' }], [other, { ...REF, routeId: '2' }]]);
   const asked = [];
-  const alert = { id: 'a1', header: 'Delays', description: 'Signal problems', kind: 'delay', label: 'Delays', warning: true, upcoming: false };
+  const alert = { id: 'a1', header: 'Delays', description: 'Signal problems', kind: 'delays', label: 'Delays', warning: true, upcoming: false, periods: [], stopIds: [], mtaType: null };
   const alertsFor = async (ref) => {
     asked.push(ref.routeId);
     return ref.routeId === '1' ? [alert] : [];
   };
   const [trip] = await addLiveStatus([{ steps: [soon, later, other, unmatched] }], 200, now, async () => undefined, (step) => refs.get(step), alertsFor);
   assert.deepEqual(asked.sort(), ['1', '2']);
-  const { kind: _kind, ...legAlert } = alert;
+  const legAlert = { id: 'a1', header: 'Delays', description: 'Signal problems', label: 'Delays', warning: true, upcoming: false };
   assert.deepEqual(trip.steps[0].alerts, [legAlert]);
   assert.deepEqual(trip.steps[1].alerts, [legAlert]);
   assert.equal(trip.steps[2].alerts, undefined);
@@ -148,4 +148,21 @@ test('an exactly matched LIRR leg carries where to find its trip in the live fee
   assert.equal(result.live.agencyId, 'lirr');
   assert.equal(result.live.tripId, result.tripId);
   assert.ok(result.live.routeId && result.live.boardStopId && result.live.alightStopId);
+});
+
+test('only alerts that touch the ride itself are kept for it', () => {
+  const ride = transit(60, 90);
+  const ref = { ...REF, stopIdsBetween: ['mid'] };
+  const seconds = (minutes) => Date.parse(at(minutes)) / 1000;
+  const alert = (fields) => ({ id: 'a', header: 'h', description: null, kind: 'detour', label: 'Detour in effect', warning: true, upcoming: false, periods: [], stopIds: [], mtaType: null, ...fields });
+  assert.equal(alertAffectsLeg(alert({}), ride, ref), true, 'a line-wide disruption');
+  assert.equal(alertAffectsLeg(alert({ kind: 'notice' }), ride, ref), false, 'a notice');
+  assert.equal(alertAffectsLeg(alert({ kind: 'extra' }), ride, ref), false, 'extra service');
+  assert.equal(alertAffectsLeg(alert({ periods: [{ start: seconds(60 * 24 * 3), end: seconds(60 * 24 * 4) }], upcoming: true }), ride, ref), false, 'planned for another day');
+  assert.equal(alertAffectsLeg(alert({ periods: [{ start: seconds(0), end: seconds(30) }] }), ride, ref), false, 'over before the ride');
+  assert.equal(alertAffectsLeg(alert({ periods: [{ start: seconds(80), end: 0 }], upcoming: true }), ride, ref), true, 'starting during the ride');
+  assert.equal(alertAffectsLeg(alert({ stopIds: ['elsewhere'] }), ride, ref), false, 'at a stop the ride skips');
+  assert.equal(alertAffectsLeg(alert({ stopIds: ['board'] }), ride, ref), true, 'where the rider boards');
+  assert.equal(alertAffectsLeg(alert({ stopIds: ['mid'] }), ride, ref), true, 'a stop on the way');
+  assert.equal(alertAffectsLeg(alert({ stopIds: ['A27N'] }), ride, { ...ref, boardStopId: 'A27S' }), true, "a subway platform's station");
 });

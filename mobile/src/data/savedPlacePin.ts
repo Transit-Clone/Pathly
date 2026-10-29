@@ -2,12 +2,15 @@ import type { Location, SavedPlaceColor } from './userData';
 
 /**
  * The home map's saved-place marker, as in Google Maps: a round badge right on the place, in the
- * place's color, with its icon centered. The web map draws the badge from this SVG and the icon as
- * the marker's label; the native map draws the same badge from views (GoogleMapView.native.tsx).
+ * place's color, with its icon centered. The web map draws the badge and icon from this SVG; the
+ * native map draws the same badge from views (GoogleMapView.native.tsx).
  */
 
 /** Badge size in px; the marker's anchor is its center. */
 export const SAVED_PIN = { size: 30 } as const;
+
+/** The icon's size in px inside the badge (the native badge draws it the same size). */
+const ICON_SIZE = 16;
 
 const RING_WIDTH = 2.5;
 
@@ -29,12 +32,20 @@ export function savedPlaceColor(location: Location, fallback: string): string {
   return location.color ? SAVED_PLACE_COLOR_HEX[location.color] ?? fallback : fallback;
 }
 
-/** The empty badge as an SVG data URL: a filled circle outlined in `ring`. */
-export function savedPinSvgUrl(fill: string, ring: string): string {
+/**
+ * The badge as an SVG data URL: a filled circle outlined in `ring`, with `icon` (path data on a
+ * 256-unit square) centered in it in the ring's color. Without an icon, the badge is empty.
+ */
+export function savedPinSvgUrl(fill: string, ring: string, icon?: readonly string[] | null): string {
   const { size } = SAVED_PIN;
   const r = size / 2;
+  const inset = (size - ICON_SIZE) / 2;
+  const glyph = icon?.length
+    ? `<g transform="translate(${inset} ${inset}) scale(${ICON_SIZE / 256})" fill="${ring}">${icon.map((d) => `<path d="${d}"/>`).join('')}</g>`
+    : '';
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">`
     + `<circle cx="${r}" cy="${r}" r="${r - RING_WIDTH / 2}" fill="${fill}" stroke="${ring}" stroke-width="${RING_WIDTH}"/>`
+    + glyph
     + '</svg>';
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 }

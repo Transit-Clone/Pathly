@@ -19,11 +19,11 @@ import { MapBackdrop } from './MapBackdrop';
 import { RouteBadge, type TransitMode } from './RouteBadge';
 import { DestinationPin, orientLegs, routeFocus, RouteLines, type MapLeg } from './RouteMapOverlay';
 import { MapControlButton } from './MapControlButton';
+import { mapPageMapHeight } from './mapSheetLayout';
 import { PressableScale } from './PressableScale';
 import { TripNotePill } from './TripNotePill';
 import { radii } from '../theme/shape';
 
-const MAP_HEIGHT = 360;
 
 /** Walking before a leg (or, on the model, after the last one). */
 export type TripDetailWalk = { minutes: number; distance: string; toName: string };
@@ -217,27 +217,23 @@ const LEAVE_WITHIN_HORIZON_MIN = 90;
 
 /**
  * How long the rider has before setting off, counting down: "Leave within 6 min", then "Leave now"
- * (in warning yellow), with the ride to catch. Live when the first ride's feed is tracking it.
+ * (in warning yellow). Live when the first ride's feed is tracking it.
  */
 function LeaveWithinCard({ leavesAt, model, testID }: { leavesAt: string; model: TripDetailModel; testID: string }) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
   const now = useClock(15_000);
   const minutes = Math.round((Date.parse(leavesAt) - now) / 60_000);
-  if (!Number.isFinite(minutes) || minutes > LEAVE_WITHIN_HORIZON_MIN || minutes < -2) return null;
+  if (!Number.isFinite(minutes) || minutes > LEAVE_WITHIN_HORIZON_MIN) return null;
   const firstLeg = model.legs[0];
   const urgent = minutes <= 1;
   const title = minutes > 0 ? `Leave within ${minutes} min` : 'Leave now';
-  const catchText = firstLeg ? `to catch the ${firstLeg.startTime} ${firstLeg.shortName}` : `to arrive by ${model.arriveTime}`;
   return (
-    <View accessibilityLabel={`${title}, ${catchText}${firstLeg?.live ? ', live' : ''}`} accessible={true} style={[styles.leaveCard, urgent && styles.leaveCardUrgent]} testID={testID}>
-      <View style={[styles.leaveIcon, urgent && styles.leaveIconUrgent]}><Icon color={urgent ? colors.onAlertYellow : colors.primary} name="time" size={20} /></View>
-      <View style={styles.routeCopy}>
-        <View style={styles.leaveTitleRow}>
-          <Text style={styles.leaveTitle}>{title}</Text>
-          {firstLeg?.live ? <LiveSignal color={colors.green} style={styles.leaveSignal} /> : null}
-        </View>
-        <Text style={styles.headerDirection}>{catchText}</Text>
+    <View accessibilityLabel={`${title}${firstLeg?.live ? ', live' : ''}`} accessible={true} style={[styles.leaveCard, urgent && styles.leaveCardUrgent]} testID={testID}>
+      <View style={[styles.leaveIcon, urgent && styles.leaveIconUrgent]}><Icon color={urgent ? colors.onAlertYellow : colors.primary} name="time" size={15} /></View>
+      <View style={styles.leaveTitleRow}>
+        <Text style={styles.leaveTitle}>{title}</Text>
+        {firstLeg?.live ? <LiveSignal color={colors.green} style={styles.leaveSignal} /> : null}
       </View>
     </View>
   );
@@ -299,10 +295,23 @@ function summaryParts(model: TripDetailModel): SummaryPart[] {
   return parts;
 }
 
+/** `color` mixed into `base` by `amount` (0–1): a ride card's light wash of its line color. Non-hex colors give `base`. */
+function shade(color: string, base: string, amount: number): string {
+  const hex = /^#([0-9a-f]{6})$/i;
+  const a = hex.exec(color)?.[1];
+  const b = hex.exec(base)?.[1];
+  if (!a || !b) return base;
+  const channel = (offset: number) => {
+    const mixed = Math.round(parseInt(b.slice(offset, offset + 2), 16) * (1 - amount) + parseInt(a.slice(offset, offset + 2), 16) * amount);
+    return mixed.toString(16).padStart(2, '0');
+  };
+  return `#${channel(0)}${channel(2)}${channel(4)}`;
+}
+
 export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = false, isFavorite, locationSelected, map: tripMap, model, onAction, onBack, onCenterOnLocation, onFocusStop, onSelectDeparture, onToggleFavorite, rootTestID, showServiceAlerts = true, testPrefix, tone = 'planned' }: SharedTripDetailViewProps) {
   const tint = useRouteColor();
   const styles = useThemedStyles(createStyles);
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const [isLocationCentered, setIsLocationCentered] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [confirmingEnd, setConfirmingEnd] = useState(false);
@@ -342,9 +351,9 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
   const ease = useLayoutEase();
   // The fare and minutes hold the first row's right side at any width (the badges wrap
   // instead); only very large text stacks them under the badges.
-  const { fontScale, width } = useWindowDimensions();
+  const { fontScale, height, width } = useWindowDimensions();
+  const mapHeight = mapPageMapHeight(height);
   const stackLargeTextMetrics = fontScale >= 1.5;
-  const routeColor = model.legs[0]?.color ?? colors.primary;
   const isEndAction = actionLabel.startsWith('End');
   const totalDuration = formatDurationMinutes(model.durationMinutes);
 
@@ -368,9 +377,9 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
   const map = tripMap ?? (
     <MapBackdrop
       focus={routeFocus(legPaths)}
-      initialSize={{ width: Math.min(width, 540), height: MAP_HEIGHT }}
+      initialSize={{ width: Math.min(width, 540), height: mapHeight }}
       padding={{ top: 76, right: 24, bottom: 36, left: 24 }}
-      renderMarkers={(projection) => (destination ? <DestinationPin color={tint(model.legs.at(-1)?.color ?? routeColor)} point={destination} projection={projection} /> : null)}
+      renderMarkers={(projection) => (destination ? <DestinationPin point={destination} projection={projection} /> : null)}
       renderOverlay={({ scale }) => <RouteLines legs={mapLegs} scale={scale} showConnectors={true} showStart={true} />}
       showUserLocation={true}
     />
@@ -389,6 +398,7 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
     </View>
   );
 
+  // GO (or END) rides the sheet's top edge and scrolls away with it.
   const action = (
     <PressableScale accessibilityLabel={actionLabel} accessibilityRole="button" onPress={isEndAction ? () => setConfirmingEnd(true) : onAction} style={[styles.goButton, isEndAction && styles.endTripAction]} testID={isEndAction ? `${testPrefix}-end` : `${testPrefix}-go`}>
       <Icon color={colors.onPrimary} name={isEndAction ? 'stop' : 'go'} size={20} />
@@ -399,6 +409,7 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
   return (
     <DetailMapPage
       action={action}
+      actionSticks={false}
       interactiveMap={interactiveMap}
       contentStyle={styles.content}
       contentTestID={`${testPrefix}-content`}
@@ -406,7 +417,7 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
       controlsScrollWithMap={true}
       handle={{ accessibilityHint: 'Expands or collapses the trip details.', accessibilityLabel: 'Trip details handle', testID: `${testPrefix}-sheet-handle` }}
       map={map}
-      mapHeight={MAP_HEIGHT}
+      mapHeight={mapHeight}
       mapTestID={`${testPrefix}-map`}
       scrollTestID={`${testPrefix}-scroll`}
       showHeader={false}
@@ -476,6 +487,8 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
           const expanded = expandedLegs.has(index);
           const allDepartures = allDeparturesLegs.has(index);
           const stops = leg.stops && leg.stops.length > 0 && leg.stopCount ? leg.stops : null;
+          const quick = leg.quickDepartures ?? leg.departures?.slice(0, 3) ?? [];
+          const selectedDeparture = leg.departures?.findIndex((departure) => departure.selected) ?? -1;
           const selectDeparture = onSelectDeparture ? (key: string) => onSelectDeparture(index, key) : undefined;
           const duration = formatDurationMinutes(leg.durationMinutes);
           const transferWait = leg.waitBeforeMinutes !== undefined ? formatDurationMinutes(leg.waitBeforeMinutes) : null;
@@ -490,7 +503,7 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
                   <Text style={styles.walkText}><Text style={styles.walkStrong}>Transfer</Text>{` · wait ${transferWait.visible}`}</Text>
                 </View>
               ) : null}
-              <View style={styles.stepCard} testID={`${testPrefix}-${tone === 'recent' ? 'leg' : 'step'}-${index}`}>
+              <View style={[styles.stepCard, { borderColor: shade(tint(leg.color), colors.surface, 0.3), backgroundColor: shade(tint(leg.color), colors.surface, isDark ? 0.14 : 0.07) }]} testID={`${testPrefix}-${tone === 'recent' ? 'leg' : 'step'}-${index}`}>
                 {/* Grouped for screen readers; the departures and stop list below stay separately operable. */}
                 <View accessibilityLabel={`${leg.routeName}, ${leg.direction}, ${duration.accessibility}, ${leg.startTime} to ${leg.endTime}`} accessible={true} style={styles.stepHeader}>
                   <RouteBadge agency={leg.agency} alert={!!leg.alerts?.length} color={tint(leg.color)} mode={leg.mode} shortName={leg.shortName} size="large" textColor={leg.textColor} />
@@ -513,7 +526,7 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
                 {leg.departures && leg.departures.length > 1 ? (
                   <View style={styles.departureBox} testID={`${testPrefix}-departures-${index}`}>
                     <View style={styles.departureChips}>
-                      {(leg.quickDepartures ?? leg.departures.slice(0, 3)).map((departure) => (
+                      {quick.map((departure) => (
                         <DepartureChip
                           key={departure.key}
                           color={tint(leg.color)}
@@ -524,21 +537,31 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
                           textColor={leg.textColor}
                         />
                       ))}
-                      <PressableScale
-                        accessibilityLabel="All departures"
+                      {/* Only when the list has times the chips don't. */}
+                      {leg.departures.length > quick.length ? <PressableScale
+                        accessibilityHint="Shows every departure"
+                        accessibilityLabel="More departures"
                         accessibilityRole="button"
                         accessibilityState={{ expanded: allDepartures }}
                         onPress={() => toggleAllDepartures(index)}
-                        style={styles.allDepartures}
+                        style={styles.departureChip}
                         testID={`${testPrefix}-all-departures-${index}`}
                       >
-                        <Text style={styles.allDeparturesText}>All departures</Text>
-                        <Icon color={colors.primary} name={allDepartures ? 'collapse' : 'expand'} size={14} />
-                      </PressableScale>
+                        <Text style={styles.allDeparturesText}>More</Text>
+                      </PressableScale> : null}
                     </View>
-                    {allDepartures ? (
-                      <View style={styles.departureList} testID={`${testPrefix}-departure-list-${index}`}>
-                        {leg.departures.map((departure) => (
+                    {/* Every departure, in a popup from the bottom; picking one closes it. */}
+                    <Modal animationType="slide" onRequestClose={() => toggleAllDepartures(index)} transparent={true} visible={allDepartures}>
+                      <Pressable accessibilityLabel="Close departures" onPress={() => toggleAllDepartures(index)} style={styles.sheetBackdrop} testID={`${testPrefix}-departure-backdrop-${index}`} />
+                      <View style={styles.linesSheet}>
+                        <View style={styles.linesSheetHeader}>
+                          {/* The line's badge, then the title: "51 departures" read like a count. */}
+                          <RouteBadge agency={leg.agency} color={tint(leg.color)} mode={leg.mode} shortName={leg.shortName} textColor={leg.textColor} />
+                          <Text accessibilityLabel={`Departures for ${leg.shortName}`} accessibilityRole="header" numberOfLines={2} style={styles.linesSheetTitle}>Departures</Text>
+                          <PressableScale accessibilityLabel="Close" accessibilityRole="button" hitSlop={8} onPress={() => toggleAllDepartures(index)} testID={`${testPrefix}-departure-close-${index}`}><Icon name="close" size={26} /></PressableScale>
+                        </View>
+                      <ScrollView style={styles.departureList} testID={`${testPrefix}-departure-list-${index}`}>
+                        {leg.departures.map((departure, departureIndex) => (
                           <PressableScale
                             key={departure.key}
                             accessibilityLabel={`Depart ${departure.time}, arrive ${departure.arriveTime}${departure.reachable ? '' : ', too soon to make'}`}
@@ -549,7 +572,8 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
                               selectDeparture?.(departure.key);
                               toggleAllDepartures(index);
                             }}
-                            style={[styles.departureListRow, !departure.reachable && styles.departureUnreachable]}
+                            // Times before the one taken sit faded above it, like those too soon to make.
+                            style={[styles.departureListRow, (!departure.reachable || departureIndex < selectedDeparture) && styles.departureUnreachable]}
                             testID={`${testPrefix}-departure-row-${index}-${departure.key}`}
                           >
                             <View style={[styles.departureRadio, departure.selected && { borderColor: tint(leg.color), backgroundColor: tint(leg.color) }]} />
@@ -561,8 +585,9 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
                             <Text style={styles.departureListArrive}>{`arrive ${departure.arriveTime}`}</Text>
                           </PressableScale>
                         ))}
+                      </ScrollView>
                       </View>
-                    ) : null}
+                    </Modal>
                   </View>
                 ) : null}
 
@@ -695,19 +720,18 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   linesSheetContent: { gap: 14, paddingTop: 6 },
   linesSheetHeading: { color: colors.mutedInk, ...typography.label },
   linesSheetBadges: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
-  leaveCard: { flexDirection: 'row', alignItems: 'center', gap: 11, marginTop: 18, padding: 14, borderWidth: 1, borderColor: colors.border, borderRadius: 20, backgroundColor: colors.surface },
+  leaveCard: { flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 16, paddingHorizontal: 12, paddingVertical: 9, borderWidth: 1, borderColor: colors.border, borderRadius: 16, backgroundColor: colors.surface },
   leaveCardUrgent: { borderColor: colors.alertYellow, backgroundColor: colors.highlightSoft },
-  leaveIcon: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 20, backgroundColor: colors.blueSoft },
+  leaveIcon: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: colors.blueSoft },
   leaveIconUrgent: { backgroundColor: colors.alertYellow },
   leaveTitleRow: { flexDirection: 'row', alignItems: 'flex-start' },
-  leaveTitle: { color: colors.ink, ...typography.routeName, fontSize: 17, lineHeight: 22 },
+  leaveTitle: { color: colors.ink, ...typography.bodyStrong, fontSize: 14, lineHeight: 19 },
   leaveSignal: { marginLeft: 2 },
   arrivalLines: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 4, marginTop: 4 },
   arrivalLabel: { color: colors.mutedInk, ...typography.metadata, fontSize: 11 },
   departureChip: { minHeight: 34, justifyContent: 'center', paddingHorizontal: 12, borderWidth: 1, borderColor: colors.border, borderRadius: radii.pill, backgroundColor: colors.surface },
   departureChipText: { color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 13, fontVariant: ['tabular-nums'] },
   departureUnreachable: { opacity: 0.45 },
-  allDepartures: { minHeight: 34, flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 4 },
   allDeparturesText: { color: colors.primary, fontFamily: fontFamilies.extraBold, fontSize: 13 },
   departureList: { marginTop: 8, borderTopWidth: 1, borderTopColor: colors.border },
   departureListRow: { minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },

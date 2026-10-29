@@ -279,6 +279,7 @@ describe('web active TripMap', () => {
     (globalThis as unknown as { google: unknown }).google = {
       maps: {
         LatLngBounds: MockLatLngBounds,
+        Point: class { constructor(public x: number, public y: number) {} },
         SymbolPath: { CIRCLE: 'circle' },
       },
     };

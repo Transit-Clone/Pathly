@@ -4,17 +4,25 @@ import MapView, { Marker, Polyline, PROVIDER_GOOGLE, type LatLng, type MapPressE
 
 import { googleMapStyle } from '../data/mapStyle';
 import { themedRouteColor } from '../data/routeColors';
+import { withAlpha } from '../data/routeDirection';
 import { zoomForRegion } from '../data/stopDeclutter';
 import { stopIndexAt, tripMapPoints, viaRevealZooms, type TripMapProps, type TripMapStop } from '../data/tripMap';
-import { useTheme, useThemedStyles } from '../theme/AppSettings';
+import { useAppSettings, useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies } from '../theme/typography';
 import { CurrentLocationMarker } from './CurrentLocationMarker';
 import { HeadingBeamMarker } from './HeadingBeamMarker';
+import { DESTINATION_PIN_HEIGHT, DestinationPinMarker } from './DestinationPinMarker';
+import { LiveVehicleMarker } from './RouteMap.native';
+import { useNow } from '../hooks/useNow';
 
 const FIT_PADDING = { top: 90, right: 40, bottom: 60, left: 40 };
 const TRANSIT_WIDTH = 6;
+const APPROACH_ALPHA = 0.35;
 // Walks are plain round gray dots, wide enough to read from far out.
+// The trip's start and destination: big light-gray dots with a darker gray ring, easy to spot zoomed out.
+const ENDPOINT_FILL = '#D5D9DE';
+const ENDPOINT_RING = '#80868B';
 const WALK_WIDTH = 6;
 const WALK_DASH = [1, 10];
 const FOCUS_ZOOM = 15;
@@ -39,15 +47,19 @@ function centerInView(point: LatLng, shiftX: number, shiftY: number): LatLng {
   };
 }
 
-export function TripMap({ centerOnUserRequest = 0, destination, focusStop, followLocation, followUser, interactive = false, itinerary, navigationProgress, onFollowModeChange, onUserPan, origin, padding = FIT_PADDING, testID = 'trip-map', userLocation, userLocationStale = false }: TripMapProps) {
+export function TripMap({ centerOnUserRequest = 0, destination, focusStop, followLocation, followUser, interactive = false, itinerary, navigationProgress, onFollowModeChange, onUserPan, origin, padding = FIT_PADDING, testID = 'trip-map', userLocation, userLocationStale = false, vehicles = [], approachLines = [] }: TripMapProps) {
   const mapRef = useRef<MapView>(null);
   const styles = useThemedStyles(createStyles);
   const { colors, isDark } = useTheme();
+  const { destinationPin } = useAppSettings();
+  // Ticks the vehicles' age badges.
+  const now = useNow(1_000);
   const mapStyle = useMemo(() => googleMapStyle(isDark), [isDark]);
   const trip = useMemo(() => tripMapPoints(itinerary, origin, destination), [destination, itinerary, origin]);
   const legs = navigationProgress?.segments ?? trip.legs;
   const progressStops = navigationProgress?.stops;
   const stops = useMemo(() => progressStops?.filter((stop) => stop.visible) ?? trip.stops, [progressStops, trip.stops]);
+  const destinationStop = stops.find((stop) => stop.kind === 'end');
   const bounds = trip.bounds;
   const coordinates = useMemo(() => bounds.map((point) => ({ latitude: point.lat, longitude: point.lng })), [bounds]);
   const coordinatesKey = useMemo(() => coordinates.map((point) => `${point.latitude},${point.longitude}`).join(';'), [coordinates]);
@@ -201,6 +213,17 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
         toolbarEnabled={false}
         zoomEnabled={interactive}
       >
+        {/* A ride's line before the rider boards is faint, like Route View's line behind the rider's stop. */}
+        {approachLines.map((line) => (
+          <Polyline
+            key={`approach-${line.key}`}
+            coordinates={line.path.map((point) => ({ latitude: point.lat, longitude: point.lng }))}
+            strokeColor={withAlpha(themedRouteColor(line.color, isDark), APPROACH_ALPHA)}
+            strokeWidth={TRANSIT_WIDTH}
+            testID={`trip-map-approach-${line.key}`}
+            zIndex={0}
+          />
+        ))}
         {legs.map((leg, index) => {
           const progressState = 'state' in leg ? leg.state as ProgressState : undefined;
           const completed = progressState === 'completed';
@@ -227,20 +250,36 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
             tappable={interactive}
             testID={`trip-map-${stop.kind}-${index}`}
             tracksViewChanges={stop.kind === 'via' && tracksVia}
-            zIndex={stop.kind === 'via' ? 2 : 3}
+            zIndex={stop.kind === 'via' ? 2 : stop.kind === 'start' || stop.kind === 'end' ? 4 : 3}
           >
             <View
               style={[
                 stop.kind === 'via' ? styles.viaDot : styles.dot,
                 'state' in stop && stop.state === 'completed' && styles.completedStop,
-                // The start ringed like the rider's location dot, but gray.
-                stop.kind === 'start' && { backgroundColor: colors.tripStart, borderColor: colors.ring },
-                stop.kind === 'end' && { backgroundColor: colors.primary },
+                (stop.kind === 'start' || stop.kind === 'end') && styles.endpointDot,
                 (stop.kind === 'stop' || stop.kind === 'via') && { backgroundColor: colors.white, borderColor: themedRouteColor(stop.color ?? colors.primary, isDark) },
               ]}
             />
           </Marker>
         )))}
+        {/* The rides' live vehicles, like Route View's. */}
+        {vehicles.map((vehicle) => <LiveVehicleMarker key={`${vehicle.mode}-${vehicle.tripId}`} color={themedRouteColor(vehicle.color, isDark)} mode={vehicle.mode} now={now} vehicle={vehicle} zIndex={3} />)}
+        {/* The rider's pin (Settings, Appearance) stands on the destination's gray dot, so it reads apart from the start. */}
+        {destinationStop ? (
+          <Marker
+            // Remounted for a newly picked pin: it doesn't track view changes.
+            key={`destination-${destinationPin.color}-${destinationPin.eyes ?? "pathling"}-${destinationPin.mouth ?? "pathling"}`}
+            // The tip sits on the dot's top edge, 8 px above its center.
+            anchor={{ x: 0.5, y: (DESTINATION_PIN_HEIGHT + 8) / DESTINATION_PIN_HEIGHT }}
+            coordinate={{ latitude: destinationStop.point.lat, longitude: destinationStop.point.lng }}
+            tappable={false}
+            testID="trip-map-destination-pin"
+            tracksViewChanges={false}
+            zIndex={5}
+          >
+            <DestinationPinMarker />
+          </Marker>
+        ) : null}
         {userLocation ? <HeadingBeamMarker coordinate={{ latitude: userLocation.lat, longitude: userLocation.lng }} /> : null}
         {userLocation ? (
           <Marker
@@ -270,6 +309,7 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
 const createStyles = (colors: Palette) => StyleSheet.create({
   completedStop: { opacity: 0.48 },
   dot: { width: 14, height: 14, borderWidth: 3, borderColor: '#FFFFFF', borderRadius: 7 },
+  endpointDot: { width: 18, height: 18, borderWidth: 3, borderRadius: 9, borderColor: ENDPOINT_RING, backgroundColor: ENDPOINT_FILL },
   viaDot: { width: 9, height: 9, borderWidth: 2, borderColor: '#FFFFFF', borderRadius: 5 },
   label: { maxWidth: 240, paddingVertical: 6, paddingHorizontal: 10, borderRadius: 12, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 6, elevation: 4 },
   labelText: { color: colors.ink, fontFamily: fontFamilies.bold, fontSize: 13 },

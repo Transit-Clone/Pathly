@@ -12,6 +12,15 @@ export const BEAN_COLORS = [
   { id: 'periwinkle', label: 'Periwinkle', hex: '#96A7ED' },
   { id: 'clay', label: 'Clay', hex: '#DDA18B' },
   { id: 'oat', label: 'Oat', hex: '#DFD3B6' },
+  // Bolder picks, still light enough for the dark face to read on.
+  { id: 'cherry', label: 'Cherry', hex: '#F2384F' },
+  { id: 'tangerine', label: 'Tangerine', hex: '#FF7A1A' },
+  { id: 'sunflower', label: 'Sunflower', hex: '#FFC21A' },
+  { id: 'emerald', label: 'Emerald', hex: '#1FBF6E' },
+  { id: 'aqua', label: 'Aqua', hex: '#18C3D6' },
+  { id: 'cobalt', label: 'Cobalt', hex: '#3D7BFF' },
+  { id: 'grape', label: 'Grape', hex: '#9B5CFF' },
+  { id: 'magenta', label: 'Magenta', hex: '#F03CA8' },
 ] as const;
 
 const INK = '#242728';
@@ -55,12 +64,11 @@ export const BEAN_HAIR = [
   { id: 'none', label: 'Bald and bold', svg: '' },
   { id: 'three', label: 'Three whole hairs', svg: line('M65 29L62 15M75 27L77 12M85 29L92 16', 6) },
   { id: 'curl', label: 'One good curl', svg: line('M72 29C56 18 66 7 75 12C83 17 73 23 70 17', 5) },
-  { id: 'tufts', label: 'Bedhead', svg: shape('M70 31Q54 7 67 11Q73 15 73 27Q80 9 90 14Q94 19 78 32Z') },
+  { id: 'tufts', label: 'Bedhead', svg: line('M67 29C55 19 60 10 66 15Q72 19 72 27C76 11 87 11 85 19Q83 25 78 29', 6) },
   { id: 'comb-over', label: 'Carefully arranged', svg: line('M60 30Q67 14 87 18M69 31Q78 21 91 25', 5) },
-  { id: 'zigzag', label: 'Static situation', svg: line('M58 29L64 16L72 27L80 13L88 26', 5) },
-  { id: 'sprout', label: 'Personal growth', svg: line('M75 30V19', 4) + shape('M75 22Q56 22 59 10Q75 9 75 22M75 22Q75 7 90 10Q92 22 75 22Z') },
+  { id: 'zigzag', label: 'Static situation', svg: line('M58 29Q60 15 65 22T75 21Q80 11 88 26', 5) },
   { id: 'swoop', label: 'Main character', svg: shape('M56 31Q60 9 91 16Q88 29 74 28Q82 23 82 21Q65 22 56 31Z') },
-  { id: 'spikes', label: 'On edge', svg: shape('M54 31L58 15L67 25L75 10L81 25L92 16L91 35Z') },
+  { id: 'spikes', label: 'Fluffy', svg: shape('M54 32C47 23 54 15 62 21C61 8 76 7 78 20C87 10 98 19 91 32Z') },
   { id: 'antenna', label: 'Receiving signals', svg: line('M75 28L79 13', 4) + circle(80, 10, 4) },
 ] as const;
 
@@ -110,13 +118,13 @@ export function randomBeanAvatar(): BeanAvatarConfig {
 
 export const BEAN_PRESETS: readonly { id: string; label: string; config: BeanAvatarConfig }[] = [
   { id: 'stare', label: 'The stare', config: { version: 1, color: 'sage', eyes: 'wide', mouth: 'flat', hair: 'none' } },
-  { id: 'sleepy', label: 'Not a morning bean', config: { version: 1, color: 'coral', eyes: 'sleepy', mouth: 'tooth', hair: 'none' } },
+  { id: 'sleepy', label: 'Not a morning Pathling', config: { version: 1, color: 'coral', eyes: 'sleepy', mouth: 'tooth', hair: 'none' } },
   { id: 'frazzled', label: 'Holding it together', config: { version: 1, color: 'lavender', eyes: 'dots', mouth: 'wobble', hair: 'three' } },
   { id: 'cool', label: 'Too cool', config: { version: 1, color: 'gold', eyes: 'shades', mouth: 'flat', hair: 'none' } },
   { id: 'processing', label: 'Still processing', config: { version: 1, color: 'sky', eyes: 'uneven', mouth: 'flat', hair: 'curl' } },
   { id: 'yawn', label: 'Express nap', config: { version: 1, color: 'peach', eyes: 'tiny', mouth: 'yawn', hair: 'none' } },
   { id: 'official', label: 'Very official', config: { version: 1, color: 'teal', eyes: 'dots', mouth: 'mustache', hair: 'comb-over' } },
-  { id: 'growth', label: 'Working on myself', config: { version: 1, color: 'pink', eyes: 'side-eye', mouth: 'smirk', hair: 'sprout' } },
+  { id: 'growth', label: 'Working on myself', config: { version: 1, color: 'pink', eyes: 'side-eye', mouth: 'smirk', hair: 'curl' } },
   { id: 'suspicious', label: 'Trust issues', config: { version: 1, color: 'lime', eyes: 'suspicious', mouth: 'oh', hair: 'none' } },
   { id: 'signal', label: 'Looking for service', config: { version: 1, color: 'periwinkle', eyes: 'upward', mouth: 'none', hair: 'antenna' } },
   { id: 'bedhead', label: 'Just woke up', config: { version: 1, color: 'clay', eyes: 'squint', mouth: 'tongue', hair: 'tufts' } },

@@ -10,7 +10,11 @@ import { useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies } from '../theme/typography';
 import { CurrentLocationMarker } from './CurrentLocationMarker';
+import { DESTINATION_PIN_HEIGHT, DESTINATION_PIN_WIDTH, DestinationPinMarker } from './DestinationPinMarker';
 import { HeadingBeamMarker } from './HeadingBeamMarker';
+import { vehicleMarkerIcon, vehicleMarkerLabel } from './RouteMap.web';
+import { Glide } from '../hooks/useGlide';
+import { formatAge } from '../data/liveTrains';
 import { centerOffsetFrom, glideMapTo } from './webMapGlide';
 
 const containerStyle = { width: '100%', height: '100%' };
@@ -18,8 +22,16 @@ const baseMapOptions = { disableDefaultUI: true, keyboardShortcuts: false, click
 const FALLBACK_CENTER = { lat: 40.75, lng: -73.95 };
 const FIT_PADDING = { top: 90, right: 40, bottom: 60, left: 40 };
 const TRANSIT_WIDTH = 6;
+// A ride's line before the rider boards is faint, like Route View's line behind the rider's stop.
+const APPROACH_OPACITY = 0.35;
 // Walks are plain round gray dots, which read from far out over any street.
 const WALK_DOT_SCALE = 3.5;
+// The trip's start and destination: big light-gray dots with a darker gray ring, easy to spot zoomed out.
+const ENDPOINT_FILL = '#D5D9DE';
+const ENDPOINT_RING = '#80868B';
+// The destination pin's tip sits this far above the destination dot's center: on its top edge.
+const PIN_TIP_ABOVE_DOT = 8;
+const destinationPinOffset = () => ({ x: -DESTINATION_PIN_WIDTH / 2, y: -DESTINATION_PIN_HEIGHT - PIN_TIP_ABOVE_DOT });
 const FOCUS_ZOOM = 15;
 
 type ProgressState = 'completed' | 'current' | 'upcoming';
@@ -32,7 +44,7 @@ const locationOffset = () => ({ x: -19, y: -19 });
  * A planned trip on a real map: each leg in its line's color, walking dotted, a marker at every
  * stop. Interactive maps pan and zoom, label a clicked stop, and offer to re-frame the whole trip.
  */
-export function TripMap({ centerOnUserRequest = 0, destination, focusStop, followLocation, followUser, interactive = false, itinerary, navigationProgress, onFollowModeChange, onUserPan, origin, padding = FIT_PADDING, testID = 'trip-map', userLocation, userLocationStale = false }: TripMapProps) {
+export function TripMap({ centerOnUserRequest = 0, destination, focusStop, followLocation, followUser, interactive = false, itinerary, navigationProgress, onFollowModeChange, onUserPan, origin, padding = FIT_PADDING, testID = 'trip-map', userLocation, userLocationStale = false, vehicles = [], approachLines = [] }: TripMapProps) {
   const { isLoaded } = useJsApiLoader({
     id: GOOGLE_MAPS_SCRIPT_ID,
     googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY ?? '',
@@ -50,6 +62,7 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
   const legs = navigationProgress?.segments ?? trip.legs;
   const progressStops = navigationProgress?.stops;
   const stops = useMemo(() => progressStops?.filter((stop) => stop.visible) ?? trip.stops, [progressStops, trip.stops]);
+  const destinationStop = stops.find((stop) => stop.kind === 'end');
   const bounds = trip.bounds;
   const boundsKey = useMemo(() => bounds.map((point) => `${point.lat},${point.lng}`).join(';'), [bounds]);
   const hasNavigationProgress = navigationProgress != null;
@@ -189,6 +202,13 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
         options={mapOptions}
         zoom={11}
       >
+        {approachLines.map((line) => (
+          <Polyline
+            key={`approach-${line.key}`}
+            options={{ strokeColor: themedRouteColor(line.color, isDark), strokeOpacity: APPROACH_OPACITY, strokeWeight: TRANSIT_WIDTH, zIndex: 0, clickable: false }}
+            path={[...line.path]}
+          />
+        ))}
         {legs.map((leg, index) => {
           const progressState = 'state' in leg ? leg.state as ProgressState : undefined;
           const completed = progressState === 'completed';
@@ -222,21 +242,40 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
           <Marker
             key={`stop-${index}`}
             clickable={interactive}
-            icon={{
+            icon={stop.kind === 'start' || stop.kind === 'end' ? {
+              path: google.maps.SymbolPath.CIRCLE,
+              scale: 7,
+              fillColor: ENDPOINT_FILL,
+              fillOpacity: 1,
+              strokeColor: ENDPOINT_RING,
+              strokeWeight: 3,
+            } : {
               path: google.maps.SymbolPath.CIRCLE,
               scale: stop.kind === 'via' ? 3.5 : 6,
-              fillColor: stop.kind === 'start' ? colors.tripStart : stop.kind === 'end' ? colors.primary : '#FFFFFF',
+              fillColor: '#FFFFFF',
               fillOpacity: 'state' in stop && stop.state === 'completed' ? 0.48 : 1,
-              strokeColor: stop.kind === 'stop' || stop.kind === 'via' ? themedRouteColor(stop.color ?? colors.primary, isDark) : stop.kind === 'start' ? colors.ring : '#FFFFFF',
+              strokeColor: stop.kind === 'stop' || stop.kind === 'via' ? themedRouteColor(stop.color ?? colors.primary, isDark) : '#FFFFFF',
               strokeOpacity: 'state' in stop && stop.state === 'completed' ? 0.48 : 1,
               strokeWeight: stop.kind === 'via' ? 2 : 3,
             }}
             onClick={interactive ? () => setSelected(index) : undefined}
             position={stop.point}
             title={stop.label}
-            zIndex={stop.kind === 'via' ? 2 : 3}
+            zIndex={stop.kind === 'via' ? 2 : stop.kind === 'start' || stop.kind === 'end' ? 4 : 3}
           />
         )))}
+        {/* The rides' live vehicles, like Route View's, gliding to each refreshed spot. */}
+        {vehicles.map((vehicle) => (
+          <Glide key={`${vehicle.mode}-${vehicle.tripId}`} lat={vehicle.lat} lon={vehicle.lon}>
+            {(point) => <Marker icon={vehicleMarkerIcon(themedRouteColor(vehicle.color, isDark), vehicle.updatedAt != null ? formatAge(Date.now() - vehicle.updatedAt) : null)} label={vehicleMarkerLabel(vehicle.updatedAt != null ? formatAge(Date.now() - vehicle.updatedAt) : null)} position={{ lat: point.lat, lng: point.lon }} title={vehicle.mode === 'bus' ? 'Bus' : 'Train'} zIndex={3} />}
+          </Glide>
+        ))}
+        {/* The rider's pin (Settings, Appearance) stands on the destination's gray dot, so it reads apart from the start. */}
+        {destinationStop ? (
+          <OverlayViewF getPixelPositionOffset={destinationPinOffset} mapPaneName={FLOAT_PANE} position={destinationStop.point}>
+            <DestinationPinMarker testID="trip-map-destination-pin" />
+          </OverlayViewF>
+        ) : null}
         {userLocation ? <HeadingBeamMarker coordinate={{ latitude: userLocation.lat, longitude: userLocation.lng }} /> : null}
         {userLocation ? (
           <OverlayViewF getPixelPositionOffset={locationOffset} mapPaneName={FLOAT_PANE} position={userLocation}>

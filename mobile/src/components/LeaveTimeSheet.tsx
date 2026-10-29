@@ -3,9 +3,9 @@ import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { formatTripTimeChoice, type TripTimeChoice } from '../data/transit';
-import { addDays, dateKeyMs, formatDateKey, nyDateKey, TRIP_TIME_ZONE, tripDayLabel, tripTimeAt } from '../data/tripPlanning';
+import { addDays, formatDateKey, nyDateKey, TRIP_TIME_ZONE, tripDayLabel, tripTimeAt } from '../data/tripPlanning';
 import { appNow } from '../debug/clock';
-import { useTheme, useThemedStyles } from '../theme/AppSettings';
+import { useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
 import { Icon } from './Icon';
@@ -13,7 +13,7 @@ import { WheelColumn } from './WheelColumn';
 import { PressableScale } from './PressableScale';
 import { radii } from '../theme/shape';
 
-/** The two timed choices; Leave now is its own button, not a tab. */
+/** The two timed choices; Set now is its own button, not a tab. */
 type LeaveMode = Exclude<TripTimeChoice['mode'], 'now'>;
 
 const modes: { id: LeaveMode; label: string }[] = [
@@ -54,66 +54,6 @@ function fromWheel({ hourIndex, minuteIndex, periodIndex }: WheelTime) {
   return (((hourIndex + 1) % 12) + periodIndex * 12) * 60 + minuteIndex;
 }
 
-const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-const monthFormat = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'long', year: 'numeric' });
-
-/** A month of days to tap; days before `minKey` or after `maxKey` can't be picked. */
-function MonthCalendar({ maxKey, minKey, onSelect, selected }: { maxKey: string; minKey: string; onSelect: (key: string) => void; selected: string }) {
-  const styles = useThemedStyles(createStyles);
-  const { colors } = useTheme();
-  const [month, setMonth] = useState(() => selected.slice(0, 7));
-  const first = new Date(dateKeyMs(`${month}-01`));
-  const lead = first.getUTCDay();
-  const daysInMonth = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
-  const cells: (string | null)[] = [
-    ...Array.from({ length: lead }, () => null),
-    ...Array.from({ length: daysInMonth }, (_, index) => `${month}-${String(index + 1).padStart(2, '0')}`),
-  ];
-  const shiftMonth = (by: number) => {
-    const next = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + by, 1));
-    setMonth(next.toISOString().slice(0, 7));
-  };
-  const canGoBack = month > minKey.slice(0, 7);
-  const canGoForward = month < maxKey.slice(0, 7);
-  return (
-    <View style={styles.calendar} testID="leave-calendar">
-      <View style={styles.calendarHeader}>
-        <PressableScale accessibilityLabel="Previous month" accessibilityRole="button" disabled={!canGoBack} hitSlop={8} onPress={() => shiftMonth(-1)} style={[styles.dayStep, !canGoBack && styles.disabled]} testID="leave-calendar-previous">
-          <Icon color={colors.ink} name="back" size={18} />
-        </PressableScale>
-        <Text style={styles.calendarTitle}>{monthFormat.format(first)}</Text>
-        <PressableScale accessibilityLabel="Next month" accessibilityRole="button" disabled={!canGoForward} hitSlop={8} onPress={() => shiftMonth(1)} style={[styles.dayStep, !canGoForward && styles.disabled]} testID="leave-calendar-next">
-          <Icon color={colors.ink} name="forward" size={18} />
-        </PressableScale>
-      </View>
-      <View style={styles.calendarGrid}>
-        {WEEKDAYS.map((day, index) => <Text key={`weekday-${index}`} style={styles.weekday}>{day}</Text>)}
-        {cells.map((key, index) => {
-          if (!key) return <View key={`blank-${index}`} style={styles.dayCell} />;
-          const disabled = key < minKey || key > maxKey;
-          const isSelected = key === selected;
-          return (
-            <Pressable
-              accessibilityLabel={formatDateKey(key)}
-              accessibilityRole="button"
-              accessibilityState={{ disabled, selected: isSelected }}
-              disabled={disabled}
-              key={key}
-              onPress={() => onSelect(key)}
-              style={styles.dayCell}
-              testID={`leave-day-${key}`}
-            >
-              <View style={[styles.dayCircle, isSelected && styles.dayCircleSelected, key === minKey && !isSelected && styles.dayCircleToday]}>
-                <Text style={[styles.dayText, disabled && styles.dayTextDisabled, isSelected && styles.dayTextSelected]}>{Number(key.slice(8))}</Text>
-              </View>
-            </Pressable>
-          );
-        })}
-      </View>
-    </View>
-  );
-}
-
 type LeaveTimeSheetProps = {
   onCancel: () => void;
   onConfirm: (choice: TripTimeChoice) => void;
@@ -125,10 +65,8 @@ type LeaveTimeSheetProps = {
 /** Bottom sheet for choosing when to leave or arrive: a time (scrolled or typed) and a day. */
 export function LeaveTimeSheet({ onCancel, onConfirm, value, nowMs }: LeaveTimeSheetProps) {
   const styles = useThemedStyles(createStyles);
-  const { colors } = useTheme();
   const [now] = useState(() => nowMs ?? appNow());
   const today = nyDateKey(now);
-  const lastDay = addDays(today, MAX_DAYS_AHEAD);
   // From Leave now, the sheet opens ready to edit: Leave, set to the current time, today.
   const [startMinutes] = useState(() => newYorkMinutesAt(now));
   const defaultMinutes = (next: LeaveMode) => (next === 'arrive' ? (startMinutes + ARRIVE_AHEAD_MINUTES) % MINUTES_PER_DAY : startMinutes);
@@ -136,7 +74,9 @@ export function LeaveTimeSheet({ onCancel, onConfirm, value, nowMs }: LeaveTimeS
   const [wheel, setWheel] = useState<WheelTime>(() => toWheel(value.mode === 'now' ? startMinutes : value.minutes));
   const [pickedDate, setDate] = useState(() => (value.mode === 'now' ? today : nyDateKey(Date.parse(tripTimeAt(value, new Date(now)).at))));
   const [touched, setTouched] = useState(value.mode !== 'now');
-  const [calendarOpen, setCalendarOpen] = useState(false);
+  // The day wheel: Today, Tomorrow, then each date up to MAX_DAYS_AHEAD.
+  const [days] = useState(() => Array.from({ length: MAX_DAYS_AHEAD + 1 }, (_, index) => addDays(today, index)));
+  const dayItems = days.map((key, index) => ({ label: index === 0 ? 'Today' : index === 1 ? 'Tomorrow' : formatDateKey(key), testID: `leave-day-${key}` }));
 
   const minutes = fromWheel(wheel);
   // The day the trip will really be: a time already gone today means tomorrow.
@@ -156,9 +96,6 @@ export function LeaveTimeSheet({ onCancel, onConfirm, value, nowMs }: LeaveTimeS
     setWheel((current) => ({ ...current, ...patch }));
   };
 
-  const dayName = date === today ? 'Today' : date === addDays(today, 1) ? 'Tomorrow' : null;
-  const canGoBack = date > today && dayOf(addDays(date, -1)) !== date;
-  const canGoForward = date < lastDay;
 
   return (
     <Modal animationType="slide" onRequestClose={onCancel} statusBarTranslucent={true} transparent={true} visible={true}>
@@ -188,58 +125,25 @@ export function LeaveTimeSheet({ onCancel, onConfirm, value, nowMs }: LeaveTimeS
         </View>
 
         <View style={styles.wheels}>
+          {/* The day on the left: a time already gone today shows as tomorrow. */}
+          <View style={styles.dayWheel}>
+            <WheelColumn accessibilityLabel="Day" testID="leave-day" items={dayItems} onSelect={(index) => setDate(days[index]!)} selectedIndex={Math.max(0, days.indexOf(date))} />
+          </View>
           <WheelColumn accessibilityLabel="Hour" testID="leave-hour" typeable={true} items={hourItems} onSelect={(hourIndex) => updateWheel({ hourIndex })} selectedIndex={wheel.hourIndex} />
           <Text style={styles.colon}>:</Text>
           <WheelColumn accessibilityLabel="Minute" testID="leave-minute" typeable={true} items={minuteItems} onSelect={(minuteIndex) => updateWheel({ minuteIndex })} selectedIndex={wheel.minuteIndex} />
           <WheelColumn accessibilityLabel="AM or PM" keyboardType="default" testID="leave-period" typeable={true} items={periodItems} onSelect={(periodIndex) => updateWheel({ periodIndex })} selectedIndex={wheel.periodIndex} />
         </View>
 
-        {/* The day: a step either way, or the calendar from the middle. */}
-        <View style={styles.dateRow}>
-          <PressableScale accessibilityLabel="Previous day" accessibilityRole="button" disabled={!canGoBack} hitSlop={6} onPress={() => setDate(addDays(date, -1))} style={[styles.dayStep, !canGoBack && styles.disabled]} testID="leave-day-previous">
-            <Icon color={colors.ink} name="back" size={20} />
-          </PressableScale>
-          <PressableScale
-            accessibilityHint="Opens a calendar to pick the day"
-            accessibilityLabel={`Day: ${dayName ?? ''} ${formatDateKey(date)}`}
-            accessibilityRole="button"
-            accessibilityState={{ expanded: calendarOpen }}
-            onPress={() => setCalendarOpen((open) => !open)}
-            style={styles.dateButton}
-            testID="leave-date"
-          >
-            <Text style={styles.dateText}>{dayName ? `${dayName}, ${formatDateKey(date)}` : formatDateKey(date)}</Text>
-            <Icon color={colors.mutedInk} name="expand" size={16} />
-          </PressableScale>
-          <PressableScale accessibilityLabel="Next day" accessibilityRole="button" disabled={!canGoForward} hitSlop={6} onPress={() => setDate(addDays(date, 1))} style={[styles.dayStep, !canGoForward && styles.disabled]} testID="leave-day-next">
-            <Icon color={colors.ink} name="forward" size={20} />
-          </PressableScale>
-        </View>
-
         {/* Back to leaving right away, in one tap. */}
-        <PressableScale accessibilityLabel="Leave now" accessibilityRole="button" hitSlop={6} onPress={() => onConfirm({ mode: 'now' })} style={styles.nowButton} testID="leave-now">
-          <Text style={styles.nowText}>Leave now</Text>
+        <PressableScale accessibilityLabel="Set now" accessibilityHint="Plans for leaving right away" accessibilityRole="button" hitSlop={6} onPress={() => onConfirm({ mode: 'now' })} style={styles.nowButton} testID="leave-now">
+          <Text style={styles.nowText}>Set now</Text>
         </PressableScale>
         <PressableScale accessibilityHint={`Plans for ${preview}`} accessibilityRole="button" onPress={() => onConfirm(draft)} style={styles.done} testID="leave-time-done">
           <Text style={styles.doneText}>Done</Text>
         </PressableScale>
       </SafeAreaView>
 
-      {/* The calendar pops up centered over the sheet; tapping outside it closes it unchanged. */}
-      <Modal animationType="fade" onRequestClose={() => setCalendarOpen(false)} statusBarTranslucent={true} transparent={true} visible={calendarOpen}>
-        <View style={styles.calendarOverlay}>
-          <Pressable accessibilityLabel="Close calendar" onPress={() => setCalendarOpen(false)} style={StyleSheet.absoluteFill} testID="leave-calendar-backdrop" />
-          <MonthCalendar
-            maxKey={lastDay}
-            minKey={today}
-            onSelect={(key) => {
-              setDate(key);
-              setCalendarOpen(false);
-            }}
-            selected={date}
-          />
-        </View>
-      </Modal>
     </Modal>
   );
 }
@@ -266,25 +170,10 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   segmentText: { color: colors.mutedInk, ...typography.bodyStrong, fontSize: 13 },
   selectedSegmentText: { color: colors.primary, fontFamily: fontFamilies.extraBold },
   wheels: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
+  // Dates read longer than the time's numbers.
+  // A row, so the wheel stretches across rather than growing down past its own height.
+  dayWheel: { flex: 2.2, flexDirection: 'row' },
   colon: { color: colors.primary, fontFamily: fontFamilies.extraBold, fontSize: 22 },
-  dateRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
-  dayStep: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 20, backgroundColor: colors.background },
-  disabled: { opacity: 0.35 },
-  dateButton: { minHeight: 40, flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: radii.pill, backgroundColor: colors.background },
-  dateText: { color: colors.ink, ...typography.bodyStrong, fontSize: 15 },
-  calendarOverlay: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: colors.scrim },
-  calendar: { width: '100%', maxWidth: 360, padding: 14, borderRadius: radii.card, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.2, shadowRadius: 24, elevation: 16 },
-  calendarHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
-  calendarTitle: { color: colors.ink, ...typography.bodyStrong, fontSize: 15 },
-  calendarGrid: { flexDirection: 'row', flexWrap: 'wrap' },
-  weekday: { width: `${100 / 7}%`, paddingVertical: 4, color: colors.mutedInk, ...typography.metadata, textAlign: 'center' },
-  dayCell: { width: `${100 / 7}%`, height: 40, alignItems: 'center', justifyContent: 'center' },
-  dayCircle: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 17 },
-  dayCircleSelected: { backgroundColor: colors.primary },
-  dayCircleToday: { borderWidth: 1, borderColor: colors.primary },
-  dayText: { color: colors.ink, ...typography.bodyStrong, fontSize: 14 },
-  dayTextDisabled: { color: colors.mutedInk, opacity: 0.45 },
-  dayTextSelected: { color: colors.onPrimary },
   done: { minHeight: 52, alignItems: 'center', justifyContent: 'center', marginTop: 4, borderRadius: radii.pill, backgroundColor: colors.primary },
   doneText: { color: colors.onPrimary, fontFamily: fontFamilies.extraBold, fontSize: 16 },
 });
