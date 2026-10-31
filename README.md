@@ -6,9 +6,10 @@ The app is a React Native + Expo client (`mobile/`) backed by Firebase Cloud Fun
 
 Project documents are in `docs/`:
 
-- `M3 Design.ipynb`: the current M3 design document
-- `M2 Design.ipynb`: the original M2 design
-- `Proposal.ipynb`: the project proposal
+- `M4 Design.ipynb`: the current M4 design document
+- `M3 Design.ipynb`: the M3 design
+- `M2 Design.ipynb`: the M2 design
+- `Proposal.ipynb`: the project proposal (M1)
 - `TestPlan.ipynb`: the testing plan
 
 <p align="center">
