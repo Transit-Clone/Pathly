@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { StyleSheet, useWindowDimensions, View, type LayoutChangeEvent } from 'react-native';
+import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import Svg, { G, Polygon, Polyline, Rect, Text as SvgText } from 'react-native-svg';
 
 import {
@@ -17,6 +17,7 @@ import {
   type MapArea,
   type Point,
 } from '../data/mapGeometry';
+import { useViewportSize } from '../hooks/useViewportSize';
 import { useTheme } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies } from '../theme/typography';
@@ -144,7 +145,7 @@ function BaseMap({ colors, scale }: { colors: Palette; scale: number }) {
 /** Vector street map of the Stony Brook area that fills its parent; overlays share its coordinates. */
 export function MapBackdrop({ focus = defaultFocus, initialSize, padding, renderMarkers, renderOverlay, showUserLocation = false, testID = 'map-backdrop' }: MapBackdropProps) {
   const { colors } = useTheme();
-  const window = useWindowDimensions();
+  const window = useViewportSize();
   const [size, setSize] = useState(initialSize ?? { width: window.width, height: window.height });
   const { projection, viewBox } = fitMap(focus, size.width, size.height, padding);
   const baseMap = useMemo(() => <BaseMap colors={colors} scale={projection.scale} />, [colors, projection.scale]);

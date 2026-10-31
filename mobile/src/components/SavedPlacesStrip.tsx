@@ -1,6 +1,7 @@
 import { useRef } from 'react';
-import { Platform, ScrollView, StyleSheet, Text, useWindowDimensions, View, type GestureResponderEvent, type ScrollViewInstance } from 'react-native';
+import { Platform, ScrollView, StyleSheet, Text, View, type GestureResponderEvent, type ScrollViewInstance } from 'react-native';
 
+import { useViewportSize } from '../hooks/useViewportSize';
 import { addressAfterName } from '../data/placesSearch';
 import { findLabeledLocation, savedPlaceName, sortSavedLocations, type Location, type SavedLocation } from '../data/userData';
 import { useTheme, useThemedStyles } from '../theme/AppSettings';
@@ -8,6 +9,7 @@ import type { Palette } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { Icon, type IconName } from './Icon';
 import { PressableScale } from './PressableScale';
+import { webTouchInput } from './touchInput';
 import { afterClick } from './afterClick';
 import { SavedPlaceBadge } from './SavedPlaceBadge';
 import { radii } from '../theme/shape';
@@ -69,7 +71,7 @@ type SavedPlacesStripProps = {
 export function SavedPlacesStrip({ onAdd, onSelect, places }: SavedPlacesStripProps) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
-  const { width } = useWindowDimensions();
+  const { width } = useViewportSize();
   // react-native-web's horizontal ScrollView scrolls by touch and trackpad but not by mouse drag,
   // so on web a drag across the cards scrolls the row here, while a plain click still opens one.
   const scrollRef = useRef<ScrollViewInstance>(null);
@@ -130,6 +132,7 @@ export function SavedPlacesStrip({ onAdd, onSelect, places }: SavedPlacesStripPr
       afterClick(card.onPress);
       return;
     }
+    if (webTouchInput) return;
     scrollRef.current?.scrollTo({ x: Math.max(0, scrollX.current - dx), animated: true });
   };
 

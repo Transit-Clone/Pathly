@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -16,6 +16,7 @@ import { useUserPreferences } from '../data/userPreferences';
 import { navigationMapProgress } from '../data/tripMap';
 import { badgeMode, formatDurationMinutes, formatTripClock, tripMinutes } from '../data/tripPlanning';
 import { useClock } from '../hooks/useClock';
+import { useViewportSize } from '../hooks/useViewportSize';
 import { notifyNow } from '../lib/notifications';
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
@@ -109,7 +110,7 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
   const now = useClock(30_000);
-  const { height } = useWindowDimensions();
+  const { height } = useViewportSize();
   const guidance = useMemo(() => guidanceForNavigation(plan, cursor), [cursor, plan]);
   const mapProgress = useMemo(() => navigationMapProgress(plan, cursor), [cursor, plan]);
   const currentStep = session.itinerary.steps[cursor.stepIndex];

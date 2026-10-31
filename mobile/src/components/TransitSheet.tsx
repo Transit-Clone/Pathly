@@ -8,6 +8,7 @@ import { useTransitLiveMap } from '../data/TransitLiveContext';
 import type { RouteDetail } from '../data/transit';
 import { sortSavedLocations, type SavedLocation } from '../data/userData';
 import { useNow } from '../hooks/useNow';
+import { useTouchScroll } from '../hooks/useTouchScroll';
 import { useAppSettings, useThemedStyles } from '../theme/AppSettings';
 import { useLayoutEase, useNativeDriver } from '../theme/motion';
 import type { Palette } from '../theme/colors';
@@ -120,6 +121,7 @@ export function TransitSheet({
   }, [activeIndex, indicatorX, reducedMotionActive, tabWidth]);
 
   const pageScrollRef = useRef<ScrollViewInstance>(null);
+  useTouchScroll(pageScrollRef);
   const scrollOffset = useRef(0);
   const expandedOffset = Math.max(0, mapHeight - EXPANDED_TOP);
   // The sheet is rebuilt at the top each time Home is shown (e.g. back from a route), but

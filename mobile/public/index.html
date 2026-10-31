@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="%LANG_ISO_CODE%">
+  <head>
+    <meta charset="utf-8" />
+    <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <title>%WEB_TITLE%</title>
+    <style id="expo-reset">
+      html {
+        background-color: #f7faff;
+        -webkit-text-size-adjust: 100%;
+        text-size-adjust: 100%;
+      }
+      @media (prefers-color-scheme: dark) {
+        html {
+          background-color: #000000;
+        }
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+      }
+      #root {
+        display: flex;
+        height: 100%;
+        flex: 1;
+      }
+      /* A scroll container that reaches its end stops there instead of dragging the screen. */
+      #root,
+      #root * {
+        overscroll-behavior: contain;
+      }
+      /* iOS Safari zooms the whole page into any focused field under 16px and doesn't zoom back. */
+      @media (hover: none) and (pointer: coarse) {
+        input,
+        textarea,
+        select {
+          font-size: 16px !important;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+    <script>
+      (function () {
+        var startX = 0;
+        var startY = 0;
+
+        function scrollsAlong(el, vertical) {
+          var style = getComputedStyle(el);
+          var overflow = vertical ? style.overflowY : style.overflowX;
+          if (overflow !== 'auto' && overflow !== 'scroll') return false;
+          return vertical ? el.scrollHeight > el.clientHeight : el.scrollWidth > el.clientWidth;
+        }
+
+        // iOS Safari scrolls the page itself despite overflow: hidden, so the only swipes let
+        // through are those on a scroll container, a text field, or a map (which handles its own).
+        function handledInPlace(target, vertical) {
+          for (var el = target; el && el.nodeType === 1 && el !== document.body; el = el.parentNode) {
+            if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return true;
+            if (el.classList.contains('gm-style')) return true;
+            if (scrollsAlong(el, vertical)) return true;
+          }
+          return false;
+        }
+
+        document.addEventListener(
+          'touchstart',
+          function (event) {
+            startX = event.touches[0].clientX;
+            startY = event.touches[0].clientY;
+          },
+          { passive: true },
+        );
+        document.addEventListener(
+          'touchmove',
+          function (event) {
+            // Two fingers are a pinch, which stays available for zooming in to read.
+            if (event.touches.length !== 1 || !event.cancelable) return;
+            var deltaX = Math.abs(event.touches[0].clientX - startX);
+            var deltaY = Math.abs(event.touches[0].clientY - startY);
+            if (!handledInPlace(event.target, deltaY >= deltaX)) event.preventDefault();
+          },
+          { passive: false },
+        );
+
+        // iOS scrolls the page to reveal a focused field and can leave it there after the
+        // keyboard closes, which shifts every container off its place.
+        window.addEventListener('focusout', function () {
+          setTimeout(function () {
+            var active = document.activeElement;
+            if (!active || !/^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName)) window.scrollTo(0, 0);
+          }, 100);
+        });
+      })();
+    </script>
+  </body>
+</html>
