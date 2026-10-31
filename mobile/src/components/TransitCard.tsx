@@ -5,7 +5,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  useWindowDimensions,
   View,
   type GestureResponderEvent,
   type NativeScrollEvent,
@@ -13,6 +12,7 @@ import {
   type ScrollViewInstance,
 } from 'react-native';
 
+import { useViewportSize } from '../hooks/useViewportSize';
 import { useRouteColor } from '../data/routeColors';
 import { departureDisplay, directionDestination, type RouteDetail, type TransitDirection } from '../data/transit';
 import { useThemedStyles } from '../theme/AppSettings';
@@ -87,7 +87,7 @@ function PageBody({ index, item, route, styles }: {
 export function TransitCard({ onPress, route, saved = false }: TransitCardProps) {
   const styles = useThemedStyles(createStyles);
   const routeColor = useRouteColor();
-  const { width } = useWindowDimensions();
+  const { width } = useViewportSize();
   const pageWidth = Math.min(width, 540) - CARD_HORIZONTAL_MARGIN * 2;
   const [activePage, setActivePage] = useState(0);
   const scrollRef = useRef<ScrollViewInstance>(null);
@@ -133,9 +133,11 @@ export function TransitCard({ onPress, route, saved = false }: TransitCardProps)
   // the active page tracks press-start/press-end position itself (Pressable already
   // normalizes touch and mouse input) and decides tap-vs-swipe from the horizontal distance.
   const dragStartX = useRef<number | null>(null);
+  const dragStartY = useRef(0);
 
   const handlePressIn = (event: GestureResponderEvent) => {
     dragStartX.current = event.nativeEvent.pageX;
+    dragStartY.current = event.nativeEvent.pageY;
   };
 
   const handlePressOut = (event: GestureResponderEvent) => {
@@ -143,6 +145,8 @@ export function TransitCard({ onPress, route, saved = false }: TransitCardProps)
     dragStartX.current = null;
     if (startX == null) return;
     const dx = event.nativeEvent.pageX - startX;
+    // A vertical drag scrolled the list; it isn't a tap on the card under the finger.
+    if (Math.abs(event.nativeEvent.pageY - dragStartY.current) > SWIPE_THRESHOLD) return;
     if (Math.abs(dx) <= SWIPE_THRESHOLD) {
       afterClick(onPress);
       return;

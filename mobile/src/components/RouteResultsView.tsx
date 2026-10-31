@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { SearchPlace } from '../data/placesSearch';
@@ -26,6 +26,7 @@ import {
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { useClock } from '../hooks/useClock';
 import { useTripPlan } from '../hooks/useTripPlan';
+import { useViewportSize } from '../hooks/useViewportSize';
 import { DEFAULT_PREFERENCES, useUserPreferences, type UserPreferences } from '../data/userPreferences';
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
 import { ScreenTransition, useLayoutEase } from '../theme/motion';
@@ -150,7 +151,7 @@ export function RouteResultsView({
 }: RouteResultsViewProps) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
-  const { fontScale, height } = useWindowDimensions();
+  const { fontScale, height } = useViewportSize();
   // Fare and minutes keep the first row's right side at any width (the badges wrap instead).
   const stackLargeTextMetrics = fontScale >= 1.5;
   const { destination, enabledModes, origin, preference } = criteria;
@@ -318,7 +319,8 @@ export function RouteResultsView({
       />
 
       {/* Refresh, on the map just below the trip card. */}
-      <View pointerEvents="box-none" style={[styles.mapButtons, { top: tripCardBottom + 12 }]}>        <MapControlButton accessibilityLabel="Refresh route results" icon="refresh" onPress={refresh} testID="refresh-results" />
+      <View pointerEvents="box-none" style={[styles.mapButtons, { top: tripCardBottom + 12 }]}>
+        <MapControlButton accessibilityLabel="Refresh route results" icon="refresh" onPress={refresh} testID="refresh-results" />
       </View>
 
       {/* Locate, just above the resting sheet. */}
@@ -352,6 +354,7 @@ export function RouteResultsView({
         mapHeight={mapHeight}
         mapTestID="results-map-viewport"
         scrollTestID="results-scroll"
+        showHeader={false}
         testID="route-results-view"
       >
         {/* Modes, Filters, then the leave time (a popup from the bottom). */}

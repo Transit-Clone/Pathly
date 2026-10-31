@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Animated, Platform, StyleSheet, useWindowDimensions, View, type NativeScrollEvent, type NativeSyntheticEvent, type ScrollViewInstance, type StyleProp, type ViewStyle } from 'react-native';
+import { Animated, Platform, StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent, type ScrollViewInstance, type StyleProp, type ViewStyle } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useTouchScroll } from '../hooks/useTouchScroll';
+import { useViewportSize } from '../hooks/useViewportSize';
 import { useAppSettings, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { SHEET_AT_REST_TOLERANCE, SheetHandle } from './SheetHandle';
@@ -63,11 +65,12 @@ export function DetailMapPage({
   testID,
 }: DetailMapPageProps) {
   const styles = useThemedStyles(createStyles);
-  const { height } = useWindowDimensions();
+  const { height } = useViewportSize();
   const insets = useSafeAreaInsets();
   const { reducedMotionActive } = useAppSettings();
   const [scrollY] = useState(() => new Animated.Value(0));
   const scrollRef = useRef<ScrollViewInstance>(null);
+  useTouchScroll(scrollRef);
   const scrollOffset = useRef(0);
   useEffect(() => {
     const id = scrollY.addListener(({ value }) => {

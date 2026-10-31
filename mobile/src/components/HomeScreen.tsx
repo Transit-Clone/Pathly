@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Animated, BackHandler, Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Animated, BackHandler, Platform, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '../auth/AuthContext';
@@ -42,6 +42,7 @@ import { pinnedSpotLabel } from '../debug/presets';
 import { useCurrentLocation, type Coordinates } from '../hooks/useCurrentLocation';
 import { useActiveTrip } from '../hooks/useActiveTrip';
 import { useNow } from '../hooks/useNow';
+import { useViewportSize } from '../hooks/useViewportSize';
 import { ThemedStatusBar, useThemedStyles } from '../theme/AppSettings';
 import { ScreenTransition } from '../theme/motion';
 import type { Palette } from '../theme/colors';
@@ -77,6 +78,7 @@ const HEADER_INSET = 80;
 // Same footprint as the blue current-location dot (CurrentLocationMarker).
 const SEARCH_CENTER_SIZE = 17;
 const NEARBY_SEARCH_DEBOUNCE_MS = 600;
+const LOCATION_UNAVAILABLE_NOTICE_MS = 1000;
 // A cached nearby list older than a day is more misleading than helpful.
 const NEARBY_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
@@ -220,7 +222,7 @@ export function HomeScreen() {
     trip.status === 'active' || trip.status === 'recovery' ? { name: 'enroute' } : { name: 'home' }
   ), [requestedView, trip.status]);
   const [savedLocations, setSavedLocations] = useState<readonly SavedLocation[]>([]);
-  const { height } = useWindowDimensions();
+  const { height } = useViewportSize();
   const { location, mocked: locationMocked, navigationFix, navigationStale, refresh: refreshLocation, status: locationStatus } = useCurrentLocation(trip.active != null);
   const { isAdmin, mockLocation, overlays, setMockLocation } = useDebug();
   const resumeGuidance = useMemo(
@@ -246,6 +248,17 @@ export function HomeScreen() {
   // A rotated or tilted map shows a compass that turns it back to north-up.
   const [mapOrientation, setMapOrientation] = useState({ heading: 0, rotated: false });
   const [reorientRequest, setReorientRequest] = useState(0);
+  // "Finding your location" stays while it's true; "unavailable" is only a brief heads-up.
+  const [unavailableNoticeDone, setUnavailableNoticeDone] = useState(false);
+  useEffect(() => {
+    if (locationStatus !== 'unavailable') return undefined;
+    const timer = setTimeout(() => setUnavailableNoticeDone(true), LOCATION_UNAVAILABLE_NOTICE_MS);
+    return () => {
+      clearTimeout(timer);
+      setUnavailableNoticeDone(false);
+    };
+  }, [locationStatus]);
+  const showLocationNotice = locationStatus === 'loading' || (locationStatus === 'unavailable' && !unavailableNoticeDone);
   if (!hasCenteredOnFix && locationStatus === 'located') {
     setHasCenteredOnFix(true);
     setRecenterRequest((count) => count + 1);
@@ -1008,7 +1021,7 @@ export function HomeScreen() {
             testID="search-center"
           />
         ) : null}
-        {locationStatus !== 'located' ? (
+        {showLocationNotice ? (
           <View pointerEvents="none" style={[styles.locationStatusPill, { top: homeHeaderInset }]}>
             <View style={styles.locationStatusBadge}>
               {locationStatus === 'loading' ? <ActivityIndicator color="#FFFFFF" size="small" /> : null}
@@ -1240,7 +1253,8 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     zIndex: 20,
     flexDirection: 'row',
     justifyContent: 'center',
-    paddingHorizontal: 20,
+    // Clears the map buttons at either side, on the narrowest phones too.
+    paddingHorizontal: 68,
   },
   locationStatusBadge: {
     flexDirection: 'row',

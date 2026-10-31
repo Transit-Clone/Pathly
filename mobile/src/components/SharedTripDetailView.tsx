@@ -1,11 +1,12 @@
 import { useState, type ReactNode } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useRouteColor } from '../data/routeColors';
 import { routes, type ServiceAlert } from '../data/transit';
 import type { TripLegNote } from '../data/tripLive';
 import { formatDurationMinutes } from '../data/tripPlanning';
 import { useClock } from '../hooks/useClock';
+import { useViewportSize } from '../hooks/useViewportSize';
 
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
 import { useLayoutEase } from '../theme/motion';
@@ -351,7 +352,7 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
   const ease = useLayoutEase();
   // The fare and minutes hold the first row's right side at any width (the badges wrap
   // instead); only very large text stacks them under the badges.
-  const { fontScale, height, width } = useWindowDimensions();
+  const { fontScale, height, width } = useViewportSize();
   const mapHeight = mapPageMapHeight(height);
   const stackLargeTextMetrics = fontScale >= 1.5;
   const isEndAction = actionLabel.startsWith('End');

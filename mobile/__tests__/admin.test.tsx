@@ -90,6 +90,11 @@ it('moves the map, Nearby, and trip planning to a mock location, and back when t
   fireEvent.press(screen.getByTestId('debug-banner-location-off'));
   expect(screen.queryByTestId('debug-banner')).toBeNull();
   expect(await screen.findByText('Location unavailable — showing Stony Brook')).toBeTruthy();
+  // A brief heads-up, not a permanent banner.
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+  });
+  expect(screen.queryByText('Location unavailable — showing Stony Brook')).toBeNull();
 });
 
 it('sets a mock location from a long press on the home map', async () => {

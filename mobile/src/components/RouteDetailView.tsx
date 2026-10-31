@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type GestureResponderEvent, type ScrollViewInstance } from 'react-native';
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View, type GestureResponderEvent, type ScrollViewInstance } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useDebug } from '../debug/DebugContext';
@@ -14,6 +14,7 @@ import { useAccessibleStops } from '../data/accessibleStops';
 import { useUserPreferences } from '../data/userPreferences';
 import { transferColor, useRouteColor } from '../data/routeColors';
 import type { Coordinates } from '../hooks/useCurrentLocation';
+import { useViewportSize } from '../hooks/useViewportSize';
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { contrastRatio, readableColor } from '../theme/contrast';
@@ -34,6 +35,7 @@ import { MapControlButton } from './MapControlButton';
 import { mapPageMapHeight } from './mapSheetLayout';
 import { PressableScale } from './PressableScale';
 import { afterClick } from './afterClick';
+import { webTouchInput } from './touchInput';
 import { MapSkeleton, PredictionTilesSkeleton, StopListSkeleton } from './Skeleton';
 import { radii } from '../theme/shape';
 
@@ -354,7 +356,7 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
   const favoriteTint = { color: routeColor, onColor: contrastRatio(colors.white, routeColor) >= 2.2 ? colors.white : '#1A1A1A' };
   // Departure tiles: filled with the route color, lightly (solid for the one picked), no outline.
   const tileFill = withAlpha(routeColor, isDark ? 0.28 : 0.16);
-  const { height, width } = useWindowDimensions();
+  const { height, width } = useViewportSize();
   const insets = useSafeAreaInsets();
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [transfersSheet, setTransfersSheet] = useState<{ stop: LiveStop; transfers: readonly (StationTransfer | LineTransfer)[] } | null>(null);
@@ -416,18 +418,23 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
   const tilesScrollRef = useRef<ScrollViewInstance>(null);
   const tilesScrollX = useRef(0);
   const tilesDragStartX = useRef<number | null>(null);
+  const tilesDragStartY = useRef(0);
   const handleTilesPressIn = (event: GestureResponderEvent) => {
     tilesDragStartX.current = event.nativeEvent.pageX;
+    tilesDragStartY.current = event.nativeEvent.pageY;
   };
   const handleTilesPressOut = (event: GestureResponderEvent, onTap: () => void) => {
     const startX = tilesDragStartX.current;
     tilesDragStartX.current = null;
     if (startX == null) return;
     const dx = event.nativeEvent.pageX - startX;
+    // A vertical drag scrolled the page; it isn't a tap on the tile under the finger.
+    if (Math.abs(event.nativeEvent.pageY - tilesDragStartY.current) > DIRECTION_SWIPE_THRESHOLD) return;
     if (Math.abs(dx) <= DIRECTION_SWIPE_THRESHOLD) {
       afterClick(onTap);
       return;
     }
+    if (webTouchInput) return;
     tilesScrollRef.current?.scrollTo({ x: Math.max(0, tilesScrollX.current - dx), animated: true });
   };
   // Each direction's departures start from its soonest one.
