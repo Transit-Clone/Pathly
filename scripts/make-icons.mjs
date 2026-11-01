@@ -113,8 +113,6 @@ function render(size, { scale, background, cutColor, cornerRadius = 0 }) {
 writeFileSync(join(outDir, 'icon.png'), render(1024, { scale: 0.82, background: BLUE, cutColor: BLUE }));
 // Android adaptive foreground: glyph inside the 66% safe zone; the blue comes from backgroundColor.
 writeFileSync(join(outDir, 'adaptive-icon.png'), render(1024, { scale: 0.58, background: null, cutColor: BLUE }));
-// Splash: the white mascot alone, shown on a brand-blue splash background.
-writeFileSync(join(outDir, 'splash-icon.png'), render(1024, { scale: 0.92, background: null, cutColor: BLUE }));
 // The rounded tile on the native splash and App.tsx's loading screen.
 writeFileSync(join(outDir, 'pathly-mark.png'), render(1024, { scale: 0.82, background: BLUE, cutColor: BLUE, cornerRadius: 240 }));
 // Web favicon.

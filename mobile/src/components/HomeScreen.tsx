@@ -49,12 +49,12 @@ import { ScreenTransition } from '../theme/motion';
 import type { Palette } from '../theme/colors';
 import { fontFamilies } from '../theme/typography';
 import { ConfirmDialog } from './ConfirmDialog';
-import { Mascot } from './Mascot';
 import { CurrentLocationButton } from './CurrentLocationButton';
 import { DeparturesView } from './DeparturesView';
 import { EnrouteNavigationView, EnrouteRecoveryView, type EnrouteLocationState } from './EnrouteNavigationView';
 import { GoogleMapView, type HomeMapCamera } from './GoogleMapView';
 import { LineLayersSheet } from './LineLayersSheet';
+import { LoadingScreen } from './LoadingScreen';
 import { MapControlButton } from './MapControlButton';
 import { PressableScale } from './PressableScale';
 import { ProfileView } from './ProfileView';
@@ -741,13 +741,9 @@ export function HomeScreen() {
         ? trip.locationState
         : 'located';
 
+  // Holds Home back so it can't flash before a trip in progress takes over; looks like the rest of startup.
   if (trip.status === 'hydrating') {
-    return screen(
-      <View accessibilityLabel="Restoring your trips" style={styles.hydration} testID="active-trip-hydration">
-        <Mascot mood="thinking" motion="bob" size={72} />
-        <Text style={styles.hydrationText}>Restoring your trips…</Text>
-      </View>,
-    );
+    return <LoadingScreen />;
   }
 
   if (activeView.name === 'enroute') {
@@ -1170,8 +1166,6 @@ export function HomeScreen() {
 const createStyles = (colors: Palette) => StyleSheet.create({
   viewport: { flex: 1, alignItems: 'center', backgroundColor: colors.background },
   screen: { width: '100%', maxWidth: 540, flex: 1, overflow: 'hidden', backgroundColor: colors.canvas },
-  hydration: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, backgroundColor: colors.canvas },
-  hydrationText: { color: colors.mutedInk, fontFamily: fontFamilies.bold, fontSize: 15 },
   safeArea: {
     position: 'absolute',
     top: 0,

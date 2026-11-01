@@ -279,7 +279,7 @@ describe('Home active-trip MVP integration', () => {
     first.unmount();
 
     const restored = render(<App />);
-    expect(restored.getByTestId('active-trip-hydration')).toBeTruthy();
+    expect(restored.getByTestId('loading-screen')).toBeTruthy();
     await restored.findByTestId('enroute-navigation-view');
     expect(restored.queryByTestId('route-results-view')).toBeNull();
     restored.unmount();
@@ -293,7 +293,7 @@ describe('Home active-trip MVP integration', () => {
     await AsyncStorage.setItem(navigationStorageKey('test-uid'), JSON.stringify(document));
 
     const recovery = render(<App />);
-    expect(recovery.getByTestId('active-trip-hydration')).toBeTruthy();
+    expect(recovery.getByTestId('loading-screen')).toBeTruthy();
     await recovery.findByTestId('enroute-recovery-view');
     expect(recovery.getByText('We can’t restore the exact route yet')).toBeTruthy();
 
