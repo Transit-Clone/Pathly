@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_SCRIPT_ID } from '../data/googleMapsLoaderConfig';
+import { beanAvatarSvg, type BeanAvatarConfig } from '../avatars/beanAvatar';
 import { formatAge, visibleTrains } from '../data/liveTrains';
 import { googleMapStyle } from '../data/mapStyle';
 import { approachingVehicle, directionArrowAt, focusStopIndex, metersPerPixel, riderNearStop, splitPathAtStop } from '../data/routeDirection';
@@ -23,7 +24,7 @@ type GeometryStop = { stopId?: string; name: string; lat: number; lon: number };
 const containerStyle = { width: '100%', height: '100%' };
 // 'greedy': one-finger drag pans on touch browsers and the wheel zooms without holding Ctrl,
 // since this map sits in its own uncovered area of the page rather than inside scrolling text.
-const baseMapOptions = { disableDefaultUI: true, gestureHandling: 'greedy', clickableIcons: false };
+const baseMapOptions = { disableDefaultUI: true, keyboardShortcuts: false, gestureHandling: 'greedy', clickableIcons: false };
 // Arbitrary point; immediately replaced by fitBounds (or the focus stop) once the map is ready.
 const FALLBACK_CENTER = { lat: 40.75, lng: -73.95 };
 const FOCUS_ZOOM = 13;
@@ -42,6 +43,11 @@ const WALK_DOT_SCALE = 3.5;
 // Vehicle marker geometry: circle at bottom-left of a larger box so the age badge can overhang its top-right.
 const VEHICLE_SIZE = 42;
 const VEHICLE_BOX = 54;
+// Riders' avatars replace the age badge, stacked to the circle's top-right.
+const RIDER_AVATAR = 24;
+const RIDER_AVATAR_STEP = 13;
+const RIDER_AVATAR_LEFT = 30;
+const vehicleBoxWidth = (riders: number) => (riders > 0 ? RIDER_AVATAR_LEFT + RIDER_AVATAR + (riders - 1) * RIDER_AVATAR_STEP : VEHICLE_BOX);
 
 /**
  * Borderless white circle with a route-color vehicle glyph (three times a stop dot's size and
@@ -49,7 +55,7 @@ const VEHICLE_BOX = 54;
  * its top-right, as an SVG data URL. With no outline, the shadow keeps the white circle visible
  * on pale tiles.
  */
-function vehicleIconUrl(color: string, age: string | null) {
+function vehicleIconUrl(color: string, age: string | null, avatars: readonly BeanAvatarConfig[]) {
   const r = VEHICLE_SIZE / 2;
   const cx = r;
   const cy = VEHICLE_BOX - r;
@@ -58,7 +64,10 @@ function vehicleIconUrl(color: string, age: string | null) {
     // can't load the app's font and fell back to Arial.
     ? `<circle cx="${VEHICLE_BOX - 12}" cy="12" r="11" fill="${color}"/>`
     : '';
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${VEHICLE_BOX}" height="${VEHICLE_BOX}" viewBox="0 0 ${VEHICLE_BOX} ${VEHICLE_BOX}">
+  // An image can't load anything else, but can hold another image as a data URL.
+  const riders = avatars.map((avatar, index) => `<image x="${RIDER_AVATAR_LEFT + index * RIDER_AVATAR_STEP}" y="0" width="${RIDER_AVATAR}" height="${RIDER_AVATAR}" href="data:image/svg+xml;charset=UTF-8,${encodeURIComponent(beanAvatarSvg(avatar))}"/>`).join('');
+  const width = vehicleBoxWidth(avatars.length);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${VEHICLE_BOX}" viewBox="0 0 ${width} ${VEHICLE_BOX}">
 <defs><filter id="s" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#16324F" flood-opacity="0.45"/></filter></defs>
 <circle cx="${cx}" cy="${cy}" r="${r - 3}" fill="#FFFFFF" filter="url(#s)"/>
 <g transform="translate(${cx - 8.4} ${cy - 10.8}) scale(1.2)">
@@ -66,16 +75,16 @@ function vehicleIconUrl(color: string, age: string | null) {
 <rect x="2.2" y="2.6" width="9.6" height="5" rx="1.2" fill="#FFFFFF"/>
 <circle cx="3.6" cy="11" r="1.3" fill="#FFFFFF"/><circle cx="10.4" cy="11" r="1.3" fill="#FFFFFF"/>
 <path d="M2.4 14.6 L0.6 17.6 M11.6 14.6 L13.4 17.6" stroke="${color}" stroke-width="1.8" stroke-linecap="round"/>
-</g>${badge}
+</g>${badge}${riders}
 </svg>`;
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 }
 
 /** A live vehicle's marker icon (Route View and the trip map), anchored on its circle's center. */
-export function vehicleMarkerIcon(color: string, age: string | null): google.maps.Icon {
+export function vehicleMarkerIcon(color: string, age: string | null, avatars: readonly BeanAvatarConfig[] = []): google.maps.Icon {
   return {
-    url: vehicleIconUrl(color, age),
-    scaledSize: new google.maps.Size(VEHICLE_BOX, VEHICLE_BOX),
+    url: vehicleIconUrl(color, age, avatars),
+    scaledSize: new google.maps.Size(vehicleBoxWidth(avatars.length), VEHICLE_BOX),
     // Anchor on the circle's center, not the badge-inclusive box's.
     anchor: new google.maps.Point(VEHICLE_SIZE / 2, VEHICLE_BOX - VEHICLE_SIZE / 2),
     // The age label's center, on the badge.
@@ -105,6 +114,8 @@ type RouteMapProps = {
   focusStopName?: string;
   /** Vehicle label (train vs bus). */
   mode?: TransitMode;
+  /** Tapping a live vehicle opens its details. */
+  onVehiclePress?: (tripId: string) => void;
   /** Tapping a stop's name (shown once its dot is tapped) opens the line at that stop. */
   onOpenStop?: (stop: GeometryStop) => void;
   /** Called when the rider drags the map, so the location button can drop its selected state. */
@@ -123,7 +134,7 @@ type RouteMapProps = {
 /** Real route map: actual stop positions, the real line, and live vehicles — for any route with a live feed. */
 const arrowOffset = () => ({ x: -DIRECTION_ARROW_BOX / 2, y: -DIRECTION_ARROW_BOX / 2 });
 
-export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusStopId, focusStopName, mode = 'rail', onOpenStop, onUserPan, path, showRouteRequest = 0, stops, testID = 'route-map', userLocation, vehicles, walkPath }: RouteMapProps) {
+export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusStopId, focusStopName, mode = 'rail', onOpenStop, onUserPan, onVehiclePress, path, showRouteRequest = 0, stops, testID = 'route-map', userLocation, vehicles, walkPath }: RouteMapProps) {
   const { isLoaded } = useJsApiLoader({
     id: GOOGLE_MAPS_SCRIPT_ID,
     googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY ?? '',
@@ -364,13 +375,14 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
           ) : null}
           {shownVehicles.map((vehicle) => {
             // Built once per refresh, not per glide frame, so the marker never redraws its icon mid-slide.
-            const age = vehicle.updatedAt != null ? formatAge(now - vehicle.updatedAt) : null;
-            const icon = vehicleMarkerIcon(color, age);
+            const avatars = vehicle.riders?.avatars ?? [];
+            const age = avatars.length === 0 && vehicle.updatedAt != null ? formatAge(now - vehicle.updatedAt) : null;
+            const icon = vehicleMarkerIcon(color, age, avatars);
             const label = vehicleMarkerLabel(age);
             // Each vehicle glides to its refreshed spot rather than jumping there.
             return (
               <Glide key={vehicle.tripId} lat={vehicle.lat} lon={vehicle.lon}>
-                {(point) => <Marker icon={icon} label={label} position={{ lat: point.lat, lng: point.lon }} title={vehicleLabel} zIndex={2} />}
+                {(point) => <Marker icon={icon} label={label} onClick={onVehiclePress ? () => onVehiclePress(vehicle.tripId) : undefined} position={{ lat: point.lat, lng: point.lon }} title={vehicleLabel} zIndex={2} />}
               </Glide>
             );
           })}

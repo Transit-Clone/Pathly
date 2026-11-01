@@ -26,12 +26,12 @@ type SettledStops = { query: string; stops: readonly SearchPlace[] };
 type SettledLines = { forSuggestions: readonly SearchPlace[]; lines: Map<string, Pick<SearchPlace, 'routes' | 'agency'>> };
 
 /**
- * Debounced suggestions for `query`: Pathly's own transit stops (with their lines) first, then
- * Google's places. Both are asked at once. Each new query (or retry) aborts the previous Google
+ * Debounced suggestions for `query`: Google's places in Google's order, then Pathly's own transit
+ * stops (with their lines). Both are asked at once. Each new query (or retry) aborts the previous Google
  * request, and each answer is only kept if it still matches the current query (and attempt), so
  * late answers for older partial queries can never replace newer ones. The status is Google's: a
  * failed or slow stop search just leaves the stops out, and stops that arrive later are added
- * above Google's rows without reordering them. Google's own station rows get their lines from
+ * without reordering Google's rows. Google's own station rows get their lines from
  * Pathly's stops once Google has answered.
  */
 export function usePlacesSearch(query: string, near?: { latitude: number; longitude: number } | null) {

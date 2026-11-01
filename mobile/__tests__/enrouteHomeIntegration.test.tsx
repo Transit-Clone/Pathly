@@ -237,14 +237,8 @@ describe('Home active-trip MVP integration', () => {
 
     fireEvent.press(screen.getByTestId('enroute-end'));
     fireEvent.press(screen.getByTestId('enroute-end-confirm-confirm'));
-    const recent = await screen.findByTestId(/^recent-trip-/);
-    expect(screen.queryByText('Ended early')).toBeNull();
+    await screen.findByTestId('tab-nearby');
     expect((await currentDocument()).active).toBeNull();
-
-    fireEvent.press(recent);
-    await screen.findByTestId('route-results-view');
-    expect(await screen.findByTestId(`itinerary-${railTrip.id}`)).toBeTruthy();
-    expect(screen.queryByTestId(`search-trip-detail-${railTrip.id}`)).toBeNull();
     expect(screen.queryByTestId('enroute-navigation-view')).toBeNull();
   });
 
@@ -285,7 +279,7 @@ describe('Home active-trip MVP integration', () => {
     first.unmount();
 
     const restored = render(<App />);
-    expect(restored.getByTestId('active-trip-hydration')).toBeTruthy();
+    expect(restored.getByTestId('loading-screen')).toBeTruthy();
     await restored.findByTestId('enroute-navigation-view');
     expect(restored.queryByTestId('route-results-view')).toBeNull();
     restored.unmount();
@@ -299,7 +293,7 @@ describe('Home active-trip MVP integration', () => {
     await AsyncStorage.setItem(navigationStorageKey('test-uid'), JSON.stringify(document));
 
     const recovery = render(<App />);
-    expect(recovery.getByTestId('active-trip-hydration')).toBeTruthy();
+    expect(recovery.getByTestId('loading-screen')).toBeTruthy();
     await recovery.findByTestId('enroute-recovery-view');
     expect(recovery.getByText('We can’t restore the exact route yet')).toBeTruthy();
 
@@ -311,7 +305,7 @@ describe('Home active-trip MVP integration', () => {
     expect((await currentDocument()).active).not.toBeNull();
     fireEvent.press(recovery.getByTestId('enroute-recovery-end'));
     fireEvent.press(recovery.getByTestId('enroute-recovery-end-confirm-confirm'));
-    expect(await recovery.findByTestId(/^recent-trip-/)).toBeTruthy();
+    expect(await recovery.findByTestId('tab-nearby')).toBeTruthy();
   });
 
   it('advances every admin checkpoint monotonically through arrival', async () => {

@@ -32,6 +32,7 @@ const baseMapOptions = {
   },
   minZoom: MIN_ZOOM,
   disableDefaultUI: true,
+  keyboardShortcuts: false,
   clickableIcons: false,
 };
 
@@ -226,7 +227,7 @@ export function GoogleMapView({ initialCamera, lines = [], location, onCameraCha
                 // Centered on the place, as Google Maps marks one, with the same icon the app shows
                 // drawn into the badge. Only a stack's top pin shows its icon.
                 icon={{
-                  url: savedPinSvgUrl(savedPlaceColor(saved.address, colors.primary), colors.savedPlaceBorder, leader ? iconPaths(savedLocationIcon(saved.address)) : null),
+                  url: savedPinSvgUrl(savedPlaceColor(saved.address, colors.primary), colors.savedPlaceBorder, leader ? iconPaths(savedLocationIcon(saved.address)) : null, colors.ring),
                   anchor: new google.maps.Point(SAVED_PIN.size / 2, SAVED_PIN.size / 2),
                 }}
                 key={saved.id}

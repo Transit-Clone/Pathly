@@ -516,6 +516,31 @@ function activeServiceIdsInWindow(schedule: ServiceSchedule, now: Date, daysAhea
   return active;
 }
 
+/** The first date any of a feed's trips is scheduled, or null when it schedules none. */
+function firstServiceDate(files: Map<string, Buffer>): string | null {
+  const schedule = buildServiceSchedule(files);
+  let earliest: string | null = null;
+  for (const serviceId of schedule.referencedServiceIds) {
+    const added = [...(schedule.exceptions.get(serviceId) ?? [])].filter(([, type]) => type === '1').map(([date]) => date);
+    const pattern = schedule.patterns.get(serviceId);
+    for (const date of pattern ? [pattern.startDate, ...added] : added) {
+      if (earliest === null || date < earliest) earliest = date;
+    }
+  }
+  return earliest;
+}
+
+/**
+ * True when a new feed only starts later and the published one still covers today. Agencies post a
+ * new schedule days ahead; publishing it early would leave today with no scheduled trips at all, so
+ * no leg could be matched to its stops or live data.
+ */
+export function gtfsFeedShouldWaitForStart(extracted: ExtractedGtfsArchive, publishedServiceEndDate: string | null | undefined, now = new Date()): boolean {
+  const today = dateKey(now);
+  const start = firstServiceDate(extracted.files);
+  return start !== null && start > today && publishedServiceEndDate != null && publishedServiceEndDate >= today;
+}
+
 function operationalServiceEndDate(files: Map<string, Buffer>): string | null {
   const schedule = buildServiceSchedule(files);
   let latest: string | null = null;
@@ -1266,7 +1291,7 @@ async function tryPublishDerived(
   }
 }
 
-export async function refreshGtfsSnapshot(agencyId: AgencyId): Promise<'published' | 'unchanged'> {
+export async function refreshGtfsSnapshot(agencyId: AgencyId): Promise<'published' | 'unchanged' | 'waiting for start date'> {
   const config = AGENCY_CONFIGS[agencyId];
   // Capture the publication generation before the network fetch. A slower invocation that
   // started against an older pointer must not be allowed to overwrite a newer run that wins
@@ -1277,6 +1302,10 @@ export async function refreshGtfsSnapshot(agencyId: AgencyId): Promise<'publishe
   const { sourceLastModified } = downloaded;
   const archive = config.fillTripDirections ? fillTripDirections(downloaded.archive) : downloaded.archive;
   const extracted = extractGtfsArchive(archive, { limits });
+  if (gtfsFeedShouldWaitForStart(extracted, current.manifest?.serviceEndDate)) {
+    logger.info('Keeping the published GTFS snapshot until the new feed starts', { agencyId, event: 'gtfs_feed_not_started' });
+    return 'waiting for start date';
+  }
   validateAgencySnapshotContract(agencyId, extracted);
   const daysOfServiceRemaining = assertGtfsServiceIsCurrent(extracted);
   if (daysOfServiceRemaining <= 14) {
@@ -1497,7 +1526,7 @@ function lastRefreshObject(agencyId: AgencyId): string {
 }
 
 /** The outcome of an agency's most recent scheduled refresh, for the admin status page. */
-export type GtfsRefreshOutcome = { at: string; ok: boolean; result?: 'published' | 'unchanged'; message?: string };
+export type GtfsRefreshOutcome = { at: string; ok: boolean; result?: 'published' | 'unchanged' | 'waiting for start date'; message?: string };
 
 /** Best effort: a status write must never fail the refresh it describes. */
 async function recordRefreshOutcome(agencyId: AgencyId, outcome: GtfsRefreshOutcome): Promise<void> {

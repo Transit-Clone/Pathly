@@ -9,7 +9,6 @@ import mockSafeAreaContext from 'react-native-safe-area-context/jest/mock';
 
 import { AuthProvider } from '../src/auth/AuthContext';
 import { ProfileView } from '../src/components/ProfileView';
-import { ISSUES_URL } from '../src/components/SettingsPages';
 import type { Itinerary } from '../src/data/tripPlanning';
 import { filterItinerariesByWalk } from '../src/data/tripPlanning';
 import { resetLineIndexForTests } from '../src/data/lineIndex';
@@ -39,8 +38,7 @@ function renderSettings(initialRoute?: 'places') {
 
 async function openPage(screen: ReturnType<typeof render>, id: string) {
   // Help is reached through the Support sheet.
-  if (id === 'help') fireEvent.press(screen.getByTestId('settings-row-support'));
-  fireEvent.press(screen.getByTestId(id === 'help' ? 'support-help' : `settings-row-${id}`));
+  fireEvent.press(screen.getByTestId(`settings-row-${id}`));
   await act(async () => undefined);
 }
 
@@ -143,7 +141,7 @@ describe('Settings', () => {
       act(() => result.current.setAppearance('dark'));
       expect(result.current.colors).toBe(highContrastDarkColors);
       act(() => result.current.setReducedMotion(true));
-      await waitFor(async () => expect(JSON.parse((await AsyncStorage.getItem(DISPLAY_SETTINGS_KEY))!)).toEqual({ appearance: 'dark', reducedMotion: true, textSize: 'default', highContrast: true, mapDotColor: 'default', destinationPin: { color: 'red' } }));
+      await waitFor(async () => expect(JSON.parse((await AsyncStorage.getItem(DISPLAY_SETTINGS_KEY))!)).toEqual({ appearance: 'dark', reducedMotion: true, pathlingMotion: true, easyMode: false, textSize: 'default', highContrast: true, mapDotColor: 'default', destinationPin: { color: 'red' } }));
 
       const reloaded = renderHook(() => useAppSettings(), { wrapper: ({ children }) => <AppSettingsProvider>{children}</AppSettingsProvider> });
       await waitFor(() => expect(reloaded.result.current.colors).toBe(highContrastDarkColors));
@@ -161,11 +159,11 @@ describe('Settings', () => {
       expect(result.current.colors).toBe(lightColors);
     });
 
-    it('saves the step-free preference and explains that trips are not filtered', async () => {
+    it('saves the step-free preference and explains how trips are marked', async () => {
       const screen = renderSettings();
       await openPage(screen, 'accessibility');
       fireEvent(screen.getByTestId('toggle-step-free'), 'valueChange', true);
-      expect(screen.getByTestId('step-free-note')).toHaveTextContent(/aren't filtered/);
+      expect(screen.getByTestId('step-free-note')).toHaveTextContent(/marked and listed last/);
       await waitFor(async () => expect(JSON.parse((await AsyncStorage.getItem(preferencesKey(UID)))!).stepFree).toBe(true));
     });
   });
@@ -298,30 +296,29 @@ describe('Settings', () => {
   });
 
   describe('Help & About', () => {
-    it('shows the FAQ, privacy, and terms, and opens support', async () => {
-      const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
+    it('shows the FAQ on its own page', async () => {
       const screen = renderSettings();
-      await openPage(screen, 'help');
-      fireEvent.press(screen.getByTestId('help-faq'));
-      expect(screen.getByText('Where does Pathly work?')).toBeTruthy();
-      fireEvent.press(screen.getByTestId('help-privacy'));
-      expect(screen.queryByTestId('help-faq-content')).toBeNull();
-      expect(screen.getByTestId('help-privacy-content')).toHaveTextContent(/Cloud Firestore/);
-      fireEvent.press(screen.getByTestId('help-terms'));
-      expect(screen.getByTestId('help-terms-content')).toHaveTextContent(/provided as is/);
-      await act(async () => {
-        fireEvent.press(screen.getByTestId('help-contact'));
-      });
-      expect(openURL).toHaveBeenCalledWith(ISSUES_URL);
+      await openPage(screen, 'faq');
+      expect(screen.getByTestId('faq-content')).toHaveTextContent(/Where does Pathly work\?/);
+    });
+
+    it('keeps privacy and terms in About, one open at a time', async () => {
+      const screen = renderSettings();
+      await openPage(screen, 'about');
+      fireEvent.press(screen.getByTestId('about-privacy'));
+      expect(screen.getByTestId('about-privacy-content')).toHaveTextContent(/Cloud Firestore/);
+      fireEvent.press(screen.getByTestId('about-terms'));
+      expect(screen.queryByTestId('about-privacy-content')).toBeNull();
+      expect(screen.getByTestId('about-terms-content')).toHaveTextContent(/provided as is/);
     });
 
     it('credits OpenStreetMap for walking distances and links to its copyright page', async () => {
       const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
       const screen = renderSettings();
-      await openPage(screen, 'help');
+      await openPage(screen, 'about');
       expect(screen.getByText('Map data © OpenStreetMap')).toBeTruthy();
       await act(async () => {
-        fireEvent.press(screen.getByTestId('help-osm'));
+        fireEvent.press(screen.getByTestId('about-osm'));
       });
       expect(openURL).toHaveBeenCalledWith('https://www.openstreetmap.org/copyright');
     });

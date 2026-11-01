@@ -93,12 +93,12 @@ export function DeparturesView({ directionIndex, onBack, route }: DeparturesView
           <DepartureListSkeleton />
         ) : state.status === 'error' ? (
           <View style={styles.message} testID="departures-unavailable">
-            <Mascot pose="worried" size={64} />
+            <Mascot mood="worried" size={64} />
             <Text style={styles.messageText}>Departures unavailable right now.</Text>
           </View>
         ) : state.departures.length === 0 ? (
           <View style={styles.message} testID="departures-empty">
-            <Mascot pose="sleepy" size={64} />
+            <Mascot mood="sleepy" size={64} />
             <Text style={styles.messageText}>No more departures today.</Text>
           </View>
         ) : (

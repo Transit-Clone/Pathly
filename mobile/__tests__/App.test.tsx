@@ -209,7 +209,7 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByTestId('transit-sheet')).toBeTruthy();
     expect(await screen.findByTestId(`route-card-${PJ_CARD}`)).toBeTruthy();
     expect(screen.getByTestId('tab-nearby')).toBeTruthy();
-    expect(screen.getByTestId('tab-recents')).toBeTruthy();
+    expect(screen.queryByTestId('tab-recents')).toBeNull();
     expect(screen.getByTestId('tab-favorites')).toBeTruthy();
     // Starts in a "finding your location" loading state (denied permission in this test
     // environment resolves it almost immediately).
@@ -229,15 +229,11 @@ describe('Pathly prototype navigation', () => {
     fireEvent.scroll(screen.getByTestId('nearby-route-list'), {
       nativeEvent: { contentOffset: { y: 240 } },
     });
-    fireEvent.press(screen.getByTestId('tab-recents'));
-
-    expect(screen.getByTestId('recents-route-list')).toBeTruthy();
-    expect(
-      StyleSheet.flatten(screen.getByTestId('recents-route-content').props.style).minHeight,
-    ).toBe(nearbyHeight);
-
     fireEvent.press(screen.getByTestId('tab-favorites'));
     expect(screen.getByTestId('favorites-route-list')).toBeTruthy();
+    expect(
+      StyleSheet.flatten(screen.getByTestId('favorites-route-content').props.style).minHeight,
+    ).toBe(nearbyHeight);
     expect(
       StyleSheet.flatten(screen.getByTestId('favorites-route-content').props.style).minHeight,
     ).toBe(nearbyHeight);
@@ -416,6 +412,8 @@ describe('Pathly prototype navigation', () => {
 
       // Its recent row keeps the icon and badges.
       fireEvent.press(screen.getByTestId('results-back'));
+      fireEvent.press(screen.getByLabelText('Back from search'));
+      fireEvent.press(screen.getByTestId('search-trigger'));
       fireEvent.changeText(screen.getByTestId('search-input'), '');
       const recent = await screen.findByTestId('search-result-stop:lirr:15');
       expect(within(recent).getByTestId('search-kind-icon-rail', hidden)).toBeTruthy();
@@ -439,7 +437,7 @@ describe('Pathly prototype navigation', () => {
     fireEvent.press(screen.getByTestId('search-trigger'));
     await pickPlace(screen, '123 Terry Rd', 'terry-road-smithtown');
     fireEvent.press(screen.getByTestId('results-back'));
-    fireEvent.press(screen.getByLabelText('Cancel destination search'));
+    fireEvent.press(screen.getByLabelText('Back from search'));
     fireEvent.press(screen.getByTestId('search-trigger'));
 
     const recentRows = screen.getAllByTestId(/^search-result-/);
@@ -465,7 +463,7 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByTestId('search-result-penn-station')).toBeTruthy();
 
     // It stays gone after leaving and reopening search, and the last one hides the section.
-    fireEvent.press(screen.getByLabelText('Cancel destination search'));
+    fireEvent.press(screen.getByLabelText('Back from search'));
     fireEvent.press(screen.getByTestId('search-trigger'));
     expect(screen.queryByTestId('search-result-times-square')).toBeNull();
     fireEvent.press(screen.getByTestId('search-recent-remove-penn-station'));
@@ -525,7 +523,8 @@ describe('Pathly prototype navigation', () => {
     expect(screen.queryByText('View trip')).toBeNull();
 
     fireEvent.press(screen.getByTestId('results-back'));
-    expect(screen.getByTestId('search-view')).toBeTruthy();
+    fireEvent.press(screen.getByLabelText('Back from search'));
+    expect(screen.getByTestId('search-trigger')).toBeTruthy();
   });
 
   it('plans from the rider to the picked place, and replans when the time changes', async () => {
@@ -750,7 +749,7 @@ describe('Pathly prototype navigation', () => {
     fireEvent.press(screen.getByTestId('refresh-results'));
     await screen.findByTestId(`search-result-view-${LIRR_TRIP.id}`);
     fireEvent.press(screen.getByTestId('results-back'));
-    fireEvent.press(screen.getByLabelText('Cancel destination search'));
+    fireEvent.press(screen.getByLabelText('Back from search'));
     fireEvent.press(await screen.findByTestId('resume-active-trip'));
     expect(await screen.findByTestId('enroute-navigation-view')).toBeTruthy();
   });
@@ -881,7 +880,7 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByTestId('search-trip-favorite').props.accessibilityState).toEqual({ selected: true });
     fireEvent.press(screen.getByTestId('search-trip-back'));
     fireEvent.press(screen.getByTestId('results-back'));
-    fireEvent.press(screen.getByLabelText('Cancel destination search'));
+    fireEvent.press(screen.getByLabelText('Back from search'));
 
     fireEvent.press(screen.getByTestId('tab-favorites'));
     expect(within(screen.getByTestId('favorite-routes')).getByTestId(`route-card-${eCardId}`)).toBeTruthy();
@@ -961,7 +960,7 @@ describe('Pathly prototype navigation', () => {
     // Cancelling changes nothing.
     fireEvent.press(screen.getByTestId('origin-field'));
     expect(screen.getByTestId('search-input').props.value).toBe('');
-    fireEvent.press(screen.getByLabelText('Cancel destination search'));
+    fireEvent.press(screen.getByLabelText('Back from search'));
     expect(await screen.findByLabelText('Trip origin, Current location')).toBeTruthy();
     expect(screen.getByLabelText('Trip destination, Stony Brook University Main Campus')).toBeTruthy();
   });
@@ -1007,17 +1006,7 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByTestId('enroute-end')).toBeTruthy();
     fireEvent.press(screen.getByTestId('enroute-end'));
     fireEvent.press(screen.getByTestId('enroute-end-confirm-confirm'));
-    fireEvent.press(await screen.findByTestId(/^recent-trip-/));
-    expect(await screen.findByTestId('route-results-view')).toBeTruthy();
-    fireEvent.press(screen.getByTestId(`search-result-view-${LIRR_TRIP.id}`));
-    expect(screen.getByTestId('search-trip-go')).toBeTruthy();
-  });
-
-  it('shows an empty Recents tab instead of sample trips', async () => {
-    const screen = await renderHome();
-    fireEvent.press(screen.getByTestId('tab-recents'));
-    expect(screen.getByText('No recent trips yet')).toBeTruthy();
-    expect(screen.queryByTestId(/^recent-trip-/)).toBeNull();
+    expect(await screen.findByTestId('tab-nearby')).toBeTruthy();
   });
 
   it('opens profile settings and can trigger sign out', async () => {
@@ -1182,8 +1171,8 @@ describe('Pathly prototype navigation', () => {
     // Only reachable once the mocked dynamic discovery resolves (jest.setup.js's
     // findNearbyTransit mock), under its synthesized id.
     expect(backgroundOf(await screen.findByTestId(`route-card-${cardIdFor(routeById.e)}`))).toBe(routeById.e.color);
-    fireEvent.press(screen.getByTestId('tab-recents'));
-    expect(backgroundOf(screen.getByTestId('recents-route-content'))).toBeUndefined();
+    fireEvent.press(screen.getByTestId('tab-favorites'));
+    expect(backgroundOf(screen.getByTestId('favorites-route-content'))).toBeUndefined();
   });
 
   it('renders results and the time picker dark', async () => {
@@ -1216,7 +1205,7 @@ describe('Pathly prototype navigation', () => {
     expect(backgroundOf(screen.getByTestId('search-trip-content'))).toBe(darkColors.surfaceMuted);
     fireEvent.press(screen.getByTestId('search-trip-back'));
     fireEvent.press(screen.getByTestId('results-back'));
-    fireEvent.press(screen.getByLabelText('Cancel destination search'));
+    fireEvent.press(screen.getByLabelText('Back from search'));
 
     fireEvent.press(screen.getByTestId('profile-trigger'));
     expect(backgroundOf(screen.getByTestId('profile-view'))).toBe(darkColors.background);
@@ -1256,7 +1245,7 @@ describe('Pathly prototype navigation', () => {
     const screen = await renderHome();
     fireEvent.press(screen.getByTestId('profile-trigger'));
 
-    for (const id of ['account', 'appearance', 'notifications', 'travel', 'accessibility', 'places', 'maps', 'privacy', 'support', 'about']) {
+    for (const id of ['account', 'appearance', 'notifications', 'travel', 'accessibility', 'places', 'maps', 'privacy', 'faq', 'contact', 'feedback', 'donate', 'about']) {
       expect(screen.getByTestId(`settings-row-${id}`)).toBeTruthy();
     }
 
@@ -1292,7 +1281,7 @@ describe('Pathly prototype navigation', () => {
     // Adding a place searches for it, and cancelling comes back to Saved places.
     fireEvent.press(screen.getByTestId('add-saved-place'));
     expect(screen.getByTestId('search-input').props.placeholder).toBe('Search for a place to save');
-    fireEvent.press(screen.getByLabelText('Cancel destination search'));
+    fireEvent.press(screen.getByLabelText('Back from search'));
     expect(screen.getByTestId('settings-places')).toBeTruthy();
     fireEvent.press(screen.getByTestId('settings-back'));
 
@@ -1300,11 +1289,9 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByText('Version 0.1.0')).toBeTruthy();
     fireEvent.press(screen.getByTestId('settings-back'));
 
-    // Support opens a sheet; its FAQ opens the help page with the answers showing.
-    fireEvent.press(screen.getByTestId('settings-row-support'));
-    expect(screen.getByTestId('support-sheet')).toBeTruthy();
-    fireEvent.press(screen.getByTestId('support-faq'));
-    expect(screen.getByTestId('help-faq-content')).toBeTruthy();
+    // FAQ opens the help page with the answers showing.
+    fireEvent.press(screen.getByTestId('settings-row-faq'));
+    expect(screen.getByTestId('faq-content')).toBeTruthy();
     fireEvent.press(screen.getByTestId('settings-back'));
 
     fireEvent.press(screen.getByTestId('sign-out'));

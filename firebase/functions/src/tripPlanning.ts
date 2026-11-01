@@ -50,7 +50,7 @@ export type TransitStep = {
    */
   departures?: TripDeparture[];
   /** The leg's GTFS line, direction and boarding stop (tripStops.ts), so the app can show its live vehicles. */
-  liveRoute?: { agencyId: string; routeId: string; boardStopId: string; directionId?: number };
+  liveRoute?: { agencyId: string; routeId: string; boardStopId: string; alightStopId?: string; directionId?: number };
   /** What the agency's live feed says about this leg's trip (tripLive.ts); absent when it says nothing. */
   live?: LegLive;
   /** The connection into this leg from the previous one, when it's tight or already missed (tripLive.ts). */
@@ -69,7 +69,15 @@ export type LegLive = { status: 'tracked' | 'cancelled' | 'skips-stop'; departs?
 export type LegConnection = { status: 'tight' | 'missed'; spareSeconds: number };
 export type TripDeparture = { departs: string; arrives: string; stopTimes?: string[] };
 export type TripStep = WalkStep | TransitStep;
-export type TripFare = { text: string; cents: number; currency: string; estimated: boolean };
+/**
+ * `reduced`: the 65+/disability/Medicare fare, when the published rules price every step.
+ * `student` (K-12), `college` and `fairFares` likewise, each only when it's cheaper than the full fare.
+ */
+/** One part of a fare: a ride, what it adds, and why ("Free transfer within 2 hours"). */
+export type FareLine = { label: string; text: string; note?: string };
+export type DiscountRider = 'reduced' | 'student' | 'college' | 'fairFares';
+export type RiderFare = { text: string; cents: number; lines?: FareLine[] };
+export type TripFare = { text: string; cents: number; currency: string; estimated: boolean; lines?: FareLine[] } & Partial<Record<DiscountRider, RiderFare>>;
 export type Itinerary = {
   id: string;
   departureTime: string;
@@ -214,7 +222,9 @@ type GoogleRoute = {
 export type RoutesResponse = { routes?: GoogleRoute[] };
 
 /** A fare for the whole itinerary when Google can't price every step; see tripFares.ts. */
-export type FareEstimator = (steps: readonly TransitStep[], departureTime: string) => TripFare | undefined;
+const DISCOUNT_RIDERS: readonly DiscountRider[] = ['reduced', 'student', 'college', 'fairFares'];
+
+export type FareEstimator = (steps: readonly TransitStep[], departureTime: string, rider?: 'full' | DiscountRider) => TripFare | undefined;
 
 const seconds = (duration: string | undefined) => Number.parseFloat(duration ?? '0') || 0;
 const toLatLng = (location: GoogleLatLng | undefined): LatLng => ({ lat: location?.latLng?.latitude ?? 0, lng: location?.latLng?.longitude ?? 0 });
@@ -311,7 +321,20 @@ function normalizeRoute(route: GoogleRoute, requestTime: string, destinationLabe
   }
 
   const key = transits.length === 0 ? 'walk' : transits.map((step) => `${step.line.name}|${step.from.name}|${step.from.time}`).join('>');
-  const fare = googleFare(route) ?? estimateFare?.(transits, departureTime);
+  const google = googleFare(route);
+  const estimatedFare = estimateFare?.(transits, departureTime);
+  const fullFare = google
+    // Google gives only a total: the published rules can explain it only when they reach the same one.
+    ? { ...google, ...(estimatedFare?.lines && estimatedFare.cents === google.cents ? { lines: estimatedFare.lines } : {}) }
+    : estimatedFare;
+  // Sent with every fare, so which one applies to the rider never leaves their device.
+  let fare = fullFare;
+  for (const rider of DISCOUNT_RIDERS) {
+    const discounted = fullFare ? estimateFare?.(transits, departureTime, rider) : undefined;
+    if (fare && discounted && discounted.cents < fare.cents) {
+      fare = { ...fare, [rider]: { text: discounted.text, cents: discounted.cents, ...(discounted.lines ? { lines: discounted.lines } : {}) } };
+    }
+  }
   return {
     id: createHash('sha256').update(key).digest('hex').slice(0, 12),
     departureTime,

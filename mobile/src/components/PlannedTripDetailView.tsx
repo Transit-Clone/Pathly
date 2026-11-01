@@ -9,17 +9,20 @@ import {
   formatTripClock,
   lineBadge,
   tripMinutes,
+  type FareType,
   type Itinerary,
   type LatLng,
   type TransitStep,
   type WalkStep,
 } from '../data/tripPlanning';
 import type { Coordinates } from '../hooks/useCurrentLocation';
+import { useUserPreferences } from '../data/userPreferences';
 import { useClock } from '../hooks/useClock';
 import { useTheme } from '../theme/AppSettings';
 import { SharedTripDetailView, type TripDetailDeparture, type TripDetailLeg, type TripDetailModel, type TripDetailWalk } from './SharedTripDetailView';
 import { TripMap } from './TripMap';
-import { useTripVehicles } from '../hooks/useTripVehicles';
+import { legLineKey, useTripVehicles } from '../hooks/useTripVehicles';
+import type { TripVehicle } from '../data/tripMap';
 
 type PlannedTripDetailViewProps = {
   destination: string;
@@ -64,7 +67,7 @@ function departureRow(option: LegDepartureOption): TripDetailDeparture {
  * A real itinerary in the shared trip-detail shape: walks, legs, and the waits between them.
  * `departures` are each transit leg's departure choices (legDepartureOptions), by leg.
  */
-export function toTripDetailModel(itinerary: Itinerary, origin: string, destination: string, isActive: boolean, primary: string, departures: readonly LegDepartureOption[][] = []): TripDetailModel {
+export function toTripDetailModel(itinerary: Itinerary, origin: string, destination: string, isActive: boolean, primary: string, departures: readonly LegDepartureOption[][] = [], fareType: FareType = 'full'): TripDetailModel {
   const legs: TripDetailLeg[] = [];
   let pendingWalk: WalkStep | null = null;
   let previous: TransitStep | null = null;
@@ -114,7 +117,8 @@ export function toTripDetailModel(itinerary: Itinerary, origin: string, destinat
     id: itinerary.id,
     destination,
     origin,
-    fare: fareLabel(itinerary.fare),
+    fare: fareLabel(itinerary.fare, fareType),
+    fareDetail: itinerary.fare ? { fare: itinerary.fare, fareType } : undefined,
     durationMinutes: tripMinutes(itinerary.durationSeconds),
     transferCount: itinerary.transfers,
     leaveTime: formatTripClock(itinerary.departureTime),
@@ -127,12 +131,34 @@ export function toTripDetailModel(itinerary: Itinerary, origin: string, destinat
   };
 }
 
+/** How soon a ride must leave for a vehicle on its way to the stop to plausibly be the rider's. */
+const MAP_LIVE_HORIZON_MS = 30 * 60 * 1000;
+
+/**
+ * Marks a ride live when the map is showing a vehicle coming to its stop and it leaves soon. The
+ * plan's own flag only says a departure matched the feed when the trip was planned; this keeps the
+ * cards in step with the map.
+ */
+export function withMapLive(model: TripDetailModel, itinerary: Itinerary, vehicles: readonly TripVehicle[], now: number): TripDetailModel {
+  const tracked = new Set(vehicles.map((vehicle) => vehicle.lineKey));
+  const rides = itinerary.steps.filter((step) => step.kind === 'transit');
+  return {
+    ...model,
+    legs: model.legs.map((leg, index) => {
+      const ride = rides[index];
+      const soon = ride != null && Date.parse(ride.from.time) - now <= MAP_LIVE_HORIZON_MS;
+      return soon && ride.liveRoute && tracked.has(legLineKey(ride.liveRoute)) ? { ...leg, live: true } : leg;
+    }),
+  };
+}
+
 /** Drops the rides' live flags once the live times are stale, so no signal claims they're current. */
 function withoutStaleLive(model: TripDetailModel, liveFresh: boolean): TripDetailModel {
   return liveFresh ? model : { ...model, legs: model.legs.map(({ live: _live, ...leg }) => leg) };
 }
 
 export function PlannedTripDetailView({ destination, destinationAddress, destinationLines, isActive, liveFresh = true, isFavorite, itinerary: planned, onBack, onEnd, onStart, onToggleFavorite, origin, riderLocation }: PlannedTripDetailViewProps) {
+  const { preferences } = useUserPreferences();
   const { colors } = useTheme();
   // A stop pressed in a leg's stop list; the counter repeats a focus on the same stop.
   const [focusStop, setFocusStop] = useState<{ point: LatLng; key: number } | null>(null);
@@ -169,7 +195,7 @@ export function PlannedTripDetailView({ destination, destinationAddress, destina
           vehicles={vehicles}
         />
       )}
-      model={withoutStaleLive({ ...toTripDetailModel(itinerary, origin, destination, isActive, colors.primary, departures), ...(destinationAddress ? { destinationAddress } : {}), ...(destinationLines?.length ? { destinationLines } : {}) }, liveFresh)}
+      model={withMapLive(withoutStaleLive({ ...toTripDetailModel(itinerary, origin, destination, isActive, colors.primary, departures, preferences.travel.fareType), ...(destinationAddress ? { destinationAddress } : {}), ...(destinationLines?.length ? { destinationLines } : {}) }, liveFresh), itinerary, vehicles, now)}
       onAction={isActive ? onEnd : () => onStart(itinerary)}
       onBack={onBack}
       onCenterOnLocation={() => {

@@ -5,16 +5,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { SearchPlace } from '../data/placesSearch';
 import { addressAt, type PinAddress } from '../data/reverseGeocode';
 import type { Coordinates } from '../hooks/useCurrentLocation';
-import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
+import { ThemedStatusBar, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { typography } from '../theme/typography';
+import { CurrentLocationButton } from './CurrentLocationButton';
+import { DESTINATION_PIN_HEIGHT, DestinationPinMarker } from './DestinationPinMarker';
 import { GoogleMapView } from './GoogleMapView';
-import { Icon } from './Icon';
 import { MapControlButton } from './MapControlButton';
 import { PressableScale } from './PressableScale';
 import { radii } from '../theme/shape';
 
-const PIN_SIZE = 44;
 /** The map coming to rest, not every frame of a drag, looks up the address. */
 const LOOKUP_DELAY_MS = 400;
 /** Set location waits this long at most for an address still being looked up. */
@@ -47,7 +47,6 @@ type MapPickerViewProps = {
  */
 export function MapPickerView({ location, onCancel, onPick }: MapPickerViewProps) {
   const styles = useThemedStyles(createStyles);
-  const { colors } = useTheme();
   const [center, setCenter] = useState<Coordinates>(location);
   const [recenterRequest, setRecenterRequest] = useState(0);
   const [bottomInset, setBottomInset] = useState(180);
@@ -100,12 +99,14 @@ export function MapPickerView({ location, onCancel, onPick }: MapPickerViewProps
         />
         {/* The pin's point sits on the map's center; it ignores touches so the map pans under it. */}
         <View pointerEvents="none" style={[styles.pinWrap, { bottom: bottomInset }]}>
-          <Icon color={colors.primary} name="place" size={PIN_SIZE} />
+          <DestinationPinMarker testID="map-picker-pin" />
         </View>
         <SafeAreaView edges={['top']} pointerEvents="box-none" style={styles.topBar}>
           <MapControlButton accessibilityLabel="Back" icon="back" onPress={onCancel} testID="map-picker-back" />
-          <MapControlButton accessibilityLabel="Show current location" icon="locate" onPress={() => setRecenterRequest((count) => count + 1)} testID="map-picker-locate" />
         </SafeAreaView>
+        <View style={[styles.locateButton, { bottom: bottomInset + 16 }]}>
+          <CurrentLocationButton onPress={() => setRecenterRequest((count) => count + 1)} selected={false} testID="map-picker-locate" />
+        </View>
         <SafeAreaView edges={['bottom']} pointerEvents="box-none" onLayout={(event) => setBottomInset(event.nativeEvent.layout.height)} style={styles.bottomBar}>
           <View style={styles.card}>
             <View accessibilityLiveRegion="polite" style={styles.addressBlock} testID="map-picker-address">
@@ -133,8 +134,8 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     left: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    // Lifts the glyph so its tip, not its middle, marks the center.
-    paddingBottom: PIN_SIZE,
+    // Lifts the pin so its tip, not its middle, marks the center.
+    paddingBottom: DESTINATION_PIN_HEIGHT,
   },
   topBar: {
     position: 'absolute',
@@ -146,12 +147,11 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     paddingHorizontal: 14,
     paddingTop: 8,
   },
+  locateButton: { position: 'absolute', right: 16 },
   bottomBar: { position: 'absolute', left: 0, right: 0, bottom: 0 },
   card: {
     gap: 12,
     padding: 16,
-    borderTopLeftRadius: radii.sheet,
-    borderTopRightRadius: radii.sheet,
     backgroundColor: colors.surface,
     shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: -2 },

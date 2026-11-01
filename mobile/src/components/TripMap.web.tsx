@@ -5,7 +5,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { GOOGLE_MAPS_LIBRARIES, GOOGLE_MAPS_SCRIPT_ID } from '../data/googleMapsLoaderConfig';
 import { googleMapStyle } from '../data/mapStyle';
 import { themedRouteColor } from '../data/routeColors';
-import { stopIndexAt, tripMapPoints, viaRevealZooms, type TripMapProps, type TripMapStop } from '../data/tripMap';
+import { stopIndexAt, tripMapPoints, ENTRANCE_REVEAL_ZOOM, viaRevealZooms, type TripMapProps, type TripMapStop, type TripVehicle } from '../data/tripMap';
 import { useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies } from '../theme/typography';
@@ -18,8 +18,17 @@ import { formatAge } from '../data/liveTrains';
 import { centerOffsetFrom, glideMapTo } from './webMapGlide';
 
 const containerStyle = { width: '100%', height: '100%' };
+/** A square in the line's color with a white arrow, for a station's way in or out. */
+function entranceIcon(color: string): google.maps.Icon {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18"><rect x="1" y="1" width="16" height="16" rx="3" fill="${color}" stroke="#FFFFFF" stroke-width="1.5"/><path d="M4.5 9H13M10 5.8 13.2 9 10 12.2" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  return { url: `data:image/svg+xml,${encodeURIComponent(svg)}`, anchor: new google.maps.Point(9, 9) };
+}
+
 const baseMapOptions = { disableDefaultUI: true, keyboardShortcuts: false, clickableIcons: false };
 const FALLBACK_CENTER = { lat: 40.75, lng: -73.95 };
+/** Riders' avatars take the age badge's place, as on Route View's map. */
+const vehicleAge = (vehicle: TripVehicle) => (!vehicle.riders?.avatars.length && vehicle.updatedAt != null ? formatAge(Date.now() - vehicle.updatedAt) : null);
+
 const FIT_PADDING = { top: 90, right: 40, bottom: 60, left: 40 };
 const TRANSIT_WIDTH = 6;
 // A ride's line before the rider boards is faint, like Route View's line behind the rider's stop.
@@ -61,7 +70,7 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
   const trip = useMemo(() => tripMapPoints(itinerary, origin, destination), [destination, itinerary, origin]);
   const legs = navigationProgress?.segments ?? trip.legs;
   const progressStops = navigationProgress?.stops;
-  const stops = useMemo(() => progressStops?.filter((stop) => stop.visible) ?? trip.stops, [progressStops, trip.stops]);
+  const stops = useMemo(() => progressStops ? [...progressStops.filter((stop) => stop.visible), ...trip.stops.filter((stop) => stop.kind === 'entrance')] : trip.stops, [progressStops, trip.stops]);
   const destinationStop = stops.find((stop) => stop.kind === 'end');
   const bounds = trip.bounds;
   const boundsKey = useMemo(() => bounds.map((point) => `${point.lat},${point.lng}`).join(';'), [bounds]);
@@ -238,11 +247,11 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
             />
           );
         })}
-        {stops.map((stop, index) => (stop.kind === 'via' && !viaShown(stop) && index !== selected ? null : (
+        {stops.map((stop, index) => (((stop.kind === 'via' && !viaShown(stop)) || (stop.kind === 'entrance' && zoom < ENTRANCE_REVEAL_ZOOM)) && index !== selected ? null : (
           <Marker
             key={`stop-${index}`}
             clickable={interactive}
-            icon={stop.kind === 'start' || stop.kind === 'end' ? {
+            icon={stop.kind === 'entrance' ? entranceIcon(themedRouteColor(stop.color ?? colors.primary, isDark)) : stop.kind === 'start' || stop.kind === 'end' ? {
               path: google.maps.SymbolPath.CIRCLE,
               scale: 7,
               fillColor: ENDPOINT_FILL,
@@ -261,13 +270,13 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
             onClick={interactive ? () => setSelected(index) : undefined}
             position={stop.point}
             title={stop.label}
-            zIndex={stop.kind === 'via' ? 2 : stop.kind === 'start' || stop.kind === 'end' ? 4 : 3}
+            zIndex={stop.kind === 'via' || stop.kind === 'entrance' ? 2 : stop.kind === 'start' || stop.kind === 'end' ? 4 : 3}
           />
         )))}
         {/* The rides' live vehicles, like Route View's, gliding to each refreshed spot. */}
         {vehicles.map((vehicle) => (
           <Glide key={`${vehicle.mode}-${vehicle.tripId}`} lat={vehicle.lat} lon={vehicle.lon}>
-            {(point) => <Marker icon={vehicleMarkerIcon(themedRouteColor(vehicle.color, isDark), vehicle.updatedAt != null ? formatAge(Date.now() - vehicle.updatedAt) : null)} label={vehicleMarkerLabel(vehicle.updatedAt != null ? formatAge(Date.now() - vehicle.updatedAt) : null)} position={{ lat: point.lat, lng: point.lon }} title={vehicle.mode === 'bus' ? 'Bus' : 'Train'} zIndex={3} />}
+            {(point) => <Marker icon={vehicleMarkerIcon(themedRouteColor(vehicle.color, isDark), vehicleAge(vehicle), vehicle.riders?.avatars)} label={vehicleMarkerLabel(vehicleAge(vehicle))} position={{ lat: point.lat, lng: point.lon }} title={vehicle.mode === 'bus' ? 'Bus' : 'Train'} zIndex={3} />}
           </Glide>
         ))}
         {/* The rider's pin (Settings, Appearance) stands on the destination's gray dot, so it reads apart from the start. */}

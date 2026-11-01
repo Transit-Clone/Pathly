@@ -14,6 +14,8 @@ export type TextSize = 'compact' | 'default' | 'large';
 
 /** How much each text size scales every font size and line height. */
 export const TEXT_SCALE: Record<TextSize, number> = { compact: 0.9, default: 1, large: 1.15 };
+/** Easy mode's text, a step beyond Large whatever Text size says. */
+export const EASY_TEXT_SCALE = 1.25;
 
 /** Display settings are the device's, not the account's, so they apply on the sign-in screen too. */
 export const DISPLAY_SETTINGS_KEY = 'pathly.display.v1';
@@ -21,7 +23,7 @@ export const DISPLAY_SETTINGS_KEY = 'pathly.display.v1';
 /** The home map's explore dot: the theme's own purple, or one of the saved-place colors. */
 export type MapDotColor = 'default' | SavedPlaceColor;
 
-type DisplaySettings = { appearance: Appearance; reducedMotion: boolean; textSize: TextSize; highContrast: boolean; mapDotColor: MapDotColor; destinationPin: DestinationPinStyle };
+type DisplaySettings = { appearance: Appearance; reducedMotion: boolean; pathlingMotion: boolean; easyMode: boolean; textSize: TextSize; highContrast: boolean; mapDotColor: MapDotColor; destinationPin: DestinationPinStyle };
 
 type AppSettingsValue = {
   appearance: Appearance;
@@ -34,6 +36,12 @@ type AppSettingsValue = {
   /** True when either the app toggle or the device asks for reduced motion. */
   reducedMotionActive: boolean;
   reducedMotion: boolean;
+  /** Pathlings bob and talk (LivelyPathling.tsx), unless reduced motion is on. */
+  pathlingMotion: boolean;
+  setPathlingMotion: (next: boolean) => void;
+  /** A simpler app: bigger text, still Pathlings, fewer controls. */
+  easyMode: boolean;
+  setEasyMode: (next: boolean) => void;
   scheme: ColorScheme;
   textSize: TextSize;
   /** TEXT_SCALE for textSize; useThemedStyles applies it to every themed font size. */
@@ -66,6 +74,8 @@ function parseDisplaySettings(text: string | null): Partial<DisplaySettings> {
     const settings: Partial<DisplaySettings> = {};
     if (saved.appearance === 'light' || saved.appearance === 'dark' || saved.appearance === 'system') settings.appearance = saved.appearance;
     if (typeof saved.reducedMotion === 'boolean') settings.reducedMotion = saved.reducedMotion;
+    if (typeof saved.pathlingMotion === 'boolean') settings.pathlingMotion = saved.pathlingMotion;
+    if (typeof saved.easyMode === 'boolean') settings.easyMode = saved.easyMode;
     if (saved.textSize === 'compact' || saved.textSize === 'default' || saved.textSize === 'large') settings.textSize = saved.textSize;
     if (typeof saved.highContrast === 'boolean') settings.highContrast = saved.highContrast;
     if (saved.destinationPin !== undefined) settings.destinationPin = normalizeDestinationPin(saved.destinationPin);
@@ -87,7 +97,7 @@ type AppSettingsProviderProps = {
 /** App preferences every screen reads (appearance, motion, text size, contrast), saved on the device. */
 export function AppSettingsProvider({ children, initialAppearance = 'light', initialReducedMotion = false, initialTextSize = 'default', initialHighContrast = false }: AppSettingsProviderProps) {
   const systemScheme = useColorScheme();
-  const [settings, setSettings] = useState<DisplaySettings>({ appearance: initialAppearance, reducedMotion: initialReducedMotion, textSize: initialTextSize, highContrast: initialHighContrast, mapDotColor: 'default', destinationPin: { ...DEFAULT_DESTINATION_PIN } });
+  const [settings, setSettings] = useState<DisplaySettings>({ appearance: initialAppearance, reducedMotion: initialReducedMotion, pathlingMotion: true, easyMode: false, textSize: initialTextSize, highContrast: initialHighContrast, mapDotColor: 'default', destinationPin: { ...DEFAULT_DESTINATION_PIN } });
   const [deviceReducedMotion, setDeviceReducedMotion] = useState(false);
   // A choice made before the saved settings finish loading wins over them.
   const changedBeforeLoad = useRef(false);
@@ -129,7 +139,7 @@ export function AppSettingsProvider({ children, initialAppearance = 'light', ini
   }, []);
 
   const value = useMemo<AppSettingsValue>(() => {
-    const { appearance, destinationPin, highContrast, mapDotColor, reducedMotion, textSize } = settings;
+    const { appearance, destinationPin, easyMode, highContrast, mapDotColor, pathlingMotion, reducedMotion, textSize } = settings;
     const scheme = resolveScheme(appearance, systemScheme);
     const palette = paletteFor(scheme, highContrast);
     return {
@@ -139,11 +149,15 @@ export function AppSettingsProvider({ children, initialAppearance = 'light', ini
       highContrast,
       isDark: scheme === 'dark',
       mapDotColor,
+      pathlingMotion,
+      setPathlingMotion: (next) => update({ pathlingMotion: next }),
+      easyMode,
+      setEasyMode: (next) => update({ easyMode: next }),
       reducedMotion,
       reducedMotionActive: reducedMotion || deviceReducedMotion,
       scheme,
       textSize,
-      textScale: TEXT_SCALE[textSize],
+      textScale: easyMode ? EASY_TEXT_SCALE : TEXT_SCALE[textSize],
       setAppearance: (next) => update({ appearance: next }),
       setDestinationPin: (next) => update({ destinationPin: normalizeDestinationPin(next) }),
       setHighContrast: (next) => update({ highContrast: next }),
@@ -172,6 +186,10 @@ const fallback: AppSettingsValue = {
   highContrast: false,
   isDark: false,
   mapDotColor: 'default',
+  pathlingMotion: true,
+  setPathlingMotion: () => undefined,
+  easyMode: false,
+  setEasyMode: () => undefined,
   reducedMotion: false,
   reducedMotionActive: false,
   scheme: 'light',

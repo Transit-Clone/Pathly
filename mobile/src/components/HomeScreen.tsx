@@ -5,8 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../auth/AuthContext';
 import { applyRouteLive } from '../data/applyRouteLive';
 import { NEARBY_CACHE_KEY, readCache, writeCache } from '../data/deviceCache';
-import { guidanceForNavigation, type TripEndpointReference } from '../data/enrouteNavigation';
-import type { RecentTripV1 } from '../data/navigationStorage';
+import { guidanceForNavigation } from '../data/enrouteNavigation';
 import { describeTransitLine, discoveredRouteToRouteDetail, fetchNearbyTransit, fetchRouteAtStop, filterOutPinnedDuplicates, type DiscoveredRoute } from '../data/nearbyTransit';
 import type { IndexedLine } from '../data/lineIndex';
 import { SERVICE_AREA_FALLBACK } from '../data/serviceArea';
@@ -41,6 +40,9 @@ import { useDebug } from '../debug/DebugContext';
 import { pinnedSpotLabel } from '../debug/presets';
 import { useCurrentLocation, type Coordinates } from '../hooks/useCurrentLocation';
 import { useActiveTrip } from '../hooks/useActiveTrip';
+import { useNewAccountPlacesPrompt } from '../hooks/useNewAccountPlacesPrompt';
+import { discardAccount } from '../data/accountData';
+import { useTripRide } from '../hooks/useTripRide';
 import { useNow } from '../hooks/useNow';
 import { useViewportSize } from '../hooks/useViewportSize';
 import { ThemedStatusBar, useThemedStyles } from '../theme/AppSettings';
@@ -48,21 +50,24 @@ import { ScreenTransition } from '../theme/motion';
 import type { Palette } from '../theme/colors';
 import { fontFamilies } from '../theme/typography';
 import { ConfirmDialog } from './ConfirmDialog';
-import { Mascot } from './Mascot';
 import { CurrentLocationButton } from './CurrentLocationButton';
 import { DeparturesView } from './DeparturesView';
 import { EnrouteNavigationView, EnrouteRecoveryView, type EnrouteLocationState } from './EnrouteNavigationView';
 import { GoogleMapView, type HomeMapCamera } from './GoogleMapView';
 import { LineLayersSheet } from './LineLayersSheet';
+import { LoadingScreen } from './LoadingScreen';
 import { MapControlButton } from './MapControlButton';
 import { PressableScale } from './PressableScale';
 import { ProfileView } from './ProfileView';
+import type { RideFix } from '../data/rideDetection';
+import { rideFixFrom, type RideTracking } from '../data/rideTracking';
 import { useUserPreferences } from '../data/userPreferences';
 import { MapPickerView } from './MapPickerView';
 import { RouteAlertsPrompt, type RouteAlertsRequest } from './RouteAlertsPrompt';
 import { RouteDetailView, type TappedStop } from './RouteDetailView';
 import { SavedPlaceDetailsSheet } from './SavedPlaceDetailsSheet';
 import { SavePlaceSheet, type SavePlaceRequest } from './SavePlaceSheet';
+import { SetPlacesPrompt } from './SetPlacesPrompt';
 import { ResumeTripCard } from './ResumeTripCard';
 import { CURRENT_LOCATION_LABEL, initialResultsCriteria, RouteResultsView, type ResultsCriteria } from './RouteResultsView';
 import { useNudgePrompt } from '../data/nudgePrompt';
@@ -84,7 +89,7 @@ const NEARBY_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 /** Choosing a place to save: straight away under `label` when set, else named in SavePlaceSheet. */
 // `replacing`: a saved place's edit sheet, waiting on the new address the search picks for it.
-type SavedPlacePick = { label?: 'Home' | 'Work'; returnTo: 'search' | 'favorites' | 'settings'; replacing?: SavePlaceRequest };
+type SavedPlacePick = { label?: 'Home' | 'Work' | 'School'; returnTo: 'home' | 'search' | 'favorites' | 'settings'; replacing?: SavePlaceRequest };
 type ResultsViewState = { name: 'results'; criteria: ResultsCriteria; returnTo: 'search' | 'favorites' | 'home' };
 
 type ActiveView =
@@ -111,18 +116,6 @@ function destinationPlaceOf(criteria: ResultsCriteria): SearchPlace {
   return criteria.destinationPlace?.title === criteria.destination ? criteria.destinationPlace : placeFromName(criteria.destination);
 }
 
-/** Reconstructs a provider-light endpoint for a fresh search; no stored route content is replayed. */
-function placeForTripEndpoint(endpoint: TripEndpointReference): SearchPlace {
-  return endpoint.kind === 'place'
-    ? { id: endpoint.placeId, title: endpoint.label, subtitle: 'Recent trip', source: 'google' }
-    : {
-      id: `recent:${endpoint.point.lat},${endpoint.point.lng}`,
-      title: endpoint.label,
-      subtitle: 'Recent trip',
-      location: { latitude: endpoint.point.lat, longitude: endpoint.point.lng },
-    };
-}
-
 function toggleItem<T>(items: readonly T[], item: T): T[] {
   return items.includes(item) ? items.filter((value) => value !== item) : [...items, item];
 }
@@ -141,10 +134,13 @@ type RouteDetailScreenProps = {
   route: RouteDetail;
   location: Coordinates;
   locationKnown: boolean;
+  locationFix?: RideFix | null;
+  onTripLine?: boolean;
+  tripRide?: RideTracking;
 };
 
 /** Reads live transit data itself — must render under TransitLiveProvider, which HomeScreen itself can't consume. */
-function RouteDetailScreen({ alerts, initialDirectionIndex, isFavorite, location, locationKnown, onBack, onOpenDepartures, onOpenStop, onOpenTransfer, onRefreshLocation, onToggleFavorite, route, wholeRoute }: RouteDetailScreenProps) {
+function RouteDetailScreen({ alerts, initialDirectionIndex, isFavorite, location, locationFix, locationKnown, onBack, onOpenDepartures, onOpenStop, onOpenTransfer, onRefreshLocation, onToggleFavorite, onTripLine, route, tripRide, wholeRoute }: RouteDetailScreenProps) {
   const live = useTransitLive(route.id);
   // Re-applies live data every 30 s so countdowns age and past departures drop between polls.
   const now = useNow(30_000);
@@ -154,6 +150,7 @@ function RouteDetailScreen({ alerts, initialDirectionIndex, isFavorite, location
       initialDirectionIndex={initialDirectionIndex}
       isFavorite={isFavorite}
       location={location}
+      locationFix={locationFix}
       locationKnown={locationKnown}
       onBack={onBack}
       onOpenDepartures={onOpenDepartures}
@@ -161,7 +158,9 @@ function RouteDetailScreen({ alerts, initialDirectionIndex, isFavorite, location
       onOpenTransfer={onOpenTransfer}
       onRefreshLocation={onRefreshLocation}
       onToggleFavorite={onToggleFavorite}
+      onTripLine={onTripLine}
       route={applyRouteLive(route, live, now)}
+      tripRide={tripRide}
       wholeRoute={wholeRoute}
     />
   );
@@ -186,7 +185,8 @@ export function HomeScreen() {
   const [tripStartFailed, setTripStartFailed] = useState(false);
   // A trip's star saves its destination to the account (Firestore), listed under Favorites -> Places.
   const { user } = useAuth();
-  const uid = user?.uid;
+  // A guest has a session but no account: nothing is saved, as if signed out.
+  const uid = user?.isAnonymous ? undefined : user?.uid;
   // One "Save" star replaces pin + favorite: saved routes lead Nearby and fill Favorites -> Routes.
   // Real lines are saved to the account (with their alert setting), so they show anywhere and
   // the backend can push their alerts; the demo catalog's illustrative routes stay on this device.
@@ -208,7 +208,7 @@ export function HomeScreen() {
   useEffect(() => {
     travelPreferencesRef.current = travelPreferences;
   }, [travelPreferences]);
-  const trip = useActiveTrip(uid);
+  const trip = useActiveTrip(user?.uid);
   const {
     advance: advanceTrip,
     cancelReplacement,
@@ -224,6 +224,12 @@ export function HomeScreen() {
   const [savedLocations, setSavedLocations] = useState<readonly SavedLocation[]>([]);
   const { height } = useViewportSize();
   const { location, mocked: locationMocked, navigationFix, navigationStale, refresh: refreshLocation, status: locationStatus } = useCurrentLocation(trip.active != null);
+  // Shares the ride the trip's on, wherever in the app the rider is, Route View included.
+  const tripStep = trip.active && (trip.active.cursor.phase === 'waiting-to-board' || trip.active.cursor.phase === 'riding')
+    ? trip.active.itinerary.steps[trip.active.cursor.stepIndex]
+    : undefined;
+  const tripRide = useTripRide(tripStep, rideFixFrom(navigationFix, Boolean(navigationStale)));
+  const tripLeg = tripStep?.kind === 'transit' ? tripStep.liveRoute : undefined;
   const { isAdmin, mockLocation, overlays, setMockLocation } = useDebug();
   const resumeGuidance = useMemo(
     () => (trip.active ? guidanceForNavigation(trip.active.plan, trip.active.cursor) : null),
@@ -492,17 +498,17 @@ export function HomeScreen() {
   }, []);
 
   const mapHeight = mapPageMapHeight(height);
-  // The transit menu scrolls over the map in one page scroll; the location button fades out and
-  // rides up with it.
+  // The transit menu scrolls over the map in one page scroll; the location button rides up with it.
   const [homeScrollY] = useState(() => new Animated.Value(0));
-  const locationButtonOpacity = homeScrollY.interpolate({
+  const layersButtonOpacity = homeScrollY.interpolate({
     inputRange: [0, 48],
     outputRange: [1, 0],
     extrapolate: 'clamp',
   });
-  const locationButtonTranslateY = homeScrollY.interpolate({
-    inputRange: [0, mapHeight],
-    outputRange: [0, -mapHeight],
+  // Fades as the sheet comes up, then off the screen, so it can't take a tap while hidden.
+  const layersButtonTranslateX = homeScrollY.interpolate({
+    inputRange: [47, 48],
+    outputRange: [0, 200],
     extrapolate: 'clamp',
   });
 
@@ -519,28 +525,18 @@ export function HomeScreen() {
     setHomeTab('favorites');
     setActiveView({ name: 'home' });
   }, []);
-  const openRecentTrip = useCallback((recent: RecentTripV1) => {
-    const originPlace = placeForTripEndpoint(recent.origin);
-    const destinationPlace = placeForTripEndpoint(recent.destination);
-    setSelectedTrip(null);
-    setTripTime({ mode: 'now' });
-    setActiveView({
-      name: 'results',
-      criteria: {
-        ...initialResultsCriteria(destinationPlace.title, destinationPlace, travelPreferencesRef.current),
-        origin: originPlace.title,
-        originPlace,
-      },
-      returnTo: 'home',
-    });
-  }, []);
   useEffect(() => {
     if (!uid) return undefined;
     return subscribeToSavedLocations(uid, MAX_SAVED_LOCATIONS, setSavedLocations);
   }, [uid]);
+  const [guestSavePrompt, setGuestSavePrompt] = useState(false);
+  const placesPrompt = useNewAccountPlacesPrompt(user);
   const isPlaceSaved = useCallback((place: SearchPlace) => findSavedLocation(savedLocations, place) != null, [savedLocations]);
   const toggleSavedPlace = useCallback((place: SearchPlace) => {
-    if (!uid) return;
+    if (!uid) {
+      setGuestSavePrompt(true);
+      return;
+    }
     const saved = findSavedLocation(savedLocations, place);
     // The listener picks up the change (Firestore applies local writes right away, even offline),
     // so the star needs no state of its own; a rejected write just leaves it as it was.
@@ -554,11 +550,12 @@ export function HomeScreen() {
   }, []);
   // Adding a saved place: search for it, then name it (or save it straight away as Home or Work).
   const [saveRequest, setSaveRequest] = useState<SavePlaceRequest | null>(null);
-  const addSavedPlace = useCallback((returnTo: SavedPlacePick['returnTo'], label?: 'Home' | 'Work') => {
+  const addSavedPlace = useCallback((returnTo: SavedPlacePick['returnTo'], label?: SavedPlacePick['label']) => {
     setActiveView({ name: 'search', pickSavedPlace: { label, returnTo } });
   }, []);
   const leaveSavedPlacePick = useCallback((returnTo: SavedPlacePick['returnTo']) => {
     if (returnTo === 'favorites') showFavorites();
+    else if (returnTo === 'home') setActiveView({ name: 'home' });
     else if (returnTo === 'settings') setActiveView({ name: 'profile', route: 'places' });
     else setActiveView({ name: 'search' });
   }, [showFavorites]);
@@ -731,6 +728,18 @@ export function HomeScreen() {
     <TransitLiveProvider activeRouteIds={activeLiveRouteIds} extraRoutes={liveRoutes} location={livePoint}>
       <ScreenTransition key={transitionKey}>{node}</ScreenTransition>
       {savePlaceSheet}
+      <ConfirmDialog
+        body="Your guest session ends and you can sign in or sign up."
+        confirmLabel="Create account"
+        onCancel={() => setGuestSavePrompt(false)}
+        onConfirm={() => {
+          setGuestSavePrompt(false);
+          if (user) void discardAccount(user);
+        }}
+        testID="guest-save-dialog"
+        title="Favorites need an account"
+        visible={guestSavePrompt}
+      />
       <RouteAlertsPrompt onClose={() => setAlertsPrompt(null)} onDone={chooseRouteAlerts} request={alertsPrompt} />
     </TransitLiveProvider>
   );
@@ -745,13 +754,9 @@ export function HomeScreen() {
         ? trip.locationState
         : 'located';
 
+  // Holds Home back so it can't flash before a trip in progress takes over; looks like the rest of startup.
   if (trip.status === 'hydrating') {
-    return screen(
-      <View accessibilityLabel="Restoring your trips" style={styles.hydration} testID="active-trip-hydration">
-        <Mascot motion="bob" pose="thinking" size={72} />
-        <Text style={styles.hydrationText}>Restoring your trips…</Text>
-      </View>,
-    );
+    return <LoadingScreen />;
   }
 
   if (activeView.name === 'enroute') {
@@ -770,7 +775,6 @@ export function HomeScreen() {
           onEnd={() => {
             void endTrip().then((ended) => {
               if (!ended) return;
-              setHomeTab('recents');
               showHome();
             });
           }}
@@ -780,6 +784,7 @@ export function HomeScreen() {
             });
           } : undefined}
           plan={session.plan}
+          ride={tripRide}
           session={session}
         />,
       );
@@ -793,7 +798,6 @@ export function HomeScreen() {
           onEnd={() => {
             void endTrip().then((ended) => {
               if (!ended) return;
-              setHomeTab('recents');
               showHome();
             });
           }}
@@ -907,8 +911,11 @@ export function HomeScreen() {
         wholeRoute={wholeRoute}
         onRefreshLocation={() => void refreshLocation()}
         location={location}
+        locationFix={rideFixFrom(navigationFix, Boolean(navigationStale))}
         locationKnown={locationStatus === 'located'}
         onToggleFavorite={() => toggleSavedRoute(route)}
+        onTripLine={tripLeg?.agencyId === route.liveSource?.agencyId && tripLeg?.routeId === route.liveSource?.routeId}
+        tripRide={tripLeg ? tripRide : undefined}
         alerts={routeAlertsFor(route)}
         route={route}
       />
@@ -940,7 +947,7 @@ export function HomeScreen() {
           tripTime={tripTime}
         />
         <ConfirmDialog
-          body="Your current trip will be saved in Recents as ended early, then this exact departure will start."
+          body="Your current trip will end, then this exact departure will start."
           confirmLabel="Replace trip"
           destructive={true}
           onCancel={cancelReplacement}
@@ -987,10 +994,41 @@ export function HomeScreen() {
     return screen(<AdminToolsView onBack={() => setActiveView({ name: 'profile' })} onPickMockLocation={() => setActiveView({ name: 'search', pickMockLocation: true })} />);
   }
 
-  return screen(
-    <View style={styles.viewport}>
-      <ThemedStatusBar />
-      <View style={styles.screen}>
+  // Inside the sheet's scroller, so the browser moves them with the sheet, as on Route View.
+  const homeMapButtons = (
+    <View pointerEvents="box-none" style={styles.locationButton}>
+          {mapOrientation.rotated ? (
+            <PressableScale
+              accessibilityHint="Turns the map back to north-up"
+              accessibilityLabel="Reorient map to north"
+              accessibilityRole="button"
+              onPress={() => setReorientRequest((count) => count + 1)}
+              style={styles.reorientButton}
+              testID="reorient-map"
+            >
+              {/* The needle's red end points at true north on the rotated map. */}
+              <View style={[styles.compassNeedle, { transform: [{ rotate: `${-mapOrientation.heading}deg` }] }]} testID="reorient-needle">
+                <View style={styles.needleNorth} />
+                <View style={styles.needleSouth} />
+              </View>
+            </PressableScale>
+          ) : null}
+          <CurrentLocationButton
+            loading={locationStatus === 'loading'}
+            onPress={() => {
+              setIsLocationCentered(true);
+              setSearchCenter(null);
+              // Recenter on the last known location now, then again on the fresh fix.
+              setRecenterRequest((count) => count + 1);
+              void refreshLocation().then(() => setRecenterRequest((count) => count + 1));
+            }}
+            selected={isLocationCentered}
+          />
+    </View>
+  );
+
+  const homeMap = (
+      <>
         {/* The map stays fixed while the sheet scrolls over it; its fixed height keeps the legal credits above the resting sheet. */}
         <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: mapHeight }} testID="home-map-viewport">
         <GoogleMapView
@@ -1021,6 +1059,14 @@ export function HomeScreen() {
             testID="search-center"
           />
         ) : null}
+      </>
+  );
+
+  return screen(
+    <View style={styles.viewport}>
+      <ThemedStatusBar />
+      <View style={styles.screen}>
+        {Platform.OS === 'web' ? null : homeMap}
         {showLocationNotice ? (
           <View pointerEvents="none" style={[styles.locationStatusPill, { top: homeHeaderInset }]}>
             <View style={styles.locationStatusBadge}>
@@ -1051,44 +1097,6 @@ export function HomeScreen() {
             visible={true}
           />
         ) : null}
-        <Animated.View
-          style={[
-            styles.locationButton,
-            {
-              bottom: height - mapHeight + 16,
-              opacity: locationButtonOpacity,
-              transform: [{ translateY: locationButtonTranslateY }],
-            },
-          ]}
-        >
-          {mapOrientation.rotated ? (
-            <PressableScale
-              accessibilityHint="Turns the map back to north-up"
-              accessibilityLabel="Reorient map to north"
-              accessibilityRole="button"
-              onPress={() => setReorientRequest((count) => count + 1)}
-              style={styles.reorientButton}
-              testID="reorient-map"
-            >
-              {/* The needle's red end points at true north on the rotated map. */}
-              <View style={[styles.compassNeedle, { transform: [{ rotate: `${-mapOrientation.heading}deg` }] }]} testID="reorient-needle">
-                <View style={styles.needleNorth} />
-                <View style={styles.needleSouth} />
-              </View>
-            </PressableScale>
-          ) : null}
-          <CurrentLocationButton
-            loading={locationStatus === 'loading'}
-            onPress={() => {
-              setIsLocationCentered(true);
-              setSearchCenter(null);
-              // Recenter on the last known location now, then again on the fresh fix.
-              setRecenterRequest((count) => count + 1);
-              void refreshLocation().then(() => setRecenterRequest((count) => count + 1));
-            }}
-            selected={isLocationCentered}
-          />
-        </Animated.View>
         <SafeAreaView edges={['top']} pointerEvents="box-none" style={styles.safeArea}>
           <View pointerEvents="box-none" style={styles.header}>
             <SearchHeader
@@ -1107,14 +1115,16 @@ export function HomeScreen() {
             {/* An occasional ask (feedback or a tip) beside the line layers button, under the profile button. */}
             <View pointerEvents="box-none" style={styles.underSearch}>
               {nudge.kind ? <NudgeBanner kind={nudge.kind} onAct={nudge.act} onDismiss={nudge.dismiss} style={styles.nudge} /> : <View pointerEvents="none" style={styles.nudge} />}
-              <MapControlButton
-                accessibilityLabel="Lines on the map"
-                icon="modes"
-                onPress={() => setLayersOpen(true)}
-                selected={lineChoice.groups.length > 0 || lineChoice.routes.length > 0}
-                style={styles.layersButton}
-                testID="line-layers-button"
-              />
+              <Animated.View style={{ opacity: layersButtonOpacity, transform: [{ translateX: layersButtonTranslateX }] }} testID="line-layers-wrap">
+                <MapControlButton
+                  accessibilityLabel="Lines on the map"
+                  icon="modes"
+                  onPress={() => setLayersOpen(true)}
+                  selected={lineChoice.groups.length > 0 || lineChoice.routes.length > 0}
+                  style={styles.layersButton}
+                  testID="line-layers-button"
+                />
+              </Animated.View>
             </View>
           </View>
         </SafeAreaView>
@@ -1122,22 +1132,25 @@ export function HomeScreen() {
         <TransitSheet
           activeTab={homeTab}
           findRoute={findRoute}
+          mapButtons={homeMapButtons}
+          webMap={Platform.OS === 'web' ? homeMap : undefined}
           mapHeight={mapHeight}
           nearbyRoutes={nearbyRoutes}
           nearbyStatus={nearbyStatus.status}
           onAddSavedPlace={uid ? () => addSavedPlace('favorites') : undefined}
-          onOpenRecentTrip={openRecentTrip}
           onOpenSavedLocation={openSavedLocation}
           onOpenRoute={openRoute}
           onTabChange={setHomeTab}
           onVisibleRouteIdsChange={setVisibleRouteIds}
-          recentTrips={trip.recents}
           savedLocations={savedLocations}
           savedNearbyRouteIds={savedNearbyRouteIds}
           savedRouteIds={savedRouteIds}
           scrollY={homeScrollY}
         />
         {savePlaceSheet}
+        {placesPrompt.show && !saveRequest ? (
+          <SetPlacesPrompt onDone={placesPrompt.dismiss} onSet={(label) => addSavedPlace('home', label)} places={savedLocations} />
+        ) : null}
         <LineLayersSheet choice={lineChoice} lines={layerCandidates} onChange={changeLineChoice} onClose={() => setLayersOpen(false)} visible={layersOpen} />
         <SavedPlaceDetailsSheet
           onClose={() => setMapPlaces([])}
@@ -1149,14 +1162,11 @@ export function HomeScreen() {
           places={mapPlaces}
         />
         <ConfirmDialog
-          body={`${arrivedDestination ?? 'Your destination'} has been added to Recents.`}
-          cancelLabel="Stay on Home"
-          confirmLabel="View Recents"
+          body={`You made it to ${arrivedDestination ?? 'your destination'}.`}
+          confirmLabel="Done"
           onCancel={() => setArrivedDestination(null)}
-          onConfirm={() => {
-            setArrivedDestination(null);
-            setHomeTab('recents');
-          }}
+          onConfirm={() => setArrivedDestination(null)}
+          singleAction={true}
           testID="trip-arrived"
           title="You’ve arrived"
           visible={arrivedDestination !== null}
@@ -1169,8 +1179,6 @@ export function HomeScreen() {
 const createStyles = (colors: Palette) => StyleSheet.create({
   viewport: { flex: 1, alignItems: 'center', backgroundColor: colors.background },
   screen: { width: '100%', maxWidth: 540, flex: 1, overflow: 'hidden', backgroundColor: colors.canvas },
-  hydration: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, backgroundColor: colors.canvas },
-  hydrationText: { color: colors.mutedInk, fontFamily: fontFamilies.bold, fontSize: 15 },
   safeArea: {
     position: 'absolute',
     top: 0,
@@ -1187,6 +1195,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   locationButton: {
     position: 'absolute',
     right: 16,
+    bottom: 14,
     zIndex: 4,
     elevation: 4,
     alignItems: 'center',

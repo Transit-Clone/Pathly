@@ -1,7 +1,7 @@
 import { haversineMeters } from './geo';
 import { isNycFerry, isStatenIslandFerry, isSuffolk, LIRR_AGENCY } from './tripAgencies';
 import type { GtfsStop } from './gtfsFeed';
-import type { FareEstimator, TransitStep, TripFare } from './tripPlanning';
+import type { FareEstimator, FareLine, TransitStep, TripFare } from './tripPlanning';
 
 /**
  * Fare estimates for itineraries Google can't price (it has no fares for the LIRR, NICE, or
@@ -18,11 +18,33 @@ import type { FareEstimator, TransitStep, TripFare } from './tripPlanning';
  *   - NYC Ferry: $4.50 one way, $5.00 from October 19, 2026 (NYCEDC board vote, September 2026),
  *     its own ticket with no transfers to or from other systems.
  *   - Staten Island Ferry: free (NYC DOT).
+ *
+ * Reduced fares (65+, disability, Medicare), which Google never prices:
+ *   - LIRR: the same chart's "One-Way Sr.Cit/Disabled/M'care" rows.
+ *   - NYC Transit: $1.50 (MTA board, effective January 4, 2026). NICE: $1.50, half its base fare
+ *     like the MTA's; NICE's own page wasn't current when this was written.
+ *   - Suffolk: $0.75, plus the same $0.25 transfer ticket (GTFS fare_products.txt, WZ_RC_3).
+ *   - NYC Ferry: $1.50 from October 19, 2026, for its discount program's members.
+ *   - NYC express bus: sources disagree, so a trip using one has no reduced estimate.
+ *
+ * Student and low-income fares. A system with no published discount for the rider stays at its full fare:
+ *   - K-12 student: free on NYC Transit subway, local bus and SIR with a Student OMNY card, up to 4 trips
+ *     a day (MTA fare policy). NICE: $2.25 with a student pass, weekdays 6 AM to 7 PM (nicebus.com).
+ *   - Student, K-12 or college: Suffolk $1.25, ages 14-22 with a student ID (sctbus.org).
+ *   - Fair Fares (NYC low-income program): half the NYC Transit subway and local bus fare. Its express
+ *     bus fare wasn't confirmed, so a trip using one has no estimate.
  */
 
 const OMNY_AGENCIES = new Set(['MTA New York City Transit', 'Mta Bus Company', 'MTA Bus Company', 'MTA', 'Nassau Inter-County Express']);
 
+export type FareRider = 'full' | 'reduced' | 'student' | 'college' | 'fairFares';
+
 const OMNY_FARE_CENTS = 300;
+const OMNY_REDUCED_CENTS = 150;
+const NYC_FERRY_REDUCED_CENTS = 150;
+const SUFFOLK_REDUCED_CENTS = 75;
+const SUFFOLK_STUDENT_CENTS = 125;
+const NICE_STUDENT_CENTS = 225;
 /** NYC Ferry one-way: $4.50, then $5.00 from Sunday, October 19, 2026 (NYCEDC fare change). */
 const NYC_FERRY_FARE_CHANGE = Date.parse('2026-10-19T04:00:00Z');
 const nycFerryFareCents = (departsMs: number) => (departsMs >= NYC_FERRY_FARE_CHANGE ? 500 : 450);
@@ -58,6 +80,17 @@ const LIRR_OFF_PEAK: Record<LirrZone, number[]> = {
   14: [2450, 2100, 1950, 1800, 1475, 1050, 725, 375],
 };
 
+const LIRR_REDUCED: Record<LirrZone, number[]> = {
+  1: [350, 350, 675, 750, 900, 1075, 1275, 1650],
+  3: [350, 300, 450, 525, 650, 825, 1100, 1400],
+  4: [675, 450, 175, 175, 325, 400, 600, 975],
+  7: [750, 525, 175, 175, 175, 325, 525, 900],
+  9: [900, 650, 325, 175, 175, 175, 400, 725],
+  10: [1075, 825, 400, 325, 175, 175, 175, 525],
+  12: [1275, 1100, 600, 525, 400, 175, 175, 350],
+  14: [1650, 1400, 975, 900, 725, 525, 350, 175],
+};
+
 /** Each station's fare zone (fare chart "LIRR Stations and Fare Zones"), by GTFS stop name. */
 const LIRR_STATION_ZONES: Record<string, LirrZone> = Object.fromEntries(
   ([
@@ -89,11 +122,28 @@ export function isLirrPeak(iso: string): boolean {
   return (hour >= 6 && hour < 10) || (hour >= 16 && hour < 20);
 }
 
+/** NICE's student pass hours: weekdays, 6 AM to 7 PM in New York. */
+function inNiceStudentHours(iso: string): boolean {
+  const parts = Object.fromEntries(nyWeekdayHour.formatToParts(new Date(iso)).map((part) => [part.type, part.value]));
+  const hour = Number(parts.hour);
+  return parts.weekday !== 'Sat' && parts.weekday !== 'Sun' && hour >= 6 && hour < 19;
+}
+
 export function lirrFareCents(fromZone: LirrZone, toZone: LirrZone, peak: boolean): number {
   return (peak ? LIRR_PEAK : LIRR_OFF_PEAK)[fromZone][LIRR_ZONES.indexOf(toZone)]!;
 }
 
+export function lirrReducedFareCents(fromZone: LirrZone, toZone: LirrZone): number {
+  return LIRR_REDUCED[fromZone][LIRR_ZONES.indexOf(toZone)]!;
+}
+
 const dollars = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+
+/** "MTA 7 train", "NICE n6 bus": a paid or transfer ride in a fare's explanation. */
+function fareLineLabel(step: TransitStep, system: string): string {
+  const name = step.line.shortName ?? step.line.name;
+  return step.mode === 'subway' ? `${system} ${name} train` : step.mode === 'bus' ? `${system} ${name} bus` : `${system} ${name}`;
+}
 
 /** Builds the estimator over the LIRR stations (GTFS stops), for matching Google's stops to zones. */
 export function createFareEstimator(lirrStops: Iterable<GtfsStop>): FareEstimator {
@@ -107,13 +157,25 @@ export function createFareEstimator(lirrStops: Iterable<GtfsStop>): FareEstimato
     return best?.zone;
   };
 
-  return (steps: readonly TransitStep[]): TripFare | undefined => {
+  return (steps: readonly TransitStep[], _departureTime?: string, rider: FareRider = 'full'): TripFare | undefined => {
+    const reduced = rider === 'reduced';
+    const k12 = rider === 'student';
+    const fairFares = rider === 'fairFares';
+    // Said on a line that stays at its full price, so a discount rider doesn't think it was forgotten.
+    const noDiscount = (note: string) => (rider === 'full' || reduced ? note : `No discount for this fare type. ${note}`);
     let cents = 0;
+    const lines: FareLine[] = [];
+    const addLine = (label: string, lineCents: number, note?: string) => {
+      lines.push({ label, text: dollars(lineCents), ...(note ? { note } : {}) });
+    };
+    const reducedNote = (note: string) => (reduced ? `Reduced fare. ${note}` : noDiscount(note));
     // The latest paid bus/subway fare's transfer: which system issued it, until when, how many left.
     // Suffolk's $0.25 buys one transfer ticket that covers both of its transfers.
     let transfer: { system: 'omny' | 'suffolk'; expiresMs: number; remaining: number; ticketBought?: boolean } | null = null;
-    const useSuffolkTransfer = () => {
-      if (!transfer!.ticketBought) cents += SUFFOLK_TRANSFER_CENTS;
+    const useSuffolkTransfer = (label: string) => {
+      const first = !transfer!.ticketBought;
+      if (first) cents += SUFFOLK_TRANSFER_CENTS;
+      addLine(label, first ? SUFFOLK_TRANSFER_CENTS : 0, first ? 'Suffolk transfer ticket' : 'Covered by your transfer ticket');
       transfer!.ticketBought = true;
       transfer!.remaining -= 1;
     };
@@ -130,49 +192,76 @@ export function createFareEstimator(lirrStops: Iterable<GtfsStop>): FareEstimato
         const fromZone = zoneAt(step.from.location);
         const toZone = zoneAt(steps[last]!.to.location);
         if (fromZone === undefined || toZone === undefined) return undefined;
-        cents += lirrFareCents(fromZone, toZone, isLirrPeak(step.from.time));
+        const peak = isLirrPeak(step.from.time);
+        const lirrCents = reduced ? lirrReducedFareCents(fromZone, toZone) : lirrFareCents(fromZone, toZone, peak);
+        cents += lirrCents;
+        addLine(`LIRR, ${step.from.name} to ${steps[last]!.to.name}`, lirrCents, noDiscount(`Zone ${fromZone} to zone ${toZone}, ${reduced ? 'reduced' : peak ? 'peak' : 'off-peak'}`));
         index = last;
         continue;
       }
 
       if (OMNY_AGENCIES.has(step.agency.name)) {
         const express = step.mode === 'bus' && EXPRESS_BUS.test(step.line.shortName ?? '');
+        const nice = step.agency.name === 'Nassau Inter-County Express';
+        const label = fareLineLabel(step, nice ? 'NICE' : 'MTA');
+        // A free ride issues no transfer to pass on.
+        if (k12 && !nice && !express) {
+          addLine(label, 0, 'With a Student OMNY card, up to 4 free trips a day');
+          continue;
+        }
         if (transferValid && transfer!.system === 'omny' && !express) {
           transfer!.remaining -= 1;
+          addLine(label, 0, 'Free transfer within 2 hours');
         } else if (transferValid && transfer!.system === 'suffolk' && !express) {
-          useSuffolkTransfer();
+          useSuffolkTransfer(label);
         } else {
-          cents += express ? EXPRESS_BUS_FARE_CENTS : OMNY_FARE_CENTS;
+          const halfFare = reduced || (fairFares && !nice);
+          if (halfFare && express) return undefined;
+          const niceStudent = k12 && nice && inNiceStudentHours(step.from.time);
+          const omnyCents = halfFare ? OMNY_REDUCED_CENTS : niceStudent ? NICE_STUDENT_CENTS : express ? EXPRESS_BUS_FARE_CENTS : OMNY_FARE_CENTS;
+          const transferNote = 'Includes one free transfer within 2 hours';
+          cents += omnyCents;
+          addLine(label, omnyCents, express ? noDiscount('Express bus fare') : fairFares && !nice ? `Fair Fares. ${transferNote}` : niceStudent ? `With a NICE student pass. ${transferNote}` : reducedNote(transferNote));
           transfer = { system: 'omny', expiresMs: departsMs + TRANSFER_WINDOW_MS, remaining: 1 };
         }
         continue;
       }
 
       if (isSuffolk(step.agency.name)) {
+        const label = fareLineLabel(step, 'Suffolk');
         if (transferValid && transfer!.system === 'suffolk') {
-          useSuffolkTransfer();
+          useSuffolkTransfer(label);
         } else if (transferValid && transfer!.system === 'omny') {
           // NICE (OMNY) transfers are accepted on Suffolk buses.
           transfer!.remaining -= 1;
+          addLine(label, 0, 'Free transfer within 2 hours');
         } else {
-          cents += SUFFOLK_FARE_CENTS;
+          const suffolkStudent = k12 || rider === 'college';
+          const suffolkCents = reduced ? SUFFOLK_REDUCED_CENTS : suffolkStudent ? SUFFOLK_STUDENT_CENTS : SUFFOLK_FARE_CENTS;
+          cents += suffolkCents;
+          addLine(label, suffolkCents, suffolkStudent ? 'Ages 14-22 with a student ID. A $0.25 transfer ticket covers up to 2 more buses' : reducedNote('A $0.25 transfer ticket covers up to 2 more buses'));
           transfer = { system: 'suffolk', expiresMs: departsMs + TRANSFER_WINDOW_MS, remaining: 2 };
         }
         continue;
       }
 
       // Free, and it doesn't use up a transfer either.
-      if (isStatenIslandFerry(step)) continue;
+      if (isStatenIslandFerry(step)) {
+        addLine('Staten Island Ferry', 0, 'Always free');
+        continue;
+      }
 
       if (isNycFerry(step.agency.name)) {
         // Its own ticket: no OMNY or Suffolk transfer applies in either direction.
-        cents += nycFerryFareCents(departsMs);
+        const ferryCents = reduced ? NYC_FERRY_REDUCED_CENTS : nycFerryFareCents(departsMs);
+        cents += ferryCents;
+        addLine('NYC Ferry', ferryCents, reducedNote('Its own ticket, with no transfers to other systems'));
         continue;
       }
 
       // An agency without a fare the app knows: no honest estimate.
       return undefined;
     }
-    return { text: dollars(cents), cents, currency: 'USD', estimated: true };
+    return { text: dollars(cents), cents, currency: 'USD', estimated: true, lines };
   };
 }

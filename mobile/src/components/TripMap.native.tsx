@@ -6,11 +6,12 @@ import { googleMapStyle } from '../data/mapStyle';
 import { themedRouteColor } from '../data/routeColors';
 import { withAlpha } from '../data/routeDirection';
 import { zoomForRegion } from '../data/stopDeclutter';
-import { stopIndexAt, tripMapPoints, viaRevealZooms, type TripMapProps, type TripMapStop } from '../data/tripMap';
+import { stopIndexAt, tripMapPoints, ENTRANCE_REVEAL_ZOOM, viaRevealZooms, type TripMapProps, type TripMapStop } from '../data/tripMap';
 import { useAppSettings, useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies } from '../theme/typography';
 import { CurrentLocationMarker } from './CurrentLocationMarker';
+import { Icon } from './Icon';
 import { HeadingBeamMarker } from './HeadingBeamMarker';
 import { NATIVE_MAP_PROVIDER } from './mapProvider';
 import { DESTINATION_PIN_HEIGHT, DestinationPinMarker } from './DestinationPinMarker';
@@ -59,7 +60,7 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
   const trip = useMemo(() => tripMapPoints(itinerary, origin, destination), [destination, itinerary, origin]);
   const legs = navigationProgress?.segments ?? trip.legs;
   const progressStops = navigationProgress?.stops;
-  const stops = useMemo(() => progressStops?.filter((stop) => stop.visible) ?? trip.stops, [progressStops, trip.stops]);
+  const stops = useMemo(() => progressStops ? [...progressStops.filter((stop) => stop.visible), ...trip.stops.filter((stop) => stop.kind === 'entrance')] : trip.stops, [progressStops, trip.stops]);
   const destinationStop = stops.find((stop) => stop.kind === 'end');
   const bounds = trip.bounds;
   const coordinates = useMemo(() => bounds.map((point) => ({ latitude: point.lat, longitude: point.lng })), [bounds]);
@@ -79,7 +80,8 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
   const revealZooms = useMemo(() => viaRevealZooms(stops), [stops]);
   const viaShown = (stop: TripMapStop) => zoom >= (revealZooms.get(stop.leg ?? -1) ?? 0);
   // Which legs' stops in between are drawn, so newly shown markers can be tracked once.
-  const shownLegsKey = [...revealZooms].filter(([, reveal]) => zoom >= reveal).map(([leg]) => leg).join(',');
+  const entrancesShown = zoom >= ENTRANCE_REVEAL_ZOOM;
+  const shownLegsKey = `${[...revealZooms].filter(([, reveal]) => zoom >= reveal).map(([leg]) => leg).join(',')}|${entrancesShown}`;
   // Newly shown custom-view markers must render once with tracking on (Android can draw them blank).
   const [tracksVia, setTracksVia] = useState(true);
   const [trackedLegsKey, setTrackedLegsKey] = useState(shownLegsKey);
@@ -243,7 +245,7 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
             />
           );
         })}
-        {stops.map((stop, index) => (stop.kind === 'via' && !viaShown(stop) && index !== selected ? null : (
+        {stops.map((stop, index) => (((stop.kind === 'via' && !viaShown(stop)) || (stop.kind === 'entrance' && !entrancesShown)) && index !== selected ? null : (
           <Marker
             key={`stop-${index}`}
             anchor={{ x: 0.5, y: 0.5 }}
@@ -251,17 +253,20 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
             onPress={interactive ? () => setSelected(index) : undefined}
             tappable={interactive}
             testID={`trip-map-${stop.kind}-${index}`}
-            tracksViewChanges={stop.kind === 'via' && tracksVia}
-            zIndex={stop.kind === 'via' ? 2 : stop.kind === 'start' || stop.kind === 'end' ? 4 : 3}
+            tracksViewChanges={(stop.kind === 'via' || stop.kind === 'entrance') && tracksVia}
+            zIndex={stop.kind === 'via' || stop.kind === 'entrance' ? 2 : stop.kind === 'start' || stop.kind === 'end' ? 4 : 3}
           >
             <View
               style={[
-                stop.kind === 'via' ? styles.viaDot : styles.dot,
+                stop.kind === 'entrance' ? styles.entranceDot : stop.kind === 'via' ? styles.viaDot : styles.dot,
                 'state' in stop && stop.state === 'completed' && styles.completedStop,
                 (stop.kind === 'start' || stop.kind === 'end') && styles.endpointDot,
+                stop.kind === 'entrance' && { backgroundColor: themedRouteColor(stop.color ?? colors.primary, isDark) },
                 (stop.kind === 'stop' || stop.kind === 'via') && { backgroundColor: colors.white, borderColor: themedRouteColor(stop.color ?? colors.primary, isDark) },
               ]}
-            />
+            >
+              {stop.kind === 'entrance' ? <Icon color="#FFFFFF" name="arrowRight" size={11} /> : null}
+            </View>
           </Marker>
         )))}
         {/* The rides' live vehicles, like Route View's. */}
@@ -312,6 +317,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   completedStop: { opacity: 0.48 },
   dot: { width: 14, height: 14, borderWidth: 3, borderColor: '#FFFFFF', borderRadius: 7 },
   endpointDot: { width: 18, height: 18, borderWidth: 3, borderRadius: 9, borderColor: ENDPOINT_RING, backgroundColor: ENDPOINT_FILL },
+  entranceDot: { width: 18, height: 18, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: '#FFFFFF', borderRadius: 3 },
   viaDot: { width: 9, height: 9, borderWidth: 2, borderColor: '#FFFFFF', borderRadius: 5 },
   label: { maxWidth: 240, paddingVertical: 6, paddingHorizontal: 10, borderRadius: 12, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 6, elevation: 4 },
   labelText: { color: colors.ink, fontFamily: fontFamilies.bold, fontSize: 13 },

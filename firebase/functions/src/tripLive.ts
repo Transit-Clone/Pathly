@@ -27,9 +27,14 @@ export const TIGHT_CONNECTION_SECONDS = 120;
 const TRIP_CANCELED = 3;
 const STOP_SKIPPED = 1;
 
-/** True when a live trip_id names the timetable's: the same, or (NYC subway) its id's tail. */
+/**
+ * True when a live trip_id names the timetable's: the same, or (NYC subway) its id's tail, which
+ * the live feed often sends without the routing at its end ("096400_L..S" for "..._096400_L..S16R").
+ */
 export function isSameTrip(staticTripId: string, liveTripId: string): boolean {
-  return liveTripId !== '' && (staticTripId === liveTripId || staticTripId.endsWith(`_${liveTripId}`));
+  if (liveTripId === '') return false;
+  if (staticTripId === liveTripId || staticTripId.endsWith(`_${liveTripId}`)) return true;
+  return /\.\.[NS]$/.test(liveTripId) && staticTripId.includes(`_${liveTripId}`);
 }
 
 type StopEvent = transit_realtime.StopTimeEvent | null | undefined;
@@ -68,7 +73,8 @@ function findLiveTrip(
 ): transit_realtime.TripUpdate | undefined {
   const updates = entities.flatMap((entity) => (entity.tripUpdate ? [entity.tripUpdate] : []));
   const { tripId } = ref;
-  if (tripId) return updates.find((update) => isSameTrip(tripId, update.trip.tripId ?? ''));
+  const sameTrip = tripId ? updates.find((update) => isSameTrip(tripId, update.trip.tripId ?? '')) : undefined;
+  if (sameTrip) return sameTrip;
   const planned = Date.parse(step.from.time);
   let best: { update: transit_realtime.TripUpdate; offset: number } | undefined;
   for (const update of updates) {

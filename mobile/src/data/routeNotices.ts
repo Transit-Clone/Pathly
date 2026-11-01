@@ -4,7 +4,7 @@ import type { RouteDetail, RoutePrediction } from './transit';
 export const LATE_THRESHOLD_MINUTES = 2;
 
 /** `label` names it on the route's alert pill; a `warning` notice turns the pill yellow. */
-export type RouteNotice = { kind: 'delay' | 'alert'; label: string; warning: boolean; title: string; detail: string | null };
+export type RouteNotice = { kind: 'delay' | 'alert' | 'outlook'; label: string; warning: boolean; title: string; detail: string | null };
 
 const VEHICLE_NOUNS = { subway: 'Train', rail: 'Train', bus: 'Bus', ferry: 'Boat' } as const;
 

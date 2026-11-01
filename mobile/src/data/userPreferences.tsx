@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 
 import { useAuth } from '../auth/AuthContext';
 import type { TransitMode } from '../components/RouteBadge';
+import type { FareType } from './tripPlanning';
 
 /**
  * A rider's own preferences (Settings -> Notifications, Travel preferences, step-free routes,
@@ -20,9 +21,13 @@ export type UserPreferences = {
     fewerTransfers: boolean;
     /** Trips walking longer than this in total are hidden when others fit; null is no limit. */
     maxWalkMinutes: number | null;
+    /** Which fare trip cards show. A fare category, never an age, and never sent anywhere. */
+    fareType: FareType;
   };
   stepFree: boolean;
   analytics: boolean;
+  /** Off by default: lets rides be detected and shown to other riders (rideTracking.ts). */
+  shareRides: boolean;
 };
 
 export const ALL_TRANSIT_MODES: readonly TransitMode[] = ['subway', 'bus', 'rail', 'ferry'];
@@ -30,9 +35,10 @@ export const WALK_LIMIT_OPTIONS: readonly (number | null)[] = [5, 10, 15, 20, 30
 
 export const DEFAULT_PREFERENCES: UserPreferences = {
   notifications: { enabled: true, serviceAlerts: true, tripReminders: true, disruptions: true },
-  travel: { modes: [...ALL_TRANSIT_MODES], allowWalking: true, fewerTransfers: false, maxWalkMinutes: null },
+  travel: { modes: [...ALL_TRANSIT_MODES], allowWalking: true, fewerTransfers: false, maxWalkMinutes: null, fareType: 'full' },
   stepFree: false,
   analytics: false,
+  shareRides: false,
 };
 
 export function preferencesKey(uid: string) {
@@ -61,11 +67,13 @@ export function parsePreferences(text: string | null): UserPreferences {
   if (isBoolean(saved.travel?.allowWalking)) travel.allowWalking = saved.travel.allowWalking;
   if (isBoolean(saved.travel?.fewerTransfers)) travel.fewerTransfers = saved.travel.fewerTransfers;
   if (saved.travel?.maxWalkMinutes === null || WALK_LIMIT_OPTIONS.includes(saved.travel?.maxWalkMinutes)) travel.maxWalkMinutes = saved.travel?.maxWalkMinutes ?? null;
+  if (['full', 'reduced', 'student', 'college', 'fairFares'].includes(saved.travel?.fareType as string)) travel.fareType = saved.travel!.fareType!;
   return {
     notifications,
     travel,
     stepFree: isBoolean(saved.stepFree) ? saved.stepFree : base.stepFree,
     analytics: isBoolean(saved.analytics) ? saved.analytics : base.analytics,
+    shareRides: isBoolean(saved.shareRides) ? saved.shareRides : base.shareRides,
   };
 }
 
@@ -74,6 +82,7 @@ export type PreferencesPatch = {
   travel?: Partial<UserPreferences['travel']>;
   stepFree?: boolean;
   analytics?: boolean;
+  shareRides?: boolean;
 };
 
 export function applyPreferencesPatch(current: UserPreferences, patch: PreferencesPatch): UserPreferences {
@@ -82,6 +91,7 @@ export function applyPreferencesPatch(current: UserPreferences, patch: Preferenc
     travel: { ...current.travel, ...patch.travel },
     stepFree: patch.stepFree ?? current.stepFree,
     analytics: patch.analytics ?? current.analytics,
+    shareRides: patch.shareRides ?? current.shareRides,
   };
 }
 

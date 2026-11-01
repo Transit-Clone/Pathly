@@ -10,7 +10,25 @@
       ]
     },
     {
+      "collectionGroup": "rideReports",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "alertInbox",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
       "collectionGroup": "sentAlerts",
+      "fieldPath": "expiresAt",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "rideSessions",
       "fieldPath": "expiresAt",
       "ttl": true,
       "indexes": []

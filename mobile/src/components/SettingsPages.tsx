@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, AppState, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { useAuth } from '../auth/AuthContext';
+import { BeanAvatar } from '../avatars/BeanAvatarImage';
 import {
   deleteAccount,
   deleteAccountProblem,
@@ -13,7 +14,9 @@ import {
   updateDisplayName,
 } from '../data/accountData';
 import { searchLineIndex, useLineIndex, type IndexedLine } from '../data/lineIndex';
+import { subscribeToAlertInbox, type AlertInboxEntry } from '../data/alertInbox';
 import { describeRouteAlerts, ROUTE_ALERT_OPTIONS, saveRoute, savedRouteFromLine, setRouteAlerts, setRouteAlertsPaused, subscribeToSavedRoutes, type SavedRoute } from '../data/savedRoutes';
+import type { FareType } from '../data/tripPlanning';
 import { ALL_TRANSIT_MODES, useUserPreferences, WALK_LIMIT_OPTIONS } from '../data/userPreferences';
 import { registerForRouteAlerts } from '../lib/notifications';
 import { useAppSettings, useTheme, useThemedStyles, type TextSize } from '../theme/AppSettings';
@@ -41,8 +44,8 @@ function useStyles() {
 // ---------------------------------------------------------------------------------------------
 // Account details
 
-export function AccountSettings({ onFeedback }: PageProps) {
-  const { refreshUser, user } = useAuth();
+export function AccountSettings({ onEditAvatar, onFeedback }: PageProps & { onEditAvatar: () => void }) {
+  const { avatar, refreshUser, user } = useAuth();
   const { colors } = useTheme();
   const { page, profile } = useStyles();
   const [editingName, setEditingName] = useState(false);
@@ -89,6 +92,11 @@ export function AccountSettings({ onFeedback }: PageProps) {
   return (
     <>
       <Card>
+        <PressableScale accessibilityHint="Change your Pathling's color, eyes, mouth and hair" accessibilityLabel="Your Pathling" accessibilityRole="button" onPress={onEditAvatar} style={profile.settingRow} testID="profile-edit-avatar">
+          <BeanAvatar config={avatar} size={44} />
+          <View style={profile.rowCopy}><Text style={profile.settingText}>Your Pathling</Text></View>
+          <Icon color={colors.mutedInk} name="forward" size={20} />
+        </PressableScale>
         {editingName ? (
           <View style={page.editBlock}>
             <Text style={profile.settingText}>Display name</Text>
@@ -122,6 +130,28 @@ export function AccountSettings({ onFeedback }: PageProps) {
       </Card>
     </>
   );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Inbox
+
+const inboxDate = (date: Date | null) => (date ? date.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Just now');
+
+/** The history of alerts on the rider's saved lines, newest first. */
+export function InboxSettings() {
+  const { page } = useStyles();
+  const { user } = useAuth();
+  const uid = user?.uid;
+  const [entries, setEntries] = useState<readonly AlertInboxEntry[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    if (!uid) return undefined;
+    return subscribeToAlertInbox(uid, setEntries, () => setFailed(true));
+  }, [uid]);
+  if (failed && !entries) return <Text style={page.lineSubtitle} testID="inbox-error">Your inbox could not be loaded. Check your connection and try again.</Text>;
+  if (!entries) return null;
+  if (entries.length === 0) return <Text style={page.lineSubtitle} testID="inbox-empty">No updates yet. Service alerts on your saved lines will show up here, and stay for 30 days.</Text>;
+  return <Card>{entries.map((entry) => <SettingRow detail={`${entry.body}\n${inboxDate(entry.sentAt)}`} key={entry.id} label={entry.title} testID={`inbox-${entry.id}`} />)}</Card>;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -307,10 +337,14 @@ const textSizeOptions: readonly { label: string; value: TextSize }[] = [
 
 export function AccessibilitySettings({ onFeedback }: PageProps) {
   const { profile } = useStyles();
-  const { highContrast, reducedMotion, setHighContrast, setReducedMotion, setTextSize, textSize } = useAppSettings();
+  const { easyMode, highContrast, pathlingMotion, reducedMotion, setHighContrast, setEasyMode, setPathlingMotion, setReducedMotion, setTextSize, textSize } = useAppSettings();
   const { preferences, updatePreferences } = useUserPreferences();
   return (
     <>
+      <Card>
+        <ToggleRow label="Easy mode" onChange={(value) => { setEasyMode(value); onFeedback(value ? 'Easy mode on' : 'Easy mode off'); }} testID="toggle-easy-mode" value={easyMode} />
+      </Card>
+      <Text style={profile.note} testID="easy-mode-note">Bigger text, Pathlings that stay still, and fewer buttons when planning a trip and riding.</Text>
       <Card>
         <ChoiceRow
           label="Text size"
@@ -325,10 +359,11 @@ export function AccessibilitySettings({ onFeedback }: PageProps) {
           testPrefix="text-size"
         />
         <ToggleRow label="Reduce motion" onChange={(value) => { setReducedMotion(value); onFeedback(value ? 'Motion reduced' : 'Motion restored'); }} testID="toggle-reduced-motion" value={reducedMotion} />
+        <ToggleRow label="Pathling animations" onChange={(value) => { setPathlingMotion(value); onFeedback(value ? 'Pathlings can move and talk' : 'Pathlings will stay still'); }} testID="toggle-pathling-motion" value={pathlingMotion} />
         <ToggleRow label="High contrast" onChange={(value) => { setHighContrast(value); onFeedback(value ? 'High contrast on' : 'High contrast off'); }} testID="toggle-high-contrast" value={highContrast} />
         <ToggleRow label="Step-free routes" onChange={(value) => { updatePreferences({ stepFree: value }); onFeedback('Step-free preference saved'); }} testID="toggle-step-free" value={preferences.stepFree} />
       </Card>
-      <Text style={profile.note} testID="step-free-note">Station access comes from the MTA and can change when an elevator is out. Every bus and ferry is step-free. Google&apos;s transit planner doesn&apos;t report step-free access, so trips aren&apos;t filtered for it yet.</Text>
+      <Text style={profile.note} testID="step-free-note">Station access comes from the MTA and can change when an elevator is out. Every bus and ferry is step-free. Google&apos;s transit planner doesn&apos;t report step-free access, so trips are checked against the MTA&apos;s and each agency&apos;s station lists: one using a station without access is marked and listed last.</Text>
     </>
   );
 }
@@ -337,6 +372,8 @@ export function AccessibilitySettings({ onFeedback }: PageProps) {
 // Travel preferences
 
 const modeLabels: Record<TransitMode, string> = { subway: 'Subway', bus: 'Bus', rail: 'Rail', ferry: 'Ferry' };
+
+const FARE_TYPE_LABELS: Record<FareType, string> = { full: 'Full fare', reduced: 'Reduced fare', student: 'K-12 student', college: 'College student', fairFares: 'Fair Fares' };
 
 export function walkLimitLabel(minutes: number | null) {
   return minutes === null ? 'No limit' : `${minutes} min`;
@@ -402,6 +439,18 @@ export function TravelSettings({ onFeedback }: PageProps) {
         ) : null}
       </Card>
       <Text style={profile.note}>Trips that walk longer than your limit are hidden when another trip fits.</Text>
+      <Text style={profile.sectionLabel}>FARES</Text>
+      <Card>
+        <ChoiceRow
+          label="Fare type"
+          onSelect={(label) => { updatePreferences({ travel: { fareType: (Object.keys(FARE_TYPE_LABELS) as FareType[]).find((type) => FARE_TYPE_LABELS[type] === label) ?? 'full' } }); onFeedback('Fare type saved'); }}
+          options={Object.values(FARE_TYPE_LABELS)}
+          selected={FARE_TYPE_LABELS[travel.fareType]}
+          testPrefix="fare-type"
+        />
+      </Card>
+      <Text style={profile.note} testID="fare-type-note">{"Reduced is for riders 65 or older, with a qualifying disability, or on Medicare; agencies may ask for proof. Pathly doesn't ask your age, and this choice stays on this device. Where a reduced fare isn't known, the full fare shows.\n\nYoung children ride free with a paying adult: up to 3 kids 44 inches or under on the subway and local buses, and kids under 5 on the LIRR."}</Text>
+      <Text style={profile.note} testID="fare-student-note">K-12 student uses a school-issued Student OMNY card or NICE pass. College students get no MTA discount; Suffolk buses charge students 14 to 22 less with an ID. Fair Fares is New York City&apos;s half-price program for low-income riders. Children under 44 inches ride subways and local buses free with a paying adult.</Text>
     </>
   );
 }
@@ -503,13 +552,17 @@ export function PrivacySettings({ onFeedback }: PageProps) {
       <Card>
         <SettingRow detail={permissionDetail[permission.status]} label="Location access" onPress={permission.status === 'unknown' ? undefined : () => void changeLocation()} testID="privacy-location" />
         <ToggleRow label="Share usage analytics" onChange={(value) => { updatePreferences({ analytics: value }); onFeedback('Analytics preference saved'); }} testID="toggle-analytics" value={preferences.analytics} />
+        {user?.isAnonymous ? null : <>
+        <ToggleRow label="Share my rides" onChange={(value) => { updatePreferences({ shareRides: value }); onFeedback(value ? 'Ride sharing on' : 'Ride sharing off'); }} testID="toggle-share-rides" value={preferences.shareRides} />
         <SettingRow detail={exporting ? 'Preparing your data…' : undefined} label="Download your data" onPress={() => void download()} testID="privacy-download" />
         <SettingRow label="Delete account" onPress={() => { setDeleteOpen((open) => !open); setDeleteError(''); }} testID="privacy-delete" />
+        </>}
       </Card>
+      {user?.isAnonymous ? null : <Text style={page.lineSubtitle} testID="share-rides-note">{"When you're on a vehicle during an active trip or with Route View open, your location helps place it for other riders, who see your avatar next to it, never your name. It's used only while you're moving with the vehicle, and it's erased about 90 seconds after you stop."}</Text>}
       {deleteOpen ? (
         <View style={page.dangerCard} testID="delete-account-panel">
           <Text style={page.dangerTitle}>Delete your account</Text>
-          <Text style={page.dangerBody}>This removes your saved places, searches, recent trips, and sign-in. Enter your password to continue.</Text>
+          <Text style={page.dangerBody}>This removes your favorites, searches, recent trips, and sign-in. Enter your password to continue.</Text>
           <TextInput
             accessibilityLabel="Password"
             autoCapitalize="none"
@@ -530,7 +583,7 @@ export function PrivacySettings({ onFeedback }: PageProps) {
         </View>
       ) : null}
       <ConfirmDialog
-        body="Your account, saved places, searches, and recent destinations will be permanently deleted. This can't be undone."
+        body="Your account, favorites, searches, and recent destinations will be permanently deleted. This can't be undone."
         confirmLabel="Delete"
         destructive={true}
         onCancel={() => setConfirmingDelete(false)}
@@ -546,7 +599,6 @@ export function PrivacySettings({ onFeedback }: PageProps) {
 // ---------------------------------------------------------------------------------------------
 // Help & About
 
-export type HelpDoc = 'faq' | 'privacy' | 'terms';
 
 /** Opens an email to support (or the issue tracker), saying where to write when that can't open. */
 export async function contactSupport(onFeedback: (message: string) => void): Promise<void> {
@@ -562,13 +614,14 @@ const FAQ: readonly { q: string; a: string }[] = [
   { q: 'Where does Pathly work?', a: 'Pathly plans trips and shows live times for transit around New York and Long Island, including the LIRR, MTA subway and buses, NICE and Suffolk County buses, and NYC Ferry.' },
   { q: 'Where do arrival times come from?', a: 'Live times come from each agency’s real-time feed when one is available, marked with a live signal. Otherwise Pathly shows the published timetable.' },
   { q: 'How are trips planned?', a: 'Trips come from Google’s transit planner. Your travel preferences set the modes, sorting, and walking used for each new search.' },
-  { q: 'How do I save a place?', a: 'Tap the star on a trip, or go to Settings > Saved places to set Home, Work, and other places.' },
+  { q: 'How do I save a place?', a: 'Tap the star on a trip, or go to Settings > Favorites to set Home, Work, and other places.' },
   { q: 'Why can’t Pathly find my location?', a: 'Check Settings > Privacy > Location access. Without it, Pathly centers on Stony Brook and you can search for a starting point.' },
 ];
 
 const PRIVACY: readonly string[] = [
   'Account: Pathly stores your email address and display name with Firebase Authentication to sign you in.',
-  'Trip history: your recent searches, recent destinations, and saved places are stored in your account in Cloud Firestore so they follow you across devices.',
+  'Trip history: your recent searches, recent destinations, and favorites are stored in your account in Cloud Firestore so they follow you across devices.',
+  'Ride reports: when you tap how a ride is going, your location is checked once to confirm you are on board and is not saved. Other riders see the report and a count for 20 minutes, never who sent it.',
   'Location: your location is used to show nearby transit and to plan trips from where you are. It is sent to Pathly’s servers and Google only for those requests, and it is not stored in your account.',
   'On this device: display settings, travel and notification preferences, a short cache of nearby times, and an in-progress trip are kept on your device.',
   'Your choices: you can download your data or delete your account at any time in Settings > Privacy.',
@@ -583,12 +636,19 @@ const TERMS: readonly string[] = [
 
 export const OSM_COPYRIGHT_URL = 'https://www.openstreetmap.org/copyright';
 
-/** `initialOpen`: a document shown open on arrival (Support's FAQ opens here with the FAQ showing). */
-export function HelpSettings({ initialOpen = null, onFeedback }: PageProps & { initialOpen?: HelpDoc | null }) {
+/** The FAQ page, answers showing. */
+export function FaqSettings() {
   const { page } = useStyles();
-  const [open, setOpen] = useState<HelpDoc | null>(initialOpen);
-  const toggle = (doc: HelpDoc) => setOpen((current) => (current === doc ? null : doc));
-  const contact = () => contactSupport(onFeedback);
+  return <Card><View style={page.doc} testID="faq-content">{FAQ.map((item) => <View key={item.q} style={page.docItem}><Text style={page.docHeading}>{item.q}</Text><Text style={page.docBody}>{item.a}</Text></View>)}</View></Card>;
+}
+
+type LegalDoc = 'privacy' | 'terms';
+
+/** About's policies and credits. */
+export function LegalSettings({ onFeedback }: PageProps) {
+  const { page } = useStyles();
+  const [open, setOpen] = useState<LegalDoc | null>(null);
+  const toggle = (doc: LegalDoc) => setOpen((current) => (current === doc ? null : doc));
   const openOsmCopyright = async () => {
     try {
       await Linking.openURL(OSM_COPYRIGHT_URL);
@@ -597,19 +657,14 @@ export function HelpSettings({ initialOpen = null, onFeedback }: PageProps & { i
     }
   };
   return (
-    <>
-      <Card>
-        <SettingRow label="Frequently asked questions" onPress={() => toggle('faq')} testID="help-faq" />
-        {open === 'faq' ? <View style={page.doc} testID="help-faq-content">{FAQ.map((item) => <View key={item.q} style={page.docItem}><Text style={page.docHeading}>{item.q}</Text><Text style={page.docBody}>{item.a}</Text></View>)}</View> : null}
-        <SettingRow label="Contact support" onPress={() => void contact()} testID="help-contact" />
-        <SettingRow label="Privacy policy" onPress={() => toggle('privacy')} testID="help-privacy" />
-        {open === 'privacy' ? <View style={page.doc} testID="help-privacy-content">{PRIVACY.map((line) => <Text key={line} style={[page.docBody, page.docItem]}>{line}</Text>)}</View> : null}
-        <SettingRow label="Terms of use" onPress={() => toggle('terms')} testID="help-terms" />
-        {open === 'terms' ? <View style={page.doc} testID="help-terms-content">{TERMS.map((line) => <Text key={line} style={[page.docBody, page.docItem]}>{line}</Text>)}</View> : null}
-        {/* Nearby's walking distances come from OpenStreetMap, whose license (ODbL) requires this credit. */}
-        <SettingRow label="Map data © OpenStreetMap" onPress={() => void openOsmCopyright()} testID="help-osm" />
-      </Card>
-    </>
+    <Card>
+      <SettingRow label="Privacy policy" onPress={() => toggle('privacy')} testID="about-privacy" />
+      {open === 'privacy' ? <View style={page.doc} testID="about-privacy-content">{PRIVACY.map((line) => <Text key={line} style={[page.docBody, page.docItem]}>{line}</Text>)}</View> : null}
+      <SettingRow label="Terms of use" onPress={() => toggle('terms')} testID="about-terms" />
+      {open === 'terms' ? <View style={page.doc} testID="about-terms-content">{TERMS.map((line) => <Text key={line} style={[page.docBody, page.docItem]}>{line}</Text>)}</View> : null}
+      {/* Nearby's walking distances come from OpenStreetMap, whose license (ODbL) requires this credit. */}
+      <SettingRow label="Map data © OpenStreetMap" onPress={() => void openOsmCopyright()} testID="about-osm" />
+    </Card>
   );
 }
 

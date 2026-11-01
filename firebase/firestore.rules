@@ -96,6 +96,11 @@ service cloud.firestore {
         allow create, update: if isOwner(uid) && isValidEntry('dateSaved');
       }
 
+      // Alerts on the rider's saved lines, written by the backend (routeAlerts.ts).
+      match /alertInbox/{entryId} {
+        allow read, delete: if isOwner(uid);
+      }
+
       // A saved transit line and its alert setting (mobile/src/data/savedRoutes.ts's SavedRoute).
       match /savedRoutes/{routeKey} {
         allow read, delete: if isOwner(uid);

@@ -23,7 +23,7 @@ export const DESTINATION_PIN_HEIGHT = Math.round((DESTINATION_PIN_WIDTH * VIEW.h
 
 /**
  * The destination pin in the rider's chosen color, with their Pathling's face and hair (or the parts
- * they picked for it in Settings, Display). `pinStyle` overrides the saved one (the editor's
+ * they picked for it in Settings, Personalization). `pinStyle` overrides the saved one (the editor's
  * preview and options); `scale` enlarges it there.
  */
 export function DestinationPinMarker({ pinStyle, scale = 1, testID }: { pinStyle?: DestinationPinStyle; scale?: number; testID?: string }) {

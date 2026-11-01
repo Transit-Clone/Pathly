@@ -24,6 +24,10 @@ test('a live trip_id names its timetable trip, including the subway feed\'s shor
   assert.equal(isSameTrip('ASP26GEN-1038-Sunday-00_000600_1..S03R', '000600_1..S03R'), true);
   assert.equal(isSameTrip('ASP26GEN-1038-Sunday-00_000600_1..S03R', '0600_1..S03R'), false);
   assert.equal(isSameTrip('GO202_26_2', ''), false);
+  // The live feed often leaves off the routing at the end of the timetable's id.
+  assert.equal(isSameTrip('AFA26GEN-L-2024-S300_096400_L..S16R', '096400_L..S'), true);
+  assert.equal(isSameTrip('AFA26GEN-L-2024-S300_096400_L..S16R', '096400_L..N'), false);
+  assert.equal(isSameTrip('AFA26GEN-L-2024-S300_096400_L..S16R', '096400_L'), false);
 });
 
 test('a leg takes its live departure and arrival from its own trip\'s stops', () => {
@@ -52,6 +56,15 @@ test('a cancelled trip or a skipped stop says so; a trip the feed doesn\'t carry
   );
   assert.equal(legLiveFrom([entity({ trip: { tripId: 'other' } })], REF, transit(0, 30)), undefined);
   assert.equal(legLiveFrom([entity({ trip: { tripId: 'GO202_26_2' }, stopTimeUpdate: [{ stopId: 'elsewhere', departure: { time: seconds(1) } }] })], REF, transit(0, 30)), undefined);
+});
+
+test('a matched trip missing from the feed falls back to the live trip leaving nearest the planned time', () => {
+  const ref = { ...REF, routeId: '7', tripId: 'not-in-the-feed' };
+  const live = legLiveFrom([entity({
+    trip: { tripId: 'running', routeId: '7' },
+    stopTimeUpdate: [{ stopId: 'board', departure: { time: seconds(2) } }, { stopId: 'alight', arrival: { time: seconds(22) } }],
+  })], ref, transit(0, 20));
+  assert.equal(live?.status, 'tracked');
 });
 
 test("without a trip id, the line's live trip leaving nearest the planned time is the leg's", () => {

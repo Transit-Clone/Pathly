@@ -44,7 +44,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         currentUser.current = nextUser;
         // Backfills accounts created before profile documents existed.
         if (nextUser) {
-          ensureUserProfile(nextUser).catch(() => undefined);
+          if (!nextUser.isAnonymous) ensureUserProfile(nextUser).catch(() => undefined);
           warmBackend(nextUser.uid);
         }
         setUser(nextUser);

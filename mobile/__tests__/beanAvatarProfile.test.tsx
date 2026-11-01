@@ -23,6 +23,7 @@ function openProfile() {
   return render(<Providers><SearchHeader onProfilePress={jest.fn()} onSearchPress={jest.fn()} /><ProfileView onBack={jest.fn()} /></Providers>);
 }
 async function edit(screen: ReturnType<typeof openProfile>) {
+  fireEvent.press(screen.getByTestId('settings-row-account'));
   fireEvent.press(screen.getByTestId('profile-edit-avatar'));
   await waitFor(() => expect(screen.getByTestId('bean-editor')).toBeTruthy());
 }
@@ -48,6 +49,7 @@ describe('custom profile beans', () => {
     const expected = { version: 1, color: 'pink', eyes: 'uneven', mouth: 'tooth', hair: 'curl' };
     await waitFor(() => expect(screen.queryByTestId('bean-editor')).toBeNull());
     expect((await getDoc(doc(db, 'users', 'test-uid'))).data()).toMatchObject({ avatar: expected, email: 'rider@example.com' });
+    fireEvent.press(screen.getByTestId('settings-back'));
     for (const id of ['header-bean-avatar', 'profile-bean-avatar']) {
       expect(screen.getByTestId(id).findByType(SvgXml).props.xml).toBe(beanAvatarSvg(expected));
     }
@@ -67,7 +69,8 @@ describe('custom profile beans', () => {
     fireEvent.press(screen.getByTestId('bean-randomize'));
     cycleTo(screen, 'color', 'Coral');
     fireEvent.press(screen.getByTestId('bean-cancel'));
-    await edit(screen);
+    fireEvent.press(screen.getByTestId('profile-edit-avatar'));
+    await waitFor(() => expect(screen.getByTestId('bean-editor')).toBeTruthy());
     expect(screen.getByTestId('bean-preview').findByType(SvgXml).props.xml).toBe(beanAvatarSvg(DEFAULT_BEAN_AVATAR));
     expect((await getDoc(doc(db, 'users', 'test-uid'))).data()?.avatar).toEqual(DEFAULT_BEAN_AVATAR);
   });
@@ -122,6 +125,7 @@ describe('custom profile beans', () => {
       return () => undefined;
     }) as typeof onSnapshot);
     const screen = openProfile();
+    fireEvent.press(screen.getByTestId('settings-row-account'));
     fireEvent.press(screen.getByTestId('profile-edit-avatar'));
     expect(screen.queryByTestId('bean-editor')).toBeNull();
     fireEvent.press(screen.getByText('Try again'));

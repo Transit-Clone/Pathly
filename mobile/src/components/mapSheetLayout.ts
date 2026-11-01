@@ -6,8 +6,9 @@ const MINIMUM_MAP_HEIGHT = 240;
 
 /**
  * How much map shows above a resting sheet: the home screen's, sized so its sheet fits three
- * transit cards. Every map page uses it, so the sheet rests at the same height everywhere.
+ * transit cards, and never under half the screen, so a short phone still gets a real map. Every
+ * map page uses it, so the sheet rests at the same height everywhere.
  */
 export function mapPageMapHeight(windowHeight: number): number {
-  return Math.max(MINIMUM_MAP_HEIGHT, windowHeight - TRANSIT_TABS_HEIGHT - TRANSIT_CARD_HEIGHT * VISIBLE_TRANSIT_CARDS - VISIBLE_CARD_GUTTER);
+  return Math.max(MINIMUM_MAP_HEIGHT, Math.round(windowHeight / 2), windowHeight - TRANSIT_TABS_HEIGHT - TRANSIT_CARD_HEIGHT * VISIBLE_TRANSIT_CARDS - VISIBLE_CARD_GUTTER);
 }
