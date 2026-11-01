@@ -81,6 +81,37 @@ describe('placesSearch', () => {
     expect(places).toEqual([{ id: 'abc', title: '100 Nicolls Rd', subtitle: 'Stony Brook, NY, USA', kind: 'place', source: 'google' }]);
   });
 
+  it('puts places near the rider first, nearest first, then the rest of the service area', async () => {
+    const store = (id: string, latitude: number) => ({ id, displayName: { text: id }, formattedAddress: `${id}, NY`, location: { latitude, longitude: -73.1 } });
+    fetchMock.mockImplementation(async (url) => ({
+      ok: true,
+      json: async () => (String(url).endsWith(':searchText')
+        ? { places: [store('closest', 40.91), store('farther', 40.95), store('out-of-area', 42)] }
+        : { suggestions: [{ placePrediction: { placeId: 'manhattan', text: { text: 'manhattan' } } }, { placePrediction: { placeId: 'closest', text: { text: 'closest' } } }] }),
+    }) as Response);
+
+    const places = await autocompletePlaces({ input: 'stop and shop', sessionToken: 't', origin: { latitude: 40.9, longitude: -73.1 } });
+
+    expect(places.map((place) => place.id)).toEqual(['closest', 'farther', 'manhattan']);
+    expect(places[0]?.location).toEqual({ latitude: 40.91, longitude: -73.1 });
+    const nearbyCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith(':searchText'));
+    expect(JSON.parse(String(nearbyCall?.[1]?.body)).rankPreference).toBe('DISTANCE');
+  });
+
+  it('still offers suggestions when the nearby search fails', async () => {
+    fetchMock.mockImplementation(async (url) => (String(url).endsWith(':searchText')
+      ? { ok: false, status: 403 } as Response
+      : { ok: true, json: async () => ({ suggestions: [{ placePrediction: { placeId: 'a', text: { text: 'a' } } }] }) } as Response));
+    const places = await autocompletePlaces({ input: 'a', sessionToken: 't', origin: { latitude: 40.9, longitude: -73.1 } });
+    expect(places.map((place) => place.id)).toEqual(['a']);
+  });
+
+  it('skips the nearby search when the rider is outside the service area', async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ suggestions: [] }) } as Response);
+    await autocompletePlaces({ input: 'mcdonalds', sessionToken: 't', origin: { latitude: 34, longitude: -118 } });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('returns an empty list when Google has no suggestions', async () => {
     fetchMock.mockReturnValue(jsonResponse({}));
     await expect(autocompletePlaces({ input: 'zzzz', sessionToken: 't' })).resolves.toEqual([]);

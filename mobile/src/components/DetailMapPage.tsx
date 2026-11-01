@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Animated, Platform, StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent, type ScrollViewInstance, type StyleProp, type ViewStyle } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useThumbSide } from '../hooks/useThumbSide';
 import { useTouchScroll } from '../hooks/useTouchScroll';
 import { useViewportSize } from '../hooks/useViewportSize';
 import { useAppSettings, useThemedStyles } from '../theme/AppSettings';
@@ -80,6 +81,7 @@ export function DetailMapPage({
   const { height } = useViewportSize();
   const insets = useSafeAreaInsets();
   const { reducedMotionActive } = useAppSettings();
+  const thumb = useThumbSide();
   const [scrollY] = useState(() => new Animated.Value(0));
   const scrollRef = useRef<ScrollViewInstance>(null);
   useTouchScroll(scrollRef);
@@ -101,7 +103,7 @@ export function DetailMapPage({
     scrollOffset.current = target;
     scrollRef.current?.scrollTo({ y: target, animated: !reducedMotionActive });
   };
-  const restingTop = mapHeight - ACTION_HEIGHT - ACTION_GAP;
+  const restingTop = mapHeight - ACTION_HEIGHT - ACTION_GAP - thumb.mapBottomClearance;
   // With the controls gone (scrolled away with the map), the action takes their row.
   const stickyTop = Math.min(restingTop, insets.top + 8 + (controlsScrollWithMap ? 0 : controlsHeight + 12));
   const actionTop = actionSticks
@@ -151,7 +153,7 @@ export function DetailMapPage({
               </View>
             ) : null}
             {mapOverlay}
-            {mapButtons ? <View pointerEvents="box-none" style={[styles.mapButtons, { bottom: action ? ACTION_HEIGHT + ACTION_GAP + 10 : 14 }]}>{mapButtons}</View> : null}
+            {mapButtons ? <View pointerEvents="box-none" style={[styles.mapButtons, thumb.anchor(16), { flexDirection: thumb.row, bottom: (action ? ACTION_HEIGHT + ACTION_GAP + 10 : 14) + thumb.mapBottomClearance }]}>{mapButtons}</View> : null}
           </View>
           <SafeAreaView edges={['bottom']} style={[styles.sheet, { minHeight: fitContent ? Math.max(0, height - mapHeight) : height }, stickyMap && styles.sheetOverStickyMap, contentStyle, handle && styles.sheetWithHandle]} testID={contentTestID}>
             {handle ? <SheetHandle {...handle} onPress={toggleExpanded} /> : null}
@@ -169,7 +171,7 @@ export function DetailMapPage({
         )}
 
         {action ? (
-          <Animated.View pointerEvents="box-none" style={[styles.action, { transform: [{ translateY: actionTop }] }]}>
+          <Animated.View pointerEvents="box-none" style={[styles.action, thumb.anchor(18), { transform: [{ translateY: actionTop }] }]}>
             {action}
           </Animated.View>
         ) : null}
@@ -188,7 +190,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   // `sticky` is web-only, which React Native's types don't allow for.
   stickyMap: { position: 'sticky', top: 0, overflow: 'hidden', backgroundColor: colors.blueSoft } as unknown as ViewStyle,
   sheetOverStickyMap: { zIndex: 2 },
-  mapButtons: { position: 'absolute', right: 16, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  mapButtons: { position: 'absolute', alignItems: 'center', gap: 10 },
   scroll: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, zIndex: 3, backgroundColor: 'transparent' },
   sheet: {
     backgroundColor: colors.surface,
@@ -216,5 +218,5 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     elevation: 6,
   },
   controls: { position: 'absolute', top: 0, right: 0, left: 0, zIndex: 10, elevation: 7 },
-  action: { position: 'absolute', top: 0, right: 18, zIndex: 12, elevation: 14 },
+  action: { position: 'absolute', top: 0, zIndex: 12, elevation: 14 },
 });

@@ -658,7 +658,7 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
   const controls = (
     <View pointerEvents="box-none" style={styles.topBar}>
       <MapControlButton accessibilityLabel="Back" icon="back" onPress={onBack} testID="route-back" />
-      {/* Save and alerts; Locate sits on the map, bottom right, like Home and Route Results. */}
+      {/* Save and alerts; Locate sits low on the map, like Home and Route Results. */}
       <View style={styles.topActions}>
         <MapControlButton accessibilityLabel={isFavorite ? 'Remove route from saved' : 'Save route'} icon="favorite" onPress={onToggleFavorite} selected={isFavorite} testID="route-favorite" tint={favoriteTint} variant="save" />
         {alerts ? <MapControlButton accessibilityLabel={alerts.on ? 'Service alerts on' : 'Service alerts off'} icon="bell" onPress={alerts.onOpen} selected={alerts.on} testID="route-alerts" /> : null}
@@ -820,6 +820,7 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
         color={routeColor}
         destination={activeDestination}
         lineName={badgeLabel(route)}
+        liveSource={route.liveSource}
         mode={vehicleIcon}
         onClaim={ride.claim}
         onClose={() => setSelectedVehicleId(null)}

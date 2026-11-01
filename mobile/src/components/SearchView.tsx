@@ -326,6 +326,8 @@ export function SearchView({ initialQuery = '', near, onAddSavedPlace, onCancel,
   const [recentsExpanded, setRecentsExpanded] = useState(false);
   const { endSession, getSessionToken, retry, status, suggestions } = usePlacesSearch(query, near);
   const isSearching = status !== 'idle';
+  // A guest has no favorites and can't add any, so the row of them isn't drawn.
+  const hasSavedPlacesStrip = savedPlaces.length > 0 || onAddSavedPlace != null;
   const lines = useLineSearch(query, near, onSelectLine != null);
   // While typing, recent searches that match come first, as in Google Maps.
   // Saved places that match come before everything else, with their own icon and color.
@@ -486,7 +488,7 @@ export function SearchView({ initialQuery = '', near, onAddSavedPlace, onCancel,
                 endSession();
                 onChooseOnMap();
               }}
-              style={[styles.resultRow, styles.chooseOnMapRow]}
+              style={[styles.resultRow, styles.chooseOnMapRow, hasSavedPlacesStrip && styles.chooseOnMapDivider]}
               testID="search-choose-on-map"
             >
               <View style={styles.resultIcon}>
@@ -681,8 +683,9 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     justifyContent: 'center',
     marginHorizontal: 8,
   },
+  chooseOnMapRow: { minHeight: 56 },
   // Its line runs the full width, like the one under the saved places strip.
-  chooseOnMapRow: { minHeight: 56, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  chooseOnMapDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
   chooseOnMapCopy: { borderBottomWidth: 0 },
   lineBadge: { width: 40, alignItems: 'center' },
   // The badge brings its own color and ring.

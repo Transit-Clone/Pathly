@@ -45,6 +45,7 @@ const VEHICLE_ANCHOR = { x: VEHICLE_SIZE / 2 / VEHICLE_BOX, y: (VEHICLE_BOX - VE
 const RIDER_AVATAR = 24;
 const RIDER_AVATAR_STEP = 13;
 const RIDER_AVATAR_LEFT = 30;
+const RIDER_DISC_INSET = 2;
 
 type RouteMapProps = {
   /** Incremented by the location button; each change centers the map on `userLocation` and follows it until a pan. */
@@ -114,7 +115,10 @@ export function LiveVehicleMarker({ color, mode, now, onPress, vehicle, zIndex }
             <Icon color={color} name={mode === 'bus' ? 'bus' : mode === 'subway' ? 'subway' : mode === 'ferry' ? 'ferry' : 'rail'} size={22} />
           </View>
           {avatars.length > 0 ? avatars.map((avatar, index) => (
-            <BeanAvatar config={avatar} key={index} size={RIDER_AVATAR} style={[styles.riderAvatar, { left: RIDER_AVATAR_LEFT + index * RIDER_AVATAR_STEP }]} testID={`route-vehicle-rider-${vehicle.tripId}-${index}`} />
+            // The first (the rider's own) on top; the white disc keeps each apart from its neighbor.
+            <View key={index} style={[styles.riderAvatar, { left: RIDER_AVATAR_LEFT + index * RIDER_AVATAR_STEP, zIndex: avatars.length - index }]}>
+              <BeanAvatar config={avatar} size={RIDER_AVATAR - RIDER_DISC_INSET * 2} testID={`route-vehicle-rider-${vehicle.tripId}-${index}`} />
+            </View>
           )) : vehicle.updatedAt != null ? (
             <View style={[styles.ageBadge, { backgroundColor: color }]} testID={`route-vehicle-age-badge-${vehicle.tripId}`}>
               <Text style={styles.ageText} testID={`route-vehicle-age-${vehicle.tripId}`}>{formatAge(now - vehicle.updatedAt)}</Text>
@@ -360,6 +364,17 @@ const styles = StyleSheet.create({
   riderAvatar: {
     position: 'absolute',
     top: 0,
+    width: RIDER_AVATAR,
+    height: RIDER_AVATAR,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: RIDER_AVATAR / 2,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#16324F',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+    elevation: 3,
   },
   ageBadge: {
     position: 'absolute',

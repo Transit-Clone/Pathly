@@ -148,6 +148,7 @@ export function nyInstant(dayMs: number, minutes: number): number {
 
 const ONE_MINUTE_MS = 60_000;
 const ONE_DAY_MS = 24 * 60 * ONE_MINUTE_MS;
+const JUST_PASSED_MS = 5 * ONE_MINUTE_MS;
 
 /** The next time New York's clock reads `minutes` past midnight: today if still ahead, else tomorrow. */
 export function nextOccurrence(minutes: number, now: Date = new Date()): { at: string; tomorrow: boolean } {
@@ -174,13 +175,14 @@ export function addDays(key: string, days: number): string {
 }
 
 /**
- * When a timed trip choice happens: its chosen day at that clock time while that's still ahead,
- * otherwise (no day chosen, or it has passed) the clock time's next occurrence. `dayOffset`
- * counts New York days from today.
+ * When a timed trip choice happens: its chosen day at that clock time unless that has clearly
+ * passed, otherwise (no day chosen, or it has) the clock time's next occurrence. A time that has
+ * only just gone stays put, so the current time, or a trip left open for a few minutes, isn't
+ * moved to tomorrow. `dayOffset` counts New York days from today.
  */
 export function tripTimeAt(time: { minutes: number; date?: string }, now: Date = new Date()): { at: string; dayOffset: number } {
   const chosen = time.date ? nyInstant(dateKeyMs(time.date), time.minutes) : Number.NaN;
-  const at = chosen >= now.getTime() + ONE_MINUTE_MS ? new Date(chosen).toISOString() : nextOccurrence(time.minutes, now).at;
+  const at = chosen >= now.getTime() - JUST_PASSED_MS ? new Date(chosen).toISOString() : nextOccurrence(time.minutes, now).at;
   const dayOffset = Math.round((dateKeyMs(nyDateKey(Date.parse(at))) - dateKeyMs(nyDateKey(now.getTime()))) / ONE_DAY_MS);
   return { at, dayOffset };
 }

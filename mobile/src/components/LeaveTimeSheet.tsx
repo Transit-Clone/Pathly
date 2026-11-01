@@ -36,10 +36,10 @@ const ARRIVE_AHEAD_MINUTES = 60;
 const MAX_DAYS_AHEAD = 60;
 const newYorkClock = new Intl.DateTimeFormat('en-US', { timeZone: TRIP_TIME_ZONE, hourCycle: 'h23', hour: '2-digit', minute: '2-digit' });
 
-/** Minutes past midnight in New York (the trip time's clock) at `ms`, rounded up to 5 minutes. */
+/** Minutes past midnight in New York (the trip time's clock) at `ms`. */
 export function newYorkMinutesAt(ms: number): number {
   const parts = Object.fromEntries(newYorkClock.formatToParts(new Date(ms)).map((part) => [part.type, part.value]));
-  return (Math.ceil((Number(parts.hour) * 60 + Number(parts.minute)) / 5) * 5) % MINUTES_PER_DAY;
+  return Number(parts.hour) * 60 + Number(parts.minute);
 }
 
 type WheelTime = { hourIndex: number; minuteIndex: number; periodIndex: number };
@@ -96,6 +96,11 @@ export function LeaveTimeSheet({ onCancel, onConfirm, value, nowMs }: LeaveTimeS
     setWheel((current) => ({ ...current, ...patch }));
   };
 
+  const selectDay = (key: string) => {
+    setDate(key);
+    // Back to Today with a time already gone: the day was asked for, so the time gives way.
+    if (dayOf(key) !== key) setWheel(toWheel(startMinutes));
+  };
 
   return (
     <Modal animationType="slide" onRequestClose={onCancel} statusBarTranslucent={true} transparent={true} visible={true}>
@@ -127,7 +132,7 @@ export function LeaveTimeSheet({ onCancel, onConfirm, value, nowMs }: LeaveTimeS
         <View style={styles.wheels}>
           {/* The day on the left: a time already gone today shows as tomorrow. */}
           <View style={styles.dayWheel}>
-            <WheelColumn accessibilityLabel="Day" testID="leave-day" items={dayItems} onSelect={(index) => setDate(days[index]!)} selectedIndex={Math.max(0, days.indexOf(date))} />
+            <WheelColumn accessibilityLabel="Day" testID="leave-day" items={dayItems} onSelect={(index) => selectDay(days[index]!)} selectedIndex={Math.max(0, days.indexOf(date))} />
           </View>
           <WheelColumn accessibilityLabel="Hour" testID="leave-hour" typeable={true} items={hourItems} onSelect={(hourIndex) => updateWheel({ hourIndex })} selectedIndex={wheel.hourIndex} />
           <Text style={styles.colon}>:</Text>

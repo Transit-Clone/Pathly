@@ -146,6 +146,7 @@ export function AdminToolsView({ onBack, onPickMockLocation }: AdminToolsViewPro
               />
             ))}
             <SettingRow detail="Any place from search" label="Search a place" onPress={onPickMockLocation} testID="admin-mock-location-search" />
+            <SettingRow detail={debug.rideAlong ? 'Following a live vehicle, as a rider other riders can see. Keep its line open to share the ride.' : 'To test ride sharing: open a line, tap a live vehicle, then Ride along.'} label="Ride Along" testID="admin-ride-along" />
             {debug.mockLocation ? <SettingRow label="Turn off mock location" onPress={() => debug.setMockLocation(undefined)} testID="admin-mock-location-off" /> : null}
           </Card>
 

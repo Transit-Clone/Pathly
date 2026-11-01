@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { SearchPlace } from '../data/placesSearch';
 import { addressAt, type PinAddress } from '../data/reverseGeocode';
 import type { Coordinates } from '../hooks/useCurrentLocation';
+import { useThumbSide } from '../hooks/useThumbSide';
 import { ThemedStatusBar, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { typography } from '../theme/typography';
@@ -47,6 +48,7 @@ type MapPickerViewProps = {
  */
 export function MapPickerView({ location, onCancel, onPick }: MapPickerViewProps) {
   const styles = useThemedStyles(createStyles);
+  const thumb = useThumbSide();
   const [center, setCenter] = useState<Coordinates>(location);
   const [recenterRequest, setRecenterRequest] = useState(0);
   const [bottomInset, setBottomInset] = useState(180);
@@ -104,7 +106,7 @@ export function MapPickerView({ location, onCancel, onPick }: MapPickerViewProps
         <SafeAreaView edges={['top']} pointerEvents="box-none" style={styles.topBar}>
           <MapControlButton accessibilityLabel="Back" icon="back" onPress={onCancel} testID="map-picker-back" />
         </SafeAreaView>
-        <View style={[styles.locateButton, { bottom: bottomInset + 16 }]}>
+        <View style={[styles.locateButton, thumb.anchor(16), { bottom: bottomInset + 16 + thumb.mapBottomClearance }]}>
           <CurrentLocationButton onPress={() => setRecenterRequest((count) => count + 1)} selected={false} testID="map-picker-locate" />
         </View>
         <SafeAreaView edges={['bottom']} pointerEvents="box-none" onLayout={(event) => setBottomInset(event.nativeEvent.layout.height)} style={styles.bottomBar}>
@@ -147,7 +149,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     paddingHorizontal: 14,
     paddingTop: 8,
   },
-  locateButton: { position: 'absolute', right: 16 },
+  locateButton: { position: 'absolute' },
   bottomBar: { position: 'absolute', left: 0, right: 0, bottom: 0 },
   card: {
     gap: 12,

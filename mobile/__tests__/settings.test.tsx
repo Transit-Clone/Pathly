@@ -141,7 +141,7 @@ describe('Settings', () => {
       act(() => result.current.setAppearance('dark'));
       expect(result.current.colors).toBe(highContrastDarkColors);
       act(() => result.current.setReducedMotion(true));
-      await waitFor(async () => expect(JSON.parse((await AsyncStorage.getItem(DISPLAY_SETTINGS_KEY))!)).toEqual({ appearance: 'dark', reducedMotion: true, pathlingMotion: true, easyMode: false, textSize: 'default', highContrast: true, mapDotColor: 'default', destinationPin: { color: 'red' } }));
+      await waitFor(async () => expect(JSON.parse((await AsyncStorage.getItem(DISPLAY_SETTINGS_KEY))!)).toEqual({ appearance: 'dark', reducedMotion: true, pathlingMotion: true, easyMode: false, textSize: 'default', highContrast: true, mapDotColor: 'default', destinationPin: { color: 'red' }, leftHanded: false }));
 
       const reloaded = renderHook(() => useAppSettings(), { wrapper: ({ children }) => <AppSettingsProvider>{children}</AppSettingsProvider> });
       await waitFor(() => expect(reloaded.result.current.colors).toBe(highContrastDarkColors));

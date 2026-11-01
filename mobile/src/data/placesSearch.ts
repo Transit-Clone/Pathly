@@ -133,12 +133,68 @@ type AutocompleteOptions = {
   origin?: { latitude: number; longitude: number } | null;
 };
 
+const NEARBY_FIELD_MASK = 'places.id,places.displayName,places.formattedAddress,places.location,places.types';
+const NEARBY_RESULTS = 5;
+const NEARBY_RADIUS_METERS = 50_000;
+
+const inServiceArea = ({ latitude, longitude }: { latitude: number; longitude: number }) => (
+  latitude >= SERVICE_AREA_BOUNDS.south && latitude <= SERVICE_AREA_BOUNDS.north
+  && longitude >= SERVICE_AREA_BOUNDS.west && longitude <= SERVICE_AREA_BOUNDS.east
+);
+
+type TextSearchResponse = {
+  places?: (PlaceDetailsResponse & { types?: string[] })[];
+};
+
+/** The closest places matching `input`. Only Text Search can rank by distance; Autocomplete can't. */
+async function searchNearestPlaces(input: string, origin: { latitude: number; longitude: number }, signal?: AbortSignal): Promise<SearchPlace[]> {
+  const response = await fetch(`${PLACES_BASE_URL}/places:searchText`, {
+    method: 'POST',
+    headers: headers(getPlacesApiKey(), NEARBY_FIELD_MASK),
+    body: JSON.stringify({
+      textQuery: input,
+      pageSize: NEARBY_RESULTS,
+      rankPreference: 'DISTANCE',
+      locationBias: { circle: { center: { latitude: origin.latitude, longitude: origin.longitude }, radius: NEARBY_RADIUS_METERS } },
+    }),
+    signal,
+  });
+  if (!response.ok) throw new PlacesRequestError(response.status);
+
+  const data = (await response.json()) as TextSearchResponse;
+  return (data.places ?? []).flatMap((place) => {
+    if (!place.location || !inServiceArea(place.location)) return [];
+    return [{
+      id: place.id,
+      title: place.displayName?.text ?? place.formattedAddress ?? '',
+      subtitle: place.formattedAddress ?? '',
+      location: place.location,
+      kind: placeKindForTypes(place.types),
+      source: 'google' as const,
+    }];
+  });
+}
+
 /**
  * Place suggestions for `input`, restricted to the Pathly service area (NYC, Nassau, Suffolk):
  * Pathly can't route outside its network, so out-of-area places are never offered.
  * Widening SERVICE_AREA_BOUNDS widens search along with the map.
+ *
+ * Autocomplete ranks by how well a place matches, not how close it is, so with the rider's location
+ * the closest matches come first, then the best matches in the rest of the area. A failed nearby
+ * search just leaves those out.
  */
-export async function autocompletePlaces({ input, sessionToken, signal, origin }: AutocompleteOptions): Promise<SearchPlace[]> {
+export async function autocompletePlaces(options: AutocompleteOptions): Promise<SearchPlace[]> {
+  const { input, origin, signal } = options;
+  const [closest, anywhere] = await Promise.all([
+    origin && inServiceArea(origin) ? searchNearestPlaces(input, origin, signal).catch(() => []) : [],
+    requestSuggestions(options),
+  ]);
+  const closestIds = new Set(closest.map((place) => place.id));
+  return [...closest, ...anywhere.filter((place) => !closestIds.has(place.id))];
+}
+
+async function requestSuggestions({ input, sessionToken, signal, origin }: AutocompleteOptions): Promise<SearchPlace[]> {
   const response = await fetch(`${PLACES_BASE_URL}/places:autocomplete`, {
     method: 'POST',
     headers: headers(getPlacesApiKey()),

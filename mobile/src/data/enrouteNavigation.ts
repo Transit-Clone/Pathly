@@ -101,6 +101,8 @@ export type NavigationFix = {
   accuracyMeters: number | null;
   capturedAt: number;
   source: 'real' | 'mock';
+  /** A mock following a vehicle's feed position (admin Ride Along), which ride sharing accepts. */
+  rideAlong?: boolean;
 };
 
 export type NavigationEvidence = {

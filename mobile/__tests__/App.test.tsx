@@ -513,8 +513,8 @@ describe('Pathly prototype navigation', () => {
 
     expect(screen.getByLabelText('Trip origin, Stony Brook University Main Campus')).toBeTruthy();
     expect(screen.getByLabelText('Trip destination, Times Square')).toBeTruthy();
-    // Depart at, from the current time (rounded up to 5 minutes).
-    expect(textOf(screen.getByTestId('leave-time-label'))).toMatch(/^Leave \d{1,2}:\d[05] [AP]M( tomorrow)?$/);
+    // Depart at, from the current time.
+    expect(textOf(screen.getByTestId('leave-time-label'))).toMatch(/^Leave \d{1,2}:\d{2} [AP]M( tomorrow)?$/);
     expect(await screen.findByText('Updated just now')).toBeTruthy();
     expect(resultsOption(screen, 'preference-cheapest').props.accessibilityState).toEqual({ selected: true });
     // Both real itineraries, each with its line badges, and no fare Google or the app could know.
@@ -579,7 +579,7 @@ describe('Pathly prototype navigation', () => {
     fireEvent.press(screen.getByTestId('leave-time-done'));
     // An hour from now by default.
     const arriveLabel = textOf(screen.getByTestId('leave-time-label'));
-    expect(arriveLabel).toMatch(/^Arrive by \d{1,2}:\d[05] [AP]M( tomorrow)?$/);
+    expect(arriveLabel).toMatch(/^Arrive by \d{1,2}:\d{2} [AP]M( tomorrow)?$/);
     await waitFor(() => expect(planTripMock()).toHaveBeenLastCalledWith(expect.objectContaining({ time: { mode: 'arrive', at: expect.any(String) } })));
 
     const calls = planTripMock().mock.calls.length;
@@ -946,7 +946,7 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByLabelText('Trip destination, Stony Brook University Main Campus')).toBeTruthy();
     expect(screen.getByLabelText('Trip origin, Current location')).toBeTruthy();
     // Leave time and the chosen preference survived the round trip.
-    expect(textOf(screen.getByTestId('leave-time-label'))).toMatch(/^Leave \d{1,2}:\d[05] [AP]M( tomorrow)?$/);
+    expect(textOf(screen.getByTestId('leave-time-label'))).toMatch(/^Leave \d{1,2}:\d{2} [AP]M( tomorrow)?$/);
     expect(resultsOption(screen, 'preference-cheapest').props.accessibilityState).toEqual(expect.objectContaining({ selected: true }));
 
     // The origin can go back to the rider's location; it starts with an empty query.

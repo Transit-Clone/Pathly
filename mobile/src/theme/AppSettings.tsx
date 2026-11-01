@@ -23,7 +23,7 @@ export const DISPLAY_SETTINGS_KEY = 'pathly.display.v1';
 /** The home map's explore dot: the theme's own purple, or one of the saved-place colors. */
 export type MapDotColor = 'default' | SavedPlaceColor;
 
-type DisplaySettings = { appearance: Appearance; reducedMotion: boolean; pathlingMotion: boolean; easyMode: boolean; textSize: TextSize; highContrast: boolean; mapDotColor: MapDotColor; destinationPin: DestinationPinStyle };
+type DisplaySettings = { appearance: Appearance; reducedMotion: boolean; pathlingMotion: boolean; easyMode: boolean; textSize: TextSize; highContrast: boolean; mapDotColor: MapDotColor; destinationPin: DestinationPinStyle; leftHanded: boolean };
 
 type AppSettingsValue = {
   appearance: Appearance;
@@ -32,6 +32,9 @@ type AppSettingsValue = {
   destinationPin: DestinationPinStyle;
   highContrast: boolean;
   isDark: boolean;
+  /** Thumb-pressed controls sit on the left (hooks/useThumbSide.ts). */
+  leftHanded: boolean;
+  setLeftHanded: (next: boolean) => void;
   mapDotColor: MapDotColor;
   /** True when either the app toggle or the device asks for reduced motion. */
   reducedMotionActive: boolean;
@@ -78,6 +81,7 @@ function parseDisplaySettings(text: string | null): Partial<DisplaySettings> {
     if (typeof saved.easyMode === 'boolean') settings.easyMode = saved.easyMode;
     if (saved.textSize === 'compact' || saved.textSize === 'default' || saved.textSize === 'large') settings.textSize = saved.textSize;
     if (typeof saved.highContrast === 'boolean') settings.highContrast = saved.highContrast;
+    if (typeof saved.leftHanded === 'boolean') settings.leftHanded = saved.leftHanded;
     if (saved.destinationPin !== undefined) settings.destinationPin = normalizeDestinationPin(saved.destinationPin);
     if (saved.mapDotColor === 'default' || (typeof saved.mapDotColor === 'string' && Object.hasOwn(SAVED_PLACE_COLOR_HEX, saved.mapDotColor))) settings.mapDotColor = saved.mapDotColor as MapDotColor;
     return settings;
@@ -97,7 +101,7 @@ type AppSettingsProviderProps = {
 /** App preferences every screen reads (appearance, motion, text size, contrast), saved on the device. */
 export function AppSettingsProvider({ children, initialAppearance = 'light', initialReducedMotion = false, initialTextSize = 'default', initialHighContrast = false }: AppSettingsProviderProps) {
   const systemScheme = useColorScheme();
-  const [settings, setSettings] = useState<DisplaySettings>({ appearance: initialAppearance, reducedMotion: initialReducedMotion, pathlingMotion: true, easyMode: false, textSize: initialTextSize, highContrast: initialHighContrast, mapDotColor: 'default', destinationPin: { ...DEFAULT_DESTINATION_PIN } });
+  const [settings, setSettings] = useState<DisplaySettings>({ appearance: initialAppearance, reducedMotion: initialReducedMotion, pathlingMotion: true, easyMode: false, textSize: initialTextSize, highContrast: initialHighContrast, mapDotColor: 'default', destinationPin: { ...DEFAULT_DESTINATION_PIN }, leftHanded: false });
   const [deviceReducedMotion, setDeviceReducedMotion] = useState(false);
   // A choice made before the saved settings finish loading wins over them.
   const changedBeforeLoad = useRef(false);
@@ -139,7 +143,7 @@ export function AppSettingsProvider({ children, initialAppearance = 'light', ini
   }, []);
 
   const value = useMemo<AppSettingsValue>(() => {
-    const { appearance, destinationPin, easyMode, highContrast, mapDotColor, pathlingMotion, reducedMotion, textSize } = settings;
+    const { appearance, destinationPin, easyMode, highContrast, leftHanded, mapDotColor, pathlingMotion, reducedMotion, textSize } = settings;
     const scheme = resolveScheme(appearance, systemScheme);
     const palette = paletteFor(scheme, highContrast);
     return {
@@ -148,6 +152,8 @@ export function AppSettingsProvider({ children, initialAppearance = 'light', ini
       destinationPin,
       highContrast,
       isDark: scheme === 'dark',
+      leftHanded,
+      setLeftHanded: (next) => update({ leftHanded: next }),
       mapDotColor,
       pathlingMotion,
       setPathlingMotion: (next) => update({ pathlingMotion: next }),
@@ -185,6 +191,8 @@ const fallback: AppSettingsValue = {
   destinationPin: DEFAULT_DESTINATION_PIN,
   highContrast: false,
   isDark: false,
+  leftHanded: false,
+  setLeftHanded: () => undefined,
   mapDotColor: 'default',
   pathlingMotion: true,
   setPathlingMotion: () => undefined,

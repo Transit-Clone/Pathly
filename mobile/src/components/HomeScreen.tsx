@@ -44,6 +44,7 @@ import { useNewAccountPlacesPrompt } from '../hooks/useNewAccountPlacesPrompt';
 import { discardAccount } from '../data/accountData';
 import { useTripRide } from '../hooks/useTripRide';
 import { useNow } from '../hooks/useNow';
+import { useThumbSide } from '../hooks/useThumbSide';
 import { useViewportSize } from '../hooks/useViewportSize';
 import { ThemedStatusBar, useThemedStyles } from '../theme/AppSettings';
 import { ScreenTransition } from '../theme/motion';
@@ -497,6 +498,7 @@ export function HomeScreen() {
     );
   }, []);
 
+  const thumb = useThumbSide();
   const mapHeight = mapPageMapHeight(height);
   // The transit menu scrolls over the map in one page scroll; the location button rides up with it.
   const [homeScrollY] = useState(() => new Animated.Value(0));
@@ -508,7 +510,7 @@ export function HomeScreen() {
   // Fades as the sheet comes up, then off the screen, so it can't take a tap while hidden.
   const layersButtonTranslateX = homeScrollY.interpolate({
     inputRange: [47, 48],
-    outputRange: [0, 200],
+    outputRange: [0, thumb.towardEdge(200)],
     extrapolate: 'clamp',
   });
 
@@ -996,7 +998,7 @@ export function HomeScreen() {
 
   // Inside the sheet's scroller, so the browser moves them with the sheet, as on Route View.
   const homeMapButtons = (
-    <View pointerEvents="box-none" style={styles.locationButton}>
+    <View pointerEvents="box-none" style={[styles.locationButton, thumb.anchor(16), { bottom: 14 + thumb.mapBottomClearance }]}>
           {mapOrientation.rotated ? (
             <PressableScale
               accessibilityHint="Turns the map back to north-up"
@@ -1113,7 +1115,7 @@ export function HomeScreen() {
               </View>
             ) : null}
             {/* An occasional ask (feedback or a tip) beside the line layers button, under the profile button. */}
-            <View pointerEvents="box-none" style={styles.underSearch}>
+            <View pointerEvents="box-none" style={[styles.underSearch, { flexDirection: thumb.row }]}>
               {nudge.kind ? <NudgeBanner kind={nudge.kind} onAct={nudge.act} onDismiss={nudge.dismiss} style={styles.nudge} /> : <View pointerEvents="none" style={styles.nudge} />}
               <Animated.View style={{ opacity: layersButtonOpacity, transform: [{ translateX: layersButtonTranslateX }] }} testID="line-layers-wrap">
                 <MapControlButton
@@ -1121,7 +1123,7 @@ export function HomeScreen() {
                   icon="modes"
                   onPress={() => setLayersOpen(true)}
                   selected={lineChoice.groups.length > 0 || lineChoice.routes.length > 0}
-                  style={styles.layersButton}
+                  style={thumb.edgeMargin(4)}
                   testID="line-layers-button"
                 />
               </Animated.View>
@@ -1189,13 +1191,10 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   header: { paddingTop: 10, paddingHorizontal: 16 },
   resumeCardWrap: { marginTop: 8 },
   // Centered under the 54 px profile button.
-  underSearch: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 },
+  underSearch: { alignItems: 'center', gap: 10, marginTop: 10 },
   nudge: { flex: 1 },
-  layersButton: { marginRight: 4 },
   locationButton: {
     position: 'absolute',
-    right: 16,
-    bottom: 14,
     zIndex: 4,
     elevation: 4,
     alignItems: 'center',

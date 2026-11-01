@@ -337,7 +337,7 @@ const textSizeOptions: readonly { label: string; value: TextSize }[] = [
 
 export function AccessibilitySettings({ onFeedback }: PageProps) {
   const { profile } = useStyles();
-  const { easyMode, highContrast, pathlingMotion, reducedMotion, setHighContrast, setEasyMode, setPathlingMotion, setReducedMotion, setTextSize, textSize } = useAppSettings();
+  const { easyMode, highContrast, leftHanded, pathlingMotion, reducedMotion, setHighContrast, setEasyMode, setLeftHanded, setPathlingMotion, setReducedMotion, setTextSize, textSize } = useAppSettings();
   const { preferences, updatePreferences } = useUserPreferences();
   return (
     <>
@@ -345,6 +345,10 @@ export function AccessibilitySettings({ onFeedback }: PageProps) {
         <ToggleRow label="Easy mode" onChange={(value) => { setEasyMode(value); onFeedback(value ? 'Easy mode on' : 'Easy mode off'); }} testID="toggle-easy-mode" value={easyMode} />
       </Card>
       <Text style={profile.note} testID="easy-mode-note">Bigger text, Pathlings that stay still, and fewer buttons when planning a trip and riding.</Text>
+      <Card>
+        <ToggleRow label="Left-handed mode" onChange={(value) => { setLeftHanded(value); onFeedback(value ? 'Left-handed mode on' : 'Left-handed mode off'); }} testID="toggle-left-handed" value={leftHanded} />
+      </Card>
+      <Text style={profile.note} testID="left-handed-note">Moves the map buttons and GO and END to the left, within reach of your left thumb when your other hand is on the railing.</Text>
       <Card>
         <ChoiceRow
           label="Text size"

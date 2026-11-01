@@ -11,7 +11,7 @@ const NOW = Date.parse('2026-10-26T20:12:00Z');
 
 describe('LeaveTimeSheet', () => {
   it('reads New York time, rounded up to the wheel\'s 5 minutes', () => {
-    expect(newYorkMinutesAt(NOW)).toBe(16 * 60 + 15);
+    expect(newYorkMinutesAt(NOW)).toBe(16 * 60 + 12);
     expect(newYorkMinutesAt(Date.parse('2026-10-26T20:10:00Z'))).toBe(16 * 60 + 10);
   });
 
@@ -22,9 +22,9 @@ describe('LeaveTimeSheet', () => {
         <LeaveTimeSheet nowMs={NOW} onCancel={jest.fn()} onConfirm={onConfirm} value={{ mode: 'now' }} />
       </AppSettingsProvider>,
     );
-    expect(screen.getByTestId('leave-time-done').props.accessibilityHint).toBe('Plans for Leave 4:15 PM');
+    expect(screen.getByTestId('leave-time-done').props.accessibilityHint).toBe('Plans for Leave 4:12 PM');
     fireEvent.press(screen.getByTestId('leave-mode-arrive'));
-    expect(screen.getByTestId('leave-time-done').props.accessibilityHint).toBe('Plans for Arrive by 5:15 PM');
+    expect(screen.getByTestId('leave-time-done').props.accessibilityHint).toBe('Plans for Arrive by 5:12 PM');
     expect(screen.queryByTestId('leave-mode-now')).toBeNull();
     fireEvent.press(screen.getByTestId('leave-now'));
     expect(onConfirm).toHaveBeenCalledWith({ mode: 'now' });
@@ -39,7 +39,7 @@ describe('LeaveTimeSheet', () => {
   it('types into a wheel by tapping its picked value', () => {
     const onConfirm = jest.fn();
     const screen = renderSheet(onConfirm);
-    fireEvent.press(screen.getByTestId('leave-minute-15'));
+    fireEvent.press(screen.getByTestId('leave-minute-12'));
     fireEvent.changeText(screen.getByTestId('leave-minute-input'), '47');
     fireEvent.press(screen.getByTestId('leave-hour-4'));
     fireEvent.changeText(screen.getByTestId('leave-hour-input'), '6');
@@ -63,17 +63,34 @@ describe('LeaveTimeSheet', () => {
     expect(within(screen.getByTestId('leave-day-2026-10-26')).getByText('Today')).toBeTruthy();
     expect(screen.queryByTestId('leave-day-2026-10-25')).toBeNull();
     fireEvent.press(screen.getByTestId('leave-day-2026-10-27'));
-    expect(screen.getByTestId('leave-time-done').props.accessibilityHint).toBe('Plans for Leave 4:15 PM tomorrow');
+    expect(screen.getByTestId('leave-time-done').props.accessibilityHint).toBe('Plans for Leave 4:12 PM tomorrow');
     fireEvent.press(screen.getByTestId('leave-day-2026-10-30'));
-    expect(screen.getByTestId('leave-time-done').props.accessibilityHint).toBe('Plans for Leave 4:15 PM Fri, Oct 30');
+    expect(screen.getByTestId('leave-time-done').props.accessibilityHint).toBe('Plans for Leave 4:12 PM Fri, Oct 30');
     fireEvent.press(screen.getByTestId('leave-time-done'));
-    expect(onConfirm).toHaveBeenCalledWith({ mode: 'depart', minutes: 16 * 60 + 15, date: '2026-10-30' });
+    expect(onConfirm).toHaveBeenCalledWith({ mode: 'depart', minutes: 16 * 60 + 12, date: '2026-10-30' });
   });
 
   it('shows a time already gone today as tomorrow', () => {
     const screen = renderSheet();
     fireEvent.press(screen.getByTestId('leave-hour-3'));
     expect(screen.getByTestId('leave-day-2026-10-27').props.accessibilityState).toEqual(expect.objectContaining({ selected: true }));
+  });
+
+  it.each(['2026-10-26T20:14:30Z', '2026-10-26T20:15:30Z'])('opens on today at %s, in the middle of the current minute', (at) => {
+    const screen = render(
+      <AppSettingsProvider>
+        <LeaveTimeSheet nowMs={Date.parse(at)} onCancel={jest.fn()} onConfirm={jest.fn()} value={{ mode: 'now' }} />
+      </AppSettingsProvider>,
+    );
+    expect(screen.getByTestId('leave-day-2026-10-26').props.accessibilityState).toEqual(expect.objectContaining({ selected: true }));
+  });
+
+  it('goes back to today from a time already gone, at the current time', () => {
+    const screen = renderSheet();
+    fireEvent.press(screen.getByTestId('leave-hour-3'));
+    fireEvent.press(screen.getByTestId('leave-day-2026-10-26'));
+    expect(screen.getByTestId('leave-day-2026-10-26').props.accessibilityState).toEqual(expect.objectContaining({ selected: true }));
+    expect(screen.getByTestId('leave-time-done').props.accessibilityHint).toBe('Plans for Leave 4:12 PM');
   });
 
   it('closes with the X without changing anything', () => {
@@ -95,6 +112,11 @@ describe('trip time days', () => {
     expect(tripTimeAt({ minutes: 20 * 60 }, now).dayOffset).toBe(0);
     expect(tripDayLabel({ minutes: 20 * 60, date: '2026-10-26' }, now)).toBe('');
     expect(tripDayLabel({ minutes: 9 * 60, date: '2026-11-02' }, now)).toBe('Mon, Nov 2');
+  });
+
+  it('keeps a chosen time that has only just passed on its day', () => {
+    expect(tripTimeAt({ minutes: 16 * 60 + 10, date: '2026-10-26' }, now).dayOffset).toBe(0);
+    expect(tripTimeAt({ minutes: 16 * 60, date: '2026-10-26' }, now).dayOffset).toBe(1);
   });
 });
 

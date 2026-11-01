@@ -88,6 +88,7 @@ export function useCurrentLocation(navigating = false) {
   const mockLatitude = mockLocation?.latitude;
   const mockLongitude = mockLocation?.longitude;
   const mockCapturedAt = mockLocation?.capturedAt;
+  const mockRideAlong = mockLocation?.rideAlong === true;
   const mockFix = useMemo<NavigationFix | null>(
     () => (mockLatitude !== undefined && mockLongitude !== undefined && mockCapturedAt !== undefined
       ? {
@@ -95,10 +96,11 @@ export function useCurrentLocation(navigating = false) {
         accuracyMeters: 0,
         capturedAt: mockCapturedAt,
         source: 'mock',
+        ...(mockRideAlong ? { rideAlong: true } : {}),
       }
       : null),
     // Alighting and boarding can be distinct checkpoints at one platform coordinate.
-    [mockCapturedAt, mockLatitude, mockLongitude],
+    [mockCapturedAt, mockLatitude, mockLongitude, mockRideAlong],
   );
 
   const acceptRealFix = useCallback((nextFix: NavigationFix) => {

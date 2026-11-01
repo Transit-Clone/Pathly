@@ -27,10 +27,12 @@
         height: 100%;
         flex: 1;
       }
-      /* A scroll container that reaches its end stops there instead of dragging the screen. */
-      #root,
-      #root * {
-        overscroll-behavior: contain;
+      /* Reaching the end of a list doesn't drag the screen. Only here: on every element, it also
+         stops wheel and touch scrolls over any overflow: hidden child from reaching its list. */
+      html,
+      body,
+      #root {
+        overscroll-behavior: none;
       }
       /* iOS Safari zooms the whole page into any focused field under 16px and doesn't zoom back. */
       @media (hover: none) and (pointer: coarse) {

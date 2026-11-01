@@ -47,6 +47,7 @@ const VEHICLE_BOX = 54;
 const RIDER_AVATAR = 24;
 const RIDER_AVATAR_STEP = 13;
 const RIDER_AVATAR_LEFT = 30;
+const RIDER_DISC_INSET = 2;
 const vehicleBoxWidth = (riders: number) => (riders > 0 ? RIDER_AVATAR_LEFT + RIDER_AVATAR + (riders - 1) * RIDER_AVATAR_STEP : VEHICLE_BOX);
 
 /**
@@ -65,7 +66,11 @@ function vehicleIconUrl(color: string, age: string | null, avatars: readonly Bea
     ? `<circle cx="${VEHICLE_BOX - 12}" cy="12" r="11" fill="${color}"/>`
     : '';
   // An image can't load anything else, but can hold another image as a data URL.
-  const riders = avatars.map((avatar, index) => `<image x="${RIDER_AVATAR_LEFT + index * RIDER_AVATAR_STEP}" y="0" width="${RIDER_AVATAR}" height="${RIDER_AVATAR}" href="data:image/svg+xml;charset=UTF-8,${encodeURIComponent(beanAvatarSvg(avatar))}"/>`).join('');
+  // Each on a white disc that keeps it apart from the map and its neighbor; the first (the rider's own) on top.
+  const riders = avatars.map((avatar, index) => {
+    const left = RIDER_AVATAR_LEFT + index * RIDER_AVATAR_STEP;
+    return `<circle cx="${left + RIDER_AVATAR / 2}" cy="${RIDER_AVATAR / 2}" r="${RIDER_AVATAR / 2}" fill="#FFFFFF" filter="url(#s)"/><image x="${left + RIDER_DISC_INSET}" y="${RIDER_DISC_INSET}" width="${RIDER_AVATAR - RIDER_DISC_INSET * 2}" height="${RIDER_AVATAR - RIDER_DISC_INSET * 2}" href="data:image/svg+xml;charset=UTF-8,${encodeURIComponent(beanAvatarSvg(avatar))}"/>`;
+  }).reverse().join('');
   const width = vehicleBoxWidth(avatars.length);
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${VEHICLE_BOX}" viewBox="0 0 ${width} ${VEHICLE_BOX}">
 <defs><filter id="s" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#16324F" flood-opacity="0.45"/></filter></defs>

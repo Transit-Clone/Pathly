@@ -9,6 +9,7 @@ import type { RideFix } from '../data/rideDetection';
 import { feedVehicles } from '../data/rideTracking';
 import type { LiveSource } from '../data/transit';
 import type { RouteLiveVehicle } from '../data/transitLive';
+import { useDebug } from '../debug/DebugContext';
 import { useNow } from '../hooks/useNow';
 import { useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
@@ -38,6 +39,8 @@ type VehicleSheetProps = {
   color: string;
   destination: string;
   lineName: string;
+  /** The line's feed, for an admin to Ride Along with this vehicle. */
+  liveSource?: LiveSource;
   mode: TransitMode;
   onClaim: (tripId: string) => void;
   onClose: () => void;
@@ -51,7 +54,7 @@ type VehicleSheetProps = {
 };
 
 /** A tapped vehicle, from the bottom: where it's going, how we know where it is, and who's on it. */
-export function VehicleSheet({ color, destination, lineName, mode, onClaim, onClose, onBoardTripId = null, onDismiss, reportFix = null, reportSource, riderAt, ridingTripId, sharingEnabled, stops, vehicle }: VehicleSheetProps) {
+export function VehicleSheet({ color, destination, lineName, liveSource, mode, onClaim, onClose, onBoardTripId = null, onDismiss, reportFix = null, reportSource, riderAt, ridingTripId, sharingEnabled, stops, vehicle }: VehicleSheetProps) {
   const styles = useThemedStyles(createStyles);
   const now = useNow(1000);
   const riding = vehicle != null && vehicle.tripId === ridingTripId;
@@ -62,6 +65,8 @@ export function VehicleSheet({ color, destination, lineName, mode, onClaim, onCl
     : null;
   const age = vehicle?.updatedAt != null ? `${formatAge(now - vehicle.updatedAt)} ago` : null;
   const canClaim = vehicle != null && sharingEnabled && !riding && riderAt != null && nearRider(feedVehicles([vehicle])[0]!, riderAt, now);
+  const { isAdmin, rideAlong, setMockLocation, startRideAlong } = useDebug();
+  const ridingAlong = vehicle != null && rideAlong?.tripId === vehicle.tripId;
   return (
     <Modal animationType="slide" onRequestClose={onClose} transparent={true} visible={vehicle != null}>
       <Pressable accessibilityLabel="Close vehicle details" onPress={onClose} style={styles.backdrop} testID="vehicle-sheet-backdrop" />
@@ -79,7 +84,11 @@ export function VehicleSheet({ color, destination, lineName, mode, onClaim, onCl
           {onBoard && riders ? (
             <View style={styles.row} testID="vehicle-sheet-riders">
               <View style={styles.avatars}>
-                {riders.avatars.map((avatar, index) => <BeanAvatar config={avatar} key={index} size={32} style={index > 0 ? styles.avatarStacked : undefined} />)}
+                {riders.avatars.map((avatar, index) => (
+                  <View key={index} style={[styles.avatarDisc, index > 0 && styles.avatarStacked, { zIndex: riders.avatars.length - index }]}>
+                    <BeanAvatar config={avatar} size={28} />
+                  </View>
+                ))}
               </View>
               <Text style={styles.rowText}>{onBoard}</Text>
             </View>
@@ -109,6 +118,24 @@ export function VehicleSheet({ color, destination, lineName, mode, onClaim, onCl
           ) : canClaim ? (
             <PressableScale accessibilityRole="button" onPress={() => { onClaim(vehicle.tripId); onClose(); }} style={[styles.button, { backgroundColor: color }]} testID="vehicle-sheet-on">
               <Text style={styles.primaryButtonText}>{`I’m on this ${NOUNS[mode]}`}</Text>
+            </PressableScale>
+          ) : null}
+          {isAdmin && liveSource ? (
+            <PressableScale
+              accessibilityHint="Admin testing: your mock location follows this vehicle's feed position"
+              accessibilityRole="button"
+              onPress={() => {
+                if (ridingAlong) setMockLocation(undefined);
+                else {
+                  const { lat, lon } = feedVehicles([vehicle])[0]!;
+                  startRideAlong({ source: liveSource, tripId: vehicle.tripId, label: `Riding along · ${lineName} ${NOUNS[mode]}` }, { lat, lon });
+                }
+                onClose();
+              }}
+              style={[styles.button, styles.secondaryButton]}
+              testID="vehicle-sheet-ride-along"
+            >
+              <Text style={styles.secondaryButtonText}>{ridingAlong ? 'Stop riding along' : 'Ride along (admin)'}</Text>
             </PressableScale>
           ) : null}
           <Text style={styles.note} testID="vehicle-sheet-note">
@@ -144,6 +171,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   rowText: { flex: 1, color: colors.ink, ...typography.bodyStrong },
   avatars: { flexDirection: 'row' },
+  avatarDisc: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, backgroundColor: '#FFFFFF' },
   avatarStacked: { marginLeft: -12 },
   button: { minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: radii.pill },
   secondaryButton: { backgroundColor: colors.surfaceMuted },

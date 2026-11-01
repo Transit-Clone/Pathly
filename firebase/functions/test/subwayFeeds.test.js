@@ -34,7 +34,16 @@ test('the Staten Island Railway and the shuttles read the feeds that carry them'
   assert.deepEqual(feedFor('7X'), ['gtfs']);
 });
 
-test('a route with no known feed shows its timetable instead of failing', async () => {
+/** Midday in New York on the bundled feed's last service day, so the test outlives the feed's expiry. */
+function lastBundledServiceDay() {
+  const [header, ...rows] = fs.readFileSync(path.join(__dirname, '..', 'static_data', 'subway', 'calendar.txt'), 'utf-8').trim().split(/\r?\n/);
+  const index = header.split(',').indexOf('end_date');
+  const lastDate = rows.map((row) => row.split(',')[index]).sort().at(-1);
+  return Date.parse(`${lastDate.slice(0, 4)}-${lastDate.slice(4, 6)}-${lastDate.slice(6, 8)}T16:00:00Z`);
+}
+
+test('a route with no known feed shows its timetable instead of failing', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: lastBundledServiceDay() });
   resetGtfsStaticDataForTests();
   const config = AGENCY_CONFIGS.subway;
   const original = config.feedRequestsForRoute;

@@ -26,6 +26,7 @@ import {
 } from '../data/tripPlanning';
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { useClock } from '../hooks/useClock';
+import { useThumbSide } from '../hooks/useThumbSide';
 import { useTripPlan } from '../hooks/useTripPlan';
 import { useViewportSize } from '../hooks/useViewportSize';
 import { DEFAULT_PREFERENCES, useUserPreferences, type UserPreferences } from '../data/userPreferences';
@@ -154,6 +155,7 @@ export function RouteResultsView({
   tripTime,
 }: RouteResultsViewProps) {
   const styles = useThemedStyles(createStyles);
+  const thumb = useThumbSide();
   const { colors } = useTheme();
   const { fontScale, height } = useViewportSize();
   // Fare and minutes keep the first row's right side at any width (the badges wrap instead).
@@ -357,7 +359,7 @@ export function RouteResultsView({
         mapButtons={mapButtons}
         // Just below the trip card, moving with it and the sheet.
         mapOverlay={
-          <View pointerEvents="box-none" style={[styles.refreshButton, { top: tripCardBottom + 12 }]}>
+          <View pointerEvents="box-none" style={[styles.refreshButton, thumb.anchor(16), { top: tripCardBottom + 12 }]}>
             <MapControlButton accessibilityLabel="Refresh route results" icon="refresh" onPress={refresh} testID="refresh-results" />
           </View>
         }
@@ -576,7 +578,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   tripRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingTop: 8, paddingLeft: 19, paddingRight: 12 },
   // Centered where Search keeps its back arrow, so the two sit under the same thumb.
   backButton: { marginTop: 4 },
-  refreshButton: { position: 'absolute', right: 16 },
+  refreshButton: { position: 'absolute' },
   controls: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 2, paddingHorizontal: 14 },
   // Modes, Filters, and the leave time share the row equally; a long leave time is cut short.
   toolbarPill: { height: 36, minWidth: 0, flex: 1, flexDirection: 'row', gap: 5, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8, borderWidth: 1, borderColor: colors.border, borderRadius: 18, backgroundColor: colors.surface },

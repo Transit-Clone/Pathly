@@ -26,9 +26,12 @@ export function endRideSession(): Promise<void> {
 const dismissedUntil = new Map<string, number>();
 export const dismissedNow = (now: number) => new Set([...dismissedUntil].filter(([, until]) => until > now).map(([tripId]) => tripId));
 
-/** A fresh, real GPS fix for detection, or null: an admin's mock location must never place a vehicle for other riders. */
+/**
+ * A fresh, real GPS fix for detection, or null: an admin's mock location must never place a vehicle
+ * for other riders. Ride Along is the exception, since it only ever repeats the agency's own position.
+ */
 export function rideFixFrom(fix: NavigationFix | null, stale: boolean): RideFix | null {
-  if (!fix || stale || fix.source !== 'real') return null;
+  if (!fix || stale || (fix.source !== 'real' && !fix.rideAlong)) return null;
   return { at: fix.capturedAt, lat: fix.point.lat, lon: fix.point.lng, accuracyMeters: fix.accuracyMeters };
 }
 
