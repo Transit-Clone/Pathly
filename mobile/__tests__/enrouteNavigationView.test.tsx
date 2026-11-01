@@ -15,6 +15,7 @@ import {
   type NormalizedNavigationPlan,
 } from '../src/data/enrouteNavigation';
 import { formatTripClock, type Itinerary, type LatLng, type TransitStep, type WalkStep } from '../src/data/tripPlanning';
+import type { RideTracking } from '../src/data/rideTracking';
 import { AppSettingsProvider } from '../src/theme/AppSettings';
 
 const baseTime = Date.UTC(2026, 9, 15, 13);
@@ -123,6 +124,7 @@ type RenderNavigationOptions = {
   onDemoCheckpoint?: jest.Mock;
   onEnd?: jest.Mock;
   onResetDemo?: jest.Mock;
+  ride?: RideTracking;
   trip?: Itinerary;
 };
 
@@ -142,12 +144,28 @@ function renderNavigation(cursor: NavigationCursor, options: RenderNavigationOpt
         onEnd={onEnd}
         onResetDemo={options.onResetDemo}
         plan={checkpointPlan}
+        ride={options.ride}
         session={runtime(checkpointPlan, trip, cursor)}
       />
     </TestProviders>,
   );
   return { onEnd, screen };
 }
+
+describe('EnrouteNavigationView ride sharing', () => {
+  it('says when a ride is shared, and lets the rider say they are not on it', () => {
+    const dismiss = jest.fn();
+    const { screen } = renderNavigation(cursorAt(plan, (_kind, label) => label === 'First Street'), { ride: { ridingTripId: 'bus-1', sharingEnabled: true, claim: jest.fn(), dismiss } });
+    expect(screen.getByTestId('enroute-ride-sharing')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('enroute-ride-not-on'));
+    expect(dismiss).toHaveBeenCalledWith('bus-1');
+  });
+
+  it('shows nothing when no ride is shared', () => {
+    const { screen } = renderNavigation(cursorAt(plan, (_kind, label) => label === 'First Street'));
+    expect(screen.queryByTestId('enroute-ride-sharing')).toBeNull();
+  });
+});
 
 describe('EnrouteNavigationView guidance', () => {
   afterEach(() => {

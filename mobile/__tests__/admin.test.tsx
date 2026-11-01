@@ -85,7 +85,7 @@ it('moves the map, Nearby, and trip planning to a mock location, and back when t
   await waitFor(() => expect(callableMock('planTrip')).toHaveBeenCalled());
   expect(callableMock('planTrip').mock.calls.at(-1)![0].origin).toEqual({ label: 'Current location', lat: PENN.latitude, lng: PENN.longitude });
   fireEvent.press(screen.getByTestId('results-back'));
-  fireEvent.press(screen.getByLabelText('Cancel destination search'));
+  fireEvent.press(screen.getByLabelText('Back from search'));
 
   fireEvent.press(screen.getByTestId('debug-banner-location-off'));
   expect(screen.queryByTestId('debug-banner')).toBeNull();

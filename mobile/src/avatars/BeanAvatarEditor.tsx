@@ -82,8 +82,8 @@ function BeanAvatarDraft({ onCancel, onSaved }: Props) {
         {tabs.map((item) => <PressableScale key={item} accessibilityRole="tab" accessibilityState={{ selected: tab === item }} disabled={saving} onPress={() => setTab(item)} style={[styles.tab, tab === item && styles.selected]} testID={`bean-tab-${item.toLowerCase()}`}><Text style={styles.tabText}>{item}</Text></PressableScale>)}
       </View>
       <View style={styles.grid}>
-        {tab === 'Color' ? BEAN_COLORS.map((color) => <PressableScale key={color.id} accessibilityLabel={`Pathling color: ${color.label}`} accessibilityRole="button" accessibilityState={{ selected: draft.color === color.id }} disabled={saving} onPress={() => change({ ...draft, color: color.id })} style={[styles.option, draft.color === color.id && styles.selected]} testID={`bean-color-${color.id}`}>
-          <View style={[styles.swatch, { backgroundColor: color.hex }]}>{draft.color === color.id ? <Icon name="check" color="#242728" size={22} /> : null}</View><Text style={styles.optionText}>{color.label}</Text>
+        {tab === 'Color' ? BEAN_COLORS.map((color) => <PressableScale key={color.id} accessibilityLabel={`Pathling color: ${color.label}`} accessibilityRole="button" accessibilityState={{ selected: draft.color === color.id }} disabled={saving} onPress={() => change({ ...draft, color: color.id })} style={[styles.option, styles.colorOption, draft.color === color.id && styles.selected]} testID={`bean-color-${color.id}`}>
+          <View style={[styles.swatch, { backgroundColor: color.hex }]}>{draft.color === color.id ? <Icon name="check" color="#242728" size={22} /> : null}</View>
         </PressableScale>) : parts.map((part) => <PressableScale key={part.id} accessibilityLabel={`${tab}: ${part.label}`} accessibilityRole="button" accessibilityState={{ selected: draft[field] === part.id }} disabled={saving} onPress={() => change({ ...draft, [field]: part.id })} style={[styles.option, draft[field] === part.id && styles.selected]} testID={`bean-${field}-${part.id}`}>
           <BeanAvatar config={{ ...draft, [field]: part.id }} size={72} />
         </PressableScale>)}
@@ -113,8 +113,8 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   option: { width: '31%', flexGrow: 1, minHeight: 110, alignItems: 'center', justifyContent: 'center', padding: 7, borderRadius: 16, borderWidth: 2, borderColor: colors.border, backgroundColor: colors.surface },
   selected: { borderColor: colors.primary, backgroundColor: colors.blueSoft },
-  optionText: { color: colors.ink, ...typography.metadata, fontSize: 11, textAlign: 'center', marginTop: 3 },
-  swatch: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', marginBottom: 7 },
+  colorOption: { width: '22%', minHeight: 72 },
+  swatch: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   footer: { paddingTop: 10, paddingBottom: 12, borderTopWidth: 1, borderTopColor: colors.border },
   save: { minHeight: 52, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary },
   saveText: { color: colors.onPrimary, ...typography.bodyStrong },

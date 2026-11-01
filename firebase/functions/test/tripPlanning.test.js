@@ -81,8 +81,10 @@ test('maps Google vehicle types to rider-facing modes', () => {
 test('a route without a fare has none, unless the estimator prices it', () => {
   const raw = fixture('routes-sbu-penn.json');
   assert.ok(normalizeRoutesResponse(raw, REQUEST_TIME, 'Penn').every((itinerary) => itinerary.fare === undefined));
-  const estimate = () => ({ text: '$9.99', cents: 999, currency: 'USD', estimated: true });
+  const estimate = (_steps, _departure, rider) => (rider && rider !== 'full' ? undefined : { text: '$9.99', cents: 999, currency: 'USD', estimated: true });
   assert.ok(normalizeRoutesResponse(raw, REQUEST_TIME, 'Penn', estimate).every((itinerary) => itinerary.fare?.cents === 999));
+  const withReduced = (_steps, _departure, rider) => (rider === 'reduced' ? { text: '$4.00', cents: 400, currency: 'USD', estimated: true } : rider ? undefined : estimate());
+  assert.deepEqual(normalizeRoutesResponse(raw, REQUEST_TIME, 'Penn', withReduced)[0].fare.reduced, { text: '$4.00', cents: 400 });
 
   const priced = structuredClone(raw);
   priced.routes[0].travelAdvisory = { transitFare: { currencyCode: 'USD', units: '12', nanos: 500000000 } };

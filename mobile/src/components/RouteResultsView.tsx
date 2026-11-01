@@ -8,6 +8,7 @@ import {
   badgeMode,
   CURRENT_LOCATION_LABEL,
   fareLabel,
+  type TripFare,
   filterItinerariesByMode,
   filterItinerariesByWalk,
   formatDurationMinutes,
@@ -27,10 +28,12 @@ import type { Coordinates } from '../hooks/useCurrentLocation';
 import { useClock } from '../hooks/useClock';
 import { useTripPlan } from '../hooks/useTripPlan';
 import { DEFAULT_PREFERENCES, useUserPreferences, type UserPreferences } from '../data/userPreferences';
-import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
+import { useAppSettings, ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
 import { ScreenTransition, useLayoutEase } from '../theme/motion';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
+import { useNotStepFreeTrips } from '../data/accessibleStops';
+import { FareSheet } from './FareSheet';
 import { DetailMapPage } from './DetailMapPage';
 import { Icon, type IconName } from './Icon';
 import { LeaveTimeSheet } from './LeaveTimeSheet';
@@ -42,6 +45,7 @@ import { MapControlButton } from './MapControlButton';
 import { mapPageMapHeight } from './mapSheetLayout';
 import { PressableScale } from './PressableScale';
 import { RouteBadge, type TransitMode } from './RouteBadge';
+import { FiltersSheet, ModesSheet } from './RouteOptionsSheet';
 import { ItinerarySkeleton } from './Skeleton';
 import { TripMap } from './TripMap';
 import { radii } from '../theme/shape';
@@ -153,14 +157,15 @@ export function RouteResultsView({
   const { fontScale, height } = useWindowDimensions();
   // Fare and minutes keep the first row's right side at any width (the badges wrap instead).
   const stackLargeTextMetrics = fontScale >= 1.5;
+  const { easyMode } = useAppSettings();
   const { destination, enabledModes, origin, preference } = criteria;
-  const travelPreferences = useUserPreferences().preferences.travel;
+  const { stepFree, travel: travelPreferences } = useUserPreferences().preferences;
   const setPreference = (next: RoutePreference) => onChangeCriteria({ ...criteria, preference: next });
   const setEnabledModes = (update: readonly TransitMode[] | ((current: readonly TransitMode[]) => readonly TransitMode[])) => (
     onChangeCriteria({ ...criteria, enabledModes: typeof update === 'function' ? update(enabledModes) : update })
   );
   const [timeSheetOpen, setTimeSheetOpen] = useState(false);
-  // Modes and Filters each open their options just below the buttons; Leave now is a popup.
+  // Modes, Filters, and Leave now each open a popup from the bottom of the screen.
   const [openPanel, setOpenPanel] = useState<'modes' | 'filter' | null>(null);
   // The map's location button: each press centers the map on the rider, until they drag it.
   const [centerRequest, setCenterRequest] = useState(0);
@@ -169,6 +174,7 @@ export function RouteResultsView({
 
   // The map rests at the home screen's height, but always leaves room for the trip card's buttons.
   const insets = useSafeAreaInsets();
+  const [fareSheetFor, setFareSheetFor] = useState<TripFare | undefined>(undefined);
   const [tripCardBottom, setTripCardBottom] = useState(insets.top + 120);
   const mapHeight = Math.max(mapPageMapHeight(height), tripCardBottom + BELOW_TRIP_CARD);
   // Trip times follow an admin's mock clock, like the plans themselves.
@@ -198,11 +204,14 @@ export function RouteResultsView({
     const byMode = filterItinerariesByMode(planned, enabledModes);
     const withinWalk = filterItinerariesByWalk(byMode, maxWalkMinutes);
     return {
-      visibleItineraries: distinctRouteItineraries(orderItineraries(withinWalk ?? byMode, preference)),
+      visibleItineraries: distinctRouteItineraries(orderItineraries(withinWalk ?? byMode, preference, travelPreferences.fareType)),
       // Every trip walks longer than the rider's limit, so all of them show with a note.
       walkLimitMissed: maxWalkMinutes !== null && withinWalk === null && byMode.length > 0,
     };
-  }, [enabledModes, maxWalkMinutes, planned, preference]);
+  }, [enabledModes, maxWalkMinutes, planned, preference, travelPreferences.fareType]);
+  const notStepFree = useNotStepFreeTrips(visibleItineraries, stepFree);
+  // Trips a wheelchair can't finish go last; the order is otherwise kept.
+  const listedItineraries = notStepFree.size === 0 ? visibleItineraries : [...visibleItineraries].sort((a, b) => Number(notStepFree.has(a.id)) - Number(notStepFree.has(b.id)));
   const modesFiltered = enabledModes.length < ALL_MODES.length;
   const tripDay = tripTime.mode === 'now' ? '' : tripDayLabel(tripTime, new Date(now));
   // Live signals only while the last update is fresh: offline, refreshes fail and it ages out.
@@ -218,10 +227,6 @@ export function RouteResultsView({
     : null);
 
   const ease = useLayoutEase();
-  const togglePanel = (panel: 'modes' | 'filter') => {
-    ease();
-    setOpenPanel((current) => (current === panel ? null : panel));
-  };
   const toggleMode = (mode: TransitMode) => {
     ease();
     setEnabledModes((current) => {
@@ -253,6 +258,21 @@ export function RouteResultsView({
   }
 
   const problem = plan.status === 'problem' ? PROBLEM_COPY[plan.problem] : null;
+
+  const mapButtons = (
+    <>
+      <MapControlButton
+        accessibilityLabel="Center on current location"
+        icon="locate"
+        onPress={() => {
+          setCenterRequest((count) => count + 1);
+          setCentered(true);
+        }}
+        selected={centered}
+        testID="results-location"
+      />
+    </>
+  );
 
   const tripCard = (
     <View onLayout={(event) => setTripCardBottom(insets.top + event.nativeEvent.layout.y + event.nativeEvent.layout.height)} style={styles.tripRow}>
@@ -316,68 +336,60 @@ export function RouteResultsView({
         testID="results-map"
         userLocation={userLocation}
       />
-
-      {/* Refresh, on the map just below the trip card. */}
-      <View pointerEvents="box-none" style={[styles.mapButtons, { top: tripCardBottom + 12 }]}>        <MapControlButton accessibilityLabel="Refresh route results" icon="refresh" onPress={refresh} testID="refresh-results" />
-      </View>
-
-      {/* Locate, just above the resting sheet. */}
-      <View pointerEvents="box-none" style={[styles.mapButtons, { bottom: 14 }]}>
-        <MapControlButton
-          accessibilityLabel="Center on current location"
-          icon="locate"
-          onPress={() => {
-            setCenterRequest((count) => count + 1);
-            setCentered(true);
-          }}
-          selected={centered}
-          testID="results-location"
-        />
-      </View>
     </>
   );
 
   return (
     <ScreenTransition key="list">
       <ThemedStatusBar />
+      <FareSheet fare={fareSheetFor} fareType={travelPreferences.fareType} onClose={() => setFareSheetFor(undefined)} />
       <DetailMapPage
         contentTestID="results-sheet"
         controls={tripCard}
         controlsHeight={tripCardBottom - insets.top}
         // Like Route View and Trip Details: the trip card scrolls away with the map.
         controlsScrollWithMap={true}
+        fitContent={true}
         handle={{ accessibilityHint: 'Expands or collapses the route list.', accessibilityLabel: 'Route list handle', testID: 'results-sheet-handle' }}
         interactiveMap={true}
         map={map}
+        mapButtons={mapButtons}
+        // Just below the trip card, moving with it and the sheet.
+        mapOverlay={
+          <View pointerEvents="box-none" style={[styles.refreshButton, { top: tripCardBottom + 12 }]}>
+            <MapControlButton accessibilityLabel="Refresh route results" icon="refresh" onPress={refresh} testID="refresh-results" />
+          </View>
+        }
         mapHeight={mapHeight}
         mapTestID="results-map-viewport"
         scrollTestID="results-scroll"
         testID="route-results-view"
       >
-        {/* Modes, Filters, then the leave time (a popup from the bottom). */}
+        {/* Modes, Filters, then the leave time, each a popup from the bottom. */}
         <View style={styles.controls}>
-          <PressableScale
+          {/* Easy mode keeps Modes only while it's narrowing the results, so nothing is filtered unseen. */}
+          {!easyMode || modesFiltered ? <PressableScale
             accessibilityLabel="Choose transit modes"
             accessibilityRole="button"
             accessibilityState={{ expanded: openPanel === 'modes' }}
-            onPress={() => togglePanel('modes')}
+            onPress={() => setOpenPanel('modes')}
             style={[styles.toolbarPill, (openPanel === 'modes' || modesFiltered) && styles.activePill]}
             testID="modes-control"
           >
             <Icon color={modesFiltered ? colors.primary : colors.ink} name="modes" size={15} />
             <Text style={[styles.toolbarPillText, modesFiltered && styles.activePillText]}>{modesFiltered ? `Modes · ${enabledModes.length}` : 'Modes'}</Text>
-          </PressableScale>
-          <PressableScale
+          </PressableScale> : null}
+          {!easyMode ? <PressableScale
             accessibilityLabel="Filter routes"
             accessibilityRole="button"
             accessibilityState={{ expanded: openPanel === 'filter' }}
-            onPress={() => togglePanel('filter')}
+            onPress={() => setOpenPanel('filter')}
             style={[styles.toolbarPill, openPanel === 'filter' && styles.activePill]}
             testID="filter-control"
           >
             <Icon color={colors.ink} name="filter" size={15} />
             <Text style={styles.toolbarPillText}>Filters</Text>
-          </PressableScale>
+          </PressableScale> : null}
           <PressableScale
             accessibilityLabel="Change leave time"
             accessibilityRole="button"
@@ -392,60 +404,13 @@ export function RouteResultsView({
           </PressableScale>
         </View>
 
-        {openPanel === 'modes' ? (
-          // Every mode starts on; tapping one leaves it out of the results.
-          <View style={styles.modes} testID="modes-panel">
-            {transitModes.map((item) => {
-              const selected = enabledModes.includes(item.id);
-              return (
-                <PressableScale
-                  key={item.id}
-                  accessibilityLabel={`${item.label} routes`}
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: selected }}
-                  onPress={() => toggleMode(item.id)}
-                  style={[styles.chip, styles.modeChip, selected && styles.selectedChip]}
-                  testID={`mode-${item.id}`}
-                >
-                  <Icon color={selected ? colors.onPrimary : colors.mutedInk} filled={selected} name={item.icon} size={14} />
-                  <Text style={[styles.chipText, selected && styles.selectedChipText]}>{item.label}</Text>
-                </PressableScale>
-              );
-            })}
-          </View>
-        ) : null}
-        {openPanel === 'filter' ? (
-          // How the results are sorted: four rounded pills, each an icon and name, sharing one row.
-          <View style={styles.sortRow} testID="filter-panel">
-            {preferences.map((item) => {
-              const selected = item.id === preference;
-              return (
-                <PressableScale
-                  key={item.id}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected }}
-                  onPress={() => {
-                    ease();
-                    setPreference(item.id);
-                  }}
-                  style={[styles.sortPill, selected && styles.selectedChip]}
-                  testID={`preference-${item.id}`}
-                >
-                  <Icon color={selected ? colors.onPrimary : colors.mutedInk} name={item.icon} size={15} />
-                  <Text numberOfLines={2} style={[styles.chipText, styles.sortText, selected && styles.selectedChipText]}>{item.label}</Text>
-                </PressableScale>
-              );
-            })}
-          </View>
-        ) : null}
-
         <Text accessibilityLiveRegion="polite" style={styles.updated} testID="results-updated">{updatedLabel}</Text>
 
         <View style={styles.results}>
           {plan.status === 'loading' ? <ItinerarySkeleton /> : null}
           {plan.status === 'problem' && problem ? (
             <View accessibilityLiveRegion="polite" style={styles.emptyResults} testID={`results-${plan.problem}`}>
-              <Mascot pose={plan.problem === 'unavailable' ? 'worried' : 'thinking'} size={64} />
+              <Mascot mood="worried" size={64} />
               <Text style={styles.emptyTitle}>{problem.title}</Text>
               <Text style={styles.emptyBody}>{problem.body}</Text>
               {problem.action ? (
@@ -462,7 +427,7 @@ export function RouteResultsView({
           ) : null}
           {plan.status === 'loaded' && planned.length === 0 ? (
             <View accessibilityLiveRegion="polite" style={styles.emptyResults} testID="results-none">
-              <Mascot pose="thinking" size={64} />
+              <Mascot mood="sad" size={64} />
               <Text style={styles.emptyTitle}>No transit trips found</Text>
               <Text style={styles.emptyBody}>{`There's no transit for this trip at ${tripTime.mode === 'now' ? 'this time' : 'the time you picked'}.`}</Text>
               <PressableScale accessibilityRole="button" onPress={() => setTimeSheetOpen(true)} style={styles.resetButton} testID="results-change-time">
@@ -487,12 +452,12 @@ export function RouteResultsView({
               {`Every trip walks more than your ${maxWalkMinutes}-minute limit, so all are shown.`}
             </Text>
           ) : null}
-          {visibleItineraries.map((itinerary) => {
+          {listedItineraries.map((itinerary) => {
             const legs = transitSteps(itinerary);
             // The ride badges in order, with a walk icon wherever there's real walking to do.
             const parts = itinerary.steps.filter((step) => step.kind === 'transit' || step.durationSeconds >= SHOWN_WALK_SECONDS);
             const duration = formatDurationMinutes(tripMinutes(itinerary.durationSeconds));
-            const fare = fareLabel(itinerary.fare);
+            const fare = fareLabel(itinerary.fare, travelPreferences.fareType);
             const leavesIn = Math.round((Date.parse(itinerary.departureTime) - now) / 60_000);
             const span = `${formatTripClock(itinerary.departureTime)} - ${formatTripClock(itinerary.arrivalTime)}`;
             const leaves = leavesIn > 0 ? `Leave within ${leavesIn} min` : 'Leave now';
@@ -548,8 +513,18 @@ export function RouteResultsView({
                         <Text style={styles.nextRide} testID={`schedule-${itinerary.id}`}>{timing}</Text>
                       )}
                     </View>
+                    {notStepFree.has(itinerary.id) ? (
+                      <View style={styles.notStepFree} testID={`not-step-free-${itinerary.id}`}>
+                        <Icon color={colors.red} name="wheelchair" size={13} />
+                        <Text style={styles.notStepFreeText}>{`No step-free access at ${notStepFree.get(itinerary.id)!.join(', ')}`}</Text>
+                      </View>
+                    ) : null}
                     <View style={[styles.summary, stackLargeTextMetrics && styles.summaryLargeText]}>
-                      <Text style={styles.fare} testID={`fare-${itinerary.id}`}>{fare}</Text>
+                      {itinerary.fare ? (
+                        <PressableScale accessibilityHint="Explains how this fare adds up" accessibilityRole="button" hitSlop={8} onPress={() => setFareSheetFor(itinerary.fare)} testID={`fare-button-${itinerary.id}`}>
+                          <Text style={styles.fare} testID={`fare-${itinerary.id}`}>{fare}</Text>
+                        </PressableScale>
+                      ) : <Text style={styles.fare} testID={`fare-${itinerary.id}`}>{fare}</Text>}
                       <View style={styles.durationGroup}>
                         <Text accessibilityLabel={duration.accessibility} style={styles.duration} testID={`search-result-duration-${itinerary.id}`}>
                           {/* Big numbers, small units: "2hr 26m" reads as 2 hr 26 m. */}
@@ -567,6 +542,19 @@ export function RouteResultsView({
         </View>
       </DetailMapPage>
 
+      {openPanel === 'modes' ? <ModesSheet enabled={enabledModes} modes={transitModes} onClose={() => setOpenPanel(null)} onToggle={toggleMode} /> : null}
+      {openPanel === 'filter' ? (
+        <FiltersSheet
+          onClose={() => setOpenPanel(null)}
+          onSelect={(next) => {
+            ease();
+            setPreference(next);
+            setOpenPanel(null);
+          }}
+          options={preferences}
+          selected={preference}
+        />
+      ) : null}
       {timeSheetOpen ? (
         <LeaveTimeSheet
           onCancel={() => setTimeSheetOpen(false)}
@@ -583,23 +571,14 @@ export function RouteResultsView({
 
 const createStyles = (colors: Palette) => StyleSheet.create({
   criteriaCard: { minWidth: 0, flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 14, paddingRight: 9, paddingVertical: 8, borderRadius: radii.card, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.16, shadowRadius: 12, elevation: 6 },
-  tripRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingTop: 8, paddingHorizontal: 12 },
-  backButton: { marginTop: 17 },
-  // On the map: below the trip card (leave time, then refresh), and above the resting sheet (locate).
-  mapButtons: { position: 'absolute', right: 16, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  tripRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingTop: 8, paddingLeft: 19, paddingRight: 12 },
+  // Centered where Search keeps its back arrow, so the two sit under the same thumb.
+  backButton: { marginTop: 4 },
+  refreshButton: { position: 'absolute', right: 16 },
   controls: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 2, paddingHorizontal: 14 },
   // Modes, Filters, and the leave time share the row equally; a long leave time is cut short.
   toolbarPill: { height: 36, minWidth: 0, flex: 1, flexDirection: 'row', gap: 5, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8, borderWidth: 1, borderColor: colors.border, borderRadius: 18, backgroundColor: colors.surface },
   toolbarPillText: { flexShrink: 1, color: colors.ink, fontFamily: fontFamilies.bold, fontSize: 11 },
-  modes: { flexDirection: 'row', gap: 7, paddingTop: 9, paddingHorizontal: 14 },
-  sortRow: { flexDirection: 'row', gap: 6, paddingTop: 9, paddingHorizontal: 14 },
-  sortPill: { flex: 1, minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingHorizontal: 7, borderWidth: 1, borderColor: colors.border, borderRadius: 18, backgroundColor: colors.surface },
-  chip: { minHeight: 36, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderWidth: 1, borderColor: colors.border, borderRadius: 18, backgroundColor: colors.surface },
-  modeChip: { flex: 1, paddingHorizontal: 5 },
-  sortText: { flexShrink: 1, textAlign: 'center' },
-  selectedChip: { borderColor: colors.primary, backgroundColor: colors.primary },
-  chipText: { color: colors.mutedInk, fontFamily: fontFamilies.bold, fontSize: 11 },
-  selectedChipText: { color: colors.onPrimary },
   updated: { alignSelf: 'flex-end', paddingTop: 8, paddingHorizontal: 16, color: colors.mutedInk, ...typography.metadata, fontSize: 9 },
   results: { gap: 8, padding: 12, paddingTop: 6, paddingBottom: 30 },
   endpointStack: { minWidth: 0, flex: 1 },
@@ -629,6 +608,8 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   segmentColumnLargeText: { flexGrow: 0 },
   segmentRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4 },
   segmentGroup: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  notStepFree: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 },
+  notStepFreeText: { flexShrink: 1, color: colors.red, ...typography.metadata, fontSize: 11 },
   nextRide: { marginTop: 6, color: colors.mutedInk, ...typography.metadata, fontSize: 10 },
   nextRideLive: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start' },
   nextRideLeave: { flexDirection: 'row', alignItems: 'flex-start' },

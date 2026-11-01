@@ -14,6 +14,19 @@ import type { RouteDetail, RoutePrediction, TransitDirection } from './transit';
  * than left at whatever placeholder values live in transit.ts — showing nothing is honest;
  * showing a specific but fake number isn't.
  */
+/** With nothing live and nothing scheduled within this long, a line isn't running for now. */
+const INACTIVE_AFTER_MINUTES = 120;
+
+/**
+ * Whether a nearby line isn't running for now (the SIM buses overnight, a weekend-only line on a
+ * weekday), from live data applied by applyRouteLive. Only an answer counts: a line still loading,
+ * or whose lookup failed, stays active rather than being hidden on no evidence.
+ */
+export function isInactiveRoute(route: RouteDetail): boolean {
+  if (!route.liveSource || route.liveStatus !== 'loaded') return false;
+  return route.directions.every((direction) => direction.unavailable || (!direction.live && direction.minutes > INACTIVE_AFTER_MINUTES));
+}
+
 export function applyRouteLive(route: RouteDetail, liveStatus: RouteLiveStatus, now: number = Date.now()): RouteDetail {
   if (!route.liveSource) return route;
 

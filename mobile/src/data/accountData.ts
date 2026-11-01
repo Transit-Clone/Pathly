@@ -4,6 +4,7 @@ import {
   EmailAuthProvider,
   reauthenticateWithCredential,
   sendPasswordResetEmail,
+  signOut,
   updateProfile,
   type User,
 } from 'firebase/auth';
@@ -12,6 +13,7 @@ import { Platform, Share } from 'react-native';
 
 import { auth, db } from '../lib/firebase';
 import { navigationStorageKey } from './navigationStorage';
+import { endRideSession } from './rideTracking';
 import { preferencesKey } from './userPreferences';
 
 /**
@@ -107,11 +109,30 @@ export function deleteAccountProblem(error: unknown): DeleteAccountProblem {
 export async function deleteAccount(user: User, password: string): Promise<void> {
   if (!user.email) throw Object.assign(new Error('no-email'), { code: 'auth/no-email' });
   await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, password));
-  for (const name of USER_COLLECTIONS) {
+  await eraseAccount(user);
+}
+
+async function eraseAccount(user: User): Promise<void> {
+  for (const name of [...USER_COLLECTIONS, 'savedRoutes', 'alertInbox']) {
     const snapshot = await getDocs(collection(db, 'users', user.uid, name));
     await Promise.all(snapshot.docs.map((entry) => deleteDoc(doc(db, 'users', user.uid, name, entry.id))));
   }
   await deleteDoc(doc(db, 'users', user.uid));
+  await endRideSession();
   await AsyncStorage.multiRemove([preferencesKey(user.uid), navigationStorageKey(user.uid)]).catch(() => undefined);
   await deleteUser(user);
+}
+
+/**
+ * Removes a guest's session or an unconfirmed sign-up, neither of which has a password to ask for.
+ * False when Firebase refused (an old session), which still signs the rider out.
+ */
+export async function discardAccount(user: User): Promise<boolean> {
+  try {
+    await eraseAccount(user);
+    return true;
+  } catch {
+    await signOut(auth).catch(() => undefined);
+    return false;
+  }
 }

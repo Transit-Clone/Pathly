@@ -34,14 +34,14 @@ export function savedPlaceColor(location: Location, fallback: string): string {
 
 /**
  * The badge as an SVG data URL: a filled circle outlined in `ring`, with `icon` (path data on a
- * 256-unit square) centered in it in the ring's color. Without an icon, the badge is empty.
+ * 256-unit square) centered in it in `iconColor`. Without an icon, the badge is empty.
  */
-export function savedPinSvgUrl(fill: string, ring: string, icon?: readonly string[] | null): string {
+export function savedPinSvgUrl(fill: string, ring: string, icon?: readonly string[] | null, iconColor = ring): string {
   const { size } = SAVED_PIN;
   const r = size / 2;
   const inset = (size - ICON_SIZE) / 2;
   const glyph = icon?.length
-    ? `<g transform="translate(${inset} ${inset}) scale(${ICON_SIZE / 256})" fill="${ring}">${icon.map((d) => `<path d="${d}"/>`).join('')}</g>`
+    ? `<g transform="translate(${inset} ${inset}) scale(${ICON_SIZE / 256})" fill="${iconColor}">${icon.map((d) => `<path d="${d}"/>`).join('')}</g>`
     : '';
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">`
     + `<circle cx="${r}" cy="${r}" r="${r - RING_WIDTH / 2}" fill="${fill}" stroke="${ring}" stroke-width="${RING_WIDTH}"/>`

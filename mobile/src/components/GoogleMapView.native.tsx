@@ -211,7 +211,7 @@ export function GoogleMapView({ initialCamera, lines = [], location, onCameraCha
           : `Plan a trip to ${name}`;
         return (
           <Marker
-            accessibilityHint="Opens fresh trip options for this saved place"
+            accessibilityHint="Opens fresh trip options for this favorite"
             accessibilityLabel={markerLabel}
             accessibilityRole="button"
             anchor={{ x: 0.5, y: 0.5 }}

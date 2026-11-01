@@ -1,27 +1,23 @@
 /** Stable IDs are saved in a user's profile; artwork can evolve without migrating profiles. */
 export const BEAN_COLORS = [
-  { id: 'sage', label: 'Sage', hex: '#A6BD83' },
-  { id: 'coral', label: 'Coral', hex: '#FF8074' },
-  { id: 'lavender', label: 'Lavender', hex: '#B5A0EA' },
-  { id: 'gold', label: 'Gold', hex: '#F9C543' },
-  { id: 'sky', label: 'Sky', hex: '#78BEF5' },
-  { id: 'peach', label: 'Peach', hex: '#FFAE8B' },
-  { id: 'teal', label: 'Teal', hex: '#64C4B7' },
-  { id: 'pink', label: 'Pink', hex: '#F593BC' },
-  { id: 'lime', label: 'Lime', hex: '#C4D975' },
-  { id: 'periwinkle', label: 'Periwinkle', hex: '#96A7ED' },
-  { id: 'clay', label: 'Clay', hex: '#DDA18B' },
-  { id: 'oat', label: 'Oat', hex: '#DFD3B6' },
-  // Bolder picks, still light enough for the dark face to read on.
-  { id: 'cherry', label: 'Cherry', hex: '#F2384F' },
-  { id: 'tangerine', label: 'Tangerine', hex: '#FF7A1A' },
-  { id: 'sunflower', label: 'Sunflower', hex: '#FFC21A' },
-  { id: 'emerald', label: 'Emerald', hex: '#1FBF6E' },
-  { id: 'aqua', label: 'Aqua', hex: '#18C3D6' },
-  { id: 'cobalt', label: 'Cobalt', hex: '#3D7BFF' },
-  { id: 'grape', label: 'Grape', hex: '#9B5CFF' },
-  { id: 'magenta', label: 'Magenta', hex: '#F03CA8' },
+  { id: 'coral', label: 'Coral', hex: '#FF9080' },
+  { id: 'peach', label: 'Peach', hex: '#FFB48C' },
+  { id: 'gold', label: 'Gold', hex: '#F8CC5E' },
+  { id: 'lime', label: 'Lime', hex: '#C8DA74' },
+  { id: 'sage', label: 'Sage', hex: '#A5C788' },
+  { id: 'teal', label: 'Teal', hex: '#6FCBB8' },
+  { id: 'sky', label: 'Sky', hex: '#7FC6F3' },
+  { id: 'periwinkle', label: 'Periwinkle', hex: '#9DACF1' },
+  { id: 'lavender', label: 'Lavender', hex: '#BBA6ED' },
+  { id: 'pink', label: 'Pink', hex: '#F6A0C2' },
+  { id: 'clay', label: 'Clay', hex: '#DBA68F' },
+  { id: 'oat', label: 'Oat', hex: '#E2D6B8' },
 ] as const;
+
+/** Colors no longer offered: profiles saved with one keep its nearest match. */
+const RETIRED_BEAN_COLORS: Readonly<Record<string, typeof BEAN_COLORS[number]['id']>> = {
+  cherry: 'coral', tangerine: 'peach', sunflower: 'gold', emerald: 'sage', aqua: 'teal', cobalt: 'periwinkle', grape: 'lavender', magenta: 'pink',
+};
 
 const INK = '#242728';
 const WHITE = '#FFFFFF';
@@ -92,7 +88,7 @@ export function normalizeBeanAvatar(value: unknown): BeanAvatarConfig {
   if (input.version !== 1) return fallback;
   return {
     version: 1,
-    color: BEAN_COLORS.find((part) => part.id === input.color)?.id ?? fallback.color,
+    color: BEAN_COLORS.find((part) => part.id === input.color)?.id ?? RETIRED_BEAN_COLORS[String(input.color)] ?? fallback.color,
     eyes: BEAN_EYES.find((part) => part.id === input.eyes)?.id ?? fallback.eyes,
     mouth: BEAN_MOUTHS.find((part) => part.id === input.mouth)?.id ?? fallback.mouth,
     hair: BEAN_HAIR.find((part) => part.id === input.hair)?.id ?? fallback.hair,
@@ -109,6 +105,21 @@ export function beanAvatarSvg(value: unknown = DEFAULT_BEAN_AVATAR): string {
   const mouth = BEAN_MOUTHS.find((part) => part.id === config.mouth)!;
   const hair = BEAN_HAIR.find((part) => part.id === config.hair)!;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">${shape(BEAN_BODY_PATH, color.hex)}${eyes.svg}${mouth.svg}${hair.svg}</svg>`;
+}
+
+/** How the mascot feels on a screen. Only the face changes, so it's always still the rider's Pathling. */
+export type BeanMood = 'own' | 'thinking' | 'happy' | 'curious' | 'sleepy' | 'worried' | 'sad';
+const MOOD_FACES: Record<Exclude<BeanMood, 'own'>, Pick<BeanAvatarConfig, 'eyes' | 'mouth'>> = {
+  thinking: { eyes: 'upward', mouth: 'none' },
+  happy: { eyes: 'happy', mouth: 'grin' },
+  curious: { eyes: 'side-eye', mouth: 'smirk' },
+  sleepy: { eyes: 'sleepy', mouth: 'yawn' },
+  worried: { eyes: 'uneven', mouth: 'wobble' },
+  sad: { eyes: 'dots', mouth: 'frown' },
+};
+
+export function beanWithMood(avatar: BeanAvatarConfig, mood: BeanMood): BeanAvatarConfig {
+  return mood === 'own' ? avatar : { ...avatar, ...MOOD_FACES[mood] };
 }
 
 export function randomBeanAvatar(): BeanAvatarConfig {

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useAuth } from '../auth/AuthContext';
+import { normalizeBeanAvatar } from '../avatars/beanAvatar';
 import {
   guidanceForNavigation,
   type ActiveTripRuntime,
@@ -11,11 +13,14 @@ import {
   type NormalizedNavigationPlan,
 } from '../data/enrouteNavigation';
 import { hurryUpFor, hurryUpMessage } from '../data/hurryUp';
+import { rideFixFrom, withOwnAvatar, type RideTracking } from '../data/rideTracking';
 import { useSupportPrompt } from '../data/supportPrompt';
 import { useUserPreferences } from '../data/userPreferences';
 import { navigationMapProgress } from '../data/tripMap';
 import { badgeMode, formatDurationMinutes, formatTripClock, tripMinutes } from '../data/tripPlanning';
 import { useClock } from '../hooks/useClock';
+import { useOnBoardVehicle } from '../hooks/useTripRide';
+import { legSource, useTripVehicles } from '../hooks/useTripVehicles';
 import { notifyNow } from '../lib/notifications';
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
@@ -27,6 +32,7 @@ import { Mascot } from './Mascot';
 import { MapControlButton } from './MapControlButton';
 import { mapPageMapHeight } from './mapSheetLayout';
 import { PressableScale } from './PressableScale';
+import { RideReportBar } from './RideReportBar';
 import { RouteBadge } from './RouteBadge';
 import { SupportCard } from './SupportCard';
 import { TripMap } from './TripMap';
@@ -48,6 +54,8 @@ type EnrouteNavigationViewProps = {
   onEnd: () => void;
   onResetDemo?: () => void;
   plan: NormalizedNavigationPlan;
+  /** Runs for the whole trip (HomeScreen), so it carries on behind other pages. */
+  ride?: RideTracking;
   session: ActiveTripRuntime;
 };
 
@@ -105,7 +113,7 @@ function movementMetadata(distanceMeters: number | null, durationSeconds: number
 }
 
 /** The map-first foreground navigation experience driven by the pure progress engine. */
-export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locationState, onBack, onDemoCheckpoint, onEnd, onResetDemo, plan, session }: EnrouteNavigationViewProps) {
+export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locationState, onBack, onDemoCheckpoint, onEnd, onResetDemo, plan, ride, session }: EnrouteNavigationViewProps) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
   const now = useClock(30_000);
@@ -114,6 +122,17 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
   const mapProgress = useMemo(() => navigationMapProgress(plan, cursor), [cursor, plan]);
   const currentStep = session.itinerary.steps[cursor.stepIndex];
   const currentTransitStep = currentStep?.kind === 'transit' ? currentStep : null;
+  // The rides' live vehicles; the one the rider's own location says they're on carries their Pathling.
+  const { vehicles, approachLines } = useTripVehicles(session.itinerary, colors.primary);
+  const rideFix = rideFixFrom(fix, locationState === 'stale' || locationState === 'unavailable' || locationState === 'loading');
+  const onBoard = useOnBoardVehicle(vehicles, rideFix);
+  const reportTripId = ride?.ridingTripId ?? onBoard;
+  const reportRoute = currentTransitStep?.liveRoute;
+  const { avatar } = useAuth();
+  const shownVehicles = useMemo(
+    () => vehicles.map((vehicle) => (vehicle.tripId === onBoard || vehicle.tripId === ride?.ridingTripId ? withOwnAvatar(vehicle, normalizeBeanAvatar(avatar ?? null)) : vehicle)),
+    [avatar, onBoard, ride?.ridingTripId, vehicles],
+  );
   const [confirmingEnd, setConfirmingEnd] = useState(false);
   const supportPrompt = useSupportPrompt(session.sessionId, guidance.phase === 'arrived');
   const [centerRequest, setCenterRequest] = useState(1);
@@ -160,6 +179,10 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
   const controls = (
     <View pointerEvents="box-none" style={styles.topBar}>
       <MapControlButton accessibilityLabel="Back to Home; navigation will stay active" icon="back" onPress={onBack} testID="enroute-back" />
+    </View>
+  );
+
+  const locateButton = (
       <MapControlButton
         accessibilityLabel="Follow current location"
         icon="locate"
@@ -170,7 +193,6 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
         selected={following}
         testID="enroute-location"
       />
-    </View>
   );
 
   const action = (
@@ -194,8 +216,10 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
         contentTestID="enroute-content"
         controls={controls}
         interactiveMap={true}
+        mapButtons={locateButton}
         map={(
           <TripMap
+            approachLines={approachLines}
             centerOnUserRequest={centerRequest}
             followLocation={followFix ? followFix.point : null}
             followUser={following}
@@ -208,6 +232,7 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
             testID="enroute-trip-map"
             userLocation={userLocation}
             userLocationStale={locationState !== 'located'}
+            vehicles={shownVehicles}
           />
         )}
         mapHeight={mapPageMapHeight(height)}
@@ -237,7 +262,7 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
                 textColor={guidance.line.textColor}
               />
             ) : guidance.phase === 'arrived' ? (
-              <Mascot motion="pop" pose="celebrate" size={52} testID="enroute-arrived-mascot" />
+              <Mascot mood="happy" motion="pop" size={52} testID="enroute-arrived-mascot" />
             ) : <View style={styles.walkIcon}><Icon color={colors.ink} name="travel" size={24} /></View>}
             <View style={styles.currentCopy}>
               <Text style={styles.currentAction} testID="enroute-current-action">{guidance.currentAction}</Text>
@@ -262,6 +287,26 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
                 <Text style={styles.hurryTitle}>{hurryCopy.title}</Text>
                 <Text style={styles.locationNoticeText}>{hurryCopy.body}</Text>
               </View>
+            </View>
+          ) : null}
+          {ride?.ridingTripId ? (
+            <View style={styles.rideNotice} testID="enroute-ride-sharing">
+              <Icon color={colors.primary} name="people" size={20} />
+              <Text style={styles.locationNoticeText}>Sharing this ride. Other riders see your avatar, never your name.</Text>
+              <PressableScale
+                accessibilityLabel="I'm not on this vehicle; stop sharing"
+                accessibilityRole="button"
+                onPress={() => { if (ride.ridingTripId) ride.dismiss(ride.ridingTripId); }}
+                style={styles.rideDismiss}
+                testID="enroute-ride-not-on"
+              >
+                <Text style={styles.rideDismissText}>Not on this</Text>
+              </PressableScale>
+            </View>
+          ) : null}
+          {reportTripId && reportRoute ? (
+            <View style={styles.rideReport}>
+              <RideReportBar fix={rideFix} key={reportTripId} source={legSource(reportRoute)} tripId={reportTripId} />
             </View>
           ) : null}
           {locationState !== 'located' ? (
@@ -323,7 +368,7 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
         ) : null}
       </DetailMapPage>
       <ConfirmDialog
-        body="You'll stop following this trip. It will be saved in Recents."
+        body="You'll stop following this trip."
         confirmLabel="End trip"
         destructive={true}
         onCancel={() => setConfirmingEnd(false)}
@@ -371,7 +416,7 @@ export function EnrouteRecoveryView({ destination, loading = false, onBack, onEn
         </View>
       </SafeAreaView>
       <ConfirmDialog
-        body="This saved active trip will be moved to Recents as ended early."
+        body="This saved trip will end."
         confirmLabel="End trip"
         destructive={true}
         onCancel={() => setConfirmingEnd(false)}
@@ -419,6 +464,10 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   remaining: { marginTop: 2, color: colors.primary, ...typography.metadata },
   locationNotice: { marginTop: 13, flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, borderRadius: radii.control, backgroundColor: colors.amberSoft },
   locationNoticeText: { flex: 1, color: colors.ink, ...typography.metadata },
+  rideReport: { marginTop: 13 },
+  rideNotice: { marginTop: 13, flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, borderRadius: radii.control, backgroundColor: colors.blueSoft },
+  rideDismiss: { minHeight: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 },
+  rideDismissText: { color: colors.primary, ...typography.bodyStrong, fontSize: 13 },
   hurryNotice: { marginTop: 13, flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: radii.control, backgroundColor: colors.highlightSoft },
   hurryCopy: { flex: 1, gap: 2 },
   hurryTitle: { color: colors.ink, ...typography.bodyStrong },

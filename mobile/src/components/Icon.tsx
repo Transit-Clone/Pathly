@@ -16,9 +16,11 @@ const glyphs = {
   add: ['plus-circle-bold', 'plus-circle-fill'],
   alert: ['warning-circle-bold', 'warning-circle-fill'],
   appearance: ['palette-bold', 'palette-fill'],
+  arrowRight: ['arrow-right-bold', 'arrow-right-bold'],
   back: ['caret-left-bold', 'caret-left-bold'],
   bell: ['bell-bold', 'bell-fill'],
   cafe: ['coffee-bold', 'coffee-fill'],
+  mail: ['envelope-rounded-fill', 'envelope-rounded-fill'],
   cart: ['shopping-cart-bold', 'shopping-cart-fill'],
   check: ['check-bold', 'check-bold'],
   close: ['x-circle-fill', 'x-circle-fill'],
@@ -72,8 +74,10 @@ const ioniconGlyphs = {
 /** Transit modes and walking, from Material Community Icons (picked for how clearly they read): [outline, filled]. */
 const materialGlyphs = {
   bus: ['bus', 'bus'],
+  calendar: ['calendar-month', 'calendar-month'],
   ferry: ['ferry', 'ferry'],
   rail: ['train', 'train'],
+  snow: ['snowflake', 'snowflake'],
   subway: ['subway-variant', 'subway-variant'],
   travel: ['walk', 'walk'],
 } as const satisfies Record<string, readonly [MaterialIconName, MaterialIconName]>;

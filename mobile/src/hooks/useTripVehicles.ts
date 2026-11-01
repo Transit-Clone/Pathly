@@ -18,17 +18,26 @@ type LegLine = { key: string; source: LiveSource; boardStopId: string; alight: L
 /** Where a ride's vehicles still matter: the line up to the rider's stop (drawn faint), and on to where they get off. */
 type LineReach = { approach: LatLon[]; upToAlighting: LatLon[] };
 
+/** A ride's line as the live feeds ask for it. */
+export function legSource({ agencyId, routeId, boardStopId }: { agencyId: string; routeId: string; boardStopId: string }): LiveSource {
+  return { agencyId: agencyId as LiveSource['agencyId'], routeId, direction1StopId: boardStopId, direction0StopId: boardStopId, direction1Index: 0 };
+}
+
+export function legLineKey({ agencyId, routeId, directionId }: { agencyId: string; routeId: string; directionId?: number }): string {
+  return `${agencyId}:${routeId}:${directionId ?? ''}`;
+}
+
 /** Each ride's line once, in the direction the rider travels (backend tripStops.ts `liveRoute`). */
 function legLines(itinerary: Itinerary | null | undefined, fallbackColor: string): LegLine[] {
   const lines = new Map<string, LegLine>();
   for (const step of itinerary?.steps ?? []) {
     if (step.kind !== 'transit' || !step.liveRoute) continue;
     const { agencyId, routeId, boardStopId, directionId } = step.liveRoute;
-    const key = `${agencyId}:${routeId}:${directionId ?? ''}`;
+    const key = legLineKey(step.liveRoute);
     if (lines.has(key)) continue;
     lines.set(key, {
       key,
-      source: { agencyId: agencyId as LiveSource['agencyId'], routeId, direction1StopId: boardStopId, direction0StopId: boardStopId, direction1Index: 0 },
+      source: legSource({ agencyId, routeId, boardStopId }),
       boardStopId,
       alight: (step as TransitStep).to.location,
       directionId,
@@ -103,7 +112,7 @@ export function useTripVehicles(itinerary: Itinerary | null | undefined, fallbac
       const reach = reaches.get(line.key);
       return visibleTrains(byLine.get(line.key) ?? [], line.directionId, now)
         .filter((vehicle) => !reach || onPath(reach.upToAlighting, vehicle))
-        .map((vehicle) => ({ ...vehicle, color: line.color, mode: line.mode }));
+        .map((vehicle) => ({ ...vehicle, color: line.color, mode: line.mode, lineKey: line.key }));
     }),
     [byLine, lines, now, reaches],
   );

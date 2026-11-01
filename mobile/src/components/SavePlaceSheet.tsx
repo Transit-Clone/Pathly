@@ -99,12 +99,12 @@ function SavePlaceForm({ groups = [], onCancel, onChangeAddress, onRemove, onSav
   return (
     <View accessibilityViewIsModal={true} style={styles.card} testID="save-place-sheet">
       <ScrollView bounces={false} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>{request.editing ? 'Edit saved place' : 'Save place'}</Text>
+        <Text style={styles.title}>{request.editing ? 'Edit favorite' : 'Add favorite'}</Text>
         <Text numberOfLines={1} style={styles.placeName}>{place.title}</Text>
         {place.subtitle ? <Text numberOfLines={2} style={styles.placeAddress}>{place.subtitle}</Text> : null}
         {request.editing && onChangeAddress ? (
           <PressableScale
-            accessibilityHint="Searches for a new address for this saved place"
+            accessibilityHint="Searches for a new address for this favorite"
             accessibilityRole="button"
             onPress={() => onChangeAddress({ ...request, label: name, style: { icon: pickedIcon, color: pickedColor, group: groupName } })}
             style={styles.changeAddress}
@@ -256,7 +256,7 @@ function SavePlaceForm({ groups = [], onCancel, onChangeAddress, onRemove, onSav
         </View>
         {request.editing && onRemove ? (
           <PressableScale accessibilityRole="button" onPress={onRemove} style={styles.remove} testID="save-place-remove">
-            <Text style={styles.removeText}>Remove from saved places</Text>
+            <Text style={styles.removeText}>Remove from favorites</Text>
           </PressableScale>
         ) : null}
       </ScrollView>

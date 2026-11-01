@@ -9,6 +9,8 @@ import { radii } from '../theme/shape';
 type ConfirmDialogProps = {
   body: string;
   cancelLabel?: string;
+  /** Just an acknowledgement: only the confirm button shows. */
+  singleAction?: boolean;
   confirmLabel: string;
   /** Styles the confirm button as a destructive action. */
   destructive?: boolean;
@@ -20,7 +22,7 @@ type ConfirmDialogProps = {
 };
 
 /** A centered yes/no prompt; React Native's Alert has no buttons on web, so this is drawn in-app. */
-export function ConfirmDialog({ body, cancelLabel = 'Cancel', confirmLabel, destructive = false, onCancel, onConfirm, testID, title, visible }: ConfirmDialogProps) {
+export function ConfirmDialog({ body, cancelLabel = 'Cancel', confirmLabel, destructive = false, singleAction = false, onCancel, onConfirm, testID, title, visible }: ConfirmDialogProps) {
   const styles = useThemedStyles(createStyles);
   return (
     <Modal animationType="fade" onRequestClose={onCancel} statusBarTranslucent={true} transparent={true} visible={visible}>
@@ -30,9 +32,11 @@ export function ConfirmDialog({ body, cancelLabel = 'Cancel', confirmLabel, dest
           <Text style={styles.title}>{title}</Text>
           <Text style={styles.body}>{body}</Text>
           <View style={styles.actions}>
+            {singleAction ? null : (
             <PressableScale accessibilityRole="button" onPress={onCancel} style={[styles.button, styles.cancelButton]} testID={`${testID}-cancel`}>
               <Text style={styles.cancelText}>{cancelLabel}</Text>
             </PressableScale>
+            )}
             <PressableScale accessibilityRole="button" onPress={onConfirm} style={[styles.button, destructive ? styles.destructiveButton : styles.confirmButton]} testID={`${testID}-confirm`}>
               <Text style={styles.confirmText}>{confirmLabel}</Text>
             </PressableScale>

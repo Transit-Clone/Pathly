@@ -1,4 +1,4 @@
-// Rasterizes the Pathly "P" (same geometry as mobile/src/components/Mascot.tsx) into app icons.
+// Rasterizes the Pathly "P" (same geometry as mobile/assets/bean-avatars/pathly-p-rounded-blue-face-icon.svg, x8) into app icons.
 // Usage: node scripts/make-icons.mjs mobile/assets   (no dependencies; rerun after changing the shape)
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -17,29 +17,18 @@ const quad = (p0, p1, p2, n = 24) => Array.from({ length: n + 1 }, (_, i) => {
   const t = i / n, u = 1 - t;
   return [u * u * p0[0] + 2 * u * t * p1[0] + t * t * p2[0], u * u * p0[1] + 2 * u * t * p1[1] + t * t * p2[1]];
 });
-// M258 235 C262 190 300 172 350 170 L590 168 C720 168 830 250 830 400 C830 520 740 595 610 605
-// C520 612 432 626 396 680 C370 720 366 780 353 830 C346 858 322 868 290 868 L236 868
-// C206 868 190 850 195 820 L215 655 Z
-const body = [[258, 235],
-  ...cubic([258, 235], [262, 190], [300, 172], [350, 170]), [590, 168],
-  ...cubic([590, 168], [720, 168], [830, 250], [830, 400]),
-  ...cubic([830, 400], [830, 520], [740, 595], [610, 605]),
-  ...cubic([610, 605], [520, 612], [432, 626], [396, 680]),
-  ...cubic([396, 680], [370, 720], [366, 780], [353, 830]),
-  ...cubic([353, 830], [346, 858], [322, 868], [290, 868]), [236, 868],
-  ...cubic([236, 868], [206, 868], [190, 850], [195, 820]), [215, 655]];
-const groove = [[222, 650], ...cubic([222, 650], [330, 562], [470, 532], [596, 524])];
-const smile = quad([503, 425], [545, 474], [588, 413]);
-const eyes = [[418, 393], [665, 368]];
+// M368 160 H576 C736 160 848 272 848 424 C848 576 736 688 576 688 H528 C488 688 464 712 464 752 V768
+// C464 832 416 880 360 880 C296 880 256 832 256 768 V272 C256 208 304 160 368 160 Z
+const body = [[368, 160], [576, 160],
+  ...cubic([576, 160], [736, 160], [848, 272], [848, 424]),
+  ...cubic([848, 424], [848, 576], [736, 688], [576, 688]), [528, 688],
+  ...cubic([528, 688], [488, 688], [464, 712], [464, 752]), [464, 768],
+  ...cubic([464, 768], [464, 832], [416, 880], [360, 880]),
+  ...cubic([360, 880], [296, 880], [256, 832], [256, 768]), [256, 272],
+  ...cubic([256, 272], [256, 208], [304, 160], [368, 160])];
+const smile = quad([488, 528], [608, 536], [648, 464]);
+const eyes = [[448, 376], [672, 376]];
 
-function inPolygon(x, y, poly) {
-  let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const [xi, yi] = poly[i], [xj, yj] = poly[j];
-    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
-  }
-  return inside;
-}
 function nearPolyline(x, y, line, radius) {
   for (let i = 0; i < line.length - 1; i++) {
     const [ax, ay] = line[i], [bx, by] = line[i + 1];
@@ -51,7 +40,7 @@ function nearPolyline(x, y, line, radius) {
 }
 const bbox = (pts, pad) => [Math.min(...pts.map((p) => p[0])) - pad, Math.min(...pts.map((p) => p[1])) - pad, Math.max(...pts.map((p) => p[0])) + pad, Math.max(...pts.map((p) => p[1])) + pad];
 const inBox = (x, y, [x0, y0, x1, y1]) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
-const grooveBox = bbox(groove, 17), smileBox = bbox(smile, 13);
+const smileBox = bbox(smile, 22);
 // Body crossings per grid row, so the fill test is a sorted-interval lookup, not a polygon walk.
 function crossings(y) {
   const xs = [];
@@ -66,12 +55,11 @@ function insideRow(x, xs) {
   for (const cx of xs) { if (cx > x) break; inside = !inside; }
   return inside;
 }
-// What the glyph is at a grid point: 'body' (white), 'cut' (face/groove, background), or null.
+// What the glyph is at a grid point: 'body' (white), 'cut' (face, background), or null.
 function glyph(x, y, xs) {
   if (!insideRow(x, xs)) return null;
-  if (inBox(x, y, grooveBox) && nearPolyline(x, y, groove, 17)) return 'cut';
-  if (inBox(x, y, smileBox) && nearPolyline(x, y, smile, 13)) return 'cut';
-  if (eyes.some(([cx, cy]) => ((x - cx) / 32) ** 2 + ((y - cy) / 44) ** 2 <= 1)) return 'cut';
+  if (inBox(x, y, smileBox) && nearPolyline(x, y, smile, 22)) return 'cut';
+  if (eyes.some(([cx, cy]) => (x - cx) ** 2 + (y - cy) ** 2 <= 36 ** 2)) return 'cut';
   return 'body';
 }
 
@@ -94,12 +82,13 @@ function png(size, rgba) {
 
 /**
  * `scale`: glyph size relative to the 1024 grid, centered. `background`: RGB or null (transparent).
- * `cutColor`: what the face/groove show — the background, or a color when it's transparent.
+ * `cutColor`: what the face shows — the background, or a color when it's transparent.
+ * `cornerRadius`: rounds the background's corners (in the output's 1024 grid), transparent outside.
  */
-function render(size, { scale, background, cutColor }) {
+function render(size, { scale, background, cutColor, cornerRadius = 0 }) {
   const rgba = Buffer.alloc(size * size * 4);
   const SS = 3; // supersampling per axis
-  const center = [512, 518];
+  const center = [552, 520];
   for (let py = 0; py < size; py++) {
     const rows = Array.from({ length: SS }, (_, sy) => crossings(((py + (sy + 0.5) / SS) / size * 1024 - 512) / scale + center[1]));
     for (let px = 0; px < size; px++) {
@@ -108,7 +97,9 @@ function render(size, { scale, background, cutColor }) {
         const gx = ((px + (sx + 0.5) / SS) / size * 1024 - 512) / scale + center[0];
         const gy = ((py + (sy + 0.5) / SS) / size * 1024 - 512) / scale + center[1];
         const kind = glyph(gx, gy, rows[sy]);
-        const color = kind === 'body' ? WHITE : kind === 'cut' ? cutColor : background;
+        const ox = (px + (sx + 0.5) / SS) / size * 1024, oy = (py + (sy + 0.5) / SS) / size * 1024;
+        const qx = Math.max(cornerRadius - ox, ox - 1024 + cornerRadius, 0), qy = Math.max(cornerRadius - oy, oy - 1024 + cornerRadius, 0);
+        const color = cornerRadius && qx * qx + qy * qy > cornerRadius * cornerRadius ? null : kind === 'body' ? WHITE : kind === 'cut' ? cutColor : background;
         if (color) { r += color[0]; g += color[1]; b += color[2]; a += 255; }
       }
       const n = SS * SS, i = (py * size + px) * 4, alpha = a / n;
@@ -119,11 +110,13 @@ function render(size, { scale, background, cutColor }) {
 }
 
 // iOS/store icon: full-bleed blue square (iOS rounds the corners itself), no transparency.
-writeFileSync(join(outDir, 'icon.png'), render(1024, { scale: 0.8, background: BLUE, cutColor: BLUE }));
+writeFileSync(join(outDir, 'icon.png'), render(1024, { scale: 0.82, background: BLUE, cutColor: BLUE }));
 // Android adaptive foreground: glyph inside the 66% safe zone; the blue comes from backgroundColor.
 writeFileSync(join(outDir, 'adaptive-icon.png'), render(1024, { scale: 0.58, background: null, cutColor: BLUE }));
 // Splash: the white mascot alone, shown on a brand-blue splash background.
 writeFileSync(join(outDir, 'splash-icon.png'), render(1024, { scale: 0.92, background: null, cutColor: BLUE }));
+// The rounded tile on the native splash and App.tsx's loading screen.
+writeFileSync(join(outDir, 'pathly-mark.png'), render(1024, { scale: 0.82, background: BLUE, cutColor: BLUE, cornerRadius: 240 }));
 // Web favicon.
 writeFileSync(join(outDir, 'favicon.png'), render(48, { scale: 0.84, background: BLUE, cutColor: BLUE }));
 console.log('wrote icons to', outDir);

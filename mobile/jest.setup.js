@@ -29,6 +29,8 @@ jest.mock('firebase/auth', () => ({
   EmailAuthProvider: { credential: jest.fn((email, password) => ({ providerId: 'password', email, password })) },
   reauthenticateWithCredential: jest.fn(() => Promise.resolve()),
   sendPasswordResetEmail: jest.fn(() => Promise.resolve()),
+  sendEmailVerification: jest.fn(() => Promise.resolve()),
+  signInAnonymously: jest.fn(() => Promise.resolve({})),
   onAuthStateChanged: jest.fn((_auth, callback) => {
     callback(mockUser);
     return () => undefined;

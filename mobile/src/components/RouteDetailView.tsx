@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type GestureResponderEvent, type ScrollViewInstance } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type GestureResponderEvent, type ScrollViewInstance } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useDebug } from '../debug/DebugContext';
@@ -8,6 +8,9 @@ import { fetchRouteGeometry, fetchRouteTransfers, type LineTransfer, type RouteG
 import { STATION_TRANSFERS, type StationTransfer, type TransferMode } from '../data/stationTransfers';
 import { departureDisplay, differentEndStop, directionDestination, preferredDirectionIndex, formatClockTime, scheduleStopsFromNow, stopsForDirection, type RouteDetail, type RoutePrediction } from '../data/transit';
 import { routeNotices, type RouteNotice } from '../data/routeNotices';
+import type { RideFix } from '../data/rideDetection';
+import { useRideTracking, type RideTracking } from '../data/rideTracking';
+import { useServiceOutlook } from '../data/serviceOutlook';
 import { focusStopIndex, withAlpha } from '../data/routeDirection';
 import { useWalkingPath, walkingMinutes } from '../data/walkingPath';
 import { useAccessibleStops } from '../data/accessibleStops';
@@ -26,6 +29,8 @@ import { LIVE_SIGNAL_WIDTH, LiveSignal } from './LiveSignal';
 import { MapBackdrop } from './MapBackdrop';
 import { MapLabelGlow } from './MapLabelGlow';
 import { Mascot } from './Mascot';
+import { VehicleSheet } from './VehicleSheet';
+import { useOnBoardVehicle } from '../hooks/useTripRide';
 import { RouteMap } from './RouteMap';
 import { pointAlong, routeFocus, RouteLines, VehicleMarker, type MapLeg } from './RouteMapOverlay';
 import { AgencyLogo } from './AgencyLogo';
@@ -33,6 +38,7 @@ import { badgeLabel, RouteBadge, transitModeForAgency } from './RouteBadge';
 import { MapControlButton } from './MapControlButton';
 import { mapPageMapHeight } from './mapSheetLayout';
 import { PressableScale } from './PressableScale';
+import { usesWebMouseDrag } from './webMouseDrag';
 import { afterClick } from './afterClick';
 import { MapSkeleton, PredictionTilesSkeleton, StopListSkeleton } from './Skeleton';
 import { radii } from '../theme/shape';
@@ -44,6 +50,12 @@ type RouteDetailViewProps = {
   /** Rider's location for the live map; `locationKnown` is false while it's only the fallback. */
   location?: Coordinates;
   locationKnown?: boolean;
+  /** The rider's GPS fix with its accuracy, for noticing they're on a vehicle; never the fallback. */
+  locationFix?: RideFix | null;
+  /** An active trip's ride tracking, on a ride right now: it carries on here rather than this page starting its own. */
+  tripRide?: RideTracking;
+  /** Whether this page is the line that ride is on: a vehicle on another line can't be claimed. */
+  onTripLine?: boolean;
   onBack: () => void;
   /** Opens the full departures list for a direction (by `directions` index). */
   onOpenDepartures?: (directionIndex: number) => void;
@@ -150,7 +162,7 @@ const MAP_BADGE_TOP = 62;
 const MAP_BUS_LABEL_HEIGHT = 52;
 /** The subway sign's height over the map (RouteBadge's xlarge). */
 const MAP_ROUTE_BADGE_HEIGHT = 58;
-const isWeb = Platform.OS === 'web';
+const isWeb = usesWebMouseDrag;
 
 /**
  * Transfers are generated for the Port Jefferson Branch's stations only
@@ -272,7 +284,7 @@ const TRANSFER_MODE_HEADINGS: readonly { mode: TransferMode; title: string }[] =
 ];
 
 /** Every alert on the line, from the bottom: each with its label (yellow for a disruption now), headline and details. */
-function AlertsSheet({ notices, onClose }: { notices: readonly RouteNotice[] | null; onClose: () => void }) {
+function AlertsSheet({ notices, onClose, title }: { notices: readonly RouteNotice[] | null; onClose: () => void; title: string }) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
   return (
@@ -281,14 +293,14 @@ function AlertsSheet({ notices, onClose }: { notices: readonly RouteNotice[] | n
       {notices ? (
         <View style={styles.transfersSheet} testID="service-alerts-list">
           <View style={styles.transfersSheetHeader}>
-            <Text accessibilityRole="header" style={styles.transfersSheetTitle}>Service alerts</Text>
+            <Text accessibilityRole="header" style={styles.transfersSheetTitle}>{title}</Text>
             <PressableScale accessibilityLabel="Close" accessibilityRole="button" hitSlop={8} onPress={onClose} testID="service-alerts-close"><Icon name="close" size={26} /></PressableScale>
           </View>
           <ScrollView contentContainerStyle={styles.alertSheetContent}>
             {notices.map((notice, index) => (
               <View key={`${notice.kind}-${index}`} style={index > 0 ? styles.alertItemSpaced : undefined} testID={`service-alert-${index}`}>
                 <View style={[styles.alertLabel, notice.warning ? styles.alertPillWarning : styles.alertPillNeutral]}>
-                  <Icon color={notice.warning ? colors.onAlertYellow : colors.ink} name={notice.warning ? 'warning' : 'info'} size={14} />
+                  <Icon color={notice.warning ? colors.onAlertYellow : colors.ink} name={notice.warning ? 'warning' : notice.kind === 'outlook' ? 'calendar' : 'info'} size={14} />
                   <Text style={[styles.alertLabelText, { color: notice.warning ? colors.onAlertYellow : colors.ink }]}>{notice.label}</Text>
                 </View>
                 <Text style={styles.alertTitle}>{notice.title}</Text>
@@ -343,7 +355,7 @@ function TransfersSheet({ onClose, onOpen, sheet }: {
   );
 }
 
-export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, location, locationKnown = false, onBack, onOpenDepartures, onOpenStop, onOpenTransfer, onRefreshLocation, onToggleFavorite, route, wholeRoute = false }: RouteDetailViewProps) {
+export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, location, locationFix = null, locationKnown = false, onBack, onOpenDepartures, onOpenStop, onOpenTransfer, onRefreshLocation, onToggleFavorite, onTripLine = false, route, tripRide, wholeRoute = false }: RouteDetailViewProps) {
   const routeColor = useRouteColor()(route.color);
   const styles = useThemedStyles(createStyles);
   const { colors, isDark } = useTheme();
@@ -356,11 +368,16 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
   const tileFill = withAlpha(routeColor, isDark ? 0.28 : 0.16);
   const { height, width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const [alertsOpen, setAlertsOpen] = useState(false);
+  const [openSheet, setOpenSheet] = useState<'alerts' | 'outlook' | null>(null);
+  const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
   const [transfersSheet, setTransfersSheet] = useState<{ stop: LiveStop; transfers: readonly (StationTransfer | LineTransfer)[] } | null>(null);
   const liveStatus = useTransitLive(route.id);
   const debug = useDebug();
   const vehicles = liveStatus.status === 'loaded' ? liveStatus.data.vehicles : [];
+  const ownRide = useRideTracking(tripRide ? undefined : route.liveSource, vehicles, locationFix);
+  const ride = tripRide ?? ownRide;
+  const onBoardTripId = useOnBoardVehicle(vehicles, locationFix);
+  const selectedVehicle = vehicles.find((vehicle) => vehicle.tripId === selectedVehicleId) ?? null;
   const [isLocationCentered, setIsLocationCentered] = useState(false);
   // Bumped on each location-button press; the live map re-centers on the rider whenever it changes.
   const [centerOnUserRequest, setCenterOnUserRequest] = useState(0);
@@ -520,6 +537,8 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
   // Delays on the shown direction's tracked departures, then MTA alerts, under the time cards.
   // The whole line shows no departures, so only its alerts, not one stop's delays.
   const notices = routeNotices(route, wholeRoute ? [] : activePredictions, vehicleIcon);
+  // Holidays and winter weather coming up, in a pill of their own beside any alert.
+  const outlook = useServiceOutlook(now, route.liveSource);
   // The stop list follows the selected departure, so its chip says whether that one is late.
 
   // Only ever rendered below for a route with no `liveSource` — every entry in the static demo
@@ -538,9 +557,10 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
   // rider's stop that the camera opens on.
   // Buses, trains and ferries are named in big type in their route color, over a soft glow from the
   // map's top-left corner so busy streets don't run through the name; subway lines keep their round sign.
+  // The glow stays with the map; the name and logo ride the page with the other buttons.
+  const mapGlow = vehicleIcon !== 'subway' ? <MapLabelGlow color={colors.surface} height={insets.top + MAP_BADGE_TOP + MAP_BUS_LABEL_HEIGHT + 320} width={300} /> : null;
   const mapBadge = vehicleIcon !== 'subway' ? (
     <>
-      <MapLabelGlow color={colors.surface} height={insets.top + MAP_BADGE_TOP + MAP_BUS_LABEL_HEIGHT + 320} width={300} />
       <View
         accessibilityLabel={`${badgeLabel(route)} ${vehicleIcon === 'rail' ? 'train' : vehicleIcon}`}
         accessible={true}
@@ -569,15 +589,13 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
   // route still uses the illustrative overlay, since it never had real geometry to fetch.
   // Only the real Google map pans and zooms (and can center on the rider); illustrated maps stay a static backdrop.
   const liveMap = !!route.liveSource && geometryStatus.status === 'loaded';
-  // Locate, on the live map just above the resting sheet: where Home and Route Results keep it.
+  // Locate, on the live map just above the sheet: where Home and Route Results keep it.
   const locateButton = (
-    <View pointerEvents="box-none" style={styles.mapLocate}>
-      <MapControlButton accessibilityLabel="Show current location" icon="locate" onPress={() => {
-        setIsLocationCentered(true);
-        onRefreshLocation?.();
-        setCenterOnUserRequest((count) => count + 1);
-      }} selected={isLocationCentered} testID="route-location" />
-    </View>
+    <MapControlButton accessibilityLabel="Show current location" icon="locate" onPress={() => {
+      setIsLocationCentered(true);
+      onRefreshLocation?.();
+      setCenterOnUserRequest((count) => count + 1);
+    }} selected={isLocationCentered} testID="route-location" />
   );
 
   const map = !route.liveSource ? (
@@ -592,7 +610,7 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
         renderOverlay={({ scale }) => <RouteLines legs={[routeLeg]} scale={scale} />}
         showUserLocation={true}
       />
-      {mapBadge}
+      {mapGlow}
     </>
   ) : geometryStatus.status === 'loaded' ? (
     <>
@@ -608,6 +626,7 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
           onOpenStop({ name: stop.name, stopId: stop.stopId, lat: stop.lat, lon: stop.lon, directionIndex: activeDirectionIndex });
         } : undefined}
         onUserPan={() => setIsLocationCentered(false)}
+        onVehiclePress={setSelectedVehicleId}
         // The agency's real track/street shape for this direction, served with the stop list.
         path={geometryStatus.geometry.path}
         stops={geometryStatus.geometry.stops}
@@ -615,16 +634,16 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
         vehicles={vehicles}
         walkPath={walkPath ?? undefined}
       />
-      {/* Overlay that ignores touches, so the badge never blocks panning the live map under it. */}
+      {/* Ignores touches, so the glow never blocks panning the live map under it. */}
       <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-        {mapBadge}
+        {mapGlow}
       </View>
     </>
   ) : geometryStatus.status === 'loading' ? (
     <MapSkeleton />
   ) : (
     <View style={styles.mapFallback} testID="route-map-fallback">
-      <Mascot pose="worried" size={56} />
+      <Mascot mood="worried" size={56} />
       <Text style={styles.mapFallbackText}>Map unavailable</Text>
     </View>
   );
@@ -648,7 +667,10 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
       contentTestID="route-detail-content"
       controls={controls}
       handle={{ accessibilityHint: 'Expands or collapses the route details.', accessibilityLabel: 'Route details handle', testID: 'route-sheet-handle' }}
-      map={liveMap ? <>{map}{locateButton}</> : map}
+      map={map}
+      mapButtons={liveMap ? locateButton : undefined}
+      // Ignores touches, so the badge never blocks panning the live map under it.
+      mapOverlay={!route.liveSource || liveMap ? <View pointerEvents="none" style={StyleSheet.absoluteFill}>{mapBadge}</View> : undefined}
       mapHeight={mapHeight}
       mapTestID="route-detail-map"
       scrollTestID="route-detail-scroll"
@@ -680,7 +702,7 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
       ) : activePredictions.length === 0 ? (
         <View style={styles.predictions}>
           <View accessible={true} style={styles.predictionsEmpty} testID="route-predictions-empty">
-            {route.liveStatus === 'error' ? <Mascot pose="worried" size={40} /> : null}
+            {route.liveStatus === 'error' ? <Mascot mood="worried" size={40} /> : null}
             <Text style={styles.predictionsEmptyText}>{predictionsEmptyMessage(route)}</Text>
           </View>
         </View>
@@ -753,12 +775,14 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
 
       {/* Only a route with a delay or an alert gets this pill. It names the most pressing one,
           yellow when service is disrupted now, and opens every alert in a sheet. */}
+      {notices.length > 0 || outlook.length > 0 ? (
+      <View style={styles.noticeRow}>
       {notices.length > 0 ? (
         <PressableScale
           accessibilityHint="Shows every alert for this line"
           accessibilityLabel={`${notices[0]!.label}${notices.length > 1 ? `, ${notices.length - 1} more` : ''}`}
           accessibilityRole="button"
-          onPress={() => setAlertsOpen(true)}
+          onPress={() => setOpenSheet('alerts')}
           style={[styles.alertPill, notices[0]!.warning ? styles.alertPillWarning : styles.alertPillNeutral]}
           testID="service-alerts"
         >
@@ -768,7 +792,40 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
           <Icon color={notices[0]!.warning ? colors.onAlertYellow : colors.mutedInk} name="forward" size={18} />
         </PressableScale>
       ) : null}
-      <AlertsSheet notices={alertsOpen ? notices : null} onClose={() => setAlertsOpen(false)} />
+      {/* A holiday or snow coming up: the date alone beside an alert, which keeps most of the row. */}
+      {outlook.length > 0 ? (
+        <PressableScale
+          accessibilityHint="Shows what may slow service soon"
+          accessibilityLabel={`${outlook[0]!.label}${outlook.length > 1 ? `, ${outlook.length - 1} more` : ''}`}
+          accessibilityRole="button"
+          onPress={() => setOpenSheet('outlook')}
+          style={[styles.alertPill, styles.alertPillNeutral, notices.length > 0 ? styles.outlookPillCompact : styles.outlookPillAlone]}
+          testID="service-outlook"
+        >
+          <Icon color={colors.ink} name={outlook[0]!.icon} size={18} />
+          <Text numberOfLines={1} style={[styles.outlookPillText, notices.length === 0 && styles.outlookPillTextAlone]}>{notices.length > 0 ? outlook[0]!.shortLabel : outlook[0]!.label}</Text>
+        </PressableScale>
+      ) : null}
+      </View>
+      ) : null}
+      <AlertsSheet notices={openSheet === 'alerts' ? notices : openSheet === 'outlook' ? outlook : null} onClose={() => setOpenSheet(null)} title={openSheet === 'outlook' ? 'Coming up' : 'Service alerts'} />
+      <VehicleSheet
+        color={routeColor}
+        destination={activeDestination}
+        lineName={badgeLabel(route)}
+        mode={vehicleIcon}
+        onClaim={ride.claim}
+        onClose={() => setSelectedVehicleId(null)}
+        onBoardTripId={onBoardTripId}
+        onDismiss={ride.dismiss}
+        reportFix={locationFix}
+        reportSource={route.liveSource}
+        riderAt={locationFix && (!tripRide || onTripLine) ? { lat: locationFix.lat, lon: locationFix.lon } : null}
+        ridingTripId={ride.ridingTripId}
+        sharingEnabled={ride.sharingEnabled}
+        stops={geometryStatus.status === 'loaded' ? geometryStatus.geometry.stops : []}
+        vehicle={selectedVehicle}
+      />
 
       <View accessibilityLabel={wholeRoute ? 'Stops' : 'Stops for the next departure'} style={styles.stopList}>
         {liveStopsResult.status === 'loading' ? (
@@ -1023,14 +1080,37 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     fontSize: 8,
   },
   // The whole pill takes the alert's color: yellow for a disruption now, neutral otherwise.
+  noticeRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+  },
   alertPill: {
+    minWidth: 0,
+    flex: 1,
     minHeight: 48,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginTop: 12,
     paddingHorizontal: 14,
     borderRadius: radii.pill,
+  },
+  outlookPillCompact: {
+    flex: 0,
+    flexShrink: 0,
+    gap: 6,
+    paddingHorizontal: 12,
+  },
+  outlookPillAlone: {
+    gap: 8,
+  },
+  outlookPillText: {
+    color: colors.ink,
+    fontFamily: fontFamilies.extraBold,
+    fontSize: 13,
+  },
+  outlookPillTextAlone: {
+    flex: 1,
   },
   alertPillWarning: {
     backgroundColor: colors.alertYellow,
@@ -1177,7 +1257,6 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     borderRadius: 12,
     backgroundColor: colors.surfaceMuted,
   },
-  mapLocate: { position: 'absolute', right: 16, bottom: 14 },
   sheetBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.35)',
@@ -1191,8 +1270,6 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     paddingHorizontal: 18,
     paddingTop: 18,
     paddingBottom: 34,
-    borderTopLeftRadius: radii.sheet,
-    borderTopRightRadius: radii.sheet,
     backgroundColor: colors.surface,
   },
   transfersSheetHeader: {

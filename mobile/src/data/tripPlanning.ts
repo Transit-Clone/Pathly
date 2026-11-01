@@ -37,7 +37,7 @@ export type TransitStep = {
   /** The same line's scheduled departures between the same two stops, this one included (tripDepartures.ts). */
   departures?: TripDeparture[];
   /** The leg's GTFS line, direction and boarding stop (backend tripStops.ts), for its live vehicles. */
-  liveRoute?: { agencyId: string; routeId: string; boardStopId: string; directionId?: number };
+  liveRoute?: { agencyId: string; routeId: string; boardStopId: string; alightStopId?: string; directionId?: number };
   /** What the agency's live feed says about this leg's trip (backend tripLive.ts). */
   live?: LegLive;
   /** The connection into this leg from the previous one, when it's tight or already missed. */
@@ -52,7 +52,19 @@ export type LegConnection = { status: 'tight' | 'missed'; spareSeconds: number }
 /** `stopTimes` follow the leg's `stops` when that trip calls at the same stops in between. */
 export type TripDeparture = { departs: string; arrives: string; stopTimes?: string[] };
 export type TripStep = WalkStep | TransitStep;
-export type TripFare = { text: string; cents: number; currency: string; estimated: boolean };
+/**
+ * `reduced`: the 65+/disability/Medicare fare, when the published rules price every step.
+ * `student` (K-12), `college` and `fairFares` likewise, each only when it's cheaper than the full fare.
+ */
+/** One part of a fare: a ride, what it adds, and why ("Free transfer within 2 hours"). */
+export type FareLine = { label: string; text: string; note?: string };
+export type RiderFare = { text: string; cents: number; lines?: FareLine[] };
+export type TripFare = { text: string; cents: number; currency: string; estimated: boolean; lines?: FareLine[] } & Partial<Record<Exclude<FareType, 'full'>, RiderFare>>;
+/** Settings -> Travel preferences; only ever kept on the device. */
+export type FareType = 'full' | 'reduced' | 'student' | 'college' | 'fairFares';
+
+/** The rider's own price for a trip, if the rules give them one. */
+export const riderFare = (fare: TripFare | undefined, fareType: FareType): RiderFare | undefined => (fareType === 'full' ? undefined : fare?.[fareType]);
 export type Itinerary = {
   id: string;
   departureTime: string;
@@ -461,13 +473,14 @@ export function resetTripPlanCacheForTests(): void {
 const arrival = (itinerary: Itinerary) => Date.parse(itinerary.arrivalTime);
 
 /** Itineraries in the rider's preferred order. */
-export function orderItineraries(itineraries: readonly Itinerary[], preference: RoutePreference): Itinerary[] {
+export function orderItineraries(itineraries: readonly Itinerary[], preference: RoutePreference, fareType: FareType = 'full'): Itinerary[] {
+  const cents = (fare: TripFare | undefined) => riderFare(fare, fareType)?.cents ?? fare?.cents ?? 0;
   const byArrival = (a: Itinerary, b: Itinerary) => arrival(a) - arrival(b);
   const sorted = [...itineraries];
   if (preference === 'transfers') return sorted.sort((a, b) => a.transfers - b.transfers || byArrival(a, b));
   if (preference === 'walking') return sorted.sort((a, b) => walkingSeconds(a) - walkingSeconds(b) || byArrival(a, b));
   if (preference === 'cheapest') {
-    return sorted.sort((a, b) => (a.fare ? 0 : 1) - (b.fare ? 0 : 1) || (a.fare?.cents ?? 0) - (b.fare?.cents ?? 0) || byArrival(a, b));
+    return sorted.sort((a, b) => (a.fare ? 0 : 1) - (b.fare ? 0 : 1) || cents(a.fare) - cents(b.fare) || byArrival(a, b));
   }
   return sorted.sort(byArrival);
 }
@@ -520,10 +533,10 @@ export function transitSteps(itinerary: Itinerary): TransitStep[] {
   return itinerary.steps.filter((step): step is TransitStep => step.kind === 'transit');
 }
 
-/** The fare as a card shows it: the adult one-way fare (Google's or the published fare rules'), or unknown. */
-export function fareLabel(fare: TripFare | undefined): string {
+/** The fare as a card shows it: the rider's fare type where it's known, else the adult one-way fare (Google's or the published fare rules'), or unknown. */
+export function fareLabel(fare: TripFare | undefined, fareType: FareType = 'full'): string {
   if (!fare) return 'Fare N/A';
-  return fare.text;
+  return riderFare(fare, fareType)?.text ?? fare.text;
 }
 
 const LIRR_AGENCY = 'Long Island Rail Road';

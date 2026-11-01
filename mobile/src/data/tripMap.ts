@@ -1,11 +1,12 @@
 import { stopRevealZoom } from './stopDeclutter';
-import { formatTripClock, type Itinerary, type LatLng } from './tripPlanning';
+import { subwayEntrancesAt } from './subwayEntrances';
+import { formatTripClock, type Itinerary, type LatLng, type TransitStep, type TripStep } from './tripPlanning';
 import { distanceMeters, type NavigationCursor, type NormalizedNavigationPlan } from './enrouteNavigation';
 import type { RouteLiveVehicle } from './transitLive';
 import type { TransitMode } from '../components/RouteBadge';
 
 /** A live vehicle on one of a trip's rides, colored and drawn like that ride's line. */
-export type TripVehicle = RouteLiveVehicle & { color: string; mode: TransitMode };
+export type TripVehicle = RouteLiveVehicle & { color: string; mode: TransitMode; lineKey?: string };
 /** A ride's line before the rider boards, drawn faint like Route View's line behind the rider's stop. */
 export type TripApproachLine = { key: string; color: string; path: readonly LatLng[] };
 
@@ -48,10 +49,13 @@ export type TripMapRenderSegment = TripMapLeg & {
   state: TripMapProgressState;
   stepIndex: number;
 };
-/** `stop`: where the rider boards or gets off; `via`: a stop passed in between. */
+/** Subway entrances appear from this zoom, when a station's street corners can be told apart. */
+export const ENTRANCE_REVEAL_ZOOM = 16;
+
+/** `stop`: where the rider boards or gets off; `via`: a stop passed in between; `entrance`: a way in or out of a subway station the rider uses. */
 export type TripMapStop = {
   point: LatLng;
-  kind: 'start' | 'stop' | 'via' | 'end';
+  kind: 'start' | 'stop' | 'via' | 'end' | 'entrance';
   color?: string;
   label?: string;
   /** The transit leg a boarding, alighting, or in-between stop belongs to. */
@@ -161,19 +165,23 @@ function joinEnds(path: readonly LatLng[], from?: LatLng, to?: LatLng): LatLng[]
   return joined;
 }
 
+const isCurbStop = (step: TripStep | undefined): step is TransitStep => step?.kind === 'transit' && step.mode !== 'subway' && step.mode !== 'rail';
+
 export function tripMapPoints(itinerary: Itinerary | null | undefined, origin?: LatLng | null, destination?: LatLng | null) {
   const legs: TripMapLeg[] = [];
   const stops: TripMapStop[] = [];
+  const entrances = new Map<string, TripMapStop>();
   let transitIndex = 0;
   const steps = itinerary?.steps ?? [];
   steps.forEach((step, index) => {
     if (step.path.length < 2) return;
     if (step.kind === 'walk') {
-      // Google's walk ends where its path does, a little off the stop's own point: it's joined to the
-      // stop dots on either side so the walk visibly reaches the stop.
+      // Google's walk ends where its path does, a little off a bus stop's own point, so it's joined to
+      // that dot. A station's walk is left alone: it ends at the entrance Google chose, and the dot is
+      // only one point in a station with many ways in.
       const before = steps[index - 1];
       const after = steps[index + 1];
-      legs.push({ path: joinEnds(step.path, before?.kind === 'transit' ? before.to.location : undefined, after?.kind === 'transit' ? after.from.location : undefined), walk: true });
+      legs.push({ path: joinEnds(step.path, isCurbStop(before) ? before.to.location : undefined, isCurbStop(after) ? after.from.location : undefined), walk: true });
     } else {
       // A ride's line is snapped to the road; it's run on to its stops' dots so it ends on them.
       legs.push({ path: joinEnds(step.path, step.from.location, step.to.location), walk: false, color: step.line.color });
@@ -185,6 +193,12 @@ export function tripMapPoints(itinerary: Itinerary | null | undefined, origin?: 
         ...(step.stops ?? []).map((stop): TripMapStop => ({ point: stop.location, kind: 'via', color, leg, label: `${stop.name} · ${formatTripClock(stop.time)}` })),
         { point: step.to.location, kind: 'stop', color, leg, label: `${step.to.name} · ${formatTripClock(step.to.time)}` },
       );
+      if (step.mode === 'subway') {
+        // A transfer's two legs can share a station, whose entrances are drawn once.
+        for (const entrance of [...subwayEntrancesAt(step.from.location), ...subwayEntrancesAt(step.to.location)]) {
+          entrances.set(`${entrance.point.lat},${entrance.point.lng},${entrance.label}`, { point: entrance.point, kind: 'entrance', color, label: entrance.label });
+        }
+      }
     }
   });
   const start = itinerary?.steps[0]?.path[0] ?? origin ?? undefined;
@@ -192,7 +206,8 @@ export function tripMapPoints(itinerary: Itinerary | null | undefined, origin?: 
   if (start) stops.unshift({ point: start, kind: 'start', label: 'Start' });
   if (end) stops.push({ point: end, kind: 'end', label: 'Destination' });
   const bounds = [...legs.flatMap((leg) => leg.path), ...stops.map((stop) => stop.point)];
-  return { legs, stops, bounds };
+  // After the bounds: entrances don't change how the trip is framed.
+  return { legs, stops: [...stops, ...entrances.values()], bounds };
 }
 
 /** The marker drawn for a stop the rider asked to see (from the stop list): the one at that point. */

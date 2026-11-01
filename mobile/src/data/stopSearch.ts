@@ -86,16 +86,24 @@ export async function addStationLines(places: readonly SearchPlace[], near?: { l
 }
 
 /**
- * Pathly's stops first (at most 3), then Google's suggestions in Google's order, leaving out a
- * Google station that a listed stop already covers (the same name, or one starting with it).
+ * Google's suggestions in Google's order. A Google station that one of Pathly's stops covers (the
+ * same name, or one starting with it) becomes that stop where it stands, since the stop knows its
+ * lines; the other stops (at most 3 in all) follow Google's rows.
  */
 export function mergeSearchResults(stops: readonly SearchPlace[], places: readonly SearchPlace[]): SearchPlace[] {
   const shown = stops.slice(0, 3);
-  const names = shown.map((stop) => normalizeStopName(stop.title));
-  const isDuplicate = (place: SearchPlace) => {
-    if (!TRANSIT_KINDS.has(place.kind)) return false;
+  const placed = new Set<SearchPlace>();
+  const merged = places.flatMap((place) => {
+    if (!TRANSIT_KINDS.has(place.kind)) return [place];
     const name = normalizeStopName(place.title);
-    return names.some((stopName) => name === stopName || name.startsWith(`${stopName} `) || stopName.startsWith(`${name} `));
-  };
-  return [...shown, ...places.filter((place) => !isDuplicate(place))];
+    const stop = shown.find((candidate) => {
+      const stopName = normalizeStopName(candidate.title);
+      return name === stopName || name.startsWith(`${stopName} `) || stopName.startsWith(`${name} `);
+    });
+    if (!stop) return [place];
+    if (placed.has(stop)) return [];
+    placed.add(stop);
+    return [stop];
+  });
+  return [...merged, ...shown.filter((stop) => !placed.has(stop))];
 }

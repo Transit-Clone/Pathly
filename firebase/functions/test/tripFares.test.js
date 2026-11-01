@@ -3,6 +3,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 
+const withoutLines = ({ lines: _lines, ...fare }) => fare;
+
 const { createFareEstimator, isLirrPeak, lirrFareCents } = require('../lib/tripFares');
 const { loadAgencyStaticData } = require('../lib/gtfsStaticData');
 const { normalizeRoutesResponse } = require('../lib/tripPlanning');
@@ -29,7 +31,7 @@ const later = (iso, minutes) => new Date(Date.parse(iso) + minutes * 60_000).toI
 
 test('Stony Brook to Penn Station costs the chart\'s Zone 10 to Zone 1 fare', () => {
   const trip = (at) => [leg(LIRR, { from: station('Stony Brook'), to: station('Penn Station'), at, mode: 'rail' })];
-  assert.deepEqual(estimate(trip(PEAK)), { text: '$21.50', cents: 2150, currency: 'USD', estimated: true });
+  assert.deepEqual(withoutLines(estimate(trip(PEAK))), { text: '$21.50', cents: 2150, currency: 'USD', estimated: true });
   assert.equal(estimate(trip(OFF_PEAK)).cents, 1600);
 });
 
@@ -109,7 +111,7 @@ test('MTA buses: SBS is a local fare, SIM express buses cost $7.25', () => {
 test('the Staten Island Ferry is free and leaves the OMNY transfer untouched', () => {
   const at = '2026-10-28T15:00:00Z';
   const siFerry = (when) => ({ ...leg('New York City Department of Transportation', { at: when, mode: 'ferry', shortName: '' }), line: { name: 'Staten Island Ferry' } });
-  assert.deepEqual(estimate([siFerry(at)]), { text: '$0.00', cents: 0, currency: 'USD', estimated: true });
+  assert.deepEqual(withoutLines(estimate([siFerry(at)])), { text: '$0.00', cents: 0, currency: 'USD', estimated: true });
   // Subway, ferry, then the SIR within two hours: one $3.00 fare and its free transfer.
   const trip = [leg('MTA New York City Transit', { at, mode: 'subway', shortName: '1' }), siFerry(later(at, 25)), leg('MTA New York City Transit', { at: later(at, 60), mode: 'rail', shortName: 'SIR' })];
   assert.equal(estimate(trip).cents, 300);
@@ -123,4 +125,54 @@ test('NYC Ferry costs $4.50, then $5.00 from October 19, 2026, with no transfers
   assert.equal(estimate([ferry('2026-10-19T15:00:00Z')]).cents, 500);
   // The ferry doesn't take or give an OMNY transfer: subway + ferry is both fares.
   assert.equal(estimate([leg('MTA New York City Transit', { at: '2026-10-19T15:00:00Z', mode: 'subway', shortName: 'F' }), ferry(later('2026-10-19T15:00:00Z', 20))]).cents, 800);
+});
+
+test('explains each part of a fare, ride by ride', () => {
+  const estimate = createFareEstimator(lirrStops.values());
+  const at = '2026-10-28T15:00:00Z';
+  const lines = estimate([leg('MTA New York City Transit', { at, mode: 'subway', shortName: '7' }), leg('MTA New York City Transit', { at, mode: 'bus', shortName: 'Q44' })]).lines;
+  assert.deepEqual(lines, [
+    { label: 'MTA 7 train', text: '$3.00', note: 'Includes one free transfer within 2 hours' },
+    { label: 'MTA Q44 bus', text: '$0.00', note: 'Free transfer within 2 hours' },
+  ]);
+});
+
+const { describe, it } = test;
+
+describe('student and low-income fares', () => {
+  const at = '2026-11-03T15:00:00Z'; // A Tuesday, 10 AM in New York.
+  const place = { name: 'Stop', time: at, location: { lat: 40.7, lng: -73.9 } };
+  const ride = (agency, shortName = '7', mode = 'bus') => ({ kind: 'transit', mode, agency: { name: agency }, line: { name: shortName, shortName }, from: place, to: place });
+  const estimate = createFareEstimator([]);
+  const cents = (rider, ...steps) => estimate(steps, at, rider)?.cents;
+  const MTA = 'MTA New York City Transit';
+  const NICE = 'Nassau Inter-County Express';
+  const SUFFOLK = 'Suffolk County Transit';
+
+  it('rides MTA free for a K-12 student, without a discount for college', () => {
+    assert.equal(cents('student', ride(MTA)), 0);
+    assert.equal(cents('college', ride(MTA)), 300);
+  });
+
+  it('charges a K-12 student NICE\'s pass fare only in its hours', () => {
+    assert.equal(cents('student', ride(NICE)), 225);
+    const late = { ...ride(NICE), from: { ...place, time: '2026-11-04T03:00:00Z' } };
+    assert.equal(cents('student', late), 300);
+  });
+
+  it('gives students, K-12 or college, Suffolk\'s student fare', () => {
+    assert.equal(cents('student', ride(SUFFOLK)), 125);
+    assert.equal(cents('college', ride(SUFFOLK)), 125);
+  });
+
+  it('halves MTA for Fair Fares only, and won\'t guess its express fare', () => {
+    assert.equal(cents('fairFares', ride(MTA)), 150);
+    assert.equal(cents('fairFares', ride(NICE)), 300);
+    assert.equal(cents('fairFares', ride(SUFFOLK)), 225);
+    assert.equal(estimate([ride(MTA, 'BM1')], at, 'fairFares'), undefined);
+  });
+
+  it('says when a line has no discount', () => {
+    assert.match(estimate([ride(SUFFOLK)], at, 'fairFares').lines[0].note, /No discount/);
+  });
 });

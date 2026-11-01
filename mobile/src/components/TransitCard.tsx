@@ -24,6 +24,7 @@ import { LIVE_SIGNAL_WIDTH, LiveSignal } from './LiveSignal';
 import { PressableScale } from './PressableScale';
 import { afterClick } from './afterClick';
 import { useSkeletonPulse } from './Skeleton';
+import { usesWebMouseDrag } from './webMouseDrag';
 import { radii } from '../theme/shape';
 
 type TransitCardProps = {
@@ -92,8 +93,12 @@ export function TransitCard({ onPress, route, saved = false }: TransitCardProps)
   const [activePage, setActivePage] = useState(0);
   const scrollRef = useRef<ScrollViewInstance>(null);
 
+  // The page the rider's own swipe reached: already there, so it mustn't be scrolled to mid-swipe.
+  const swipedPage = useRef<number | null>(null);
   const updatePage = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    setActivePage(Math.round(event.nativeEvent.contentOffset.x / pageWidth));
+    const page = Math.round(event.nativeEvent.contentOffset.x / pageWidth);
+    swipedPage.current = page;
+    setActivePage(page);
   };
 
   // Opens on whichever direction's next train is actually sooner, not always the first one —
@@ -115,6 +120,7 @@ export function TransitCard({ onPress, route, saved = false }: TransitCardProps)
   // actually visible, so it's kept in sync here — covers the auto-select above and is a no-op
   // (already there) after the user's own scroll gesture updates `activePage` instead.
   useEffect(() => {
+    if (swipedPage.current === activePage) return;
     scrollRef.current?.scrollTo({ x: activePage * pageWidth, animated: false });
   }, [activePage, pageWidth]);
 
@@ -158,7 +164,7 @@ export function TransitCard({ onPress, route, saved = false }: TransitCardProps)
       style={[styles.card, { backgroundColor: routeColor(route.color) }]}
       testID={`route-card-${route.id}`}
     >
-      {Platform.OS === 'web' ? (
+      {usesWebMouseDrag ? (
         <PressableScale
           accessibilityHint="Opens route details. Swipe horizontally for the other direction."
           accessibilityLabel={accessibilityLabelFor(webActiveDirection)}
@@ -176,6 +182,9 @@ export function TransitCard({ onPress, route, saved = false }: TransitCardProps)
           decelerationRate="fast"
           horizontal={true}
           onMomentumScrollEnd={updatePage}
+          // The browser reports no end of a swipe.
+          onScroll={Platform.OS === 'web' ? updatePage : undefined}
+          scrollEventThrottle={Platform.OS === 'web' ? 32 : undefined}
           pagingEnabled={true}
           showsHorizontalScrollIndicator={false}
           testID={`transit-${route.id}-directions`}

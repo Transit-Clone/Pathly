@@ -36,7 +36,7 @@ export function SavedPlaceDetailsSheet({ onClose, onEdit, onGo, places }: SavedP
         <Pressable accessibilityLabel="Close" onPress={onClose} style={styles.backdrop} testID="saved-place-details-backdrop" />
         <View accessibilityViewIsModal={true} style={styles.sheet} testID="saved-place-details">
           <View style={styles.header}>
-            <Text style={styles.heading}>{stacked ? `${places.length} saved places here` : 'Saved place'}</Text>
+            <Text style={styles.heading}>{stacked ? `${places.length} favorites here` : 'Favorite'}</Text>
             <PressableScale accessibilityLabel="Close" accessibilityRole="button" hitSlop={8} onPress={onClose} testID="saved-place-details-close"><Icon name="close" size={26} /></PressableScale>
           </View>
           <ScrollView bounces={false} style={styles.list}>
@@ -66,7 +66,7 @@ export function SavedPlaceDetailsSheet({ onClose, onEdit, onGo, places }: SavedP
                     </PressableScale>
                   ) : null}
                   <PressableScale
-                    accessibilityHint="Plans a trip to this saved place"
+                    accessibilityHint="Plans a trip to this favorite"
                     accessibilityLabel={`Go to ${title}`}
                     accessibilityRole="button"
                     onPress={() => onGo(place)}

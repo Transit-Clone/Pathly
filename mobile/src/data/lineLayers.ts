@@ -5,14 +5,14 @@ import type { LiveSource } from './transit';
 
 type AgencyId = LiveSource['agencyId'];
 
-/** The home map's "show every line" switches: one per mode the rider thinks in, not per feed. */
+/** The home map's "show every line" switches: one per agency the rider knows, not per feed. */
 export const LINE_LAYER_GROUPS = [
-  { id: 'subway', label: 'Subway', icon: 'subway', agencies: ['subway'] },
-  { id: 'bus', label: 'MTA buses', icon: 'bus', agencies: ['bx', 'bk', 'mn', 'qn', 'si', 'busco'] },
+  { id: 'subway', label: 'MTA Subway', icon: 'subway', agencies: ['subway'] },
+  { id: 'bus', label: 'MTA Buses', icon: 'bus', agencies: ['bx', 'bk', 'mn', 'qn', 'si', 'busco'] },
   { id: 'lirr', label: 'LIRR', icon: 'rail', agencies: ['lirr'] },
-  { id: 'ferry', label: 'Ferries', icon: 'ferry', agencies: ['nycferry', 'siferry'] },
-  { id: 'nice', label: 'NICE buses', icon: 'bus', agencies: ['nice'] },
-  { id: 'suffolk', label: 'Suffolk buses', icon: 'bus', agencies: ['suffolk'] },
+  { id: 'ferry', label: 'NYC Ferries', icon: 'ferry', agencies: ['nycferry', 'siferry'] },
+  { id: 'nice', label: 'NICE Buses', icon: 'bus', agencies: ['nice'] },
+  { id: 'suffolk', label: 'Suffolk Buses', icon: 'bus', agencies: ['suffolk'] },
 ] as const satisfies readonly { id: string; label: string; icon: string; agencies: readonly AgencyId[] }[];
 
 export type LineLayerGroupId = (typeof LINE_LAYER_GROUPS)[number]['id'];

@@ -14,7 +14,7 @@ export function SupportCard({ onDismiss, onDonate }: { onDismiss: () => void; on
   return (
     <View accessibilityLiveRegion="polite" style={styles.card} testID="support-card">
       <View style={styles.row}>
-        <Mascot motion="pop" pose="happy" size={44} />
+        <Mascot mood="happy" motion="pop" size={44} />
         <View style={styles.copy}>
           <Text style={styles.title}>Glad you made it!</Text>
           <Text style={styles.body}>{`${STUDENT_DISCLAIMER} If Pathly got you here, a small tip keeps it running.`}</Text>

@@ -1,4 +1,6 @@
 
+import { isRideReportKind, type VehicleReport } from './rideReports';
+import { normalizeBeanAvatar, type BeanAvatarConfig } from '../avatars/beanAvatar';
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { callable } from '../lib/firebase';
 import type { NearestRouteStop } from './nearestRouteStop';
@@ -12,7 +14,19 @@ export type RouteLiveVehicle = {
   lon: number;
   /** When the vehicle's GPS position was measured (epoch ms); null if the backend didn't say. */
   updatedAt: number | null;
+  /** What riders on it say right now (rideReports.ts), most-reported first. */
+  reports?: readonly VehicleReport[];
+  /** Pathly riders sharing this ride (rideSessions.ts); when set, lat/lon/updatedAt are theirs. */
+  riders?: {
+    count: number;
+    /** At most three, the rider's own first. */
+    avatars: readonly BeanAvatarConfig[];
+    you: boolean;
+    /** Where the agency's feed puts the vehicle. */
+    feed: { lat: number; lon: number; updatedAt: number | null };
+  };
 };
+type VehicleRidersResponse = { count: number; avatars: unknown[]; you: boolean; feed: { lat: number; lon: number; timestamp: number | null } };
 export type DirectionPrediction = {
   minutes: number;
   live: boolean;
@@ -33,7 +47,7 @@ type RouteLiveStatusResponse = {
   routeId: string;
   routeName: string;
   /** `timestamp` is epoch seconds; absent from functions deployed before it was added. */
-  vehicles: { tripId: string; directionId: number; lat: number; lon: number; timestamp?: number | null }[];
+  vehicles: { tripId: string; directionId: number; lat: number; lon: number; timestamp?: number | null; riders?: VehicleRidersResponse; reports?: { kind: string; count: number }[] }[];
   stopPredictions: StopPredictions;
   /** Absent from functions deployed before service alerts were added. */
   alerts?: ServiceAlert[];
@@ -157,6 +171,15 @@ function toRouteLiveData(data: RouteLiveStatusResponse & { nearestStop?: Nearest
       lat: vehicle.lat,
       lon: vehicle.lon,
       updatedAt: vehicle.timestamp != null ? vehicle.timestamp * 1000 : null,
+      ...(vehicle.reports ? { reports: vehicle.reports.filter((report): report is VehicleReport => isRideReportKind(report.kind)) } : {}),
+      ...(vehicle.riders ? {
+        riders: {
+          count: vehicle.riders.count,
+          avatars: vehicle.riders.avatars.slice(0, 3).map(normalizeBeanAvatar),
+          you: vehicle.riders.you,
+          feed: { lat: vehicle.riders.feed.lat, lon: vehicle.riders.feed.lon, updatedAt: vehicle.riders.feed.timestamp != null ? vehicle.riders.feed.timestamp * 1000 : null },
+        },
+      } : {}),
     })),
   };
 }

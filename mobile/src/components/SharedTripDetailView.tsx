@@ -11,6 +11,8 @@ import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings
 import { useLayoutEase } from '../theme/motion';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
+import { FareSheet } from './FareSheet';
+import type { FareType, TripFare } from '../data/tripPlanning';
 import { ConfirmDialog } from './ConfirmDialog';
 import { DetailMapPage } from './DetailMapPage';
 import { Icon } from './Icon';
@@ -83,6 +85,8 @@ export type TripDetailModel = {
   detailNote?: string;
   durationMinutes: number;
   fare: string;
+  /** The fare behind `fare`, opening its explanation when tapped. */
+  fareDetail?: { fare: TripFare; fareType: FareType };
   id: string;
   leaveTime: string;
   /** When the rider has to set off (ISO), for the "Leave within" card; absent hides it. */
@@ -227,7 +231,8 @@ function LeaveWithinCard({ leavesAt, model, testID }: { leavesAt: string; model:
   if (!Number.isFinite(minutes) || minutes > LEAVE_WITHIN_HORIZON_MIN) return null;
   const firstLeg = model.legs[0];
   const urgent = minutes <= 1;
-  const title = minutes > 0 ? `Leave within ${minutes} min` : 'Leave now';
+  const catching = firstLeg ? ` to catch the ${firstLeg.startTime}` : '';
+  const title = `${minutes > 0 ? `Leave within ${minutes} min` : 'Leave now'}${catching}`;
   return (
     <View accessibilityLabel={`${title}${firstLeg?.live ? ', live' : ''}`} accessible={true} style={[styles.leaveCard, urgent && styles.leaveCardUrgent]} testID={testID}>
       <View style={[styles.leaveIcon, urgent && styles.leaveIconUrgent]}><Icon color={urgent ? colors.onAlertYellow : colors.primary} name="time" size={15} /></View>
@@ -313,6 +318,7 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
   const styles = useThemedStyles(createStyles);
   const { colors, isDark } = useTheme();
   const [isLocationCentered, setIsLocationCentered] = useState(false);
+  const [fareOpen, setFareOpen] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [confirmingEnd, setConfirmingEnd] = useState(false);
   // Legs whose stops in between are shown, by index.
@@ -321,7 +327,8 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
   const [allDeparturesLegs, setAllDeparturesLegs] = useState<ReadonlySet<number>>(new Set());
   const [openAlertLegs, setOpenAlertLegs] = useState<ReadonlySet<number>>(new Set());
   const [destinationLinesOpen, setDestinationLinesOpen] = useState(false);
-  const hasDestinationLines = (model.destinationLines?.length ?? 0) > 0;
+  // Only a list cut off to "+N" has more to show.
+  const hasDestinationLines = (model.destinationLines?.length ?? 0) > MAX_ARRIVAL_BADGES;
   const toggleLegAlerts = (index: number) => {
     ease();
     setOpenAlertLegs((current) => {
@@ -390,12 +397,15 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
       <MapControlButton accessibilityLabel={backLabel} icon="back" onPress={onBack} testID={`${testPrefix}-back`} />
       <View style={styles.mapActions}>
         <MapControlButton accessibilityLabel={isFavorite ? 'Remove destination from saved' : 'Save destination'} icon="favorite" onPress={onToggleFavorite} selected={isFavorite} testID={`${testPrefix}-favorite`} variant="save" />
-        <MapControlButton accessibilityLabel="Center trip map on current location" icon="locate" onPress={() => {
-          setIsLocationCentered(true);
-          onCenterOnLocation?.();
-        }} selected={locationSelected ?? isLocationCentered} testID={`${testPrefix}-location`} />
       </View>
     </View>
+  );
+
+  const locateButton = (
+    <MapControlButton accessibilityLabel="Center trip map on current location" icon="locate" onPress={() => {
+      setIsLocationCentered(true);
+      onCenterOnLocation?.();
+    }} selected={locationSelected ?? isLocationCentered} testID={`${testPrefix}-location`} />
   );
 
   // GO (or END) rides the sheet's top edge and scrolls away with it.
@@ -417,6 +427,7 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
       controlsScrollWithMap={true}
       handle={{ accessibilityHint: 'Expands or collapses the trip details.', accessibilityLabel: 'Trip details handle', testID: `${testPrefix}-sheet-handle` }}
       map={map}
+      mapButtons={locateButton}
       mapHeight={mapHeight}
       mapTestID={`${testPrefix}-map`}
       scrollTestID={`${testPrefix}-scroll`}
@@ -457,7 +468,12 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
           })}
         </View>
         <View style={[styles.primaryMetrics, stackLargeTextMetrics && styles.primaryMetricsLargeText]} testID={`${testPrefix}-summary`}>
-          <Text style={styles.fare}>{model.fare}</Text>
+          {model.fareDetail ? (
+            <PressableScale accessibilityHint="Explains how this fare adds up" accessibilityRole="button" hitSlop={8} onPress={() => setFareOpen(true)} testID={`${testPrefix}-fare`}>
+              <Text style={styles.fare}>{model.fare}</Text>
+            </PressableScale>
+          ) : <Text style={styles.fare}>{model.fare}</Text>}
+          <FareSheet fare={fareOpen ? model.fareDetail?.fare : undefined} fareType={model.fareDetail?.fareType ?? 'full'} onClose={() => setFareOpen(false)} />
           <View style={styles.minutesLive}>
             <Text accessibilityLabel={totalDuration.accessibility} style={[styles.metricValue, styles.minutes]} testID={`${testPrefix}-duration`}>{totalDuration.visible}</Text>
             {model.legs.some((leg) => leg.live) ? <LiveSignal color={colors.green} style={styles.minutesSignal} /> : null}

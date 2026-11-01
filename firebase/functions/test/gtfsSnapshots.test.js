@@ -13,6 +13,7 @@ const {
   createGtfsSnapshotManifest,
   derivedArchiveObject,
   daysUntilGtfsServiceEnd,
+  gtfsFeedShouldWaitForStart,
   extractGtfsArchive,
   fillTripDirections,
   hydrateCurrentGtfsSnapshot,
@@ -266,6 +267,22 @@ test('requires app fallback route and stop IDs before publishing an agency feed'
     () => validateAgencySnapshotContract('lirr', extractGtfsArchive(archive(inactiveRoute)), now),
     /required route_id 10 has no current trips/,
   );
+});
+
+test('keeps the published feed until a new one starts, unless the published one has ended', () => {
+  const now = new Date('2026-10-06T12:00:00.000Z');
+  const upcomingFiles = validFiles();
+  upcomingFiles['calendar.txt'] = strToU8(
+    'service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\nWK,1,1,1,1,1,0,0,20261007,20261231\n',
+  );
+  const upcoming = extractGtfsArchive(archive(upcomingFiles));
+  assert.equal(gtfsFeedShouldWaitForStart(upcoming, '20261006', now), true);
+  // The published feed ended, or there is none: better the upcoming feed than nothing.
+  assert.equal(gtfsFeedShouldWaitForStart(upcoming, '20261005', now), false);
+  assert.equal(gtfsFeedShouldWaitForStart(upcoming, undefined, now), false);
+  // The day it starts, and any feed already running, publish as usual.
+  assert.equal(gtfsFeedShouldWaitForStart(upcoming, '20261031', new Date('2026-10-07T12:00:00.000Z')), false);
+  assert.equal(gtfsFeedShouldWaitForStart(extractGtfsArchive(archive()), '20261031', now), false);
 });
 
 test('rejects missing or expired service horizons', () => {
@@ -901,7 +918,7 @@ test('exports a bounded daily scheduled function', () => {
   assert.equal(endpoint.maxInstances, 1);
   assert.equal(endpoint.serviceAccountEmail, 'pathly-gtfs-writer@pathly-b7f0f.iam.gserviceaccount.com');
   assert.equal(endpoint.timeoutSeconds, 1800);
-  assert.equal(endpoint.scheduleTrigger.schedule, '0 4 * * *');
+  assert.equal(endpoint.scheduleTrigger.schedule, '15 0 * * *');
   assert.equal(endpoint.scheduleTrigger.timeZone, 'America/New_York');
   assert.equal(endpoint.scheduleTrigger.retryConfig.retryCount, 3);
   assert.equal(endpoint.scheduleTrigger.retryConfig.minBackoffSeconds, 60);

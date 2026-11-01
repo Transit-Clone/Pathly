@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { Platform, ScrollView, StyleSheet, Text, useWindowDimensions, View, type GestureResponderEvent, type ScrollViewInstance } from 'react-native';
+import { ScrollView, StyleSheet, Text, useWindowDimensions, View, type GestureResponderEvent, type ScrollViewInstance } from 'react-native';
 
 import { addressAfterName } from '../data/placesSearch';
 import { findLabeledLocation, savedPlaceName, sortSavedLocations, type Location, type SavedLocation } from '../data/userData';
@@ -8,6 +8,7 @@ import type { Palette } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { Icon, type IconName } from './Icon';
 import { PressableScale } from './PressableScale';
+import { usesWebMouseDrag } from './webMouseDrag';
 import { afterClick } from './afterClick';
 import { SavedPlaceBadge } from './SavedPlaceBadge';
 import { radii } from '../theme/shape';
@@ -20,7 +21,7 @@ const GAP = 10;
 const CARDS_PER_VIEW = 2.35;
 /** A mouse drag shorter than this (px) is a click on the card. */
 const DRAG_THRESHOLD = 8;
-const isWeb = Platform.OS === 'web';
+const isWeb = usesWebMouseDrag;
 
 /** A saved place's icon from the name it was saved under (its label, when it has one): home, work, school, or a pin. */
 export function savedPlaceIcon(name: string): IconName {
@@ -84,7 +85,7 @@ export function SavedPlacesStrip({ onAdd, onSelect, places }: SavedPlacesStripPr
       title,
       subtitle,
       label: subtitle ? `${title}, ${subtitle}` : title,
-      hint: 'Plans a trip to this saved place',
+      hint: 'Plans a trip to this favorite',
       onPress: () => onSelect(place),
       testID: `search-saved-place-${place.id}`,
     };
@@ -107,7 +108,7 @@ export function SavedPlacesStrip({ onAdd, onSelect, places }: SavedPlacesStripPr
       icon: 'add',
       title: 'Add',
       subtitle: 'Save a place',
-      label: 'Add a saved place',
+      label: 'Add a favorite',
       hint: 'Searches for a place to save',
       onPress: () => onAdd(),
       testID: 'search-add-saved-place',
@@ -135,7 +136,7 @@ export function SavedPlacesStrip({ onAdd, onSelect, places }: SavedPlacesStripPr
 
   return (
     <ScrollView
-      accessibilityLabel="Saved places"
+      accessibilityLabel="Favorites"
       contentContainerStyle={styles.row}
       decelerationRate="fast"
       horizontal={true}

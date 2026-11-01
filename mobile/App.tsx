@@ -10,8 +10,10 @@ import { Image, StyleSheet, useColorScheme, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider, useAuth } from './src/auth/AuthContext';
+import { needsEmailConfirmation } from './src/auth/authService';
 import { AuthScreen } from './src/components/AuthScreen';
 import { HomeScreen } from './src/components/HomeScreen';
+import { VerifyEmailScreen } from './src/components/VerifyEmailScreen';
 import { UserPreferencesProvider } from './src/data/userPreferences';
 import { DebugProvider } from './src/debug/DebugContext';
 import { AppSettingsProvider } from './src/theme/AppSettings';
@@ -43,7 +45,8 @@ function LoadingScreen() {
 function AppContent() {
   const { initializing, user } = useAuth();
   if (initializing) return <LoadingScreen />;
-  return user ? <HomeScreen /> : <AuthScreen />;
+  if (!user) return <AuthScreen />;
+  return needsEmailConfirmation(user) ? <VerifyEmailScreen /> : <HomeScreen />;
 }
 
 export default function App() {

@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '../auth/AuthContext';
+import type { BeanMood } from '../avatars/beanAvatar';
 import { searchLineIndex, useLineIndex, type IndexedLine } from '../data/lineIndex';
 import { searchTransitRoutes, warmLineSearch } from '../data/nearbyTransit';
 import { addressAfterName, fetchPlaceDetails, formatDistanceAway, placeDistanceMeters, type PlaceKind, type SearchPlace } from '../data/placesSearch';
@@ -22,8 +23,9 @@ import { usePlacesSearch } from '../hooks/usePlacesSearch';
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
+import { DestinationPinMarker } from './DestinationPinMarker';
 import { Icon, type IconName } from './Icon';
-import { Mascot, type MascotPose } from './Mascot';
+import { Mascot } from './Mascot';
 import { PressableScale } from './PressableScale';
 import { badgeLabel, RouteBadge, transitModeForAgency, type TransitMode } from './RouteBadge';
 import { SavedPlaceBadge } from './SavedPlaceBadge';
@@ -132,7 +134,7 @@ export type SearchViewProps = {
   initialQuery?: string;
   onCancel: () => void;
   onSelect: (place: SearchPlace) => void;
-  /** When set (editing a trip's start), a "Current location" choice is offered first. */
+  /** When set (editing a trip's start), a "Current location" choice is offered until the rider types. */
   onSelectCurrentLocation?: () => void;
   /** The rider's location, to rank equally good transit stops nearest first. */
   near?: { latitude: number; longitude: number } | null;
@@ -159,11 +161,6 @@ type SearchResultRowProps = {
   /** Where the rider is searching around: each row says how far it is, under its icon. */
   near?: { latitude: number; longitude: number } | null;
 };
-
-function SearchIcon() {
-  const { colors } = useTheme();
-  return <Icon color={colors.ink} name="search" size={20} />;
-}
 
 function SearchResultRow({ near, onPress, onRemove, place, recent = false, resolving = false, saved }: SearchResultRowProps) {
   const styles = useThemedStyles(createStyles);
@@ -276,19 +273,18 @@ function ShowMoreRow({ expanded, hiddenCount, noun, onToggle, testID }: { expand
 }
 
 type MessageProps = {
+  mood?: BeanMood;
   body: string;
   children?: ReactNode;
-  /** Which mascot sits above the message. */
-  pose?: MascotPose;
   title: string;
 };
 
 /** Centered empty/error/unavailable state, announced to assistive technology. */
-function Message({ body, children, pose = 'thinking', title }: MessageProps) {
+function Message({ body, children, mood = 'curious', title }: MessageProps) {
   const styles = useThemedStyles(createStyles);
   return (
     <View accessibilityLiveRegion="polite" style={styles.message} testID="search-message">
-      <Mascot pose={pose} size={64} style={styles.messageMascot} />
+      <Mascot mood={mood} size={64} style={styles.messageMascot} />
       <Text style={styles.messageTitle}>{title}</Text>
       <Text style={styles.messageBody}>{body}</Text>
       {children}
@@ -306,7 +302,7 @@ export function SearchView({ initialQuery = '', near, onAddSavedPlace, onCancel,
   // The line being opened (its stops are looked up first), as `agencyId:routeId`.
   const [openingLine, setOpeningLine] = useState<string | null>(null);
   const { user } = useAuth();
-  const uid = user?.uid;
+  const uid = user?.isAnonymous ? undefined : user?.uid;
   // The account's search history (Firestore), newest first; it shows new picks right away, even offline.
   const [recentPlaces, setRecentPlaces] = useState<readonly SearchPlace[]>([]);
 
@@ -348,7 +344,7 @@ export function SearchView({ initialQuery = '', near, onAddSavedPlace, onCancel,
   });
   const getDetailsSessionToken = useEffectEvent(getSessionToken);
 
-  // Resolves the picked suggestion; unmounting (e.g. Cancel) aborts it so a late answer can't navigate.
+  // Resolves the picked suggestion; unmounting (e.g. Back) aborts it so a late answer can't navigate.
   useEffect(() => {
     if (!resolvingId) return undefined;
     const controller = new AbortController();
@@ -392,15 +388,15 @@ export function SearchView({ initialQuery = '', near, onAddSavedPlace, onCancel,
     if (status === 'unconfigured') {
       return (
         <Message
+          mood="worried"
           body="Place search is not set up for this build yet. Clear the search to pick a recent place."
-          pose="worried"
           title="Place search is unavailable"
         />
       );
     }
     if (status === 'error') {
       return (
-        <Message body="Check your connection and try again." pose="worried" title="Couldn't load places">
+        <Message body="Check your connection and try again." mood="worried" title="Couldn't load places">
           <PressableScale accessibilityRole="button" onPress={retry} style={styles.retryButton} testID="search-retry">
             <Text style={styles.retryText}>Retry</Text>
           </PressableScale>
@@ -441,7 +437,16 @@ export function SearchView({ initialQuery = '', near, onAddSavedPlace, onCancel,
         <SafeAreaView edges={['top']} style={styles.searchSafeArea}>
           <View style={styles.searchRow}>
             <View style={styles.searchField}>
-              <SearchIcon />
+              <PressableScale
+                accessibilityLabel="Back from search"
+                accessibilityRole="button"
+                hitSlop={6}
+                onPress={onCancel}
+                style={styles.backButton}
+                testID="search-back"
+              >
+                <Icon color={colors.ink} name="back" size={22} />
+              </PressableScale>
               <TextInput
                 accessibilityHint="Type an address, station, or destination"
                 accessibilityLabel="Search destinations"
@@ -469,15 +474,6 @@ export function SearchView({ initialQuery = '', near, onAddSavedPlace, onCancel,
                 </PressableScale>
               ) : null}
             </View>
-
-            <PressableScale
-              accessibilityLabel="Cancel destination search"
-              accessibilityRole="button"
-              onPress={onCancel}
-              style={styles.cancelButton}
-            >
-              <Text style={styles.cancelText}>Cancel</Text>
-            </PressableScale>
           </View>
           {/* "Choose on map" then saved places lead the page, under the search field, until the rider starts typing. */}
           {!isSearching && onChooseOnMap ? (
@@ -494,7 +490,7 @@ export function SearchView({ initialQuery = '', near, onAddSavedPlace, onCancel,
               testID="search-choose-on-map"
             >
               <View style={styles.resultIcon}>
-                <Icon color={colors.primary} name="map" size={20} />
+                <DestinationPinMarker scale={0.6} />
               </View>
               <View style={[styles.resultCopy, styles.chooseOnMapCopy]}>
                 <Text numberOfLines={1} style={styles.resultTitle}>Choose on map</Text>
@@ -517,7 +513,7 @@ export function SearchView({ initialQuery = '', near, onAddSavedPlace, onCancel,
             </Text>
           ) : null}
 
-          {onSelectCurrentLocation ? (
+          {onSelectCurrentLocation && (!isSearching || query === initialQuery) ? (
             <PressableScale
               accessibilityLabel="Current location"
               accessibilityRole="button"
@@ -624,8 +620,8 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     flexShrink: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingLeft: 16,
+    gap: 4,
+    paddingLeft: 4,
     paddingRight: 6,
     borderRadius: radii.pill,
     backgroundColor: colors.surfaceMuted,
@@ -638,23 +634,17 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     ...typography.bodyStrong,
     fontSize: 16,
   },
-  clearButton: {
+  backButton: {
     minWidth: 44,
     minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  cancelButton: {
-    minWidth: 54,
-    minHeight: 48,
-    flexShrink: 0,
+  clearButton: {
+    minWidth: 44,
+    minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  cancelText: {
-    color: colors.primary,
-    ...typography.bodyStrong,
-    fontSize: 15,
   },
   results: {
     flex: 1,

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, useWindowDimensions, View, type LayoutChangeEvent } from 'react-native';
 import MapView, { Marker, Polyline, type Region } from 'react-native-maps';
 
+import { BeanAvatar } from '../avatars/BeanAvatarImage';
 import { formatAge, visibleTrains } from '../data/liveTrains';
 import { googleMapStyle } from '../data/mapStyle';
 import { approachingVehicle, directionArrowAt, focusStopIndex, metersPerPixel, riderNearStop, splitPathAtStop, withAlpha } from '../data/routeDirection';
@@ -40,6 +41,10 @@ const STOP_RING = 1.5;
 const VEHICLE_SIZE = 42;
 const VEHICLE_BOX = 54;
 const VEHICLE_ANCHOR = { x: VEHICLE_SIZE / 2 / VEHICLE_BOX, y: (VEHICLE_BOX - VEHICLE_SIZE / 2) / VEHICLE_BOX };
+// Riders' avatars replace the age badge, stacked; the box widens so Android doesn't clip them.
+const RIDER_AVATAR = 24;
+const RIDER_AVATAR_STEP = 13;
+const RIDER_AVATAR_LEFT = 30;
 
 type RouteMapProps = {
   /** Incremented by the location button; each change centers the map on `userLocation` and follows it until a pan. */
@@ -55,6 +60,8 @@ type RouteMapProps = {
   focusStopName?: string;
   /** Vehicle glyph and label (train vs bus). */
   mode?: TransitMode;
+  /** Tapping a live vehicle opens its details. */
+  onVehiclePress?: (tripId: string) => void;
   /** Tapping a stop's name (shown once its dot is tapped) opens the line at that stop. */
   onOpenStop?: (stop: GeometryStop) => void;
   /** Called when the rider drags the map, so the location button can drop its selected state. */
@@ -94,16 +101,21 @@ function regionFor(stops: readonly GeometryStop[], focusStop: GeometryStop | und
  * A live vehicle (Route View and the trip map): a white circle with the line's mode glyph and its
  * position's age, gliding to each refreshed spot rather than jumping there.
  */
-export function LiveVehicleMarker({ color, mode, now, vehicle, zIndex }: { color: string; mode: TransitMode; now: number; vehicle: RouteLiveVehicle; zIndex: number }) {
+export function LiveVehicleMarker({ color, mode, now, onPress, vehicle, zIndex }: { color: string; mode: TransitMode; now: number; onPress?: (tripId: string) => void; vehicle: RouteLiveVehicle; zIndex: number }) {
+  const avatars = vehicle.riders?.avatars ?? [];
+  const boxWidth = avatars.length > 0 ? RIDER_AVATAR_LEFT + RIDER_AVATAR + (avatars.length - 1) * RIDER_AVATAR_STEP : VEHICLE_BOX;
+  const anchor = { x: VEHICLE_SIZE / 2 / boxWidth, y: VEHICLE_ANCHOR.y };
   return (
     <Glide lat={vehicle.lat} lon={vehicle.lon}>{(point) => (
       // Vehicles keep tracking view changes so the ticking age badge re-renders; there are only a few.
-      <Marker anchor={VEHICLE_ANCHOR} coordinate={{ latitude: point.lat, longitude: point.lon }} testID={`route-vehicle-${vehicle.tripId}`} title={mode === 'bus' ? 'Bus' : 'Train'} zIndex={zIndex}>
-        <View style={styles.vehicleBox}>
+      <Marker anchor={anchor} coordinate={{ latitude: point.lat, longitude: point.lon }} onPress={onPress ? () => onPress(vehicle.tripId) : undefined} testID={`route-vehicle-${vehicle.tripId}`} title={onPress ? undefined : mode === 'bus' ? 'Bus' : 'Train'} zIndex={zIndex}>
+        <View style={[styles.vehicleBox, { width: boxWidth }]}>
           <View style={styles.vehicleBadge} testID={`route-vehicle-badge-${vehicle.tripId}`}>
             <Icon color={color} name={mode === 'bus' ? 'bus' : mode === 'subway' ? 'subway' : mode === 'ferry' ? 'ferry' : 'rail'} size={22} />
           </View>
-          {vehicle.updatedAt != null ? (
+          {avatars.length > 0 ? avatars.map((avatar, index) => (
+            <BeanAvatar config={avatar} key={index} size={RIDER_AVATAR} style={[styles.riderAvatar, { left: RIDER_AVATAR_LEFT + index * RIDER_AVATAR_STEP }]} testID={`route-vehicle-rider-${vehicle.tripId}-${index}`} />
+          )) : vehicle.updatedAt != null ? (
             <View style={[styles.ageBadge, { backgroundColor: color }]} testID={`route-vehicle-age-badge-${vehicle.tripId}`}>
               <Text style={styles.ageText} testID={`route-vehicle-age-${vehicle.tripId}`}>{formatAge(now - vehicle.updatedAt)}</Text>
             </View>
@@ -115,7 +127,7 @@ export function LiveVehicleMarker({ color, mode, now, vehicle, zIndex }: { color
 }
 
 /** Real route map: actual stop positions, the real line, and live vehicles — for any route with a live feed. */
-export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusStopId, focusStopName, mode = 'rail', onOpenStop, onUserPan, path, showRouteRequest = 0, stops, testID = 'route-map', userLocation, vehicles, walkPath }: RouteMapProps) {
+export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusStopId, focusStopName, mode = 'rail', onOpenStop, onUserPan, onVehiclePress, path, showRouteRequest = 0, stops, testID = 'route-map', userLocation, vehicles, walkPath }: RouteMapProps) {
   const mapRef = useRef<MapView>(null);
   // Places hidden, and recolored in the dark theme (see mapStyle.ts).
   const { colors, isDark } = useTheme();
@@ -300,7 +312,7 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
           <DirectionArrow color={color} />
         </Marker>
       ) : null}
-      {shownVehicles.map((vehicle) => <LiveVehicleMarker key={vehicle.tripId} color={color} mode={mode} now={now} vehicle={vehicle} zIndex={2} />)}
+      {shownVehicles.map((vehicle) => <LiveVehicleMarker key={vehicle.tripId} color={color} mode={mode} now={now} onPress={onVehiclePress} vehicle={vehicle} zIndex={2} />)}
       {userLocation ? <HeadingBeamMarker coordinate={userLocation} /> : null}
     </MapView>
   );
@@ -344,6 +356,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.35,
     shadowRadius: 5,
     elevation: 6,
+  },
+  riderAvatar: {
+    position: 'absolute',
+    top: 0,
   },
   ageBadge: {
     position: 'absolute',

@@ -6,6 +6,9 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { getAccessibleStops as findAccessibleStops } from './accessibleStops';
 import { requireAdmin } from './admin';
 import { collectBackendStatus } from './backendStatus';
+import { isRideReportKind, routeRideReports, saveRideReport, withReports, type RideReportKind } from './rideReports';
+import { deleteRideSession, MAX_RIDER_ACCURACY_METERS, riderGapAllowed, routeRideSessions, saveRideSession, withRiders } from './rideSessions';
+import { getWinterAlerts, holidayService, type HolidayService } from './serviceOutlook';
 import { enforceCallableSecurity, peekRateLimits, type CallableRateLimit } from './callableSecurity';
 import {
   describeRoute,
@@ -99,6 +102,13 @@ const RATE_LIMITS = {
   listTransitLines: { userPerMinute: 10 },
   // Opening a line from a stop or transfer badge in route view.
   describeTransitRoute: { userPerMinute: 60 },
+  // A rider on a vehicle reports about every 30 seconds.
+  reportRide: { userPerMinute: 10 },
+  stopRide: { userPerMinute: 10 },
+  // A rider tapping how their ride is going.
+  reportRideCondition: { userPerMinute: 10 },
+  // Route View, at most once per 15 minutes per device.
+  getServiceOutlook: { userPerMinute: 10 },
   // Admin-only; each call checks every live feed.
   getBackendStatus: { userPerMinute: 6 },
 } satisfies Record<string, CallableRateLimit>;
@@ -134,7 +144,8 @@ export const refreshGtfsStaticData = onSchedule(
     memory: '4GiB',
     minBackoffSeconds: 60,
     retryCount: 3,
-    schedule: '0 4 * * *',
+    // Just after midnight, so a feed waiting for its start date takes over as that day begins.
+    schedule: '15 0 * * *',
     serviceAccount: GTFS_WRITER_SERVICE_ACCOUNT,
     timeZone: 'America/New_York',
     timeoutSeconds: 1800,
@@ -215,14 +226,14 @@ type RouteLiveStatusRequest = { agencyId: AgencyId; routeId: string; direction1S
  * for both direction1StopId and direction0StopId.)
  */
 export const getRouteLiveStatus = onCall<RouteLiveStatusRequest>({ ...liveStatusCallableOptions, secrets: [swiftlyApiKey, mtaBusTimeApiKey] }, async (request) => {
-  await enforceCallableSecurity(request, 'getRouteLiveStatus', RATE_LIMITS.getRouteLiveStatus);
+  const uid = await enforceCallableSecurity(request, 'getRouteLiveStatus', RATE_LIMITS.getRouteLiveStatus);
   const data = request.data ?? ({} as RouteLiveStatusRequest);
   await prepareAgencyStaticData(requiredAgencyId(data.agencyId));
-  return routeLiveStatus(data);
+  return routeLiveStatus(data, uid);
 });
 
 /** One route's live status — the shared body of getRouteLiveStatus and getRoutesLiveStatus. Its agency's static data must already be prepared. */
-async function routeLiveStatus(data: RouteLiveStatusRequest) {
+async function routeLiveStatus(data: RouteLiveStatusRequest, uid?: string) {
   const agencyId = requiredAgencyId(data.agencyId);
   const routeId = requiredRouteId(agencyId, data.routeId);
   let direction1StopId = requiredString(data.direction1StopId, 'direction1StopId');
@@ -234,16 +245,102 @@ async function routeLiveStatus(data: RouteLiveStatusRequest) {
   // feed) rather than by a separate prior call, so a route needs one round trip, not two. Each
   // direction falls back to the given stop id if it can't be resolved.
   const hasLocation = location !== null;
-  const [status, nearestStop, alerts] = await Promise.all([
+  const [status, nearestStop, alerts, rideSessions, rideReports] = await Promise.all([
     getRouteStatus(agencyId, routeId),
     location ? getNearestStopForRoute(agencyId, routeId, location.lat, location.lon).catch(() => null) : Promise.resolve(null),
     getRouteAlerts(agencyId, routeId),
+    routeRideSessions(agencyId, routeId),
+    routeRideReports(agencyId, routeId),
   ]);
   direction1StopId = nearestStop?.direction1?.stopId ?? direction1StopId;
   direction0StopId = nearestStop?.direction0?.stopId ?? direction0StopId;
   const stopPredictions = await getStopPredictions(agencyId, routeId, direction1StopId, direction0StopId, status.trips);
-  return { ...status, stopPredictions, alerts, ...(hasLocation ? { nearestStop } : {}) };
+  return { ...status, vehicles: withReports(withRiders(status.vehicles, rideSessions, uid, Date.now()), rideReports, Date.now()), stopPredictions, alerts, ...(hasLocation ? { nearestStop } : {}) };
 }
+
+type ReportRideRequest = { agencyId: AgencyId; routeId: string; tripId: string; lat: number; lon: number; accuracyMeters: number };
+
+/**
+ * A rider who opted in says they're on a vehicle (mobile/src/data/rideTracking.ts). Accepted only
+ * with an accurate fix near where the agency's own feed puts that vehicle; anything else ends the
+ * rider's session instead. Client call: httpsCallable(functions, 'reportRide')({ agencyId, routeId, tripId, lat, lon, accuracyMeters }).
+ */
+export const reportRide = onCall<ReportRideRequest>({ ...liveStatusCallableOptions, secrets: [swiftlyApiKey, mtaBusTimeApiKey] }, async (request) => {
+  const uid = await enforceCallableSecurity(request, 'reportRide', RATE_LIMITS.reportRide);
+  // Anyone can mint a guest session, so guests can't place vehicles for other riders.
+  if (request.auth?.token.firebase?.sign_in_provider === 'anonymous') throw new HttpsError('permission-denied', 'Create an account to share rides.');
+  const data = request.data ?? ({} as ReportRideRequest);
+  const agencyId = requiredAgencyId(data.agencyId);
+  await prepareAgencyStaticData(agencyId);
+  const routeId = requiredRouteId(agencyId, data.routeId);
+  const tripId = requiredString(data.tripId, 'tripId');
+  const rider = requiredCoordinates(data.lat, data.lon);
+  const accurate = typeof data.accuracyMeters === 'number' && data.accuracyMeters >= 0 && data.accuracyMeters <= MAX_RIDER_ACCURACY_METERS;
+  const now = Date.now();
+  const vehicle = (await getRouteStatus(agencyId, routeId)).vehicles.find((candidate) => candidate.tripId === tripId);
+  if (!accurate || !vehicle || !riderGapAllowed(vehicle, rider, now)) {
+    await deleteRideSession(uid);
+    return { accepted: false };
+  }
+  await saveRideSession(uid, agencyId, routeId, tripId, rider, now);
+  return { accepted: true };
+});
+
+type ReportRideConditionRequest = ReportRideRequest & { kind: RideReportKind };
+
+/**
+ * A rider says how their ride is going (rideReports.ts). Like reportRide it needs an accurate fix
+ * near that vehicle, so only someone on it can report; the fix is checked, not stored.
+ */
+export const reportRideCondition = onCall<ReportRideConditionRequest>({ ...liveStatusCallableOptions, secrets: [swiftlyApiKey, mtaBusTimeApiKey] }, async (request) => {
+  const uid = await enforceCallableSecurity(request, 'reportRideCondition', RATE_LIMITS.reportRideCondition);
+  if (request.auth?.token.firebase?.sign_in_provider === 'anonymous') throw new HttpsError('permission-denied', 'Create an account to report on rides.');
+  const data = request.data ?? ({} as ReportRideConditionRequest);
+  if (!isRideReportKind(data.kind)) throw new HttpsError('invalid-argument', 'kind is not a known report');
+  const agencyId = requiredAgencyId(data.agencyId);
+  await prepareAgencyStaticData(agencyId);
+  const routeId = requiredRouteId(agencyId, data.routeId);
+  const tripId = requiredString(data.tripId, 'tripId');
+  const rider = requiredCoordinates(data.lat, data.lon);
+  const accurate = typeof data.accuracyMeters === 'number' && data.accuracyMeters >= 0 && data.accuracyMeters <= MAX_RIDER_ACCURACY_METERS;
+  const now = Date.now();
+  const vehicle = (await getRouteStatus(agencyId, routeId)).vehicles.find((candidate) => candidate.tripId === tripId);
+  if (!accurate || !vehicle || !riderGapAllowed(vehicle, rider, now)) return { accepted: false };
+  await saveRideReport(uid, agencyId, routeId, tripId, data.kind, now);
+  return { accepted: true };
+});
+
+/** The rider got off, turned sharing off, or left the page: their position is deleted now. */
+export const stopRide = onCall({ ...protectedCallableOptions, minInstances: 0 }, async (request) => {
+  const uid = await enforceCallableSecurity(request, 'stopRide', RATE_LIMITS.stopRide);
+  await deleteRideSession(uid);
+  return { ok: true };
+});
+
+const MAX_HOLIDAY_DATES = 3;
+type ServiceOutlookRequest = { agencyId?: AgencyId; routeId?: string; holidayDates?: string[] };
+
+/** A route's timetable on the holidays the device asks about; any trouble just leaves them out. */
+async function routeHolidayService({ agencyId, routeId, holidayDates }: ServiceOutlookRequest): Promise<Record<string, HolidayService>> {
+  if (typeof agencyId !== 'string' || typeof routeId !== 'string' || !Array.isArray(holidayDates)) return {};
+  if (!Object.hasOwn(AGENCY_CONFIGS, agencyId)) throw new HttpsError('invalid-argument', 'agencyId is not supported');
+  const dates = holidayDates.slice(0, MAX_HOLIDAY_DATES).filter((date) => typeof date === 'string' && /^\d{8}$/.test(date));
+  try {
+    await prepareAgencyStaticData(agencyId);
+    if (!isAgencyAvailable(agencyId) || !loadAgencyStaticData(agencyId).routesById.has(routeId)) return {};
+    return Object.fromEntries(dates.map((date) => [date, holidayService(agencyId, routeId, date)]));
+  } catch (error) {
+    logger.warn('Could not read a holiday timetable', { agencyId, reason: error instanceof Error ? error.message : String(error) });
+    return {};
+  }
+}
+
+/** Winter weather riders should plan around, and how a route's timetable changes on coming holidays (serviceOutlook.ts); the holiday dates are worked out on the device. */
+export const getServiceOutlook = onCall<ServiceOutlookRequest>({ ...protectedCallableOptions, minInstances: 0 }, async (request) => {
+  await enforceCallableSecurity(request, 'getServiceOutlook', RATE_LIMITS.getServiceOutlook);
+  const [winterAlerts, holidays] = await Promise.all([getWinterAlerts(), routeHolidayService(request.data ?? {})]);
+  return { winterAlerts, holidayService: holidays };
+});
 
 /** The most routes one batch may ask for (a screenful of cards with room to spare). */
 const MAX_BATCH_ROUTES = 12;
@@ -259,7 +356,7 @@ type RoutesLiveStatusRequest = { routes: Omit<RouteLiveStatusRequest, 'lat' | 'l
  */
 // minInstances 0 stated outright, so a deploy clears the earlier always-on setting (it billed while idle).
 export const getRoutesLiveStatus = onCall<RoutesLiveStatusRequest>({ ...liveStatusCallableOptions, minInstances: 0, secrets: [swiftlyApiKey, mtaBusTimeApiKey] }, async (request) => {
-  await enforceCallableSecurity(request, 'getRoutesLiveStatus', RATE_LIMITS.getRoutesLiveStatus);
+  const uid = await enforceCallableSecurity(request, 'getRoutesLiveStatus', RATE_LIMITS.getRoutesLiveStatus);
   const data = request.data ?? ({} as RoutesLiveStatusRequest);
   if (!Array.isArray(data.routes) || data.routes.length === 0 || data.routes.length > MAX_BATCH_ROUTES) {
     throw new HttpsError('invalid-argument', `routes must list 1 to ${MAX_BATCH_ROUTES} routes`);
@@ -277,7 +374,7 @@ export const getRoutesLiveStatus = onCall<RoutesLiveStatusRequest>({ ...liveStat
 
   const results = await Promise.all(data.routes.map(async (route) => {
     try {
-      return { ok: true as const, data: await routeLiveStatus({ ...route, ...(location ? { lat: location.lat, lon: location.lon } : {}) }) };
+      return { ok: true as const, data: await routeLiveStatus({ ...route, ...(location ? { lat: location.lat, lon: location.lon } : {}) }, uid) };
     } catch (error) {
       if (error instanceof HttpsError) return { ok: false as const, code: error.code };
       logger.error('Batched route live status failed', { agencyId: route?.agencyId, routeId: route?.routeId, reason: error instanceof Error ? error.message : String(error) });

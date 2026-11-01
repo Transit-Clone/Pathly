@@ -372,8 +372,8 @@ export async function addTripStops<T extends { steps: { kind: string }[] }>(itin
       if (result.departures) step.departures = result.departures;
       if (result.live) {
         liveTripRefs.set(step, result.live);
-        const { agencyId, routeId, boardStopId, directionId } = result.live;
-        step.liveRoute = directionId === undefined ? { agencyId, routeId, boardStopId } : { agencyId, routeId, boardStopId, directionId };
+        const { agencyId, routeId, boardStopId, alightStopId, directionId } = result.live;
+        step.liveRoute = directionId === undefined ? { agencyId, routeId, boardStopId, alightStopId } : { agencyId, routeId, boardStopId, alightStopId, directionId };
       }
     }
   }));
