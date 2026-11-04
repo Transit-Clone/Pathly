@@ -28,7 +28,8 @@ import { usesWebMouseDrag } from './webMouseDrag';
 import { radii } from '../theme/shape';
 
 type TransitCardProps = {
-  onPress: () => void;
+  /** With the direction shown on the card when it was pressed (by `directions` index). */
+  onPress: (directionIndex: number) => void;
   /** Saved by the rider: shown first in Nearby with a small star. */
   saved?: boolean;
   route: RouteDetail;
@@ -154,7 +155,7 @@ export function TransitCard({ onPress, route, saved = false }: TransitCardProps)
     // A vertical drag scrolled the list; it isn't a tap on the card under the finger.
     if (Math.abs(event.nativeEvent.pageY - dragStartY.current) > SWIPE_THRESHOLD) return;
     if (Math.abs(dx) <= SWIPE_THRESHOLD) {
-      afterClick(onPress);
+      afterClick(() => onPress(activePage));
       return;
     }
     const direction = dx < 0 ? 1 : -1;
@@ -199,7 +200,7 @@ export function TransitCard({ onPress, route, saved = false }: TransitCardProps)
               accessibilityHint="Opens route details. Swipe horizontally for the other direction."
               accessibilityLabel={accessibilityLabelFor(item)}
               accessibilityRole="button"
-              onPress={onPress}
+              onPress={() => onPress(index)}
               style={[styles.page, { width: pageWidth }]}
               testID={`route-card-${route.id}-${index === 0 ? 'primary' : 'alternate'}`}
             >

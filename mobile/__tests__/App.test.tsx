@@ -162,6 +162,15 @@ describe('Pathly prototype navigation', () => {
     expect(within(screen.getByTestId(`route-card-${PJ_CARD}-alternate`)).queryByTestId('live-gps-signal', { includeHiddenElements: true })).toBeNull();
   });
 
+  it.each(['primary', 'alternate'])('opens Route View in the direction of the %s page of a card', async (page) => {
+    const screen = await renderHome();
+    const card = await screen.findByTestId(`route-card-${PJ_CARD}-${page}`);
+    const label: string = card.props.accessibilityLabel;
+    fireEvent.press(card);
+    const destination: string = screen.getByTestId('route-detail-destination').props.children;
+    expect(label).toContain(`. ${destination}. `);
+  });
+
   it.each(routes.map((route) => [cardIdFor(route), route.routeName, route.shortName] as const))(
     'opens shared details for %s and returns home',
     async (cardId, routeName, shortName) => {

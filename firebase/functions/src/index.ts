@@ -11,6 +11,7 @@ import { deleteRideSession, MAX_RIDER_ACCURACY_METERS, riderGapAllowed, routeRid
 import { getWinterAlerts, holidayService, type HolidayService } from './serviceOutlook';
 import { enforceCallableSecurity, peekRateLimits, type CallableRateLimit } from './callableSecurity';
 import {
+  agenciesNear,
   describeRoute,
   listLines,
   findNearbyTransit as findNearbyTransitDiscovery,
@@ -421,9 +422,12 @@ type WarmupRequest = { warmup?: boolean };
  */
 const AGENCY_PREPARE_CONCURRENCY = 3;
 
-/** Readies every agency's timetable, a few downloads at a time. `tolerant`: one agency's failure doesn't fail the rest. */
-async function prepareAllAgencyStaticData({ tolerant = false }: { tolerant?: boolean } = {}): Promise<void> {
-  const queue = Object.keys(AGENCY_CONFIGS) as AgencyId[];
+/**
+ * Readies these agencies' timetables (every agency's by default), a few downloads at a time.
+ * `tolerant`: one agency's failure doesn't fail the rest.
+ */
+async function prepareAllAgencyStaticData({ tolerant = false, agencyIds = Object.keys(AGENCY_CONFIGS) as AgencyId[] }: { tolerant?: boolean; agencyIds?: readonly AgencyId[] } = {}): Promise<void> {
+  const queue = [...agencyIds];
   const worker = async () => {
     for (let agencyId = queue.shift(); agencyId; agencyId = queue.shift()) {
       const preparing = prepareAgencyStaticData(agencyId);
@@ -433,16 +437,21 @@ async function prepareAllAgencyStaticData({ tolerant = false }: { tolerant?: boo
   await Promise.all(Array.from({ length: AGENCY_PREPARE_CONCURRENCY }, worker));
 }
 
+/** Agencies loaded wherever the rider is (no `stopBounds`): the ones a warm-up readies. */
+const UNBOUNDED_AGENCY_IDS = (Object.keys(AGENCY_CONFIGS) as AgencyId[]).filter((agencyId) => !AGENCY_CONFIGS[agencyId].stopBounds);
+
 /**
- * Answers a `{ warmup: true }` call: brings this (possibly cold) instance's static data up —
- * every agency's current snapshot and small files, plus the stop indexes nearby search starts
- * from — so the rider's first real request finds it ready. Returns no transit data. The app waits
- * for this before its first real call, since with concurrency 1 a request arriving mid-warm-up
- * would otherwise start a second cold instance.
+ * Answers a `{ warmup: true }` call: brings this (possibly cold) instance's static data up — the
+ * current snapshot and small files of every agency loaded wherever the rider is, plus the stop
+ * indexes nearby search starts from — so the rider's first real request finds it ready. The
+ * warm-up doesn't know where the rider is, so agencies with `stopBounds` (the city's buses and
+ * ferries) wait for a request near them. Returns no transit data. The app waits for this before
+ * its first real call, since with concurrency 1 a request arriving mid-warm-up would otherwise
+ * start a second cold instance.
  */
 async function warmTransitInstance({ stopIndexes }: { stopIndexes: boolean }): Promise<{ warmed: true }> {
-  await prepareAllAgencyStaticData();
-  for (const agencyId of Object.keys(AGENCY_CONFIGS) as AgencyId[]) {
+  await prepareAllAgencyStaticData({ agencyIds: UNBOUNDED_AGENCY_IDS });
+  for (const agencyId of UNBOUNDED_AGENCY_IDS) {
     if (!isAgencyAvailable(agencyId)) continue;
     loadAgencyStaticData(agencyId);
     if (stopIndexes) await loadGlobalStopRouteIndex(agencyId);
@@ -464,7 +473,8 @@ export const findNearbyTransit = onCall<FindNearbyTransitRequest>({ ...protected
   await enforceCallableSecurity(request, 'findNearbyTransit', RATE_LIMITS.findNearbyTransit);
   if (request.data?.warmup === true) return warmTransitInstance({ stopIndexes: true });
   const { lat, lon } = requiredCoordinates(request.data?.lat, request.data?.lon);
-  await prepareAllAgencyStaticData();
+  // Only the agencies that could be near: on Long Island, the city's buses aren't downloaded.
+  await prepareAllAgencyStaticData({ agencyIds: agenciesNear(lat, lon) });
   const routes = await findNearbyTransitDiscovery(lat, lon);
   return { routes };
 });

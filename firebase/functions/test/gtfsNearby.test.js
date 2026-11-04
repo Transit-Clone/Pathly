@@ -1,7 +1,8 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
-const { findNearbyTransit, pickNearbyRoutes } = require('../lib/gtfsDiscovery');
+const { AGENCY_CONFIGS } = require('../lib/gtfsAgencies');
+const { agenciesNear, findNearbyTransit, pickNearbyRoutes } = require('../lib/gtfsDiscovery');
 
 const route = (routeId, distanceMeters, agencyId = 'suffolk') => ({ agencyId, routeId, distanceMeters });
 const ids = (routes) => routes.map((item) => item.routeId);
@@ -45,4 +46,15 @@ test('Midtown lists every route within walking range without widening', async ()
   assert.ok(isSorted(routes));
   // Every subway route is within the subway's 1.6 km base radius: the search never widened.
   assert.ok(routes.filter((item) => item.agencyId === 'subway').every((item) => item.distanceMeters <= 1_600));
+});
+
+test('a cold start loads only the agencies that could be nearby', () => {
+  // Stony Brook: none of the city's buses or ferries.
+  assert.deepEqual(agenciesNear(40.9126, -73.1234), ['lirr', 'subway', 'nice', 'suffolk']);
+  // Valley Stream, at the city line: Queens buses (and those of MTA Bus) reach it, Staten Island's don't.
+  const valleyStream = agenciesNear(40.6643, -73.7085);
+  assert.ok(valleyStream.includes('qn') && valleyStream.includes('busco'));
+  assert.ok(!valleyStream.includes('si') && !valleyStream.includes('bx'));
+  // Midtown: everything.
+  assert.deepEqual(agenciesNear(40.7549, -73.984), Object.keys(AGENCY_CONFIGS));
 });

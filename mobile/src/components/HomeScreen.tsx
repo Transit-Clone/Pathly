@@ -8,6 +8,7 @@ import { NEARBY_CACHE_KEY, readCache, writeCache } from '../data/deviceCache';
 import { guidanceForNavigation } from '../data/enrouteNavigation';
 import { describeTransitLine, discoveredRouteToRouteDetail, fetchNearbyTransit, fetchRouteAtStop, filterOutPinnedDuplicates, type DiscoveredRoute } from '../data/nearbyTransit';
 import type { IndexedLine } from '../data/lineIndex';
+import { distanceMeters } from '../data/routeDirection';
 import { SERVICE_AREA_FALLBACK } from '../data/serviceArea';
 import type { LineTransfer } from '../data/routeGeometry';
 import { removeSavedRoute, saveRoute, savedRouteFrom, savedRouteToRouteDetail, setRouteAlerts, setRouteFavorite, subscribeToSavedRoutes, type AlertHours, type RouteAlertSetting, type SavedRoute } from '../data/savedRoutes';
@@ -84,6 +85,10 @@ const HEADER_INSET = 80;
 // Same footprint as the blue current-location dot (CurrentLocationMarker).
 const SEARCH_CENTER_SIZE = 17;
 const NEARBY_SEARCH_DEBOUNCE_MS = 600;
+// GPS fixes arrive every few seconds (about every second on the web, where the watch's distance
+// filter isn't honored) and drift while the rider stands still. Nearby is searched again only once
+// the point has moved this far: searching on every fix ran into the per-rider rate limit.
+const NEARBY_RESEARCH_METERS = 150;
 const LOCATION_UNAVAILABLE_NOTICE_MS = 1000;
 // A cached nearby list older than a day is more misleading than helpful.
 const NEARBY_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -301,6 +306,12 @@ export function HomeScreen() {
   }
   const nearbyPoint = searchCenter ?? location;
   const exploring = searchCenter != null;
+  // Where Nearby was last searched; follows nearbyPoint only in steps of NEARBY_RESEARCH_METERS.
+  const [nearbySearchPoint, setNearbySearchPoint] = useState(nearbyPoint);
+  if (nearbySearchPoint !== nearbyPoint && distanceMeters(
+    { lat: nearbySearchPoint.latitude, lon: nearbySearchPoint.longitude },
+    { lat: nearbyPoint.latitude, lon: nearbyPoint.longitude },
+  ) >= NEARBY_RESEARCH_METERS) setNearbySearchPoint(nearbyPoint);
   // An open route keeps the stops it opened with: live data stays anchored where the rider was,
   // so a new fix (or a "nearer" stop) never swaps the stop or walking path under them.
   const viewingRoute = activeView.name === 'route' || activeView.name === 'departures';
@@ -321,7 +332,7 @@ export function HomeScreen() {
     const load = async () => {
       setNearbyStatus((current) => (current.status === 'loaded' ? { ...current, refreshing: true } : { status: 'loading' }));
       try {
-        const discovered = await fetchNearbyTransit(nearbyPoint);
+        const discovered = await fetchNearbyTransit(nearbySearchPoint);
         if (cancelled) return;
         setNearbyStatus({ status: 'loaded', routes: discovered.map(discoveredRouteToRouteDetail) });
         // The rider's own surroundings (not an area explored with the map) open instantly next time.
@@ -337,7 +348,7 @@ export function HomeScreen() {
       clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed on the coordinate primitives, not the point object (a new reference every GPS update)
-  }, [nearbyPoint.latitude, nearbyPoint.longitude]);
+  }, [nearbySearchPoint.latitude, nearbySearchPoint.longitude]);
   // Every discovered route, regardless of pin state — used for resolving ids (findRoute) so a
   // pinned route's own detail page keeps working.
   const allDiscoveredRoutes = useMemo(
@@ -460,9 +471,9 @@ export function HomeScreen() {
     };
   };
 
-  const openRoute = useCallback((routeId: string) => {
+  const openRoute = useCallback((routeId: string, directionIndex: number) => {
     const route = findRoute(routeId);
-    if (route) setActiveView({ name: 'route', routeId, route });
+    if (route) setActiveView({ name: 'route', routeId, route, directionIndex });
   }, [findRoute]);
 
   // A line opened from search: the whole line, Back returns to the search.

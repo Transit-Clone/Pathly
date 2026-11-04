@@ -38,7 +38,7 @@ type TransitSheetProps = {
   /** Starts saving a new place; offered under Favorites -> Places when set. */
   onAddSavedPlace?: () => void;
   /** Opens a fresh route search for a completed trip; stored provider results are never replayed. */
-  onOpenRoute: (routeId: string) => void;
+  onOpenRoute: (routeId: string, directionIndex: number) => void;
   onTabChange: (tab: TransitTabId) => void;
   /** Destinations saved with a trip's star (Firestore savedLocations), under Favorites -> Places. */
   savedLocations: readonly SavedLocation[];
@@ -300,7 +300,7 @@ export function TransitSheet({
                   {savedRoutes.map((route) => (
                     <View key={route.id} onLayout={(event) => recordCardLayout('saved', route.id, event)} testID={`card-slot-${route.id}`}>
                       <TransitCard
-                        onPress={() => onOpenRoute(route.id)}
+                        onPress={(directionIndex) => onOpenRoute(route.id, directionIndex)}
                         route={route}
                         saved={true}
                       />
@@ -313,7 +313,7 @@ export function TransitSheet({
                 {nearbyCards.map((route) => (
                   <View key={route.id} onLayout={(event) => recordCardLayout('nearby', route.id, event)} testID={`card-slot-${route.id}`}>
                     <TransitCard
-                      onPress={() => onOpenRoute(route.id)}
+                      onPress={(directionIndex) => onOpenRoute(route.id, directionIndex)}
                       route={route}
                     />
                   </View>
@@ -349,7 +349,7 @@ export function TransitSheet({
                     <View onLayout={(event) => recordSectionLayout('inactive', event)} testID="inactive-routes">
                       {inactiveCards.map((route) => (
                         <View key={route.id} onLayout={(event) => recordCardLayout('inactive', route.id, event)} testID={`card-slot-${route.id}`}>
-                          <TransitCard onPress={() => onOpenRoute(route.id)} route={route} />
+                          <TransitCard onPress={(directionIndex) => onOpenRoute(route.id, directionIndex)} route={route} />
                         </View>
                       ))}
                     </View>
@@ -368,7 +368,7 @@ export function TransitSheet({
                       if (!route) return null;
                       return (
                         <View key={id} onLayout={(event) => recordCardLayout('favorites', id, event)} testID={`favorite-route-${id}`}>
-                          <TransitCard onPress={() => onOpenRoute(id)} route={applyRouteLive(route, liveMap.get(id) ?? { status: 'error' }, now)} />
+                          <TransitCard onPress={(directionIndex) => onOpenRoute(id, directionIndex)} route={applyRouteLive(route, liveMap.get(id) ?? { status: 'error' }, now)} />
                         </View>
                       );
                     })}

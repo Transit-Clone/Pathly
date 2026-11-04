@@ -19,6 +19,9 @@ export const MTA_BUS_AGENCY_IDS: readonly BusAgencyId[] = ['bx', 'bk', 'mn', 'qn
 /** One GTFS-RT feed to fetch and merge in — most agencies need just one (an agency-wide feed that already bundles trip updates and vehicle positions); Swiftly-hosted agencies publish those as two separate feeds instead. */
 export type FeedRequest = { url: string; headers?: Record<string, string> };
 
+/** A latitude/longitude rectangle. */
+export type StopBounds = { south: number; north: number; west: number; east: number };
+
 export type AgencyConfig = {
   id: AgencyId;
   displayName: string;
@@ -65,6 +68,13 @@ export type AgencyConfig = {
    * Such an agency has no committed static_data/ copy, and is skipped until a snapshot is published.
    */
   onDemandRouteFiles?: boolean;
+  /**
+   * The rectangle around every stop in the feed. A nearby search farther from it than the agency's
+   * widest search radius doesn't download the agency's timetable (agenciesNear in gtfsDiscovery.ts),
+   * so a cold start on Long Island skips the city's buses. Unset: always loaded. Widen it if the
+   * agency adds stops outside it.
+   */
+  stopBounds?: StopBounds;
   /** The agency_ids MTA's service-alert feed files this agency's routes under (see gtfsAlerts.ts); none for agencies it doesn't cover. */
   serviceAlertAgencyIds?: readonly string[];
   /**
@@ -147,9 +157,10 @@ const BUS_SNAPSHOT_LIMITS = {
   stopTimeRows: 6_000_000,
 } as const;
 
-function mtaBusConfig(id: BusAgencyId, feed: string): AgencyConfig {
+function mtaBusConfig(id: BusAgencyId, feed: string, stopBounds: StopBounds): AgencyConfig {
   return {
     id,
+    stopBounds,
     displayName: 'MTA Bus',
     dataDir: id,
     staticFeedUrl: `https://rrgtfsfeeds.s3.amazonaws.com/${feed}.zip`,
@@ -232,12 +243,13 @@ export const AGENCY_CONFIGS: Record<AgencyId, AgencyConfig> = {
     feedRequestsForRoute: () => swiftlyFeedRequests('suffolk-county'),
     alertFeedRequests: () => swiftlyAlertRequests('suffolk-county'),
   },
-  bx: mtaBusConfig('bx', 'gtfs_bx'),
-  bk: mtaBusConfig('bk', 'gtfs_b'),
-  mn: mtaBusConfig('mn', 'gtfs_m'),
-  qn: mtaBusConfig('qn', 'gtfs_q'),
-  si: mtaBusConfig('si', 'gtfs_si'),
-  busco: mtaBusConfig('busco', 'gtfs_busco'),
+  // stopBounds: each feed's stops.txt, rounded outward (sampled 2026-11-03).
+  bx: mtaBusConfig('bx', 'gtfs_bx', { south: 40.79, north: 40.92, west: -73.96, east: -73.78 }),
+  bk: mtaBusConfig('bk', 'gtfs_b', { south: 40.57, north: 40.78, west: -74.05, east: -73.78 }),
+  mn: mtaBusConfig('mn', 'gtfs_m', { south: 40.70, north: 40.87, west: -74.02, east: -73.86 }),
+  qn: mtaBusConfig('qn', 'gtfs_q', { south: 40.64, north: 40.85, west: -73.99, east: -73.70 }),
+  si: mtaBusConfig('si', 'gtfs_si', { south: 40.50, north: 40.77, west: -74.26, east: -73.96 }),
+  busco: mtaBusConfig('busco', 'gtfs_busco', { south: 40.56, north: 40.94, west: -74.02, east: -73.70 }),
   nycferry: {
     id: 'nycferry',
     displayName: 'NYC Ferry',
@@ -250,6 +262,8 @@ export const AGENCY_CONFIGS: Record<AgencyId, AgencyConfig> = {
     realtimeTripIdsMatchStatic: true,
     // Tiny, but published like the buses so nothing needs committing.
     onDemandRouteFiles: true,
+    // stops.txt, rounded outward (sampled 2026-11-03).
+    stopBounds: { south: 40.56, north: 40.81, west: -74.08, east: -73.76 },
     // Trip updates only: NYC Ferry publishes no vehicle positions.
     feedRequestsForRoute: () => [{ url: 'https://nycferry.connexionz.net/rtt/public/utility/gtfsrealtime.aspx/tripupdate' }],
     // Same host's service alerts (answered with an empty feed when there are none, checked 2026-10-25).
@@ -274,6 +288,7 @@ export const AGENCY_CONFIGS: Record<AgencyId, AgencyConfig> = {
     // No realtime feed: departures come from the timetable.
     realtimeTripIdsMatchStatic: false,
     onDemandRouteFiles: true,
+    stopBounds: { south: 40.64, north: 40.71, west: -74.08, east: -74.01 },
     feedRequestsForRoute: () => [],
   },
 };

@@ -492,6 +492,21 @@ const MAX_NEARBY_CAP_METERS: Partial<Record<AgencyId, number>> = {
 };
 const DEFAULT_MAX_NEARBY_CAP_METERS = 6_000;
 
+/**
+ * The agencies a nearby search at this point could list: every agency without `stopBounds`, and
+ * those whose stops come within their widest search radius. Only these need their timetables
+ * downloaded first, which is most of a cold start.
+ */
+export function agenciesNear(lat: number, lon: number): AgencyId[] {
+  return (Object.keys(AGENCY_CONFIGS) as AgencyId[]).filter((agencyId) => {
+    const bounds = agencyConfig(agencyId).stopBounds;
+    if (!bounds) return true;
+    const nearestLat = Math.min(Math.max(lat, bounds.south), bounds.north);
+    const nearestLon = Math.min(Math.max(lon, bounds.west), bounds.east);
+    return haversineMeters(lat, lon, nearestLat, nearestLon) <= (MAX_NEARBY_CAP_METERS[agencyId] ?? DEFAULT_MAX_NEARBY_CAP_METERS);
+  });
+}
+
 // Only a candidate-discovery step before the real distance filter: generous enough that the
 // widest pass, not this count, decides what's "nearby" (a dense bus hub easily serves 10+
 // routes, and the widest pass covers several hubs).
