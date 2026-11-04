@@ -170,6 +170,29 @@ npm run deploy:web
 
 This exports the web bundle to `mobile/dist` and deploys only Hosting. It doesn't change Cloud Functions, Firestore, or Storage. You need to be signed in to the Firebase CLI (`npx firebase-tools login`) with access to the `pathly-b7f0f` project. The `EXPO_PUBLIC_` values in your local `mobile/.env` are built into the bundle, so deploy from a machine that has the full config.
 
+## Android release
+
+Android builds run on EAS (`mobile/eas.json`). The package name is `com.pathly.app` and can't change after the first Google Play upload. Run these commands from `mobile/` after `npx eas-cli login`.
+
+### One-time setup
+
+1. **Environment variables.** EAS builds don't read `mobile/.env`. Add every variable from `mobile/.env.example` to the EAS `production` environment (and `preview` for test APKs), either on expo.dev under **Project → Environment variables** or with `npx eas-cli env:create`. Use the `plaintext` or `sensitive` visibility; `EXPO_PUBLIC_` values end up in the app either way.
+2. **Firebase Android app.** In the Firebase console, add an Android app with the package `com.pathly.app` and download `google-services.json`. Upload it as an EAS **file** variable named `GOOGLE_SERVICES_JSON`. For local native builds, put it at `mobile/google-services.json` (git ignores it).
+3. **Push notifications.** In the Firebase console, create a service account key for Firebase Cloud Messaging (V1) and upload it with `npx eas-cli credentials` → Android → production → Google Service Account → FCM V1.
+4. **Signing.** Let EAS generate the upload keystore on the first build, then download a backup with `npx eas-cli credentials`. Google Play App Signing holds the real signing key.
+5. **SHA-1 fingerprints.** After the first upload, copy the app signing key's SHA-1 from Play Console → **Test and release → App integrity**. Add it, along with the EAS upload key's SHA-1, to the Android OAuth client (`EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID`), the Android Maps key restriction, and the Firebase Android app. If you enforce App Check, register Play Integrity for the Android app.
+6. **Play submissions.** Create a Google Cloud service account with release access in Play Console (**Users and permissions**), and save its JSON key as `mobile/play-service-account.json` (git ignores it). Upload the first `.aab` by hand in Play Console; Google requires that before the API accepts uploads.
+
+### Building and submitting
+
+```sh
+npx eas-cli build -p android --profile preview     # installable APK for testing on a phone
+npx eas-cli build -p android --profile production  # signed .aab for Google Play
+npx eas-cli submit -p android --profile production # upload the latest build as a draft on the internal track
+```
+
+`versionCode` increases automatically on each production build. Change `version` in `mobile/app.config.js` for the version people see. Promote releases from internal → closed → production testing in Play Console. A new personal developer account must run a closed test with at least 12 testers for 14 days before it can publish to production.
+
 ## Backend
 
 The Cloud Functions in `firebase/functions/` serve live departures, trip plans, and nearby stops. Two generated data sets aren't committed:

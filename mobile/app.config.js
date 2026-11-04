@@ -1,3 +1,13 @@
+const fs = require('fs');
+const path = require('path');
+
+// Firebase's Android config (needed for push notifications through FCM). EAS builds read it from
+// the GOOGLE_SERVICES_JSON file variable; local builds read mobile/google-services.json. Both are
+// optional so the app still starts without push.
+const localGoogleServices = path.join(__dirname, 'google-services.json');
+const googleServicesFile =
+  process.env.GOOGLE_SERVICES_JSON ?? (fs.existsSync(localGoogleServices) ? './google-services.json' : undefined);
+
 module.exports = {
   expo: {
     name: 'Pathly',
@@ -11,10 +21,12 @@ module.exports = {
     platforms: ['ios', 'android', 'web'],
     ios: {
       supportsTablet: true,
-      bundleIdentifier: 'com.pathly.prototype',
+      bundleIdentifier: 'com.pathly.app',
     },
     android: {
-      package: 'com.pathly.prototype',
+      // Permanent once the app is uploaded to Google Play.
+      package: 'com.pathly.app',
+      ...(googleServicesFile ? { googleServicesFile } : {}),
       adaptiveIcon: {
         foregroundImage: './assets/adaptive-icon.png',
         backgroundColor: '#0B4F9C',

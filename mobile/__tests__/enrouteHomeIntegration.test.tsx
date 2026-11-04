@@ -25,6 +25,10 @@ let alternateFirstDeparture: string;
 
 const mockUseFonts = jest.fn(() => [true] as [boolean]);
 
+// Each test renders the whole app and drives a trip end to end, which takes about 2-10s per test
+// (more on a busy machine), so Jest's 5s default fails them at random.
+jest.setTimeout(30_000);
+
 jest.mock('react-native-safe-area-context', () => mockSafeAreaContext);
 jest.mock('@expo-google-fonts/nunito/useFonts', () => ({
   useFonts: () => mockUseFonts(),

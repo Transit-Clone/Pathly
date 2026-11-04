@@ -25,6 +25,10 @@ coverage/
 # Never commit long-lived Google service-account credentials.
 *firebase-adminsdk*.json
 *.service-account.json
+# Play Console upload key for `eas submit` and Firebase native app configs (supplied through EAS).
+play-service-account.json
+google-services.json
+GoogleService-Info.plist
 
 # Firebase
 .firebase/

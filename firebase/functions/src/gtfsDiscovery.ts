@@ -498,13 +498,27 @@ const DEFAULT_MAX_NEARBY_CAP_METERS = 6_000;
  * downloaded first, which is most of a cold start.
  */
 export function agenciesNear(lat: number, lon: number): AgencyId[] {
-  return (Object.keys(AGENCY_CONFIGS) as AgencyId[]).filter((agencyId) => {
-    const bounds = agencyConfig(agencyId).stopBounds;
-    if (!bounds) return true;
-    const nearestLat = Math.min(Math.max(lat, bounds.south), bounds.north);
-    const nearestLon = Math.min(Math.max(lon, bounds.west), bounds.east);
-    return haversineMeters(lat, lon, nearestLat, nearestLon) <= (MAX_NEARBY_CAP_METERS[agencyId] ?? DEFAULT_MAX_NEARBY_CAP_METERS);
-  });
+  return (Object.keys(AGENCY_CONFIGS) as AgencyId[]).filter((agencyId) =>
+    stopsMayBeWithin(agencyId, lat, lon, MAX_NEARBY_CAP_METERS[agencyId] ?? DEFAULT_MAX_NEARBY_CAP_METERS));
+}
+
+/**
+ * The agencies that could have a transfer at any of these stops (a route's): every agency without
+ * `stopBounds`, and those whose stops come within transfer distance of one of them. An agency left
+ * out has no stop that close, so getRouteTransfers' answer is the same without its timetables.
+ */
+export function agenciesNearStops(stops: readonly { lat: number; lon: number }[]): AgencyId[] {
+  return (Object.keys(AGENCY_CONFIGS) as AgencyId[]).filter((agencyId) =>
+    !agencyConfig(agencyId).stopBounds || stops.some((stop) => stopsMayBeWithin(agencyId, stop.lat, stop.lon, STATION_TRANSFER_METERS)));
+}
+
+/** Whether the agency's stop bounds (if it has any) come within `radius` meters of the point. */
+function stopsMayBeWithin(agencyId: AgencyId, lat: number, lon: number, radius: number): boolean {
+  const bounds = agencyConfig(agencyId).stopBounds;
+  if (!bounds) return true;
+  const nearestLat = Math.min(Math.max(lat, bounds.south), bounds.north);
+  const nearestLon = Math.min(Math.max(lon, bounds.west), bounds.east);
+  return haversineMeters(lat, lon, nearestLat, nearestLon) <= radius;
 }
 
 // Only a candidate-discovery step before the real distance filter: generous enough that the

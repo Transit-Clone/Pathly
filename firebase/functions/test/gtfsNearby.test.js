@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const { AGENCY_CONFIGS } = require('../lib/gtfsAgencies');
-const { agenciesNear, findNearbyTransit, pickNearbyRoutes } = require('../lib/gtfsDiscovery');
+const { agenciesNear, agenciesNearStops, findNearbyTransit, pickNearbyRoutes } = require('../lib/gtfsDiscovery');
 
 const route = (routeId, distanceMeters, agencyId = 'suffolk') => ({ agencyId, routeId, distanceMeters });
 const ids = (routes) => routes.map((item) => item.routeId);
@@ -57,4 +57,13 @@ test('a cold start loads only the agencies that could be nearby', () => {
   assert.ok(!valleyStream.includes('si') && !valleyStream.includes('bx'));
   // Midtown: everything.
   assert.deepEqual(agenciesNear(40.7549, -73.984), Object.keys(AGENCY_CONFIGS));
+});
+
+test('route transfers load only the agencies with a stop near the route', () => {
+  // Stony Brook and Port Jefferson: no city bus or ferry stop within transfer distance.
+  assert.deepEqual(agenciesNearStops([{ lat: 40.9204, lon: -73.1283 }, { lat: 40.9346, lon: -73.0525 }]), ['lirr', 'subway', 'nice', 'suffolk']);
+  // A route that reaches Jamaica picks up the Queens buses there.
+  assert.ok(agenciesNearStops([{ lat: 40.9204, lon: -73.1283 }, { lat: 40.6995, lon: -73.8081 }]).includes('qn'));
+  // A route with no stops needs only the agencies loaded everywhere.
+  assert.deepEqual(agenciesNearStops([]), ['lirr', 'subway', 'nice', 'suffolk']);
 });

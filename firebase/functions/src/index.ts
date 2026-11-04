@@ -12,6 +12,7 @@ import { getWinterAlerts, holidayService, type HolidayService } from './serviceO
 import { enforceCallableSecurity, peekRateLimits, type CallableRateLimit } from './callableSecurity';
 import {
   agenciesNear,
+  agenciesNearStops,
   describeRoute,
   listLines,
   findNearbyTransit as findNearbyTransitDiscovery,
@@ -581,7 +582,9 @@ export const getRouteTransfers = onCall<RouteGeometryRequest>(protectedCallableO
   const routeId = requiredRouteId(agencyId, data.routeId);
   const { directionId } = data;
   if (directionId !== 0 && directionId !== 1) throw new HttpsError('invalid-argument', 'directionId must be 0 or 1');
-  await prepareAllAgencyStaticData();
+  // Only the agencies with a stop near this route: a Long Island route doesn't download the city's buses.
+  const geometry = await getRouteGeometryDiscovery(agencyId, routeId, directionId);
+  await prepareAllAgencyStaticData({ agencyIds: agenciesNearStops(geometry?.stops ?? []) });
   return { transfers: await getRouteTransfersDiscovery(agencyId, routeId, directionId) };
 });
 
