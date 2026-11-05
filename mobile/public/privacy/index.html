@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pathly Privacy Policy</title>
+    <meta name="description" content="What Pathly collects, how it is used, and how to delete your account." />
+    <link rel="icon" href="/favicon.ico" />
+    <style>
+      :root {
+        --bg: #f7faff;
+        --surface: #ffffff;
+        --ink: #0f1b2d;
+        --muted: #4a5a70;
+        --line: #dde5f0;
+        --accent: #0b4f9c;
+        --danger-bg: #fff4f2;
+        --danger-line: #f2c9c2;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #000000;
+          --surface: #11161e;
+          --ink: #eef3fa;
+          --muted: #a3b0c2;
+          --line: #263142;
+          --accent: #7fb2ff;
+          --danger-bg: #24130f;
+          --danger-line: #5a2c23;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      }
+      main { max-width: 720px; margin: 0 auto; padding: 40px 16px 64px; }
+      header { margin-bottom: 28px; }
+      .brand { color: var(--accent); font-weight: 700; letter-spacing: 0.02em; text-decoration: none; }
+      h1 { font-size: 2rem; line-height: 1.2; margin: 8px 0 4px; }
+      .updated { color: var(--muted); margin: 0; }
+      nav { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 16px; }
+      nav a { color: var(--accent); }
+      section { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px 20px 8px; margin-top: 16px; }
+      section.delete { background: var(--danger-bg); border-color: var(--danger-line); }
+      h2 { font-size: 1.2rem; margin: 0 0 8px; scroll-margin-top: 16px; }
+      h3 { font-size: 1rem; margin: 16px 0 4px; }
+      p, ul, ol { margin: 0 0 12px; }
+      ul, ol { padding-left: 22px; }
+      li { margin-bottom: 6px; }
+      a { color: var(--accent); }
+      .muted { color: var(--muted); }
+      footer { color: var(--muted); font-size: 0.9rem; margin-top: 28px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <a class="brand" href="/">Pathly</a>
+        <h1>Privacy Policy</h1>
+        <p class="updated">Effective November 4, 2026</p>
+        <nav aria-label="On this page">
+          <a href="#collect">What we collect</a>
+          <a href="#use">How it’s used</a>
+          <a href="#share">Who we share with</a>
+          <a href="#delete-account">Delete your account</a>
+          <a href="#contact">Contact</a>
+        </nav>
+      </header>
+
+      <section>
+        <p>Pathly is a trip planner for transit around New York and Long Island. This policy explains what the Pathly app and website collect, why, and the choices you have. Pathly does not sell your data, does not show ads, and does not use advertising or analytics tracking.</p>
+      </section>
+
+      <section id="collect">
+        <h2>What we collect</h2>
+        <h3>Account</h3>
+        <p>Your email address and display name, stored with Firebase Authentication to sign you in, plus the avatar you choose. If you sign in with Google, we receive your name and email from Google.</p>
+        <h3>Things you save</h3>
+        <ul>
+          <li>Recent searches and recent destinations.</li>
+          <li>Favorite places (such as Home and Work) and saved routes, with their alert settings.</li>
+          <li>Route alerts sent to you, kept in your in-app inbox.</li>
+        </ul>
+        <p>These are stored in your account in Cloud Firestore so they follow you across devices.</p>
+        <h3>Location</h3>
+        <p>With your permission, Pathly uses your device’s location while you use the app to show nearby transit, plan trips from where you are, and guide you during a trip. Location is sent to Pathly’s servers and to Google only to answer those requests. It is not saved to your account or kept as a history.</p>
+        <p>If you choose to share that you’re riding a vehicle, your latest position on it is held for about 90 seconds so other riders can see that someone is on board. They see your avatar, never your name, email, or exact location. Ride reports you send (such as “crowded”) are shown to other riders as a count for 20 minutes and never identify you.</p>
+        <h3>Notifications</h3>
+        <p>If you turn on notifications, we store your device’s push token in your account so route alerts can reach you.</p>
+        <h3>On your device</h3>
+        <p>Display settings, travel and notification preferences, a short cache of nearby times, and an in-progress trip are kept on your device only.</p>
+      </section>
+
+      <section id="use">
+        <h2>How it’s used</h2>
+        <ul>
+          <li>To provide the app: sign-in, trip planning, nearby transit, live times, navigation, and alerts.</li>
+          <li>To keep the service working and secure, including limiting abuse.</li>
+        </ul>
+        <p>We do not use your data for advertising, and we do not build profiles of your movements.</p>
+      </section>
+
+      <section id="share">
+        <h2>Who we share with</h2>
+        <p>We share data only with the services that run Pathly, and only what each needs:</p>
+        <ul>
+          <li><strong>Google Firebase and Google Cloud</strong>: accounts, storage, and Pathly’s servers.</li>
+          <li><strong>Google Maps Platform</strong>: maps, place search, and trip directions. Searches and the locations in them are sent to Google to answer them.</li>
+          <li><strong>Expo push notification service</strong>: delivers notifications to your device using its push token.</li>
+        </ul>
+        <p>Transit schedules and live times come from public agency feeds; we don’t send your data to transit agencies. We may disclose information if the law requires it.</p>
+      </section>
+
+      <section id="retention">
+        <h2>How long we keep it</h2>
+        <p>Account data is kept until you delete it or delete your account. Riding-along positions expire after about 90 seconds and ride reports after 20 minutes. Server logs used for security and troubleshooting are kept for a limited time and then deleted automatically.</p>
+        <p>Data is encrypted in transit. No system is perfectly secure, but we limit access to your data to what running the service requires.</p>
+      </section>
+
+      <section class="delete" id="delete-account">
+        <h2>Delete your account</h2>
+        <p>You can delete your Pathly account and its data at any time.</p>
+        <h3>In the app</h3>
+        <ol>
+          <li>Open Pathly and go to <strong>Settings</strong> → <strong>Location &amp; Privacy</strong>.</li>
+          <li>Tap <strong>Delete account</strong> and confirm with your password.</li>
+        </ol>
+        <h3>Without the app</h3>
+        <p>Email <a href="mailto:sc3vvv@gmail.com?subject=Delete%20my%20Pathly%20account">sc3vvv@gmail.com</a> from the address on your account with the subject “Delete my Pathly account”. We’ll confirm and delete it within 30 days.</p>
+        <h3>What is deleted</h3>
+        <p>Your sign-in account, profile and avatar, recent searches and destinations, favorite places, saved routes and alert settings, alert inbox, and push tokens. Nothing is kept afterward, apart from anonymous ride reports and riding-along positions, which expire on their own within 20 minutes.</p>
+        <p>You can also <strong>Download your data</strong> from the same Privacy page before deleting.</p>
+      </section>
+
+      <section id="children">
+        <h2>Children</h2>
+        <p>Pathly is not directed to children under 13, and we do not knowingly collect their data. If you believe a child has created an account, contact us and we will delete it.</p>
+      </section>
+
+      <section id="changes">
+        <h2>Changes</h2>
+        <p>If we change this policy, we’ll update the date above, and we’ll tell you in the app before any change that affects how your data is used.</p>
+      </section>
+
+      <section id="contact">
+        <h2>Contact</h2>
+        <p>Questions or requests: <a href="mailto:sc3vvv@gmail.com">sc3vvv@gmail.com</a>.</p>
+      </section>
+
+      <footer>© 2026 Pathly</footer>
+    </main>
+  </body>
+</html>

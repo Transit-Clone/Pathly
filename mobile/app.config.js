@@ -12,6 +12,8 @@ module.exports = {
   expo: {
     name: 'Pathly',
     slug: 'pathly',
+    // EAS account that builds and submits the app.
+    owner: 'pathlyapp',
     version: '0.1.0',
     orientation: 'portrait',
     // Icon, adaptive icon, splash, and favicon are drawn by scripts/make-icons.mjs.
@@ -73,7 +75,8 @@ module.exports = {
     ],
     extra: {
       eas: {
-        projectId: 'ddb0b432-4e44-463e-b30e-3f60be0ca6b2',
+        // @pathlyapp/pathly on expo.dev
+        projectId: 'deefeb3d-b292-44e7-8e70-64f8f7bf6a87',
       },
     },
   },

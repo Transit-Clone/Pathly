@@ -18,9 +18,11 @@ const {
   fillTripDirections,
   hydrateCurrentGtfsSnapshot,
   parseGtfsSnapshotManifest,
+  readLineIndex,
   refreshAllGtfsSnapshots,
   refreshGtfsSnapshot,
   resetGtfsSnapshotStateForTests,
+  saveLineIndex,
   setGtfsDerivedArchiveBuilderForTests,
   setGtfsSnapshotBucketForTests,
   validateAgencySnapshotContract,
@@ -1214,5 +1216,28 @@ test('downloads the Staten Island Ferry with a browser User-Agent and publishes 
     assert.equal(await refreshGtfsSnapshot('siferry'), 'unchanged');
   } finally {
     global.fetch = originalFetch;
+  }
+});
+
+test('the saved line list is read back only in the format it was built for', async () => {
+  const fakeBucket = new FakeBucket();
+  setGtfsSnapshotBucketForTests(fakeBucket);
+  process.env.GTFS_USE_CLOUD_STORAGE = 'true';
+  try {
+    assert.equal(await readLineIndex(1), null);
+    const lines = [{ agencyId: 'lirr', routeId: '1', shortName: 'Babylon' }];
+    await saveLineIndex(1, lines);
+    resetGtfsSnapshotStateForTests();
+    setGtfsSnapshotBucketForTests(fakeBucket);
+    assert.deepEqual(await readLineIndex(1), lines);
+    // A deploy that changed how lines are built ignores the old list.
+    assert.equal(await readLineIndex(2), null);
+    // Unreadable contents fall back to building the list.
+    fakeBucket.objects.set('gtfs/v1/lines.json', { data: Buffer.from('not json'), generation: '9' });
+    resetGtfsSnapshotStateForTests();
+    setGtfsSnapshotBucketForTests(fakeBucket);
+    assert.equal(await readLineIndex(1), null);
+  } finally {
+    delete process.env.GTFS_USE_CLOUD_STORAGE;
   }
 });

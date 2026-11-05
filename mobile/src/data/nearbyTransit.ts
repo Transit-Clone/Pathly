@@ -36,10 +36,35 @@ const findNearbyTransitCallable = callable<{ lat: number; lon: number }, FindNea
  * principle applied everywhere else live data is fetched in this app.
  */
 export async function fetchNearbyTransit(location: Coordinates): Promise<readonly DiscoveredRoute[]> {
+  const ticket = ++latestNearbyTicket;
   await whenWarm('findNearbyTransit');
-  const { data } = await findNearbyTransitCallable({ lat: location.latitude, lon: location.longitude });
+  // One search at a time. Each backend instance answers one request at a time, so a second search
+  // sent while the first still runs (the map panned again) started another cold instance, and
+  // every one of them loaded the area's timetables from scratch: 20 s or more each. Waiting for
+  // the running one, then searching only the latest point, reuses its now-warm instance.
+  while (nearbyInFlight) {
+    await nearbyInFlight;
+    if (ticket !== latestNearbyTicket) throw new NearbySearchSupersededError();
+  }
+  if (ticket !== latestNearbyTicket) throw new NearbySearchSupersededError();
+  const request = findNearbyTransitCallable({ lat: location.latitude, lon: location.longitude });
+  nearbyInFlight = request.then(() => undefined, () => undefined).finally(() => {
+    nearbyInFlight = null;
+  });
+  const { data } = await request;
   return data.routes;
 }
+
+/** A nearby search dropped before it was sent, because a newer one replaced it. */
+export class NearbySearchSupersededError extends Error {
+  constructor() {
+    super('A newer nearby search replaced this one');
+    this.name = 'NearbySearchSupersededError';
+  }
+}
+
+let latestNearbyTicket = 0;
+let nearbyInFlight: Promise<void> | null = null;
 
 /** The real (agencyId, routeId) a `liveSource` identifies — the stable key used to tell "is this the same real line" apart from comparing `RouteDetail.id`s, which differ between a route's demo-catalog id (e.g. "ronkonkoma") and its synthesized discovered one (e.g. "lirr:10") even when they're the exact same real route. */
 export function liveSourceKey(liveSource: Pick<LiveSource, 'agencyId' | 'routeId'>): string {

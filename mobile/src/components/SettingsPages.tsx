@@ -639,6 +639,8 @@ const TERMS: readonly string[] = [
 ];
 
 export const OSM_COPYRIGHT_URL = 'https://www.openstreetmap.org/copyright';
+/** The full policy, with account deletion, as Google Play links to it (mobile/public/privacy). */
+export const PRIVACY_POLICY_URL = 'https://pathly.web.app/privacy';
 
 /** The FAQ page, answers showing. */
 export function FaqSettings() {
@@ -653,21 +655,22 @@ export function LegalSettings({ onFeedback }: PageProps) {
   const { page } = useStyles();
   const [open, setOpen] = useState<LegalDoc | null>(null);
   const toggle = (doc: LegalDoc) => setOpen((current) => (current === doc ? null : doc));
-  const openOsmCopyright = async () => {
+  const openLink = async (url: string) => {
     try {
-      await Linking.openURL(OSM_COPYRIGHT_URL);
+      await Linking.openURL(url);
     } catch {
-      onFeedback(`See ${OSM_COPYRIGHT_URL}`);
+      onFeedback(`See ${url}`);
     }
   };
   return (
     <Card>
       <SettingRow label="Privacy policy" onPress={() => toggle('privacy')} testID="about-privacy" />
       {open === 'privacy' ? <View style={page.doc} testID="about-privacy-content">{PRIVACY.map((line) => <Text key={line} style={[page.docBody, page.docItem]}>{line}</Text>)}</View> : null}
+      {open === 'privacy' ? <SettingRow label="Full policy and account deletion" onPress={() => void openLink(PRIVACY_POLICY_URL)} testID="about-privacy-web" /> : null}
       <SettingRow label="Terms of use" onPress={() => toggle('terms')} testID="about-terms" />
       {open === 'terms' ? <View style={page.doc} testID="about-terms-content">{TERMS.map((line) => <Text key={line} style={[page.docBody, page.docItem]}>{line}</Text>)}</View> : null}
       {/* Nearby's walking distances come from OpenStreetMap, whose license (ODbL) requires this credit. */}
-      <SettingRow label="Map data © OpenStreetMap" onPress={() => void openOsmCopyright()} testID="about-osm" />
+      <SettingRow label="Map data © OpenStreetMap" onPress={() => void openLink(OSM_COPYRIGHT_URL)} testID="about-osm" />
     </Card>
   );
 }

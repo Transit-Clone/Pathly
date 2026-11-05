@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "deefeb3d-b292-44e7-8e70-64f8f7bf6a87"
+      }
+    },
+    "android": {
+      "package": "com.pathlyapp.pathly"
+    }
+  }
+}

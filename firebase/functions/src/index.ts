@@ -14,6 +14,7 @@ import {
   agenciesNear,
   agenciesNearStops,
   describeRoute,
+  LINE_INDEX_FORMAT,
   listLines,
   findNearbyTransit as findNearbyTransitDiscovery,
   getAgencyLines as getAgencyLinesDiscovery,
@@ -26,7 +27,7 @@ import {
 } from './gtfsDiscovery';
 import { AGENCY_CONFIGS, type AgencyId } from './gtfsAgencies';
 import { getStopPredictions } from './gtfsSchedule';
-import { refreshAllGtfsSnapshots } from './gtfsSnapshots';
+import { readLineIndex, refreshAllGtfsSnapshots, saveLineIndex } from './gtfsSnapshots';
 import { isAgencyAvailable, loadAgencyStaticData, loadGlobalStopRouteIndex, prepareAgencyStaticData } from './gtfsStaticData';
 import { getRouteAlerts } from './gtfsAlerts';
 import { sendSavedRouteAlerts } from './routeAlerts';
@@ -152,8 +153,32 @@ export const refreshGtfsStaticData = onSchedule(
     timeZone: 'America/New_York',
     timeoutSeconds: 1800,
   },
-  refreshAllGtfsSnapshots,
+  async () => {
+    try {
+      await refreshAllGtfsSnapshots();
+    } finally {
+      // Even after one agency failed: the others' new lines still belong in the list.
+      await saveCurrentLineIndex();
+    }
+  },
 );
+
+/**
+ * Builds the app's line list from every agency's current snapshot and saves it, so a cold
+ * listTransitLines reads one small file instead of loading every agency. A failure is only logged:
+ * listTransitLines then keeps the previous list, or builds its own.
+ */
+export async function saveCurrentLineIndex(): Promise<void> {
+  try {
+    await prepareAllAgencyStaticData({ tolerant: true });
+    const lines = listLines();
+    if (lines.length === 0) throw new Error('no lines to save');
+    await saveLineIndex(LINE_INDEX_FORMAT, lines);
+    logger.info('Saved the line list', { event: 'line_index_saved', lineCount: lines.length });
+  } catch (error) {
+    logger.warn('Could not save the line list', { event: 'line_index_failed', reason: error instanceof Error ? error.message : String(error) });
+  }
+}
 
 /** Push new service alerts on riders' saved lines (routeAlerts.ts), every five minutes. */
 export const sendRouteAlerts = onSchedule(
@@ -611,6 +636,9 @@ export const searchTransitRoutes = onCall<SearchTransitRoutesRequest>(protectedC
  */
 export const listTransitLines = onCall(protectedCallableOptions, async (request) => {
   await enforceCallableSecurity(request, 'listTransitLines', RATE_LIMITS.listTransitLines);
+  // The list the daily refresh saved: a cold instance doesn't wait on every agency's timetables.
+  const saved = await readLineIndex(LINE_INDEX_FORMAT);
+  if (saved) return { lines: saved };
   await prepareAllAgencyStaticData({ tolerant: true });
   return { lines: listLines() };
 });

@@ -1,0 +1,30 @@
+{
+  "cli": {
+    "version": ">= 27.4.1",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_SUPPORT_EMAIL": "sc3vvv@gmail.com"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_SUPPORT_EMAIL": "sc3vvv@gmail.com"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_SUPPORT_EMAIL": "sc3vvv@gmail.com"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

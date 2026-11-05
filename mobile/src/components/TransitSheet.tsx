@@ -34,6 +34,8 @@ type TransitSheetProps = {
   /** Every real nearby route for the rider's current location, across every configured agency (nearbyTransit.ts) — not a fixed handful of hand-picked lines. */
   nearbyRoutes: readonly RouteDetail[];
   nearbyStatus: 'loading' | 'loaded' | 'error';
+  /** The cards shown are for another area (the map was moved) while that area's search runs. */
+  nearbyUpdating?: boolean;
   onOpenSavedLocation: (location: SavedLocation) => void;
   /** Starts saving a new place; offered under Favorites -> Places when set. */
   onAddSavedPlace?: () => void;
@@ -72,6 +74,7 @@ export function TransitSheet({
   mapHeight,
   nearbyRoutes,
   nearbyStatus,
+  nearbyUpdating = false,
   onOpenSavedLocation,
   onAddSavedPlace,
   onOpenRoute,
@@ -309,9 +312,10 @@ export function TransitSheet({
                 </View>
               ) : null}
 
-              <View onLayout={(event) => recordSectionLayout('nearby', event)} style={styles.cardStack} testID="nearby-routes">
+              {/* While another area's search runs, the cards only fade (no row of its own, so nothing moves) and stay tappable. */}
+              <View accessibilityState={{ busy: nearbyUpdating }} onLayout={(event) => recordSectionLayout('nearby', event)} style={styles.cardStack} testID="nearby-routes">
                 {nearbyCards.map((route) => (
-                  <View key={route.id} onLayout={(event) => recordCardLayout('nearby', route.id, event)} testID={`card-slot-${route.id}`}>
+                  <View key={route.id} onLayout={(event) => recordCardLayout('nearby', route.id, event)} style={nearbyUpdating ? styles.staleCard : undefined} testID={`card-slot-${route.id}`}>
                     <TransitCard
                       onPress={(directionIndex) => onOpenRoute(route.id, directionIndex)}
                       route={route}
@@ -457,6 +461,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   inactiveChevronOpen: { transform: [{ rotate: '-90deg' }] },
   nearbyEmpty: { alignItems: 'center', paddingVertical: 20, paddingHorizontal: 20, gap: 8 },
   nearbyEmptyText: { color: colors.mutedInk, ...typography.metadata, textAlign: 'center' },
+  staleCard: { opacity: 0.45 },
   sectionHeading: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 },
   sectionLabel: { color: colors.mutedInk, ...typography.label },
   favoriteTrips: { paddingBottom: 12 },

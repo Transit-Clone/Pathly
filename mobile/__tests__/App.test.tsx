@@ -1530,8 +1530,13 @@ describe('Pathly prototype navigation', () => {
     expect(screen.queryByTestId('search-center')).toBeNull();
 
     const map = screen.getByTestId('google-map-view', { includeHiddenElements: true });
+    const nearbyBusy = () => screen.getByTestId('nearby-routes').props.accessibilityState?.busy;
+    expect(nearbyBusy()).toBe(false);
     fireEvent(map, 'panDrag');
     fireEvent(map, 'regionChangeComplete', { latitude: 40.7685, longitude: -73.5251, latitudeDelta: 0.05, longitudeDelta: 0.05 });
+    // The old area's cards fade at once (still tappable, nothing moves) until the new area answers.
+    expect(nearbyBusy()).toBe(true);
+    await waitFor(() => expect(nearbyBusy()).toBe(false), { timeout: 2000 });
     // A solid purple dot the size of the GPS dot, not a faint ring.
     const centerStyle = StyleSheet.flatten(screen.getByTestId('search-center').props.style);
     expect(centerStyle).toEqual(expect.objectContaining({ width: 17, height: 17, backgroundColor: lightColors.searchCenter }));

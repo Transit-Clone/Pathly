@@ -286,7 +286,8 @@ export function HomeScreen() {
   // Once loaded, a re-fetch keeps showing the previous list (`refreshing`) instead of emptying
   // it: location updates arrive every few seconds, and an empty gap made the open route page
   // lose its route and bounce back to Home.
-  const [nearbyStatus, setNearbyStatus] = useState<{ status: 'loading' } | { status: 'loaded'; routes: readonly RouteDetail[]; refreshing?: boolean } | { status: 'error' }>({ status: 'loading' });
+  // `explored`: the list is for an area panned to with the map, not the rider's own location.
+  const [nearbyStatus, setNearbyStatus] = useState<{ status: 'loading' } | { status: 'loaded'; routes: readonly RouteDetail[]; refreshing?: boolean; explored?: boolean } | { status: 'error' }>({ status: 'loading' });
   // Where the rider has panned the home map to explore (null = their own location). Nearby is
   // searched around this point, and each card's stop and departures are for the stop nearest it,
   // so exploring Hicksville shows Hicksville stops, not the rider's own.
@@ -329,12 +330,13 @@ export function HomeScreen() {
   }, []);
   useEffect(() => {
     let cancelled = false;
+    // Marked at once, not after the debounce, so a moved map shows its cards are being replaced.
+    setNearbyStatus((current) => (current.status === 'loaded' ? { ...current, refreshing: true } : { status: 'loading' }));
     const load = async () => {
-      setNearbyStatus((current) => (current.status === 'loaded' ? { ...current, refreshing: true } : { status: 'loading' }));
       try {
         const discovered = await fetchNearbyTransit(nearbySearchPoint);
         if (cancelled) return;
-        setNearbyStatus({ status: 'loaded', routes: discovered.map(discoveredRouteToRouteDetail) });
+        setNearbyStatus({ status: 'loaded', routes: discovered.map(discoveredRouteToRouteDetail), explored: exploring });
         // The rider's own surroundings (not an area explored with the map) open instantly next time.
         if (!exploring) void writeCache(NEARBY_CACHE_KEY, discovered);
       } catch {
@@ -1150,6 +1152,8 @@ export function HomeScreen() {
           mapHeight={mapHeight}
           nearbyRoutes={nearbyRoutes}
           nearbyStatus={nearbyStatus.status}
+          // Only when the area changed (panned away, or back): a GPS step keeps its cards undimmed.
+          nearbyUpdating={nearbyStatus.status === 'loaded' && nearbyStatus.refreshing === true && (exploring || nearbyStatus.explored === true)}
           onAddSavedPlace={uid ? () => addSavedPlace('favorites') : undefined}
           onOpenSavedLocation={openSavedLocation}
           onOpenRoute={openRoute}

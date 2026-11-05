@@ -316,6 +316,12 @@ export async function searchRoutes(query: string, lat: number, lon: number): Pro
 /** One line in the app's on-device line index: enough to find it by name and show its badge. */
 export type IndexedLine = { agencyId: AgencyId; agencyDisplayName: string; routeId: string; shortName: string; routeName: string; color: string };
 
+/**
+ * Version of what listLines returns. The daily refresh saves its output (readLineIndex): bump this
+ * when a change alters it (a new field, a color rule) so a deploy doesn't serve the old saved list.
+ */
+export const LINE_INDEX_FORMAT = 1;
+
 /** Every line of every available agency, for the app to search on the device as the rider types. */
 export function listLines(): IndexedLine[] {
   const lines = availableAgencyIds().flatMap((agencyId) => [...loadAgencyStaticData(agencyId).routesById.values()].map((route) => ({

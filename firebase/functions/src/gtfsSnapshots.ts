@@ -1554,6 +1554,37 @@ export async function readLastRefreshOutcome(agencyId: AgencyId): Promise<GtfsRe
   }
 }
 
+// The app's list of every line (listTransitLines), saved by each daily refresh so a cold instance
+// can answer it without downloading every agency's timetables.
+const LINE_INDEX_OBJECT = `${SNAPSHOT_ROOT}/lines.json`;
+let lineIndexCache: { format: number; readAtMs: number; lines: Promise<unknown[] | null> } | undefined;
+
+/** Saves the line list built from the current snapshots; `format` marks how it was built. */
+export async function saveLineIndex(format: number, lines: readonly unknown[]): Promise<void> {
+  await bucket().file(LINE_INDEX_OBJECT).save(JSON.stringify({ format, builtAt: new Date().toISOString(), lines }), { contentType: 'application/json', resumable: false });
+}
+
+/**
+ * The saved line list, or null when there is none of this `format` (a deploy that changed how
+ * lines are built ignores the old one until the next refresh) or it can't be read: the caller
+ * then builds it from the timetables. Kept for a few minutes per instance.
+ */
+export function readLineIndex(format: number, nowMs = Date.now()): Promise<unknown[] | null> {
+  if (!remoteSnapshotsEnabled()) return Promise.resolve(null);
+  if (lineIndexCache && lineIndexCache.format === format && nowMs - lineIndexCache.readAtMs < MANIFEST_CHECK_INTERVAL_MS) return lineIndexCache.lines;
+  const lines = withTimeout(bucket().file(LINE_INDEX_OBJECT).download(), SNAPSHOT_CHECK_TIMEOUT_MS, 'line index read timed out')
+    .then(([data]) => {
+      const parsed = JSON.parse(data.toString('utf8')) as { format?: unknown; lines?: unknown };
+      return parsed.format === format && Array.isArray(parsed.lines) && parsed.lines.length > 0 ? parsed.lines : null;
+    })
+    .catch((error: unknown) => {
+      if (!isNotFound(error)) logger.warn('Could not read the saved line list', { reason: error instanceof Error ? error.message : String(error) });
+      return null;
+    });
+  lineIndexCache = { format, readAtMs: nowMs, lines };
+  return lines;
+}
+
 /** The published snapshot's identity and age, or why there is none (admin status page). */
 export type GtfsSnapshotSummary =
   | { state: 'published'; version: string; publishedAt: string; serviceEndDate: string | null; hasDerived: boolean }
@@ -1783,6 +1814,7 @@ export async function hydrateCurrentGtfsSnapshot(
 /** Unit-test isolation only. */
 export function resetGtfsSnapshotStateForTests(): void {
   snapshotStates.clear();
+  lineIndexCache = undefined;
   storageBucketForTests = undefined;
   derivedArchiveBuilderForTests = undefined;
 }
