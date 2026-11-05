@@ -35,9 +35,16 @@ describe('isInactiveRoute', () => {
     expect(isInactiveRoute(applied('loaded', [600, 640]))).toBe(true);
   });
 
-  it('keeps a line running in either direction, or live at all', () => {
+  it('keeps a line running in either direction, live or scheduled', () => {
     expect(isInactiveRoute(applied('loaded', [600, 20]))).toBe(false);
-    expect(isInactiveRoute(applied('loaded', [600], true))).toBe(false);
+    expect(isInactiveRoute(applied('loaded', [15], true))).toBe(false);
+    expect(isInactiveRoute(applied('loaded', [90]))).toBe(false);
+  });
+
+  it("counts a line whose next departure is tomorrow morning, even one already in the live feed", () => {
+    // 11 PM: the first runs are at 6 AM, 7 hours off. Some feeds list them the night before.
+    expect(isInactiveRoute(applied('loaded', [420, 435], true))).toBe(true);
+    expect(isInactiveRoute(applied('loaded', [420], true))).toBe(true);
   });
 
   it('never hides a line on no answer', () => {
@@ -69,6 +76,15 @@ describe('Show inactive lines', () => {
     mockLive.clear();
     mockLive.set('run', live('run', [{ minutes: 5, live: true }]));
     mockLive.set('sim', live('sim', [{ minutes: 600, live: false }]));
+  });
+
+  it('hides a line whose only departures are tomorrow morning, tracked or not', () => {
+    mockLive.set('owl', live('owl', [{ minutes: 430, live: true }, { minutes: 460, live: false }]));
+    const screen = renderSheet([line('run'), line('owl')]);
+    expect(screen.queryByTestId('route-card-owl')).toBeNull();
+    expect(screen.getByTestId('see-inactive-lines')).toHaveTextContent(/Show inactive lines \(1\)/);
+    fireEvent.press(screen.getByTestId('see-inactive-lines'));
+    expect(screen.getByTestId('route-card-owl')).toBeTruthy();
   });
 
   it('keeps inactive lines behind the button until asked', () => {

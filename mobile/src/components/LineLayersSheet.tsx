@@ -42,7 +42,7 @@ export function LineLayersSheet({ choice, lines, onChange, onClose, visible }: L
         <Pressable accessibilityLabel="Close" onPress={onClose} style={styles.backdrop} testID="line-layers-backdrop" />
         <View accessibilityViewIsModal={true} style={styles.sheet} testID="line-layers-sheet">
           <View style={styles.header}>
-            <Text style={styles.title}>Lines on the map</Text>
+            <Text style={styles.title}>Map routes</Text>
             {anyOn ? (
               <PressableScale accessibilityRole="button" hitSlop={8} onPress={() => onChange({ groups: [], routes: [] })} testID="line-layers-clear">
                 <Text style={styles.clear}>Hide all</Text>

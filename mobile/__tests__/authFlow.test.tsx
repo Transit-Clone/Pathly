@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
-import { createUserWithEmailAndPassword, sendEmailVerification, signInAnonymously } from 'firebase/auth';
+import { createUserWithEmailAndPassword, sendEmailVerification, sendPasswordResetEmail, signInAnonymously } from 'firebase/auth';
+import { StyleSheet } from 'react-native';
 import type { User } from 'firebase/auth';
 
 import { needsEmailConfirmation, setSignUpDraft, signUpWithEmail } from '../src/auth/authService';
@@ -61,7 +62,38 @@ describe('sign-up form', () => {
   });
 });
 
+describe('forgot password', () => {
+  it('asks for the email first', async () => {
+    render(<AuthScreen />);
+    fireEvent.press(screen.getByTestId('auth-forgot-password'));
+    await screen.findByText('Enter your email above, then tap Forgot password.');
+    expect(sendPasswordResetEmail).not.toHaveBeenCalled();
+  });
+
+  it('emails a reset link to the address typed, without saying whether an account exists', async () => {
+    render(<AuthScreen />);
+    fireEvent.changeText(screen.getByTestId('auth-email'), '  rider@example.com ');
+    fireEvent.press(screen.getByTestId('auth-forgot-password'));
+    await waitFor(() => expect(sendPasswordResetEmail).toHaveBeenCalledWith(expect.anything(), 'rider@example.com'));
+    expect(await screen.findByTestId('auth-notice')).toHaveTextContent(/If there's an account for rider@example\.com, a link to reset its password is on its way/);
+  });
+
+  it('only shows on sign-in', () => {
+    render(<AuthScreen />);
+    expect(screen.getByTestId('auth-forgot-password')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('auth-switch-mode'));
+    expect(screen.queryByTestId('auth-forgot-password')).toBeNull();
+  });
+});
+
 describe('guest mode', () => {
+  it('is a full button like the other ways in, not a small link', () => {
+    render(<AuthScreen />);
+    const guest = StyleSheet.flatten(screen.getByTestId('auth-guest').props.style);
+    expect(guest).toMatchObject({ minHeight: 52, borderWidth: 1 });
+    expect(screen.getByTestId('auth-guest')).toHaveTextContent(/Continue as guest/);
+  });
+
   it('starts an anonymous session', async () => {
     render(<AuthScreen />);
     fireEvent.press(screen.getByTestId('auth-guest'));

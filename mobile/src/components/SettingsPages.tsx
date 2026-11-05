@@ -15,7 +15,7 @@ import {
 } from '../data/accountData';
 import { searchLineIndex, useLineIndex, type IndexedLine } from '../data/lineIndex';
 import { subscribeToAlertInbox, type AlertInboxEntry } from '../data/alertInbox';
-import { describeRouteAlerts, ROUTE_ALERT_OPTIONS, saveRoute, savedRouteFromLine, setRouteAlerts, setRouteAlertsPaused, subscribeToSavedRoutes, type SavedRoute } from '../data/savedRoutes';
+import { describeRouteAlerts, removeSavedRoute, ROUTE_ALERT_OPTIONS, saveRoute, savedRouteFromLine, setRouteAlerts, setRouteAlertsPaused, subscribeToSavedRoutes, type SavedRoute } from '../data/savedRoutes';
 import type { FareType } from '../data/tripPlanning';
 import { ALL_TRANSIT_MODES, useUserPreferences, WALK_LIMIT_OPTIONS } from '../data/userPreferences';
 import { registerForRouteAlerts } from '../lib/notifications';
@@ -137,21 +137,65 @@ export function AccountSettings({ onEditAvatar, onFeedback }: PageProps & { onEd
 
 const inboxDate = (date: Date | null) => (date ? date.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Just now');
 
-/** The history of alerts on the rider's saved lines, newest first. */
+/** The agency names RouteBadge reads a line's shape from, for an inbox entry whose line isn't saved anymore. */
+const INBOX_AGENCY_NAMES: Record<string, string> = {
+  lirr: 'LIRR',
+  subway: 'MTA Subway',
+  nice: 'NICE Bus',
+  suffolk: 'Suffolk County Transit',
+  nycferry: 'NYC Ferry',
+  siferry: 'Staten Island Ferry',
+};
+
+/**
+ * The line an inbox alert is about, as a route card badges it: from the rider's saved line when
+ * it's still saved (its own color), else named from the alert's title ("S93 service alert").
+ */
+export function inboxLineBadge(entry: AlertInboxEntry, savedRoutes: readonly SavedRoute[], fallbackColor: string): { agency: string; color: string; shortName: string } | null {
+  const saved = entry.agencyId && entry.routeId ? savedRoutes.find((route) => route.agencyId === entry.agencyId && route.routeId === entry.routeId) : undefined;
+  if (saved) return { agency: saved.agencyName, color: saved.color, shortName: badgeLabel({ agency: saved.agencyName, shortName: saved.shortName || saved.routeName }) };
+  const named = entry.title.replace(/\s+service alert$/i, '').trim();
+  if (!named || named === entry.title) return null;
+  const agency = (entry.agencyId ? INBOX_AGENCY_NAMES[entry.agencyId] : undefined) ?? 'MTA Bus';
+  return { agency, color: fallbackColor, shortName: badgeLabel({ agency, shortName: named }) };
+}
+
+/** The history of alerts on the rider's saved lines, newest first, each badged with its line. */
 export function InboxSettings() {
-  const { page } = useStyles();
+  const { page, profile } = useStyles();
+  const { colors } = useTheme();
   const { user } = useAuth();
   const uid = user?.uid;
   const [entries, setEntries] = useState<readonly AlertInboxEntry[] | null>(null);
+  const [savedRoutes, setSavedRoutes] = useState<readonly SavedRoute[]>([]);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     if (!uid) return undefined;
     return subscribeToAlertInbox(uid, setEntries, () => setFailed(true));
   }, [uid]);
+  useEffect(() => {
+    if (!uid) return undefined;
+    return subscribeToSavedRoutes(uid, setSavedRoutes);
+  }, [uid]);
   if (failed && !entries) return <Text style={page.lineSubtitle} testID="inbox-error">Your inbox could not be loaded. Check your connection and try again.</Text>;
   if (!entries) return null;
-  if (entries.length === 0) return <Text style={page.lineSubtitle} testID="inbox-empty">No updates yet. Service alerts on your saved lines will show up here, and stay for 30 days.</Text>;
-  return <Card>{entries.map((entry) => <SettingRow detail={`${entry.body}\n${inboxDate(entry.sentAt)}`} key={entry.id} label={entry.title} testID={`inbox-${entry.id}`} />)}</Card>;
+  if (entries.length === 0) return <Text style={page.lineSubtitle} testID="inbox-empty">No updates yet. Service alerts on your Favorite Lines will show up here, and stay for 30 days.</Text>;
+  return (
+    <Card>
+      {entries.map((entry) => {
+        const line = inboxLineBadge(entry, savedRoutes, colors.mutedInk);
+        return (
+          <View accessible={true} key={entry.id} style={profile.settingRow} testID={`inbox-${entry.id}`}>
+            {line ? <RouteBadge agency={line.agency} color={line.color} mode={transitModeForAgency(line.agency)} shortName={line.shortName} size="small" testID={`inbox-${entry.id}-badge`} /> : null}
+            <View style={profile.rowCopy}>
+              <Text style={profile.settingText}>{entry.title}</Text>
+              <Text style={profile.settingDetail}>{`${entry.body}\n${inboxDate(entry.sentAt)}`}</Text>
+            </View>
+          </View>
+        );
+      })}
+    </Card>
+  );
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -194,12 +238,22 @@ export function NotificationSettings({ onFeedback }: PageProps) {
     }
     saveLineAlerts(route, option.value, route.alertHours);
   };
+  // Added here, a line is starred like the star in Route View, so it shows under Favorites too.
   const addLine = async (line: IndexedLine) => {
     if (!uid) return;
-    const saved = savedRouteFromLine(line);
+    const saved = { ...savedRouteFromLine(line), favorite: true };
     await saveRoute(uid, saved);
     void registerForRouteAlerts(uid);
-    onFeedback(`${badgeLabel({ agency: line.agencyDisplayName, shortName: line.shortName })} alerts: All times`);
+    onFeedback(`${badgeLabel({ agency: line.agencyDisplayName, shortName: line.shortName })} added to Favorite Lines, alerts: All times`);
+  };
+  // Removing takes the line off Favorites and stops its alerts, after a confirm.
+  const [removing, setRemoving] = useState<SavedRoute | null>(null);
+  const removeLine = (route: SavedRoute) => {
+    if (!uid) return;
+    removeSavedRoute(uid, route.id).then(
+      () => onFeedback(`${lineName(route)} removed from Favorite Lines`),
+      () => onFeedback(`${lineName(route)} could not be removed. Check your connection and try again.`),
+    );
   };
   return (
     <>
@@ -213,22 +267,33 @@ export function NotificationSettings({ onFeedback }: PageProps) {
           </>
         ) : null}
       </Card>
-      <Text style={profile.sectionLabel}>SAVED LINES</Text>
+      <Text style={profile.sectionLabel}>FAVORITE LINES</Text>
       <Card>
         {savedRoutes.length === 0 ? (
-          <SettingRow label="No saved lines yet" testID="notifications-no-saved-lines" />
+          <SettingRow detail="Tap the star on a line, or add one below, to get its service alerts." label="No Favorite Lines yet" testID="notifications-no-saved-lines" />
         ) : savedRoutes.map((route) => (
-          <ChoiceRow
+          <FavoriteLineRow
             key={route.id}
-            label={route.shortName && route.shortName !== route.routeName ? `${route.shortName} · ${route.routeName}` : route.routeName}
+            onRemove={() => setRemoving(route)}
             onSelect={(label) => setLineAlerts(route, label)}
-            options={ROUTE_ALERT_OPTIONS.map((option) => option.label)}
-            selected={ROUTE_ALERT_OPTIONS.find((option) => option.value === (route.alerts === 'peak' ? 'custom' : route.alerts))?.label ?? 'Never'}
-            testPrefix={`line-alerts-${route.id}`}
+            route={route}
           />
         ))}
+        {uid ? <AddSavedLine onAdd={addLine} savedIds={savedRoutes.map((route) => route.id)} /> : null}
       </Card>
-      {uid ? <AddSavedLine onAdd={addLine} savedIds={savedRoutes.map((route) => route.id)} /> : null}
+      <ConfirmDialog
+        body="It leaves your Favorites and you'll stop getting its service alerts. You can add it again anytime."
+        confirmLabel="Remove"
+        destructive={true}
+        onCancel={() => setRemoving(null)}
+        onConfirm={() => {
+          if (removing) removeLine(removing);
+          setRemoving(null);
+        }}
+        testID="notifications-remove-line-confirm"
+        title={removing ? `Remove ${lineName(removing)} from Favorite Lines?` : ''}
+        visible={removing != null}
+      />
       <Text style={profile.note} testID="notifications-not-sent">{"Line alerts arrive as push notifications in the Android and iOS app; the web app doesn't receive them."}</Text>
       <RouteAlertsPrompt
         onClose={() => setHoursPrompt(null)}
@@ -241,7 +306,61 @@ export function NotificationSettings({ onFeedback }: PageProps) {
 
 const MAX_LINE_RESULTS = 6;
 
-/** "Add a line" under Saved lines: search every line by code or name and turn its alerts on. */
+/** A saved line's short name for messages: "PJ", "S93". */
+function lineName(route: SavedRoute): string {
+  return badgeLabel({ agency: route.agencyName, shortName: route.shortName || route.routeName });
+}
+
+/**
+ * One Favorite Line: its badge and name with a Remove button, then when its alerts come. A line
+ * kept only for its alerts (unstarred in Route View) says so.
+ */
+function FavoriteLineRow({ onRemove, onSelect, route }: { onRemove: () => void; onSelect: (label: string) => void; route: SavedRoute }) {
+  const { page, profile } = useStyles();
+  const { colors } = useTheme();
+  const label = lineName(route);
+  const selected = ROUTE_ALERT_OPTIONS.find((option) => option.value === (route.alerts === 'peak' ? 'custom' : route.alerts))?.label ?? 'Never';
+  return (
+    <View style={profile.choiceBlock} testID={`favorite-line-${route.id}`}>
+      <View style={page.favoriteHeader}>
+        <RouteBadge agency={route.agencyName} color={route.color} mode={transitModeForAgency(route.agencyName)} shortName={label} size="small" />
+        <View style={page.lineCopy}>
+          <Text numberOfLines={1} style={page.lineTitle}>{route.routeName || label}</Text>
+          <Text numberOfLines={1} style={page.lineSubtitle}>{route.favorite ? route.agencyName : `${route.agencyName} · alerts only, not starred`}</Text>
+        </View>
+        <PressableScale
+          accessibilityLabel={`Remove ${label} from Favorite Lines`}
+          accessibilityRole="button"
+          hitSlop={6}
+          onPress={onRemove}
+          style={page.removeButton}
+          testID={`favorite-line-remove-${route.id}`}
+        >
+          <Icon color={colors.red} name="close" size={16} />
+          <Text style={page.removeText}>Remove</Text>
+        </PressableScale>
+      </View>
+      <Text style={page.alertsLabel}>ALERTS</Text>
+      <View style={profile.choices}>
+        {ROUTE_ALERT_OPTIONS.map(({ label: option }) => (
+          <Pressable
+            accessibilityLabel={`${label} alerts: ${option}`}
+            accessibilityRole="button"
+            accessibilityState={{ selected: selected === option }}
+            key={option}
+            onPress={() => onSelect(option)}
+            style={[profile.choice, selected === option && profile.choiceSelected]}
+            testID={`line-alerts-${route.id}-${option.toLowerCase().replaceAll(' ', '-')}`}
+          >
+            <Text style={[profile.choiceText, selected === option && profile.choiceTextSelected]}>{option}</Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+/** "Add a favorite line" under Favorite Lines: search every line by code or name, star it and turn its alerts on. */
 function AddSavedLine({ onAdd, savedIds }: { onAdd: (line: IndexedLine) => Promise<void>; savedIds: readonly string[] }) {
   const { page } = useStyles();
   const { colors } = useTheme();
@@ -268,15 +387,16 @@ function AddSavedLine({ onAdd, savedIds }: { onAdd: (line: IndexedLine) => Promi
   const close = () => { setOpen(false); setQuery(''); };
   return (
     <>
-      <Card>
-        <SettingRow label="Add a line" onPress={() => setOpen(true)} testID="notifications-add-line" />
-      </Card>
+      <PressableScale accessibilityRole="button" onPress={() => setOpen(true)} style={page.addLineRow} testID="notifications-add-line">
+        <View style={page.addLineIcon}><Icon color={colors.onPrimary} name="add" size={18} /></View>
+        <Text style={page.addLineText}>Add a favorite line</Text>
+      </PressableScale>
       <Modal animationType="slide" onRequestClose={close} statusBarTranslucent={true} transparent={true} visible={open}>
         <View style={page.sheetViewport}>
           <Pressable accessibilityLabel="Close" onPress={close} style={page.sheetBackdrop} testID="notifications-add-line-backdrop" />
           <View style={page.sheet} testID="notifications-add-line-panel">
-            <Text style={page.sheetTitle}>Add a line</Text>
-            <Text style={page.lineSubtitle}>Its service alerts start at all times; change that in Saved lines.</Text>
+            <Text style={page.sheetTitle}>Add a favorite line</Text>
+            <Text style={page.lineSubtitle}>{"It's starred like a line saved in Route View, and its service alerts start at all times; change that under Favorite Lines."}</Text>
             <TextInput
               accessibilityLabel="Search lines"
               autoCapitalize="none"
@@ -688,6 +808,13 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   lineTitle: { color: colors.ink, fontFamily: fontFamilies.bold, fontSize: 15 },
   lineSubtitle: { color: colors.mutedInk, fontFamily: fontFamilies.semibold, fontSize: 12 },
   lineEmpty: { color: colors.mutedInk, fontFamily: fontFamilies.semibold, fontSize: 13, paddingVertical: 6 },
+  favoriteHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  removeButton: { minHeight: 36, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, borderRadius: radii.pill, backgroundColor: colors.background },
+  removeText: { color: colors.red, fontFamily: fontFamilies.bold, fontSize: 13 },
+  alertsLabel: { marginTop: 12, color: colors.mutedInk, ...typography.label },
+  addLineRow: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 15 },
+  addLineIcon: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: colors.primary },
+  addLineText: { color: colors.primary, ...typography.bodyStrong, fontSize: 15 },
   editBlock: { padding: 15, gap: 10, borderBottomWidth: 1, borderBottomColor: colors.border },
   input: { minHeight: 46, paddingHorizontal: 13, borderWidth: 1, borderColor: colors.border, borderRadius: radii.control, color: colors.ink, backgroundColor: colors.background, ...typography.body, fontSize: 15 },
   buttonRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },

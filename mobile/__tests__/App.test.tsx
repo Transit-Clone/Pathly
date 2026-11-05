@@ -1991,6 +1991,44 @@ describe('Pathly prototype navigation', () => {
 
     });
 
+    it('GO opens a guided ride from the rider\'s stop, picks where to get off, and starts navigation', async () => {
+      const screen = await openPortJefferson();
+      fireEvent.press(screen.getByTestId('route-go'));
+      const guide = await screen.findByTestId(`ride-guide-${PJ_CARD}`);
+      expect(guide).toBeTruthy();
+      // Laid out like Trip Details: leave within, times, the one ride.
+      expect(screen.getByTestId('ride-guide-leave-within')).toHaveTextContent(/Leave (within \d+ min|now)/);
+      expect(screen.getByTestId('ride-guide-leave-time')).toBeTruthy();
+      expect(screen.getByTestId('ride-guide-step-0')).toBeTruthy();
+      expect(screen.queryByTestId('ride-guide-step-1')).toBeNull();
+      // Every stop after the rider's, the end of the line picked until they choose.
+      const stops = screen.getAllByTestId(/^ride-guide-stop-\d+$/);
+      expect(stops).toHaveLength(20);
+      expect(stops[0]!.props.accessibilityLabel).not.toMatch(/^Stony Brook/);
+      expect(stops.at(-1)!.props.accessibilityState).toEqual({ selected: true });
+      expect(stops.at(-1)!.props.accessibilityLabel).toMatch(/^Penn Station, arrive about /);
+
+      fireEvent.press(stops[2]!);
+      const picked = screen.getByTestId('ride-guide-stop-3');
+      expect(picked.props.accessibilityState).toEqual({ selected: true });
+      const pickedName = picked.props.accessibilityLabel.split(',')[0];
+      const pickedTime = screen.getByTestId('ride-guide-stop-time-3').props.children;
+      expect(screen.getByTestId('ride-guide-arrive-time')).toHaveTextContent(pickedTime);
+      expect(screen.getByLabelText(`Start ride to ${pickedName}`)).toBeTruthy();
+
+      fireEvent.press(screen.getByTestId('ride-guide-go'));
+      expect(await screen.findByTestId('enroute-navigation-view')).toBeTruthy();
+    });
+
+    it('GO\'s guided ride goes back to the route it came from', async () => {
+      const screen = await openPortJefferson();
+      fireEvent.press(screen.getByTestId('route-go'));
+      await screen.findByTestId(`ride-guide-${PJ_CARD}`);
+      fireEvent.press(screen.getByTestId('ride-guide-back'));
+      expect(await screen.findByTestId('route-go')).toBeTruthy();
+      expect(screen.queryByTestId(`ride-guide-${PJ_CARD}`)).toBeNull();
+    });
+
     it("starts the stop list at the rider's station and runs to the end of the selected direction", async () => {
       const screen = await openPortJefferson();
       expect(rows(screen)[0]).toBe('Stony Brook');
@@ -2020,6 +2058,12 @@ describe('Pathly prototype navigation', () => {
       }
       expect(sheet.getByText('Subway')).toBeTruthy();
       expect(sheet.getByText('Bus')).toBeTruthy();
+      // All at once: each mode's badges wrap onto more rows, none cut off past the side.
+      for (const mode of ['subway', 'bus'] as const) {
+        const chips = StyleSheet.flatten(screen.getByTestId(`transfers-sheet-chips-${mode}`).props.style);
+        expect(chips.flexWrap).toBe('wrap');
+        expect(chips.overflow).not.toBe('hidden');
+      }
 
       fireEvent.press(screen.getByTestId('transfers-sheet-close'));
       expect(screen.queryByTestId('transfers-sheet')).toBeNull();

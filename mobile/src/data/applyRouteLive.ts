@@ -19,12 +19,17 @@ const INACTIVE_AFTER_MINUTES = 120;
 
 /**
  * Whether a nearby line isn't running for now (the SIM buses overnight, a weekend-only line on a
- * weekday), from live data applied by applyRouteLive. Only an answer counts: a line still loading,
- * or whose lookup failed, stays active rather than being hidden on no evidence.
+ * weekday), from live data applied by applyRouteLive: neither direction leaves within
+ * INACTIVE_AFTER_MINUTES. Only an answer counts: a line still loading, or whose lookup failed,
+ * stays active rather than being hidden on no evidence.
+ *
+ * A "live" departure hours away counts the same as a scheduled one: some agencies' realtime feeds
+ * list trips long before they start (tomorrow morning's first runs, the night before), and their
+ * being in the feed doesn't mean the line is running now.
  */
 export function isInactiveRoute(route: RouteDetail): boolean {
   if (!route.liveSource || route.liveStatus !== 'loaded') return false;
-  return route.directions.every((direction) => direction.unavailable || (!direction.live && direction.minutes > INACTIVE_AFTER_MINUTES));
+  return route.directions.every((direction) => direction.unavailable || direction.minutes > INACTIVE_AFTER_MINUTES);
 }
 
 export function applyRouteLive(route: RouteDetail, liveStatus: RouteLiveStatus, now: number = Date.now()): RouteDetail {

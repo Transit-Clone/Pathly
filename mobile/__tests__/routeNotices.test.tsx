@@ -66,13 +66,18 @@ describe('Route Details alert pill', () => {
     </AppSettingsProvider>,
   );
 
-  it('names the most pressing alert, in yellow, and opens every alert in a sheet', async () => {
+  it('shows every alert as its own pill, the most pressing first, in yellow, and opens them all in a sheet', async () => {
     const detour = { ...alert, label: 'Detour in effect', warning: true, upcoming: false };
     const screen = renderRoute({ ...liveRoute, serviceAlerts: [detour], predictions: [{ minutes: 4, live: true, delayMinutes: 6 }, { minutes: 19, live: false }] });
     const pill = screen.getByTestId('service-alerts');
     expect(within(pill).getByText('Running late')).toBeTruthy();
-    expect(within(pill).getByText('+1 more')).toBeTruthy();
+    expect(within(screen.getByTestId('service-alerts-1')).getByText('Detour in effect')).toBeTruthy();
+    // One row, swiped sideways when the pills don't all fit.
+    const row = screen.getByTestId('route-notices');
+    expect(row.props.horizontal).toBe(true);
+    expect(within(row).getByTestId('service-alerts-1')).toBeTruthy();
     expect(StyleSheet.flatten(pill.props.style).backgroundColor).toBe(lightColors.alertYellow);
+    expect(StyleSheet.flatten(screen.getByTestId('service-alerts-1').props.style).backgroundColor).toBe(lightColors.alertYellow);
     expect(screen.queryByTestId('service-alerts-list')).toBeNull();
     fireEvent.press(pill);
     const sheet = within(screen.getByTestId('service-alerts-list'));

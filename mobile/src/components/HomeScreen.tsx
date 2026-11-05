@@ -5,7 +5,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../auth/AuthContext';
 import { applyRouteLive } from '../data/applyRouteLive';
 import { NEARBY_CACHE_KEY, readCache, writeCache } from '../data/deviceCache';
-import { guidanceForNavigation } from '../data/enrouteNavigation';
+import { guidanceForNavigation, type TripEndpointReference } from '../data/enrouteNavigation';
+import type { RideGuideRequest } from '../data/rideGuide';
 import { describeTransitLine, discoveredRouteToRouteDetail, fetchNearbyTransit, fetchRouteAtStop, filterOutPinnedDuplicates, type DiscoveredRoute } from '../data/nearbyTransit';
 import type { IndexedLine } from '../data/lineIndex';
 import { distanceMeters } from '../data/routeDirection';
@@ -16,7 +17,7 @@ import { registerForRouteAlerts } from '../lib/notifications';
 import { EMPTY_LINE_LAYERS, lineLayerRouteKey, loadMapLines, readLineLayerChoice, writeLineLayerChoice, type LineLayerChoice, type LineLayerRoute, type MapLine } from '../data/lineLayers';
 import type { SearchPlace } from '../data/placesSearch';
 import { TransitLiveProvider, useTransitLive } from '../data/TransitLiveContext';
-import { riderLocation, type Itinerary, type ResumePlanRequest } from '../data/tripPlanning';
+import { riderLocation, type Itinerary, type ResumePlanRequest, type TripMode } from '../data/tripPlanning';
 import {
   findSavedLocation,
   locationToPlace,
@@ -55,6 +56,7 @@ import { ConfirmDialog } from './ConfirmDialog';
 import { CurrentLocationButton } from './CurrentLocationButton';
 import { DeparturesView } from './DeparturesView';
 import { EnrouteNavigationView, EnrouteRecoveryView, type EnrouteLocationState } from './EnrouteNavigationView';
+import { RideGuideView } from './RideGuideView';
 import { GoogleMapView, type HomeMapCamera } from './GoogleMapView';
 import { LineLayersSheet } from './LineLayersSheet';
 import { LoadingScreen } from './LoadingScreen';
@@ -109,6 +111,8 @@ type ActiveView =
   | { name: 'route'; routeId: string; route: RouteDetail; directionIndex?: number; previous?: ActiveView; wholeRoute?: boolean }
   // "More departures" for one direction of an opened route; back returns to that route and direction.
   | { name: 'departures'; routeId: string; route: RouteDetail; directionIndex: number; previous?: ActiveView; wholeRoute?: boolean }
+  // Route View's GO: one line from the rider's stop, to pick where they get off; back returns to `previous`.
+  | { name: 'rideGuide'; request: RideGuideRequest; previous: ActiveView }
   | ResultsViewState
   | { name: 'enroute' }
   | { name: 'profile'; route?: 'places' }
@@ -133,6 +137,7 @@ type RouteDetailScreenProps = {
   onOpenDepartures: (directionIndex: number) => void;
   onOpenStop: (stop: TappedStop) => void;
   onOpenTransfer: (transfer: LineTransfer, stop: TappedStop) => void;
+  onGo?: (request: RideGuideRequest) => void;
   wholeRoute?: boolean;
   onRefreshLocation: () => void;
   onToggleFavorite: () => void;
@@ -146,7 +151,7 @@ type RouteDetailScreenProps = {
 };
 
 /** Reads live transit data itself — must render under TransitLiveProvider, which HomeScreen itself can't consume. */
-function RouteDetailScreen({ alerts, initialDirectionIndex, isFavorite, location, locationFix, locationKnown, onBack, onOpenDepartures, onOpenStop, onOpenTransfer, onRefreshLocation, onToggleFavorite, onTripLine, route, tripRide, wholeRoute }: RouteDetailScreenProps) {
+function RouteDetailScreen({ alerts, initialDirectionIndex, isFavorite, location, locationFix, locationKnown, onBack, onGo, onOpenDepartures, onOpenStop, onOpenTransfer, onRefreshLocation, onToggleFavorite, onTripLine, route, tripRide, wholeRoute }: RouteDetailScreenProps) {
   const live = useTransitLive(route.id);
   // Re-applies live data every 30 s so countdowns age and past departures drop between polls.
   const now = useNow(30_000);
@@ -159,6 +164,7 @@ function RouteDetailScreen({ alerts, initialDirectionIndex, isFavorite, location
       locationFix={locationFix}
       locationKnown={locationKnown}
       onBack={onBack}
+      onGo={onGo}
       onOpenDepartures={onOpenDepartures}
       onOpenStop={onOpenStop}
       onOpenTransfer={onOpenTransfer}
@@ -312,7 +318,11 @@ export function HomeScreen() {
   if (nearbySearchPoint !== nearbyPoint && distanceMeters(
     { lat: nearbySearchPoint.latitude, lon: nearbySearchPoint.longitude },
     { lat: nearbyPoint.latitude, lon: nearbyPoint.longitude },
-  ) >= NEARBY_RESEARCH_METERS) setNearbySearchPoint(nearbyPoint);
+  ) >= NEARBY_RESEARCH_METERS) {
+    setNearbySearchPoint(nearbyPoint);
+    // Marked at once, not after the search's debounce, so a moved map shows its cards are being replaced.
+    setNearbyStatus((current) => (current.status === 'loaded' ? { ...current, refreshing: true } : { status: 'loading' }));
+  }
   // An open route keeps the stops it opened with: live data stays anchored where the rider was,
   // so a new fix (or a "nearer" stop) never swaps the stop or walking path under them.
   const viewingRoute = activeView.name === 'route' || activeView.name === 'departures';
@@ -330,8 +340,6 @@ export function HomeScreen() {
   }, []);
   useEffect(() => {
     let cancelled = false;
-    // Marked at once, not after the debounce, so a moved map shows its cards are being replaced.
-    setNearbyStatus((current) => (current.status === 'loaded' ? { ...current, refreshing: true } : { status: 'loading' }));
     const load = async () => {
       try {
         const discovered = await fetchNearbyTransit(nearbySearchPoint);
@@ -645,6 +653,24 @@ export function HomeScreen() {
       setTripStartFailed(true);
     }
   }, [activeView, selectedTrip, startActiveTrip]);
+  // GO from Route View's guided ride: the same en-route navigation as a planned trip, from the
+  // walk's start (or the boarding stop) to the stop the rider picked.
+  const startRide = useCallback(async (itinerary: Itinerary) => {
+    const ride = itinerary.steps.find((step) => step.kind === 'transit');
+    if (!ride || ride.kind !== 'transit') {
+      setTripStartFailed(true);
+      return;
+    }
+    const walk = itinerary.steps[0]?.kind === 'walk' ? itinerary.steps[0] : null;
+    const savedAt = Date.now();
+    const origin: TripEndpointReference = { kind: 'coordinate', label: walk ? CURRENT_LOCATION_LABEL : ride.from.name, point: walk?.path[0] ?? ride.from.location, savedAt };
+    const destination: TripEndpointReference = { kind: 'coordinate', label: ride.to.name, point: ride.to.location, savedAt };
+    const modes: TripMode[] = ride.mode === 'subway' || ride.mode === 'bus' || ride.mode === 'rail' ? [ride.mode] : ['subway', 'bus', 'rail'];
+    const resumeRequest: ResumePlanRequest = { origin, destination, time: { mode: 'depart', at: itinerary.departureTime }, preference: 'fastest', modes };
+    const result = await startActiveTrip({ itinerary, origin, destination, resumeRequest });
+    if (result === 'started') setActiveView({ name: 'enroute' });
+    else if (result !== 'replacement-required') setTripStartFailed(true);
+  }, [startActiveTrip]);
 
   // Real GPS and admin checkpoints share this one evidence path. The engine itself rejects stale,
   // inaccurate, ambiguous, and backward movement and completes the session idempotently.
@@ -716,6 +742,11 @@ export function HomeScreen() {
       return;
     }
 
+    if (activeView.name === 'rideGuide') {
+      setActiveView(activeView.previous);
+      return;
+    }
+
     showHome();
   }, [activeView, closePlannedTrip, closeResults, leaveSavedPlacePick, selectedTrip, showHome]);
 
@@ -757,6 +788,41 @@ export function HomeScreen() {
       />
       <RouteAlertsPrompt onClose={() => setAlertsPrompt(null)} onDone={chooseRouteAlerts} request={alertsPrompt} />
     </TransitLiveProvider>
+  );
+
+  // Starting a trip (a planned one, or Route View's GO) over an active one asks first; a failed start says so.
+  const tripStartDialogs = (
+    <>
+      <ConfirmDialog
+        body="Your current trip will end, then this exact departure will start."
+        confirmLabel="Replace trip"
+        destructive={true}
+        onCancel={cancelReplacement}
+        onConfirm={() => {
+          void confirmReplacement().then((replaced) => {
+            if (!replaced) {
+              setTripStartFailed(true);
+              return;
+            }
+            setSelectedTrip(null);
+            setActiveView({ name: 'enroute' });
+          });
+        }}
+        testID="replace-active-trip-confirm"
+        title="Replace your active trip?"
+        visible={trip.pendingReplacement !== null}
+      />
+      <ConfirmDialog
+        body="Your active trip could not be saved on this device. Nothing was replaced. Please try again."
+        cancelLabel="Close"
+        confirmLabel="OK"
+        onCancel={() => setTripStartFailed(false)}
+        onConfirm={() => setTripStartFailed(false)}
+        testID="start-trip-error"
+        title="Couldn’t start this trip"
+        visible={tripStartFailed}
+      />
+    </>
   );
 
   const enrouteLocationState: EnrouteLocationState = locationStatus === 'loading'
@@ -923,6 +989,7 @@ export function HomeScreen() {
         onOpenDepartures={(directionIndex) => setActiveView({ name: 'departures', routeId, route, directionIndex, previous, wholeRoute })}
         onOpenStop={(stop) => openStop(routeView, stop)}
         onOpenTransfer={(transfer, stop) => openTransfer(routeView, transfer, stop)}
+        onGo={(request) => setActiveView({ name: 'rideGuide', request, previous: { ...routeView, directionIndex: request.directionIndex } })}
         wholeRoute={wholeRoute}
         onRefreshLocation={() => void refreshLocation()}
         location={location}
@@ -934,6 +1001,20 @@ export function HomeScreen() {
         alerts={routeAlertsFor(route)}
         route={route}
       />
+    );
+  }
+
+  if (activeView.name === 'rideGuide') {
+    return screen(
+      <>
+        <RideGuideView
+          onBack={closeCurrentView}
+          onStart={(itinerary) => void startRide(itinerary)}
+          request={activeView.request}
+          riderLocation={riderLocation(location, locationStatus)}
+        />
+        {tripStartDialogs}
+      </>,
     );
   }
 
@@ -961,35 +1042,7 @@ export function HomeScreen() {
           selectedItinerary={selectedTrip?.itinerary ?? null}
           tripTime={tripTime}
         />
-        <ConfirmDialog
-          body="Your current trip will end, then this exact departure will start."
-          confirmLabel="Replace trip"
-          destructive={true}
-          onCancel={cancelReplacement}
-          onConfirm={() => {
-            void confirmReplacement().then((replaced) => {
-              if (!replaced) {
-                setTripStartFailed(true);
-                return;
-              }
-              setSelectedTrip(null);
-              setActiveView({ name: 'enroute' });
-            });
-          }}
-          testID="replace-active-trip-confirm"
-          title="Replace your active trip?"
-          visible={trip.pendingReplacement !== null}
-        />
-        <ConfirmDialog
-          body="Your active trip could not be saved on this device. Nothing was replaced. Please try again."
-          cancelLabel="Close"
-          confirmLabel="OK"
-          onCancel={() => setTripStartFailed(false)}
-          onConfirm={() => setTripStartFailed(false)}
-          testID="start-trip-error"
-          title="Couldn’t start this trip"
-          visible={tripStartFailed}
-        />
+        {tripStartDialogs}
       </>
     );
   }
@@ -1132,7 +1185,7 @@ export function HomeScreen() {
               {nudge.kind ? <NudgeBanner kind={nudge.kind} onAct={nudge.act} onDismiss={nudge.dismiss} style={styles.nudge} /> : <View pointerEvents="none" style={styles.nudge} />}
               <Animated.View style={{ opacity: layersButtonOpacity, transform: [{ translateX: layersButtonTranslateX }] }} testID="line-layers-wrap">
                 <MapControlButton
-                  accessibilityLabel="Lines on the map"
+                  accessibilityLabel="Map routes"
                   icon="modes"
                   onPress={() => setLayersOpen(true)}
                   selected={lineChoice.groups.length > 0 || lineChoice.routes.length > 0}

@@ -1,7 +1,7 @@
 import { act, fireEvent, render, renderHook, waitFor } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { deleteUser, EmailAuthProvider, reauthenticateWithCredential, sendPasswordResetEmail, updateProfile } from 'firebase/auth';
-import { doc, getDoc, getDocs, collection } from 'firebase/firestore';
+import { doc, getDoc, getDocs, collection, setDoc } from 'firebase/firestore';
 import * as Location from 'expo-location';
 import type { ReactNode } from 'react';
 import { Linking, Share, StyleSheet } from 'react-native';
@@ -95,7 +95,7 @@ describe('Settings', () => {
       expect(again.queryByTestId('toggle-service-alerts')).toBeNull();
     });
 
-    it('searches for a line in a popup and adds it with alerts on, unstarred', async () => {
+    it('searches for a line in a popup and adds it to Favorite Lines, starred with alerts on', async () => {
       resetLineIndexForTests([
         { agencyId: 'suffolk', agencyDisplayName: 'Suffolk County Transit', routeId: '51', shortName: '51', routeName: 'Patchogue RR to Port Jefferson', color: '#C43D4B' },
         { agencyId: 'lirr', agencyDisplayName: 'LIRR', routeId: '10', shortName: 'Port Jefferson Branch', routeName: 'Port Jefferson Branch', color: '#006EC7' },
@@ -110,9 +110,36 @@ describe('Settings', () => {
         fireEvent.press(screen.getByTestId('notifications-add-line-lirr-10'));
       });
       const saved = (await getDocs(collection({} as never, 'users', UID, 'savedRoutes'))).docs.map((entry) => entry.data());
-      expect(saved).toContainEqual(expect.objectContaining({ routeId: '10', agencyId: 'lirr', alerts: 'all', favorite: false }));
-      expect(screen.getByText('PJ alerts: All times')).toBeTruthy();
+      expect(saved).toContainEqual(expect.objectContaining({ routeId: '10', agencyId: 'lirr', alerts: 'all', favorite: true }));
+      expect(screen.getByText('PJ added to Favorite Lines, alerts: All times')).toBeTruthy();
       resetLineIndexForTests();
+    });
+
+    it('lists Favorite Lines with their badges, and removes one after a confirm', async () => {
+      await setDoc(doc({} as never, 'users', UID, 'savedRoutes', 'suffolk:51'), {
+        agencyId: 'suffolk', routeId: '51', agencyName: 'Suffolk County Transit', routeName: 'Patchogue RR to Port Jefferson', shortName: '51', color: '#C43D4B',
+        favorite: true, alerts: 'all', direction0: null, direction1: null, dateSaved: 1,
+      });
+      const screen = renderSettings();
+      await openPage(screen, 'notifications');
+      expect(screen.getByText('FAVORITE LINES')).toBeTruthy();
+      expect(screen.queryByText('SAVED LINES')).toBeNull();
+      const row = await screen.findByTestId('favorite-line-suffolk:51');
+      expect(row).toHaveTextContent(/Patchogue RR to Port Jefferson/);
+      expect(screen.getByTestId('notifications-add-line')).toHaveTextContent(/Add a favorite line/);
+
+      // Cancelling keeps it.
+      fireEvent.press(screen.getByTestId('favorite-line-remove-suffolk:51'));
+      expect(screen.getByText('Remove 51 from Favorite Lines?')).toBeTruthy();
+      fireEvent.press(screen.getByTestId('notifications-remove-line-confirm-cancel'));
+      expect((await getDocs(collection({} as never, 'users', UID, 'savedRoutes'))).docs).toHaveLength(1);
+
+      fireEvent.press(screen.getByTestId('favorite-line-remove-suffolk:51'));
+      await act(async () => {
+        fireEvent.press(screen.getByTestId('notifications-remove-line-confirm-confirm'));
+      });
+      expect((await getDocs(collection({} as never, 'users', UID, 'savedRoutes'))).docs).toHaveLength(0);
+      expect(screen.getByText('51 removed from Favorite Lines')).toBeTruthy();
     });
   });
 

@@ -3,10 +3,12 @@ import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleShe
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { signInAsGuest, signInWithEmail, signUpWithEmail, takeSignUpDraft } from '../auth/authService';
+import { sendPasswordReset } from '../data/accountData';
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
 import { GoogleSignInButton } from './GoogleSignInButton';
+import { Icon } from './Icon';
 import { PathlingChat } from './PathlingChat';
 import { PressableScale } from './PressableScale';
 import { radii } from '../theme/shape';
@@ -55,6 +57,8 @@ export function AuthScreen() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState(draft?.notice ?? '');
+  // A confirmation that isn't an error (a password reset link on its way).
+  const [notice, setNotice] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const canSubmit = email.trim().length > 0 && password.length > 0 && (mode === 'signIn' || confirmPassword.length > 0) && !submitting;
@@ -80,8 +84,33 @@ export function AuthScreen() {
     }
   };
 
+  // "Forgot password?": emails a reset link to the address typed above. Firebase doesn't say
+  // whether an account exists for it, and neither does this, so it can't be used to probe.
+  const forgotPassword = async () => {
+    if (submitting) return;
+    setNotice('');
+    const address = email.trim();
+    if (!address) {
+      setError('Enter your email above, then tap Forgot password.');
+      return;
+    }
+    setError('');
+    setSubmitting(true);
+    try {
+      await sendPasswordReset(address);
+      setNotice(`If there's an account for ${address}, a link to reset its password is on its way. Check your inbox.`);
+    } catch (caught) {
+      const code = errorCode(caught);
+      if (code === 'auth/user-not-found') setNotice(`If there's an account for ${address}, a link to reset its password is on its way. Check your inbox.`);
+      else setError(code === 'auth/invalid-email' ? 'Enter a valid email address.' : code === 'auth/too-many-requests' ? 'Too many tries. Wait a minute and try again.' : friendlyAuthError(caught));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const continueAsGuest = async () => {
     if (submitting) return;
+    setNotice('');
     setError('');
     setSubmitting(true);
     try {
@@ -153,8 +182,22 @@ export function AuthScreen() {
               ) : null}
             </View>
             {mode === 'signUp' ? <Text style={styles.hint} testID="auth-name-hint">You can change your name anytime in Settings. We&apos;ll email you a link to confirm your address.</Text> : null}
+            {mode === 'signIn' ? (
+              <PressableScale
+                accessibilityHint="Emails a link to reset your password"
+                accessibilityRole="button"
+                disabled={submitting}
+                hitSlop={8}
+                onPress={() => void forgotPassword()}
+                style={styles.forgot}
+                testID="auth-forgot-password"
+              >
+                <Text style={styles.forgotText}>Forgot password?</Text>
+              </PressableScale>
+            ) : null}
 
             {error ? <Text accessibilityLiveRegion="polite" style={styles.error}>{error}</Text> : null}
+            {notice ? <Text accessibilityLiveRegion="polite" style={styles.notice} testID="auth-notice">{notice}</Text> : null}
 
             <PressableScale
               accessibilityRole="button"
@@ -171,18 +214,35 @@ export function AuthScreen() {
               <Text style={styles.dividerText}>or</Text>
               <View style={styles.dividerLine} />
             </View>
+            {/* Google and guest are the same full-width buttons, so all three ways in read as equal choices. */}
             <GoogleSignInButton
               disabled={submitting}
               onError={(caught) => {
                 if (!CANCELLED_CODES.has(errorCode(caught))) setError(friendlyAuthError(caught));
               }}
-              onStart={() => setError('')}
+              onStart={() => {
+                setNotice('');
+                setError('');
+              }}
             />
+            <PressableScale
+              accessibilityHint="Look around without an account. Nothing is saved."
+              accessibilityLabel="Continue as guest"
+              accessibilityRole="button"
+              disabled={submitting}
+              onPress={() => void continueAsGuest()}
+              style={[styles.guest, submitting && styles.guestDisabled]}
+              testID="auth-guest"
+            >
+              <Icon color={colors.ink} name="person" size={18} />
+              <Text style={styles.guestText}>Continue as guest</Text>
+            </PressableScale>
 
             <PressableScale
               accessibilityRole="button"
               onPress={() => {
                 setError('');
+                setNotice('');
                 setConfirmPassword('');
                 setMode(mode === 'signIn' ? 'signUp' : 'signIn');
               }}
@@ -193,10 +253,6 @@ export function AuthScreen() {
                 {mode === 'signIn' ? "Don't have an account? " : 'Already have an account? '}
                 <Text style={styles.switchModeAction}>{mode === 'signIn' ? 'Sign up' : 'Sign in'}</Text>
               </Text>
-            </PressableScale>
-
-            <PressableScale accessibilityRole="button" disabled={submitting} onPress={() => void continueAsGuest()} style={styles.guest} testID="auth-guest">
-              <Text style={styles.guestText}>Continue as guest</Text>
             </PressableScale>
           </ScrollView>
         </KeyboardAvoidingView>
@@ -219,6 +275,9 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   input: { minHeight: 52, paddingHorizontal: 16, color: colors.ink, borderBottomWidth: 1, borderBottomColor: colors.border, ...typography.body, fontSize: 15 },
   inputLast: { borderBottomWidth: 0 },
   error: { marginTop: 14, color: colors.red, ...typography.metadata },
+  notice: { marginTop: 14, color: colors.ink, ...typography.metadata },
+  forgot: { alignSelf: 'flex-end', marginTop: 10, paddingVertical: 4 },
+  forgotText: { color: colors.primary, fontFamily: fontFamilies.extraBold, fontSize: 13 },
   primaryAction: { minHeight: 52, alignItems: 'center', justifyContent: 'center', marginTop: 20, borderRadius: radii.pill, backgroundColor: colors.primary },
   primaryActionDisabled: { opacity: 0.5 },
   primaryActionText: { color: colors.onPrimary, fontFamily: fontFamilies.extraBold, fontSize: 15 },
@@ -228,6 +287,8 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   switchMode: { alignItems: 'center', marginTop: 18 },
   switchModeText: { color: colors.mutedInk, ...typography.metadata },
   switchModeAction: { color: colors.primary, fontFamily: fontFamilies.extraBold },
-  guest: { alignItems: 'center', marginTop: 18, paddingVertical: 8 },
-  guestText: { color: colors.primary, fontFamily: fontFamilies.extraBold, fontSize: 15 },
+  // Matches the Google button (GoogleButton.tsx): outlined, full width, icon and label.
+  guest: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 12, borderWidth: 1, borderColor: colors.border, borderRadius: radii.pill, backgroundColor: colors.surface },
+  guestDisabled: { opacity: 0.5 },
+  guestText: { color: colors.ink, fontFamily: fontFamilies.extraBold, fontSize: 15 },
 });

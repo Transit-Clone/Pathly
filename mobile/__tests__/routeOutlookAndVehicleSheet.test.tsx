@@ -44,11 +44,16 @@ describe('Route View outlook pill', () => {
     await act(async () => {});
   });
 
-  it('shrinks to the date beside a warning, which stays', async () => {
-    mockOutlook.mockReturnValue([thanksgiving]);
+  it('sits beside a delay in one swipeable row, both shown in full', async () => {
+    mockOutlook.mockReturnValue([thanksgiving, { ...thanksgiving, icon: 'snow', label: 'Snow · Nov 27', shortLabel: 'Nov 27', title: 'Snow is expected Friday' }]);
     const screen = renderRoute({ ...liveRoute, predictions: [{ minutes: 4, live: true, delayMinutes: 6 }] });
-    expect(within(screen.getByTestId('service-alerts')).getByText('Running late')).toBeTruthy();
-    expect(within(screen.getByTestId('service-outlook')).getByText('Nov 26')).toBeTruthy();
+    const row = screen.getByTestId('route-notices');
+    expect(row.props.horizontal).toBe(true);
+    expect(within(row).getByTestId('service-alerts')).toHaveTextContent(/Running late/);
+    expect(within(row).getByTestId('service-outlook')).toHaveTextContent(/Thanksgiving · Nov 26/);
+    expect(within(row).getByTestId('service-outlook-1')).toHaveTextContent(/Snow · Nov 27/);
+    fireEvent.press(screen.getByTestId('service-outlook-1'));
+    expect(within(screen.getByTestId('service-alerts-list')).getByText('Snow is expected Friday')).toBeTruthy();
     await act(async () => {});
   });
 });

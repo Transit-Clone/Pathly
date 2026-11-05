@@ -5,7 +5,15 @@ import { db } from '../lib/firebase';
 const MAX_INBOX_ENTRIES = 50;
 
 /** One alert on a saved line, written by the backend (firebase/functions/src/routeAlerts.ts). */
-export type AlertInboxEntry = { id: string; title: string; body: string; sentAt: Date | null };
+export type AlertInboxEntry = {
+  id: string;
+  title: string;
+  body: string;
+  sentAt: Date | null;
+  /** The line it's about; absent from entries written before the backend recorded it. */
+  agencyId?: string;
+  routeId?: string;
+};
 
 /** Newest-first listener; `sentAt` is null briefly while a just-written server timestamp is pending. */
 export function subscribeToAlertInbox(uid: string, onChange: (entries: AlertInboxEntry[]) => void, onError: () => void): Unsubscribe {

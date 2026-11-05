@@ -99,7 +99,7 @@ type HubRow = { id: Exclude<SettingsRoute, 'hub' | 'avatar' | 'pin'> | 'contact'
 const hubCards: readonly (readonly HubRow[])[] = [
   [
     { id: 'account', title: 'Account', detail: 'Your Pathling, name, email and password', icon: 'person' },
-    { id: 'inbox', title: 'Inbox', detail: 'Past updates on your saved lines', icon: 'mail' },
+    { id: 'inbox', title: 'Inbox', detail: 'Past alerts on your Favorite Lines', icon: 'mail' },
     { id: 'appearance', title: 'Personalization', detail: 'Theme, map dot and destination pin', icon: 'appearance' },
     { id: 'notifications', title: 'Notifications', detail: 'Service alerts and lines you follow', icon: 'bell' },
   ],

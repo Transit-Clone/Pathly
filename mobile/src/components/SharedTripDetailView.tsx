@@ -123,8 +123,12 @@ type SharedTripDetailViewProps = {
   locationSelected?: boolean;
   /** A departure was picked from a leg's box (by transit leg index). */
   onSelectDeparture?: (legIndex: number, key: string) => void;
-  testPrefix: 'search-trip' | 'recent-trip';
+  testPrefix: 'search-trip' | 'recent-trip' | 'ride-guide';
   tone?: 'planned' | 'recent';
+  /** Shown between the times and the legs (Route View's GO: the stop to get off at). */
+  beforeSteps?: ReactNode;
+  /** The star saves the destination; a page with nothing to save hides it. */
+  showFavorite?: boolean;
 };
 
 /** Walking gets a card of its own; a transfer between legs adds the wait for the next one. */
@@ -314,7 +318,7 @@ function shade(color: string, base: string, amount: number): string {
   return `#${channel(0)}${channel(2)}${channel(4)}`;
 }
 
-export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = false, isFavorite, locationSelected, map: tripMap, model, onAction, onBack, onCenterOnLocation, onFocusStop, onSelectDeparture, onToggleFavorite, rootTestID, showServiceAlerts = true, testPrefix, tone = 'planned' }: SharedTripDetailViewProps) {
+export function SharedTripDetailView({ actionLabel, backLabel, beforeSteps, interactiveMap = false, isFavorite, locationSelected, map: tripMap, model, onAction, onBack, onCenterOnLocation, onFocusStop, onSelectDeparture, onToggleFavorite, rootTestID, showFavorite = true, showServiceAlerts = true, testPrefix, tone = 'planned' }: SharedTripDetailViewProps) {
   const tint = useRouteColor();
   const styles = useThemedStyles(createStyles);
   const { colors, isDark } = useTheme();
@@ -396,9 +400,11 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
   const controls = (
     <View pointerEvents="box-none" style={styles.topBar}>
       <MapControlButton accessibilityLabel={backLabel} icon="back" onPress={onBack} testID={`${testPrefix}-back`} />
-      <View style={styles.mapActions}>
-        <MapControlButton accessibilityLabel={isFavorite ? 'Remove destination from saved' : 'Save destination'} icon="favorite" onPress={onToggleFavorite} selected={isFavorite} testID={`${testPrefix}-favorite`} variant="save" />
-      </View>
+      {showFavorite ? (
+        <View style={styles.mapActions}>
+          <MapControlButton accessibilityLabel={isFavorite ? 'Remove destination from saved' : 'Save destination'} icon="favorite" onPress={onToggleFavorite} selected={isFavorite} testID={`${testPrefix}-favorite`} variant="save" />
+        </View>
+      ) : null}
     </View>
   );
 
@@ -498,6 +504,7 @@ export function SharedTripDetailView({ actionLabel, backLabel, interactiveMap = 
         </PressableScale>
       ) : null}
       {showServiceAlerts && alertsOpen ? <Text style={styles.alertBody}>No active service advisories affect this trip.</Text> : null}
+      {beforeSteps}
 
       <View style={styles.steps}>
         {model.legs.map((leg, index) => {

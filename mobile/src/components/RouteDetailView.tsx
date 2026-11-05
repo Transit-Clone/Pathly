@@ -8,6 +8,7 @@ import { fetchRouteGeometry, fetchRouteTransfers, type LineTransfer, type RouteG
 import { STATION_TRANSFERS, type StationTransfer, type TransferMode } from '../data/stationTransfers';
 import { departureDisplay, differentEndStop, directionDestination, preferredDirectionIndex, formatClockTime, scheduleStopsFromNow, stopsForDirection, type RouteDetail, type RoutePrediction } from '../data/transit';
 import { routeNotices, type RouteNotice } from '../data/routeNotices';
+import type { RideGuideRequest } from '../data/rideGuide';
 import type { RideFix } from '../data/rideDetection';
 import { useRideTracking, type RideTracking } from '../data/rideTracking';
 import { useServiceOutlook } from '../data/serviceOutlook';
@@ -69,6 +70,11 @@ type RouteDetailViewProps = {
   onOpenTransfer?: (transfer: LineTransfer, stop: TappedStop) => void;
   /** Opens this line at one of its stops (a stop on the map, or a stop row on the whole line). */
   onOpenStop?: (stop: TappedStop) => void;
+  /**
+   * GO: opens a guided view of this one line from the rider's stop (RideGuideView), for a rider who
+   * already knows they're taking it. Shown once the stops and a departure are known.
+   */
+  onGo?: (request: RideGuideRequest) => void;
   route: RouteDetail;
   /**
    * The whole line, not one stop's view of it (opened from search): a general overview that
@@ -342,7 +348,8 @@ function TransfersSheet({ onClose, onOpen, sheet }: {
               return (
                 <View key={mode} testID={`transfers-sheet-${mode}`}>
                   <Text style={styles.transfersSheetHeading}>{title}</Text>
-                  <View style={styles.transfers}>
+                  {/* Every line at once: the badges wrap onto more rows rather than running off the side. */}
+                  <View style={styles.transfersSheetChips} testID={`transfers-sheet-chips-${mode}`}>
                     {ofMode.map((transfer) => (
                       <TransferChip key={`${transfer.agency}-${transfer.name}`} onOpen={onOpen} stopName={sheet.stopName} testID={`transfers-sheet-chip-${transfer.name}`} transfer={transfer} />
                     ))}
@@ -357,7 +364,7 @@ function TransfersSheet({ onClose, onOpen, sheet }: {
   );
 }
 
-export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, location, locationFix = null, locationKnown = false, onBack, onOpenDepartures, onOpenStop, onOpenTransfer, onRefreshLocation, onToggleFavorite, onTripLine = false, route, tripRide, wholeRoute = false }: RouteDetailViewProps) {
+export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, location, locationFix = null, locationKnown = false, onBack, onGo, onOpenDepartures, onOpenStop, onOpenTransfer, onRefreshLocation, onToggleFavorite, onTripLine = false, route, tripRide, wholeRoute = false }: RouteDetailViewProps) {
   const routeColor = useRouteColor()(route.color);
   const styles = useThemedStyles(createStyles);
   const { colors, isDark } = useTheme();
@@ -546,6 +553,54 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
   const notices = routeNotices(route, wholeRoute ? [] : activePredictions, vehicleIcon);
   // Holidays and winter weather coming up, in a pill of their own beside any alert.
   const outlook = useServiceOutlook(now, route.liveSource);
+  // GO's guided view starts from what this page shows: the rider's stop onward in this direction,
+  // its departures (the picked one first choice), the walk there, and the line's notices.
+  // `capturedAt`: when the departures' minutes count from.
+  const guideRequest = (capturedAt: number): RideGuideRequest | null => {
+    if (wholeRoute || !route.liveSource || geometryStatus.status !== 'loaded' || activePredictions.length === 0) return null;
+    const { path, stops } = geometryStatus.geometry;
+    const rideStops = stops.slice(Math.max(0, focusStopIndex(stops, activeDirection.stopId, activeDirection.stopName)));
+    if (rideStops.length < 2) return null;
+    const walk = walkPath ? walkingMinutes(walkPath) : null;
+    return {
+      routeId: route.id,
+      directionIndex: activeDirectionIndex,
+      agency: route.agency,
+      agencyId: route.liveSource.agencyId,
+      routeIdAtAgency: route.liveSource.routeId,
+      ...(geometryDirectionId !== undefined ? { directionId: geometryDirectionId } : {}),
+      mode: vehicleIcon,
+      routeName: route.routeName,
+      shortName: badgeLabel(route),
+      color: route.color,
+      headsign: activeDestination,
+      stops: rideStops.map((stop) => ({ name: stop.name, stopId: stop.stopId, lat: stop.lat, lon: stop.lon, offsetMinutes: stop.offsetMinutes })),
+      ...(path ? { path } : {}),
+      departures: activePredictions.slice(0, MAX_PREDICTION_TILES),
+      selectedDeparture: Math.min(selectedPredictionIndex, MAX_PREDICTION_TILES - 1),
+      walk: walkPath && walk != null ? { minutes: walk, path: walkPath } : null,
+      notices: [...notices, ...outlook],
+      capturedAt,
+    };
+  };
+  const canGo = onGo != null && guideRequest(0) != null;
+  const goAction = canGo ? (
+    <PressableScale
+      accessibilityHint={`Shows this ${vehicleIcon === 'subway' || vehicleIcon === 'rail' ? 'train' : vehicleIcon}'s stops toward ${activeDestination}, to pick where you get off`}
+      accessibilityLabel={`Go: ride ${badgeLabel(route)} toward ${activeDestination}`}
+      accessibilityRole="button"
+      onPress={() => {
+        // The departures' minutes were counted at this render's `now`.
+        const request = guideRequest(now.getTime());
+        if (request) onGo?.(request);
+      }}
+      style={styles.goButton}
+      testID="route-go"
+    >
+      <Icon color={colors.onPrimary} name="go" size={20} />
+      <Text style={styles.goButtonText}>GO</Text>
+    </PressableScale>
+  ) : undefined;
   // The stop list follows the selected departure, so its chip says whether that one is late.
 
   // Only ever rendered below for a route with no `liveSource` — every entry in the static demo
@@ -668,6 +723,8 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
 
   return (
     <DetailMapPage
+      action={goAction}
+      actionSticks={false}
       controlsScrollWithMap={true}
       interactiveMap={liveMap}
       contentStyle={styles.content}
@@ -780,40 +837,50 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
         </ScrollView>
       )}
 
-      {/* Only a route with a delay or an alert gets this pill. It names the most pressing one,
-          yellow when service is disrupted now, and opens every alert in a sheet. */}
+      {/* A pill for every delay and alert (yellow when service is disrupted now), then one for each
+          holiday or snow coming up, in one row that swipes sideways when they don't all fit. A
+          lone pill fills the row. Each opens its sheet with the details. */}
       {notices.length > 0 || outlook.length > 0 ? (
-      <View style={styles.noticeRow}>
-      {notices.length > 0 ? (
-        <PressableScale
-          accessibilityHint="Shows every alert for this line"
-          accessibilityLabel={`${notices[0]!.label}${notices.length > 1 ? `, ${notices.length - 1} more` : ''}`}
-          accessibilityRole="button"
-          onPress={() => setOpenSheet('alerts')}
-          style={[styles.alertPill, notices[0]!.warning ? styles.alertPillWarning : styles.alertPillNeutral]}
-          testID="service-alerts"
+        <ScrollView
+          contentContainerStyle={styles.noticeRow}
+          horizontal={true}
+          showsHorizontalScrollIndicator={false}
+          style={styles.noticeScroll}
+          testID="route-notices"
         >
-          <Icon color={notices[0]!.warning ? colors.onAlertYellow : colors.ink} name={notices[0]!.warning ? 'warning' : 'info'} size={20} />
-          <Text numberOfLines={1} style={[styles.alertPillText, { color: notices[0]!.warning ? colors.onAlertYellow : colors.ink }]}>{notices[0]!.label}</Text>
-          {notices.length > 1 ? <Text style={[styles.alertPillMore, { color: notices[0]!.warning ? colors.onAlertYellow : colors.mutedInk }]}>{`+${notices.length - 1} more`}</Text> : null}
-          <Icon color={notices[0]!.warning ? colors.onAlertYellow : colors.mutedInk} name="forward" size={18} />
-        </PressableScale>
-      ) : null}
-      {/* A holiday or snow coming up: the date alone beside an alert, which keeps most of the row. */}
-      {outlook.length > 0 ? (
-        <PressableScale
-          accessibilityHint="Shows what may slow service soon"
-          accessibilityLabel={`${outlook[0]!.label}${outlook.length > 1 ? `, ${outlook.length - 1} more` : ''}`}
-          accessibilityRole="button"
-          onPress={() => setOpenSheet('outlook')}
-          style={[styles.alertPill, styles.alertPillNeutral, notices.length > 0 ? styles.outlookPillCompact : styles.outlookPillAlone]}
-          testID="service-outlook"
-        >
-          <Icon color={colors.ink} name={outlook[0]!.icon} size={18} />
-          <Text numberOfLines={1} style={[styles.outlookPillText, notices.length === 0 && styles.outlookPillTextAlone]}>{notices.length > 0 ? outlook[0]!.shortLabel : outlook[0]!.label}</Text>
-        </PressableScale>
-      ) : null}
-      </View>
+          {notices.map((notice, index) => {
+            const ink = notice.warning ? colors.onAlertYellow : colors.ink;
+            return (
+              <PressableScale
+                key={`alert-${notice.kind}-${index}`}
+                accessibilityHint="Shows every alert for this line"
+                accessibilityLabel={`${notice.label}: ${notice.title}`}
+                accessibilityRole="button"
+                onPress={() => setOpenSheet('alerts')}
+                style={[styles.alertPill, { maxWidth: pageWidth * 0.85 }, notice.warning ? styles.alertPillWarning : styles.alertPillNeutral]}
+                testID={index === 0 ? 'service-alerts' : `service-alerts-${index}`}
+              >
+                <Icon color={ink} name={notice.warning ? 'warning' : 'info'} size={20} />
+                <Text numberOfLines={1} style={[styles.alertPillText, { color: ink }]}>{notice.label}</Text>
+                <Icon color={notice.warning ? colors.onAlertYellow : colors.mutedInk} name="forward" size={18} />
+              </PressableScale>
+            );
+          })}
+          {outlook.map((notice, index) => (
+            <PressableScale
+              key={`outlook-${notice.dateKey ?? index}-${index}`}
+              accessibilityHint="Shows what may slow service soon"
+              accessibilityLabel={notice.label}
+              accessibilityRole="button"
+              onPress={() => setOpenSheet('outlook')}
+              style={[styles.alertPill, styles.alertPillNeutral, { maxWidth: pageWidth * 0.85 }]}
+              testID={index === 0 ? 'service-outlook' : `service-outlook-${index}`}
+            >
+              <Icon color={colors.ink} name={notice.icon} size={18} />
+              <Text numberOfLines={1} style={styles.outlookPillText}>{notice.label}</Text>
+            </PressableScale>
+          ))}
+        </ScrollView>
       ) : null}
       <AlertsSheet notices={openSheet === 'alerts' ? notices : openSheet === 'outlook' ? outlook : null} onClose={() => setOpenSheet(null)} title={openSheet === 'outlook' ? 'Coming up' : 'Service alerts'} />
       <VehicleSheet
@@ -1087,15 +1154,21 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     ...typography.label,
     fontSize: 8,
   },
-  // The whole pill takes the alert's color: yellow for a disruption now, neutral otherwise.
-  noticeRow: {
-    flexDirection: 'row',
-    gap: 8,
+  // The pills' own sideways scroll, sized to them rather than to the page.
+  noticeScroll: {
+    flexGrow: 0,
     marginTop: 12,
   },
+  // Grows to the row's width, so pills that fit share it and a lone one fills it.
+  noticeRow: {
+    flexGrow: 1,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  // The whole pill takes the alert's color: yellow for a disruption now, neutral otherwise.
   alertPill: {
-    minWidth: 0,
-    flex: 1,
+    flexGrow: 1,
+    flexShrink: 0,
     minHeight: 48,
     flexDirection: 'row',
     alignItems: 'center',
@@ -1103,22 +1176,34 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: radii.pill,
   },
-  outlookPillCompact: {
-    flex: 0,
-    flexShrink: 0,
-    gap: 6,
-    paddingHorizontal: 12,
-  },
-  outlookPillAlone: {
-    gap: 8,
-  },
   outlookPillText: {
+    flexShrink: 1,
     color: colors.ink,
     fontFamily: fontFamilies.extraBold,
     fontSize: 13,
   },
-  outlookPillTextAlone: {
-    flex: 1,
+  goButton: {
+    minWidth: 104,
+    height: 60,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 18,
+    borderWidth: 3,
+    borderColor: colors.blueSoft,
+    borderRadius: 30,
+    backgroundColor: colors.primary,
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
+    elevation: 9,
+  },
+  goButtonText: {
+    color: colors.onPrimary,
+    fontFamily: fontFamilies.extraBold,
+    fontSize: 18,
   },
   alertPillWarning: {
     backgroundColor: colors.alertYellow,
@@ -1127,12 +1212,8 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     backgroundColor: colors.surfaceMuted,
   },
   alertPillText: {
-    flex: 1,
+    flexShrink: 1,
     ...typography.bodyStrong,
-  },
-  alertPillMore: {
-    ...typography.metadata,
-    fontFamily: fontFamilies.bold,
   },
   alertSheetContent: {
     paddingTop: 6,
@@ -1298,6 +1379,13 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   transfersSheetHeading: {
     color: colors.mutedInk,
     ...typography.label,
+  },
+  transfersSheetChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 7,
   },
   transferMore: {
     color: colors.mutedInk,
