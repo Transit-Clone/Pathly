@@ -4,7 +4,7 @@ import { callable } from '../lib/firebase';
 import { whenWarm } from './backendWarmup';
 import { preferredDirectionIndex, type LiveSource, type RouteDetail, type TransitDirection } from './transit';
 
-type DiscoveredDirection = { stopId: string; name: string; headsign: string | null; distanceMeters?: number; stopsAhead?: number | null } | null;
+type DiscoveredDirection = { stopId: string; name: string; headsign: string | null; distanceMeters?: number; stopsAhead?: number | null; lat?: number; lon?: number } | null;
 
 export type DiscoveredRoute = {
   agencyId: LiveSource['agencyId'];
@@ -119,6 +119,8 @@ export function discoveredRouteToRouteDetail(discovered: DiscoveredRoute): Route
     stopName: primary?.name ?? other?.name ?? 'Unknown stop',
     stopId: primary?.stopId,
     distanceMeters: primary?.distanceMeters,
+    stopLat: primary?.lat,
+    stopLon: primary?.lon,
     stopsAhead: primary?.stopsAhead ?? undefined,
     unavailable: true,
   });

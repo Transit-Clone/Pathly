@@ -12,6 +12,8 @@ import { SHEET_AT_REST_TOLERANCE, SheetHandle } from './SheetHandle';
 const CONTROL_ROW_HEIGHT = 48;
 const ACTION_HEIGHT = 60;
 const ACTION_GAP = 16;
+/** Map buttons moved to the top line up under the top-right controls (their rows' 14 pt inset). */
+const TOP_BUTTONS_INSET = 14;
 
 type DetailMapPageProps = {
   action?: ReactNode;
@@ -37,6 +39,11 @@ type DetailMapPageProps = {
   map: ReactNode;
   /** Buttons on the map just above the sheet, moving with it as it scrolls (and above the action, if any). */
   mapButtons?: ReactNode;
+  /**
+   * Puts `mapButtons` at the top of the map instead, this far below the safe area (just under the
+   * top row of controls), so they stay clear of a GO action riding the sheet's edge.
+   */
+  mapButtonsTop?: number;
   /** Anything else placed on the map (positioned by the page), moving with the sheet like `mapButtons`. */
   mapOverlay?: ReactNode;
   mapHeight: number;
@@ -66,6 +73,7 @@ export function DetailMapPage({
   interactiveMap = false,
   map,
   mapButtons,
+  mapButtonsTop,
   mapOverlay,
   mapHeight,
   mapTestID,
@@ -153,7 +161,7 @@ export function DetailMapPage({
               </View>
             ) : null}
             {mapOverlay}
-            {mapButtons ? <View pointerEvents="box-none" style={[styles.mapButtons, thumb.anchor(16), { flexDirection: thumb.row, bottom: (action ? ACTION_HEIGHT + ACTION_GAP + 10 : 14) + thumb.mapBottomClearance }]}>{mapButtons}</View> : null}
+            {mapButtons ? <View pointerEvents="box-none" style={[styles.mapButtons, mapButtonsTop != null ? { right: TOP_BUTTONS_INSET, top: insets.top + mapButtonsTop } : thumb.anchor(16), mapButtonsTop != null ? { flexDirection: thumb.row } : { flexDirection: thumb.row, bottom: (action ? ACTION_HEIGHT + ACTION_GAP + 10 : 14) + thumb.mapBottomClearance }]} testID={`${scrollTestID}-map-buttons`}>{mapButtons}</View> : null}
           </View>
           <SafeAreaView edges={['bottom']} style={[styles.sheet, { minHeight: fitContent ? Math.max(0, height - mapHeight) : height }, stickyMap && styles.sheetOverStickyMap, contentStyle, handle && styles.sheetWithHandle]} testID={contentTestID}>
             {handle ? <SheetHandle {...handle} onPress={toggleExpanded} /> : null}

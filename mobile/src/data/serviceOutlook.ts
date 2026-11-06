@@ -9,7 +9,7 @@ const DAY_MS = 86_400_000;
 const WEATHER_REFRESH_MS = 15 * 60 * 1000;
 
 /** A notice about what's coming, with the short form its pill uses beside a warning pill. */
-export type OutlookNotice = RouteNotice & { icon: 'calendar' | 'snow'; shortLabel: string; /** A holiday's date, "YYYYMMDD". */ dateKey?: string };
+export type OutlookNotice = RouteNotice & { icon: 'calendar' | 'snow'; shortLabel: string; /** A holiday's date, "YYYYMMDD". */ dateKey?: string; /** A holiday's name. */ holiday?: string };
 
 const utcDay = (year: number, month: number, day: number) => Date.UTC(year, month - 1, day);
 
@@ -68,6 +68,7 @@ export function upcomingHolidays(now: Date): OutlookNotice[] {
         label: `${name} · ${when}`,
         shortLabel: when,
         dateKey: new Date(day).toISOString().slice(0, 10).replaceAll('-', ''),
+        holiday: name,
         warning: false,
         title: day === today ? `${name} is today` : `${name} is ${weekday}, ${date}`,
         detail: 'Many lines run a holiday schedule, with fewer trips and longer waits. Check the times again that day.',
@@ -81,13 +82,18 @@ type OutlookRoute = { agencyId: string; routeId: string };
 const getServiceOutlook = callable<Partial<OutlookRoute> & { holidayDates?: string[] }, { winterAlerts?: WinterAlert[]; holidayService?: Record<string, HolidayService> }>('getServiceOutlook');
 
 /**
- * Holidays as this route's own timetable has them: how service changes, and nothing at all when
- * the agency confirms a regular day. A timetable that can't say keeps the general wording.
+ * Holidays as this route's own timetable has them: how service changes, or that it looks like a
+ * usual day. A timetable that can't say keeps the general wording.
+ *
+ * A day the timetable calls regular keeps its pill, reworded, rather than being dropped: the
+ * general pill shows first (before the route's answer arrives), so dropping it made the holiday
+ * pill flash and vanish (Veterans Day on the S76). And "regular" only means about as many trips
+ * as the week before: school trips and the like can still change, so the date stays worth a look.
  */
 export function withHolidayService(holidays: readonly OutlookNotice[], service: Readonly<Record<string, HolidayService>>): OutlookNotice[] {
   return holidays.flatMap((notice) => {
     const found = notice.dateKey ? service[notice.dateKey] : undefined;
-    if (found?.status === 'regular') return [];
+    if (found?.status === 'regular') return [{ ...notice, detail: 'The timetable shows about the usual service on this line that day. Some trips, such as school trips, may still change.' }];
     if (found?.status === 'none') return [{ ...notice, detail: 'The timetable shows no service on this line that day.' }];
     if (found?.status === 'reduced') return [{ ...notice, detail: `The timetable shows about ${found.percentFewer}% fewer trips on this line that day than usual.` }];
     return [notice];

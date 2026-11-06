@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import type { SearchPlace } from '../data/placesSearch';
+import { addressAfterName, type SearchPlace } from '../data/placesSearch';
 import { SAVED_PLACE_COLOR_HEX } from '../data/savedPlacePin';
 import { MAX_GROUP_NAME, MAX_PLACE_LABEL, SAVED_PLACE_COLORS, SAVED_PLACE_ICONS, type SavedPlaceColor, type SavedPlaceIcon, type SavedPlaceStyle } from '../data/userData';
 import { useTheme, useThemedStyles } from '../theme/AppSettings';
@@ -78,6 +78,9 @@ function SavePlaceForm({ groups = [], onCancel, onChangeAddress, onRemove, onSav
   const shownIcon: SavedPlaceIcon = pickedIcon ?? (SAVED_PLACE_ICONS.find((icon) => icon === derived) ?? 'place');
   const shownColor = pickedColor ?? 'blue';
   const { place } = request;
+  // As search results show it: the place or street first, then the rest of its address under it
+  // (never the street twice, as a saved address's own street line would repeat it).
+  const placeDetail = place.subtitle ? addressAfterName(place.title, place.subtitle) : '';
   const groupName = (newGroup ?? group ?? '').trim() || undefined;
   const sameGroup = (other: string) => other.toLowerCase() === groupName?.toLowerCase();
   // Other places already in the chosen list, which take on this place's icon and color with it.
@@ -100,8 +103,8 @@ function SavePlaceForm({ groups = [], onCancel, onChangeAddress, onRemove, onSav
     <View accessibilityViewIsModal={true} style={styles.card} testID="save-place-sheet">
       <ScrollView bounces={false} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>{request.editing ? 'Edit favorite' : 'Add favorite'}</Text>
-        <Text numberOfLines={1} style={styles.placeName}>{place.title}</Text>
-        {place.subtitle ? <Text numberOfLines={2} style={styles.placeAddress}>{place.subtitle}</Text> : null}
+        <Text numberOfLines={1} style={styles.placeName} testID="save-place-title">{place.title}</Text>
+        {placeDetail ? <Text numberOfLines={2} style={styles.placeAddress} testID="save-place-address">{placeDetail}</Text> : null}
         {request.editing && onChangeAddress ? (
           <PressableScale
             accessibilityHint="Searches for a new address for this favorite"

@@ -17,6 +17,7 @@ import { searchLineIndex, useLineIndex, type IndexedLine } from '../data/lineInd
 import { subscribeToAlertInbox, type AlertInboxEntry } from '../data/alertInbox';
 import { describeRouteAlerts, removeSavedRoute, ROUTE_ALERT_OPTIONS, saveRoute, savedRouteFromLine, setRouteAlerts, setRouteAlertsPaused, subscribeToSavedRoutes, type SavedRoute } from '../data/savedRoutes';
 import type { FareType } from '../data/tripPlanning';
+import { clearSearchHistory } from '../data/userData';
 import { ALL_TRANSIT_MODES, useUserPreferences, WALK_LIMIT_OPTIONS } from '../data/userPreferences';
 import { registerForRouteAlerts } from '../lib/notifications';
 import { useAppSettings, useTheme, useThemedStyles, type TextSize } from '../theme/AppSettings';
@@ -266,6 +267,8 @@ export function NotificationSettings({ onFeedback }: PageProps) {
             <ToggleRow label="Disruption updates" onChange={(value) => set('disruptions', value)} testID="toggle-disruptions" value={notifications.disruptions} />
           </>
         ) : null}
+        {/* The home screen's occasional ask (nudgePrompt.ts); its "Don't ask again" turns this off. */}
+        <ToggleRow label="Feedback & support popups" onChange={(value) => { updatePreferences({ supportPrompts: value }); onFeedback(value ? 'Feedback & support popups on' : 'Feedback & support popups off'); }} testID="toggle-support-prompts" value={preferences.supportPrompts} />
       </Card>
       <Text style={profile.sectionLabel}>FAVORITE LINES</Text>
       <Card>
@@ -620,6 +623,18 @@ export function PrivacySettings({ onFeedback }: PageProps) {
   const [password, setPassword] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+  const [confirmingClearSearches, setConfirmingClearSearches] = useState(false);
+
+  const clearSearches = async () => {
+    setConfirmingClearSearches(false);
+    if (!user) return;
+    try {
+      const cleared = await clearSearchHistory(user.uid);
+      onFeedback(cleared > 0 ? 'Search history cleared' : 'No search history to clear');
+    } catch {
+      onFeedback('Your search history could not be cleared. Check your connection and try again.');
+    }
+  };
 
   const changeLocation = async () => {
     if (permission.status === 'undetermined' || (permission.status === 'denied' && permission.canAskAgain && Platform.OS !== 'web')) {
@@ -674,8 +689,10 @@ export function PrivacySettings({ onFeedback }: PageProps) {
   return (
     <>
       <Card>
+        <SettingRow detail="pathly.web.app/privacy" label="Privacy policy" onPress={() => void openLink(PRIVACY_POLICY_URL, onFeedback)} testID="privacy-policy" />
         <SettingRow detail={permissionDetail[permission.status]} label="Location access" onPress={permission.status === 'unknown' ? undefined : () => void changeLocation()} testID="privacy-location" />
         <ToggleRow label="Share usage analytics" onChange={(value) => { updatePreferences({ analytics: value }); onFeedback('Analytics preference saved'); }} testID="toggle-analytics" value={preferences.analytics} />
+        {user ? <SettingRow detail="Removes your recent searches. Favorites and trips stay." label="Clear search history" onPress={() => setConfirmingClearSearches(true)} testID="privacy-clear-searches" /> : null}
         {user?.isAnonymous ? null : <>
         <ToggleRow label="Share my rides" onChange={(value) => { updatePreferences({ shareRides: value }); onFeedback(value ? 'Ride sharing on' : 'Ride sharing off'); }} testID="toggle-share-rides" value={preferences.shareRides} />
         <SettingRow detail={exporting ? 'Preparing your data…' : undefined} label="Download your data" onPress={() => void download()} testID="privacy-download" />
@@ -716,6 +733,16 @@ export function PrivacySettings({ onFeedback }: PageProps) {
         title="Delete account?"
         visible={confirmingDelete}
       />
+      <ConfirmDialog
+        body="Your recent searches will be removed from this account on every device. Favorites and recent trips stay."
+        confirmLabel="Clear"
+        destructive={true}
+        onCancel={() => setConfirmingClearSearches(false)}
+        onConfirm={() => void clearSearches()}
+        testID="clear-searches-dialog"
+        title="Clear search history?"
+        visible={confirmingClearSearches}
+      />
     </>
   );
 }
@@ -723,6 +750,15 @@ export function PrivacySettings({ onFeedback }: PageProps) {
 // ---------------------------------------------------------------------------------------------
 // Help & About
 
+
+/** Opens a web page, saying where it is when it can't open. */
+export async function openLink(url: string, onFeedback: (message: string) => void): Promise<void> {
+  try {
+    await Linking.openURL(url);
+  } catch {
+    onFeedback(`See ${url}`);
+  }
+}
 
 /** Opens an email to support (or the issue tracker), saying where to write when that can't open. */
 export async function contactSupport(onFeedback: (message: string) => void): Promise<void> {
@@ -742,15 +778,6 @@ const FAQ: readonly { q: string; a: string }[] = [
   { q: 'Why can’t Pathly find my location?', a: 'Check Settings > Privacy > Location access. Without it, Pathly centers on Stony Brook and you can search for a starting point.' },
 ];
 
-const PRIVACY: readonly string[] = [
-  'Account: Pathly stores your email address and display name with Firebase Authentication to sign you in.',
-  'Trip history: your recent searches, recent destinations, and favorites are stored in your account in Cloud Firestore so they follow you across devices.',
-  'Ride reports: when you tap how a ride is going, your location is checked once to confirm you are on board and is not saved. Other riders see the report and a count for 20 minutes, never who sent it.',
-  'Location: your location is used to show nearby transit and to plan trips from where you are. It is sent to Pathly’s servers and Google only for those requests, and it is not stored in your account.',
-  'On this device: display settings, travel and notification preferences, a short cache of nearby times, and an in-progress trip are kept on your device.',
-  'Your choices: you can download your data or delete your account at any time in Settings > Privacy.',
-];
-
 const TERMS: readonly string[] = [
   'Pathly is a prototype trip planner provided as is, without warranty.',
   'Schedules, live times, fares, and trip plans come from transit agencies and Google and can be late, incomplete, or wrong. Check official agency sources for critical travel.',
@@ -768,29 +795,18 @@ export function FaqSettings() {
   return <Card><View style={page.doc} testID="faq-content">{FAQ.map((item) => <View key={item.q} style={page.docItem}><Text style={page.docHeading}>{item.q}</Text><Text style={page.docBody}>{item.a}</Text></View>)}</View></Card>;
 }
 
-type LegalDoc = 'privacy' | 'terms';
-
 /** About's policies and credits. */
 export function LegalSettings({ onFeedback }: PageProps) {
   const { page } = useStyles();
-  const [open, setOpen] = useState<LegalDoc | null>(null);
-  const toggle = (doc: LegalDoc) => setOpen((current) => (current === doc ? null : doc));
-  const openLink = async (url: string) => {
-    try {
-      await Linking.openURL(url);
-    } catch {
-      onFeedback(`See ${url}`);
-    }
-  };
+  const [termsOpen, setTermsOpen] = useState(false);
   return (
     <Card>
-      <SettingRow label="Privacy policy" onPress={() => toggle('privacy')} testID="about-privacy" />
-      {open === 'privacy' ? <View style={page.doc} testID="about-privacy-content">{PRIVACY.map((line) => <Text key={line} style={[page.docBody, page.docItem]}>{line}</Text>)}</View> : null}
-      {open === 'privacy' ? <SettingRow label="Full policy and account deletion" onPress={() => void openLink(PRIVACY_POLICY_URL)} testID="about-privacy-web" /> : null}
-      <SettingRow label="Terms of use" onPress={() => toggle('terms')} testID="about-terms" />
-      {open === 'terms' ? <View style={page.doc} testID="about-terms-content">{TERMS.map((line) => <Text key={line} style={[page.docBody, page.docItem]}>{line}</Text>)}</View> : null}
+      {/* The whole policy, the same page Google Play links to, rather than a shorter copy in the app. */}
+      <SettingRow detail="pathly.web.app/privacy" label="Privacy policy" onPress={() => void openLink(PRIVACY_POLICY_URL, onFeedback)} testID="about-privacy" />
+      <SettingRow label="Terms of use" onPress={() => setTermsOpen((open) => !open)} testID="about-terms" />
+      {termsOpen ? <View style={page.doc} testID="about-terms-content">{TERMS.map((line) => <Text key={line} style={[page.docBody, page.docItem]}>{line}</Text>)}</View> : null}
       {/* Nearby's walking distances come from OpenStreetMap, whose license (ODbL) requires this credit. */}
-      <SettingRow label="Map data © OpenStreetMap" onPress={() => void openLink(OSM_COPYRIGHT_URL)} testID="about-osm" />
+      <SettingRow label="Map data © OpenStreetMap" onPress={() => void openLink(OSM_COPYRIGHT_URL, onFeedback)} testID="about-osm" />
     </Card>
   );
 }

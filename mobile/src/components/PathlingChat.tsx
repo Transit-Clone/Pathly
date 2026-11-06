@@ -11,13 +11,23 @@ import { LivelyPathling, usePathlingsMove } from './LivelyPathling';
 const LINE_MS = 5000;
 
 /** Short back-and-forths; the beans take turns saying each line. */
-const CHATS: readonly (readonly string[])[] = [
+export const CHATS: readonly (readonly string[])[] = [
   ['Is this the express?', 'Only if you believe in it.'],
   ['Two minutes away!', 'It said that ten minutes ago.', 'Time is a suggestion.'],
   ['Why are you standing so close?', "It's rush hour.", 'We are the only ones here.'],
   ['I saved us a seat.', "We don't have legs."],
   ['Stand clear of the closing doors.', 'There are no doors here.', 'I just like saying it.'],
   ['Which way to the train?', 'Sign in and we can all find out.'],
+  ['Is that a pigeon on the platform?', 'He has a monthly pass.', 'Respect.'],
+  ['Next stop, snacks.', 'That is not a stop.', 'It is if you believe.'],
+  ['I forgot my password.', 'Tap "Forgot password?"', 'I forgot where that is too.'],
+  ['Did we just miss it?', 'There is another in eight minutes.', 'Eight whole minutes?!'],
+  ['Who has the window seat?', 'We are all window seats.'],
+  ['Is it a local or an express?', 'Yes.'],
+  ['Why is it called rush hour?', 'Nobody is rushing.', 'Everybody is rushing.'],
+  ['Sign in so I can learn your favorite lines.', 'Mine is all of them.'],
+  ['Ever ridden the ferry?', 'I get seasick on escalators.'],
+  ['Do you think the bus can see us?', 'Wave harder.'],
 ];
 const LINES = CHATS.flatMap((lines, chat) => lines.map((text, index) => ({ text, speaker: (chat + index) % 3 })));
 

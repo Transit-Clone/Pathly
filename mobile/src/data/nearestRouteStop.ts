@@ -4,7 +4,7 @@ import { callable } from '../lib/firebase';
 import type { LiveSource } from './transit';
 
 /** A direction's nearest stop — resolved independently of the other direction, so it's never assumed to share a station (NICE Bus/Suffolk County Transit's stops never do; LIRR's/subway's happen to). Absent if this route has no real trips in that direction at all. */
-export type NearestDirectionStop = { stopId: string; name: string } | null;
+export type NearestDirectionStop = { stopId: string; name: string; lat?: number; lon?: number } | null;
 
 export type NearestRouteStop = {
   distanceMeters: number;
@@ -12,11 +12,19 @@ export type NearestRouteStop = {
   direction0: NearestDirectionStop;
 };
 
+export type NearestDirectionResponse = { stopId: string; name: string; headsign: string | null; lat?: number; lon?: number } | null;
 type NearestRouteStopResponse = {
   distanceMeters: number;
-  direction1: { stopId: string; name: string; headsign: string | null } | null;
-  direction0: { stopId: string; name: string; headsign: string | null } | null;
+  direction1: NearestDirectionResponse;
+  direction0: NearestDirectionResponse;
 };
+
+/** The stop, with its position when the backend sent one (older backends don't). */
+export function directionStop(stop: NearestDirectionResponse): NearestDirectionStop {
+  if (!stop) return null;
+  const hasPoint = typeof stop.lat === 'number' && typeof stop.lon === 'number';
+  return { stopId: stop.stopId, name: stop.name, ...(hasPoint ? { lat: stop.lat, lon: stop.lon } : {}) };
+}
 
 const getNearestRouteStopCallable = callable<
   { agencyId: string; routeId: string; lat: number; lon: number },
@@ -44,8 +52,8 @@ export async function fetchNearestRouteStop(
     });
     return {
       distanceMeters: data.distanceMeters,
-      direction1: data.direction1 ? { stopId: data.direction1.stopId, name: data.direction1.name } : null,
-      direction0: data.direction0 ? { stopId: data.direction0.stopId, name: data.direction0.name } : null,
+      direction1: directionStop(data.direction1),
+      direction0: directionStop(data.direction0),
     };
   } catch {
     return null;

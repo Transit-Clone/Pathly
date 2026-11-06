@@ -21,7 +21,7 @@ import { LiveSignal } from './LiveSignal';
 import { MapBackdrop } from './MapBackdrop';
 import { RouteBadge, type TransitMode } from './RouteBadge';
 import { DestinationPin, orientLegs, routeFocus, RouteLines, type MapLeg } from './RouteMapOverlay';
-import { MapControlButton } from './MapControlButton';
+import { MAP_CONTROL_SIZE, MapControlButton } from './MapControlButton';
 import { mapPageMapHeight } from './mapSheetLayout';
 import { PressableScale } from './PressableScale';
 import { TripNotePill } from './TripNotePill';
@@ -223,6 +223,8 @@ function LegAlerts({ alerts, expanded, onToggle, testID }: { alerts: readonly Se
 
 /** The "Leave within" card shows for trips leaving within this long. */
 const LEAVE_WITHIN_HORIZON_MIN = 90;
+/** Just below the top row of map buttons (its 8 pt top padding, a button, then a gap). */
+const TOP_ROW_BOTTOM = 8 + MAP_CONTROL_SIZE + 12;
 
 /**
  * How long the rider has before setting off, counting down: "Leave within 6 min", then "Leave now"
@@ -435,6 +437,8 @@ export function SharedTripDetailView({ actionLabel, backLabel, beforeSteps, inte
       handle={{ accessibilityHint: 'Expands or collapses the trip details.', accessibilityLabel: 'Trip details handle', testID: `${testPrefix}-sheet-handle` }}
       map={map}
       mapButtons={locateButton}
+      // GO (or END) rides the sheet's edge, so Locate moves up under the top row, clear of it.
+      mapButtonsTop={TOP_ROW_BOTTOM}
       mapHeight={mapHeight}
       mapTestID={`${testPrefix}-map`}
       scrollTestID={`${testPrefix}-scroll`}

@@ -2,6 +2,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDocs,
   limit,
   onSnapshot,
   orderBy,
@@ -214,6 +215,13 @@ export function recordSearch(uid: string, place: SearchPlace, type: LocationType
 
 export function removeSearch(uid: string, placeId: string) {
   return deleteDoc(doc(db, 'users', uid, SEARCHES, placeKey(placeId)));
+}
+
+/** Settings -> Privacy -> Clear search history: every recent search, gone (saved places and trips stay). */
+export async function clearSearchHistory(uid: string): Promise<number> {
+  const snapshot = await getDocs(collection(db, 'users', uid, SEARCHES));
+  await Promise.all(snapshot.docs.map((entry) => deleteDoc(doc(db, 'users', uid, SEARCHES, entry.id))));
+  return snapshot.docs.length;
 }
 
 export function recordNavigation(uid: string, place: SearchPlace) {

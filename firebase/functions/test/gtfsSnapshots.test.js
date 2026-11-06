@@ -1241,3 +1241,61 @@ test('the saved line list is read back only in the format it was built for', asy
     delete process.env.GTFS_USE_CLOUD_STORAGE;
   }
 });
+
+test('the nearby index is read only while it matches the published snapshot', async () => {
+  const { saveNearbyIndexObject } = require('../lib/gtfsSnapshots');
+  const { nearbyIndexSource, resetNearbyIndexStateForTests } = require('../lib/gtfsNearbyIndex');
+  const fakeBucket = new FakeBucket();
+  setGtfsSnapshotBucketForTests(fakeBucket);
+  resetNearbyIndexStateForTests();
+  const bytes = archive(currentLirrFiles());
+  const originalFetch = global.fetch;
+  global.fetch = async () => new Response(bytes);
+  process.env.GTFS_USE_CLOUD_STORAGE = 'true';
+  const fallbackLoads = [];
+  const fallback = {
+    mayHaveStationsWithin: () => true,
+    load: async (agencyId) => {
+      fallbackLoads.push(agencyId);
+      return null;
+    },
+  };
+  const saveIndex = async (snapshotVersion) => {
+    const file = {
+      format: 1,
+      agencyId: 'lirr',
+      snapshotVersion,
+      stops: [['s1', 'Stony Brook', 40.9204, -73.1283]],
+      stations: [[0, ['10']]],
+      routes: [['10', 'Port Jefferson Branch', 'PJ', '#00985F', ['Port Jefferson', [[0, 0]]], ['Penn Station', [[0, 12]]]]],
+    };
+    await saveNearbyIndexObject('lirr.json', JSON.stringify(file));
+    await saveNearbyIndexObject('coverage.json', JSON.stringify({ format: 1, builtAt: 'now', agencies: { lirr: { snapshotVersion, cells: [4092, -7313] } } }));
+    resetNearbyIndexStateForTests();
+  };
+  try {
+    // No index yet: the timetables are read.
+    assert.equal(await (await nearbyIndexSource(fallback)).load('lirr'), null);
+    assert.deepEqual(fallbackLoads, ['lirr']);
+
+    assert.equal(await refreshGtfsSnapshot('lirr'), 'published');
+    const { version } = JSON.parse(fakeBucket.objects.get('gtfs/v1/lirr/current.json').data.toString('utf8'));
+    await saveIndex(version);
+    const source = await nearbyIndexSource(fallback);
+    const data = await source.load('lirr');
+    assert.deepEqual(data.stations, [{ stopId: 's1', stopName: 'Stony Brook', lat: 40.9204, lon: -73.1283, routeIds: ['10'] }]);
+    assert.equal((await data.route('10')).directions[1].stops[0].stopsAhead, 12);
+    assert.equal(await source.mayHaveStationsWithin('lirr', 40.9204, -73.1283, 100), true);
+    assert.equal(await source.mayHaveStationsWithin('lirr', 40.7, -73.98, 1_600), false);
+    assert.deepEqual(fallbackLoads, ['lirr']);
+
+    // Built from an older snapshot than the one published: the timetables again.
+    await saveIndex('an-older-version');
+    assert.equal(await (await nearbyIndexSource(fallback)).load('lirr'), null);
+    assert.deepEqual(fallbackLoads, ['lirr', 'lirr']);
+  } finally {
+    global.fetch = originalFetch;
+    delete process.env.GTFS_USE_CLOUD_STORAGE;
+    resetNearbyIndexStateForTests();
+  }
+});

@@ -43,6 +43,12 @@ export function isAgencyAvailable(agencyId: AgencyId): boolean {
   return !agencyConfig(agencyId).onDemandRouteFiles && existsSync(join(STATIC_DATA_ROOT, agencyConfig(agencyId).dataDir, 'routes.txt'));
 }
 
+/** The published snapshot version this instance read the agency from, or null for its committed copy (or none). */
+export function agencySnapshotVersion(agencyId: AgencyId): string | null {
+  const version = activeDataRoots.get(agencyId)?.version;
+  return version && version !== 'bundled' ? version : null;
+}
+
 /** The configured agencies whose timetables this instance can read (call after preparing them). */
 export function availableAgencyIds(): AgencyId[] {
   return (Object.keys(AGENCY_CONFIGS) as AgencyId[]).filter(isAgencyAvailable);

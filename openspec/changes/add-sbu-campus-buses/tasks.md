@@ -1,0 +1,25 @@
+# Tasks
+
+## 1. Permission and feed checks
+
+- [ ] 1.1 The user sends the permission email to SBU Mobility & Parking Services (`transportation@stonybrook.edu`), asking whether Pathly may use and display the static and realtime feeds in its Play Store app, what attribution wording SBU wants, whether ETA Transit must also agree, and whether route names, colors and logos may be used. Record the reply (date, sender, what it permits: static, realtime, attribution wording, logo) in `firebase/functions/static_data/LICENSES.md`. Verify: the file names the permission and its scope. Nothing below is turned on for riders until this is done.
+- [ ] 1.2 Sample `trip_updates.pb` and `position_updates.pb` with a GTFS-RT decoder in a scratchpad script (not committed), and compare their trip IDs and route IDs with the static `trips.txt` from the same hour. Record the result here and set `realtimeTripIdsMatchStatic` from it (design decision 1).
+- [ ] 1.3 Check SBU's site for the campus bus fare and for rider-facing route names (to confirm "SBU Transit" and how the "LIRR"/Railroad shuttle is presented). Record both here with the date and URLs.
+
+## 2. Backend
+
+- [ ] 2.1 Add `sbu` to `AgencyId` and `AGENCY_CONFIGS` (design decision 1), the `requiresPermission`/`SBU_DATA_PERMITTED` gate (decision 2), and the `MODE_WORDS`, `MODE_RANK`, nearby distance and stop-search mode entries. Add a small fixture under `test/fixtures/gtfs/sbu/` (two loop routes, the "LIRR"-named route, Charter with no trips, the station stop). Verify with tests: with the gate on, discovery at the Stony Brook LIRR station returns the SBU routes alongside the LIRR; with it off, it returns no SBU routes and no error; a point in Manhattan doesn't load SBU (`stopBounds`).
+- [ ] 2.2 Loop handling (design decision 3): generic headsigns replaced by the route's long name (falling back to `stop_headsign`) during derivation, a single-direction route offering one direction, and routes without trips not prepared. Verify with tests on the fixture: the Outer Loop's departures are labeled "Outer Loop", its direction info has no second direction, and Charter is absent from discovery and search. Existing agencies' derived output is unchanged (the snapshot tests still pass).
+- [ ] 2.3 Realtime wiring behind `liveFeedEnabled` (design decision 6): trip updates and vehicle positions from the S3 prefix, plus the alerts feed. Verify with tests: with it off, live status is scheduled and untracked with no network fetch; with it on and a stubbed feed, a trip is tracked and vehicles are returned.
+- [ ] 2.4 Trip planning and fares (decision 7): check with one Routes API query from the SBU campus to the Stony Brook station whether Google returns SBU legs, and record the agency name. If it does, map it in `tripAgencies.ts`. Add the SBU fare from task 1.3 to `tripFares.ts` with a dated source comment. Verify with `tripAgencies.test.js` and `tripFares.test.js`, then run `npm test` and `npm run build` in `firebase/functions`.
+
+## 3. Client
+
+- [ ] 3.1 Wait until the other sessions' uncommitted edits to `RouteDetailView.tsx` and `SettingsPages.tsx` have landed. Then add `sbu` to `LiveSource['agencyId']` and to the agency tables (`RouteDetailView` `OWN_TRANSFER_KIND` and the agency/mode table, `INBOX_AGENCY_NAMES`, `lineIndex.ts` mode and search words, `routeGeometry.ts`), and add the "SBU Buses" map layer in `lineLayers.ts`. Verify with `npx tsc --noEmit`, plus a `lineIndex` test showing that a search for "lirr" excludes SBU's Railroad shuttle and "sbu"/"stony brook" finds SBU lines.
+- [ ] 3.2 Badge readability (design decision 5): an SBU route with a light color (`FAEC2A`) gets dark badge text, and the "LIRR"-named route renders in the bus shape with the "SBU Transit" accessibility label. Verify with `RouteBadge` component tests.
+- [ ] 3.3 The transit data sources section in Help & About (decision 8): one table of every agency's data source and attribution, rendered next to the OpenStreetMap row, with SBU's entry using the wording recorded in task 1.1. Verify with a `SettingsPages` test that every `AgencyId` has an entry and that SBU's text matches `LICENSES.md`.
+- [ ] 3.4 Check how a client without `sbu` in its union handles a nearby result with `agencyId: 'sbu'` (render a route card from such a payload in a test). Record whether turning the gate on must wait for client adoption (design, Open Questions).
+
+## 4. Integration check
+
+- [ ] 4.1 Deploy functions with `SBU_DATA_PERMITTED=false` (user's go-ahead required) and trigger the GTFS refresh; confirm that the SBU snapshot is published and that production Nearby at the Stony Brook station shows no SBU routes. In the emulator with the gate on and a mock location (see `admin-debug-tools`) at the Stony Brook LIRR station, a main-campus stop on the Outer Loop, and the Southampton campus: check Nearby, open the Outer Loop, the Railroad shuttle and Hospital Express, and check names, badges, departures and Help & About credits on web at phone width. Run all test suites. Turning the gate on in production is a separate step, after task 1.1.

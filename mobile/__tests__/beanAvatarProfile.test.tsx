@@ -60,6 +60,29 @@ describe('custom profile beans', () => {
     expect(again.getByTestId('bean-preview').findByType(SvgXml).props.xml).toBe(beanAvatarSvg(expected));
   });
 
+  it('saves an outfit and a goofy new face, and No outfit takes it off again', async () => {
+    const screen = openProfile();
+    await edit(screen);
+    cycleTo(screen, 'eyes', 'Googly');
+    cycleTo(screen, 'hair', 'Photosynthesizing');
+    cycleTo(screen, 'outfit', 'Santa hat');
+    await act(async () => { fireEvent.press(screen.getByTestId('bean-save')); });
+    await waitFor(() => expect(screen.queryByTestId('bean-editor')).toBeNull());
+    const saved = { ...DEFAULT_BEAN_AVATAR, eyes: 'googly', hair: 'sprout', outfit: 'santa' };
+    expect((await getDoc(doc(db, 'users', 'test-uid'))).data()?.avatar).toEqual(saved);
+    expect(screen.getByTestId('header-bean-avatar').findByType(SvgXml).props.xml).toBe(beanAvatarSvg(saved));
+
+    fireEvent.press(screen.getByTestId('profile-edit-avatar'));
+    await waitFor(() => expect(screen.getByTestId('bean-editor')).toBeTruthy());
+    fireEvent.press(screen.getByTestId('bean-tab-outfit'));
+    expect(screen.getByTestId('bean-outfit-santa').props.accessibilityState.selected).toBe(true);
+    cycleTo(screen, 'outfit', 'No outfit');
+    await act(async () => { fireEvent.press(screen.getByTestId('bean-save')); });
+    await waitFor(() => expect(screen.queryByTestId('bean-editor')).toBeNull());
+    expect((await getDoc(doc(db, 'users', 'test-uid'))).data()?.avatar).toEqual({ ...DEFAULT_BEAN_AVATAR, eyes: 'googly', hair: 'sprout' });
+    expect(screen.queryByTestId('bean-tab-pattern')).toBeNull();
+  });
+
   it('discards a canceled draft and offers Surprise me without presets', async () => {
     const screen = openProfile();
     await edit(screen);

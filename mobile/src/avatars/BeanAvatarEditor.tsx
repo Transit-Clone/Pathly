@@ -9,10 +9,10 @@ import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings
 import type { Palette } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { BeanAvatar } from './BeanAvatarImage';
-import { BEAN_COLORS, BEAN_EYES, BEAN_HAIR, BEAN_MOUTHS, randomBeanAvatar, type BeanAvatarConfig } from './beanAvatar';
+import { BEAN_COLORS, BEAN_EYES, BEAN_HAIR, BEAN_MOUTHS, BEAN_OUTFITS, randomBeanAvatar, type BeanAvatarConfig } from './beanAvatar';
 
 type Props = { onCancel: () => void; onSaved: () => void };
-const tabs = ['Color', 'Eyes', 'Mouth', 'Hair'] as const;
+const tabs = ['Color', 'Eyes', 'Mouth', 'Hair', 'Outfit'] as const;
 type Tab = typeof tabs[number];
 
 /** Wait for the saved profile before creating a draft, so a default can't overwrite it. */
@@ -65,8 +65,17 @@ function BeanAvatarDraft({ onCancel, onSaved }: Props) {
       if (mounted.current) setSaving(false);
     }
   };
-  const field = tab === 'Eyes' ? 'eyes' : tab === 'Mouth' ? 'mouth' : 'hair';
-  const parts = tab === 'Eyes' ? BEAN_EYES : tab === 'Mouth' ? BEAN_MOUTHS : BEAN_HAIR;
+  const field = tab === 'Eyes' ? 'eyes' : tab === 'Mouth' ? 'mouth' : tab === 'Outfit' ? 'outfit' : 'hair';
+  const parts: readonly { id: string; label: string }[] = tab === 'Eyes' ? BEAN_EYES : tab === 'Mouth' ? BEAN_MOUTHS : tab === 'Outfit' ? BEAN_OUTFITS : BEAN_HAIR;
+  // No outfit is saved as left out, not as 'none'.
+  const chosen = draft[field] ?? 'none';
+  const choose = (id: string): BeanAvatarConfig => {
+    if (field === 'outfit' && id === 'none') {
+      const { [field]: _dropped, ...rest } = draft;
+      return rest;
+    }
+    return { ...draft, [field]: id } as BeanAvatarConfig;
+  };
   return <View style={styles.viewport}><SafeAreaView edges={['top', 'bottom']} style={styles.screen} testID="bean-editor">
     <ThemedStatusBar />
     <View style={styles.header}>
@@ -84,8 +93,9 @@ function BeanAvatarDraft({ onCancel, onSaved }: Props) {
       <View style={styles.grid}>
         {tab === 'Color' ? BEAN_COLORS.map((color) => <PressableScale key={color.id} accessibilityLabel={`Pathling color: ${color.label}`} accessibilityRole="button" accessibilityState={{ selected: draft.color === color.id }} disabled={saving} onPress={() => change({ ...draft, color: color.id })} style={[styles.option, styles.colorOption, draft.color === color.id && styles.selected]} testID={`bean-color-${color.id}`}>
           <View style={[styles.swatch, { backgroundColor: color.hex }]}>{draft.color === color.id ? <Icon name="check" color="#242728" size={22} /> : null}</View>
-        </PressableScale>) : parts.map((part) => <PressableScale key={part.id} accessibilityLabel={`${tab}: ${part.label}`} accessibilityRole="button" accessibilityState={{ selected: draft[field] === part.id }} disabled={saving} onPress={() => change({ ...draft, [field]: part.id })} style={[styles.option, draft[field] === part.id && styles.selected]} testID={`bean-${field}-${part.id}`}>
-          <BeanAvatar config={{ ...draft, [field]: part.id }} size={72} />
+        </PressableScale>) : parts.map((part) => <PressableScale key={part.id} accessibilityLabel={`${tab}: ${part.label}`} accessibilityRole="button" accessibilityState={{ selected: chosen === part.id }} disabled={saving} onPress={() => change(choose(part.id))} style={[styles.option, chosen === part.id && styles.selected]} testID={`bean-${field}-${part.id}`}>
+          {/* Under a hat the hair is hidden, so hair thumbnails show it without the outfit. */}
+          <BeanAvatar config={field === 'hair' ? { ...choose(part.id), outfit: undefined } : choose(part.id)} size={72} />
         </PressableScale>)}
       </View>
     </ScrollView>

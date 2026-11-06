@@ -131,6 +131,12 @@ type RouteMapProps = {
   testID?: string;
   /** Rider's real location; omitted while only the fallback is known. */
   userLocation?: Coordinates;
+  /**
+   * The home map's purple explore dot, when the rider was exploring from it: drawn beside the
+   * rider's own dot, and framed with the stop and vehicle in its place (the walk starts there).
+   * The location button still goes to the rider.
+   */
+  exploreFrom?: Coordinates;
   vehicles: readonly RouteLiveVehicle[];
   /** The walk along the streets from the rider to the focused stop, drawn dotted (as on the trip map). */
   walkPath?: readonly { lat: number; lon: number }[];
@@ -139,7 +145,9 @@ type RouteMapProps = {
 /** Real route map: actual stop positions, the real line, and live vehicles — for any route with a live feed. */
 const arrowOffset = () => ({ x: -DIRECTION_ARROW_BOX / 2, y: -DIRECTION_ARROW_BOX / 2 });
 
-export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusStopId, focusStopName, mode = 'rail', onOpenStop, onUserPan, onVehiclePress, path, showRouteRequest = 0, stops, testID = 'route-map', userLocation, vehicles, walkPath }: RouteMapProps) {
+export function RouteMap({ centerOnUserRequest = 0, color, directionId, exploreFrom, focusStopId, focusStopName, mode = 'rail', onOpenStop, onUserPan, onVehiclePress, path, showRouteRequest = 0, stops, testID = 'route-map', userLocation, vehicles, walkPath }: RouteMapProps) {
+  // Where the walk starts: the purple dot when exploring, else the rider.
+  const walkOrigin = exploreFrom ?? userLocation;
   const { isLoaded } = useJsApiLoader({
     id: GOOGLE_MAPS_SCRIPT_ID,
     googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY ?? '',
@@ -184,7 +192,8 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
   const behindPolylineOptions = useMemo(() => ({ strokeColor: color, strokeOpacity: BEHIND_LINE_OPACITY, strokeWeight: LINE_WIDTH, zIndex: 0 }), [color]);
 
   // The rider, when they're near their stop: framed with it so they see the walk there.
-  const nearRider = userLocation && focusStop && riderNearStop(userLocation, focusStop) ? { lat: userLocation.latitude, lng: userLocation.longitude } : null;
+  // The purple dot is always framed: its walk and stop are the point of the page.
+  const nearRider = walkOrigin && focusStop && (exploreFrom != null || riderNearStop(walkOrigin, focusStop)) ? { lat: walkOrigin.latitude, lng: walkOrigin.longitude } : null;
   const frameStop = (target: google.maps.Map, stop: GeometryStop, extra: readonly google.maps.LatLngLiteral[]) => {
     const points = [{ lat: stop.lat, lng: stop.lon }, ...extra];
     if (points.length === 1) {
@@ -358,6 +367,15 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
                 {onOpenStop ? <span style={{ marginLeft: 6, color }}>›</span> : null}
               </div>
             </OverlayViewF>
+          ) : null}
+          {exploreFrom ? (
+            <Marker
+              clickable={false}
+              icon={{ path: google.maps.SymbolPath.CIRCLE, scale: 8.5, fillColor: colors.searchCenter, fillOpacity: 1, strokeColor: '#FFFFFF', strokeWeight: 3 }}
+              position={{ lat: exploreFrom.latitude, lng: exploreFrom.longitude }}
+              title="Exploring from here"
+              zIndex={3}
+            />
           ) : null}
           {userLocation ? <HeadingBeamMarker coordinate={userLocation} /> : null}
           {userLocation ? (

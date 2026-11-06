@@ -7,41 +7,37 @@ import { DONATION_URL } from './supportPrompt';
 /** Where "Give feedback" goes: the team's rider survey. */
 export const FEEDBACK_FORM_URL = 'https://forms.gle/x8KJ7RWahqvnqEKe7';
 
-export type NudgeKind = 'feedback' | 'donate';
-
-const STORAGE_KEY = 'pathly.nudges.v1';
+const STORAGE_KEY = 'pathly.nudges.v2';
 const DAY_MS = 24 * 60 * 60 * 1000;
-/** No asks until Pathly has been opened this many times. */
-export const OPENS_BEFORE_ASKING = 3;
-/** At most one ask in this long, whichever kind. */
-export const MIN_GAP_MS = 4 * DAY_MS;
-/** How long each kind stays away after its button is pressed, or after "close". */
-const QUIET_AFTER_ACTION_MS: Record<NudgeKind, number> = { feedback: 45 * DAY_MS, donate: 60 * DAY_MS };
-const QUIET_AFTER_DISMISS_MS: Record<NudgeKind, number> = { feedback: 10 * DAY_MS, donate: 21 * DAY_MS };
-/** An ask left alone goes away on its own after this long. */
-export const AUTO_HIDE_MS = 15_000;
+/** No ask until Pathly has been opened this many times… */
+export const OPENS_BEFORE_ASKING = 5;
+/** …over at least this long since its first open: a rider who has used it for a while. */
+export const USE_BEFORE_ASKING_MS = 3 * DAY_MS;
+/** Never two asks within this long. */
+export const MIN_GAP_MS = 7 * DAY_MS;
+/** After a swipe or close, the ask rests this long. */
+export const QUIET_AFTER_DISMISS_MS = 21 * DAY_MS;
+/** After a tip or the survey, it rests longer: the rider already helped. */
+export const QUIET_AFTER_ACTION_MS = 90 * DAY_MS;
 
-export type NudgeState = { opens: number; lastShownAt: number; lastKind: NudgeKind | null; quietUntil: Record<NudgeKind, number> };
+export type NudgeState = { opens: number; firstOpenAt: number; lastShownAt: number; quietUntil: number };
 
-const EMPTY: NudgeState = { opens: 0, lastShownAt: 0, lastKind: null, quietUntil: { feedback: 0, donate: 0 } };
+const EMPTY: NudgeState = { opens: 0, firstOpenAt: 0, lastShownAt: 0, quietUntil: 0 };
 
 /**
- * Which ask (if any) this app open shows: only after a few opens, never two within MIN_GAP_MS,
- * taking turns (feedback first), and skipping a kind that's resting after its last answer.
+ * Whether this app open shows the support popup: only once the rider has used Pathly a while
+ * (OPENS_BEFORE_ASKING opens over USE_BEFORE_ASKING_MS), never twice within MIN_GAP_MS, and not
+ * while it's resting after its last answer.
  */
-export function pickNudge(state: NudgeState, now: number): NudgeKind | null {
-  if (state.opens < OPENS_BEFORE_ASKING || now - state.lastShownAt < MIN_GAP_MS) return null;
-  const order: NudgeKind[] = state.lastKind === 'feedback' ? ['donate', 'feedback'] : ['feedback', 'donate'];
-  return order.find((kind) => now >= state.quietUntil[kind]) ?? null;
+export function shouldAskForSupport(state: NudgeState, now: number): boolean {
+  if (state.opens < OPENS_BEFORE_ASKING || !state.firstOpenAt || now - state.firstOpenAt < USE_BEFORE_ASKING_MS) return false;
+  return now - state.lastShownAt >= MIN_GAP_MS && now >= state.quietUntil;
 }
 
 async function readState(): Promise<NudgeState> {
   try {
     const text = await AsyncStorage.getItem(STORAGE_KEY);
-    if (text) {
-      const saved = JSON.parse(text) as Partial<NudgeState>;
-      return { ...EMPTY, ...saved, quietUntil: { ...EMPTY.quietUntil, ...saved.quietUntil } };
-    }
+    if (text) return { ...EMPTY, ...(JSON.parse(text) as Partial<NudgeState>) };
   } catch {
     // A missing or unreadable record just starts over.
   }
@@ -52,7 +48,7 @@ async function writeState(state: NudgeState): Promise<void> {
   try {
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch {
-    // Best effort only: at worst an ask comes again a little sooner.
+    // Best effort only: at worst the ask comes again a little sooner.
   }
 }
 
@@ -64,49 +60,49 @@ export function resetNudgeLaunchForTests(): void {
 }
 
 /**
- * The home screen's occasional small ask, for feedback or a tip, under the search bar. `paused`
- * holds it back (a trip to resume takes that spot); it hides itself after AUTO_HIDE_MS.
+ * The home screen's occasional popup asking the rider to support Pathly or take a quick feedback
+ * survey. `paused` holds it back (a trip to resume takes that spot); `enabled` is the rider's
+ * Settings switch (Notifications -> Feedback & support popups), which "Don't ask again" turns off.
  */
-export function useNudgePrompt(paused: boolean, now = Date.now) {
-  const [kind, setKind] = useState<NudgeKind | null>(null);
+export function useSupportPopup(paused: boolean, enabled: boolean, now = Date.now) {
+  const [visible, setVisible] = useState(false);
 
   useEffect(() => {
     if (paused || countedThisLaunch) return undefined;
     countedThisLaunch = true;
     let cancelled = false;
     void (async () => {
-      const counted = { ...(await readState()) };
-      counted.opens += 1;
-      const picked = pickNudge(counted, now());
-      await writeState(picked ? { ...counted, lastShownAt: now(), lastKind: picked } : counted);
-      if (!cancelled) setKind(picked);
+      const saved = await readState();
+      const at = now();
+      const counted = { ...saved, opens: saved.opens + 1, firstOpenAt: saved.firstOpenAt || at };
+      // Only counted as shown when it really is: switched off, it isn't.
+      const ask = enabled && shouldAskForSupport(counted, at);
+      await writeState(ask ? { ...counted, lastShownAt: at } : counted);
+      if (!cancelled && ask) setVisible(true);
     })();
     return () => {
       cancelled = true;
     };
-  }, [now, paused]);
+  }, [enabled, now, paused]);
 
-  useEffect(() => {
-    if (!kind) return undefined;
-    const timer = setTimeout(() => setKind(null), AUTO_HIDE_MS);
-    return () => clearTimeout(timer);
-  }, [kind]);
-
-  const rest = useCallback(async (shown: NudgeKind, quietMs: number) => {
-    setKind(null);
+  const rest = useCallback(async (quietMs: number) => {
+    setVisible(false);
     const state = await readState();
-    await writeState({ ...state, quietUntil: { ...state.quietUntil, [shown]: now() + quietMs } });
+    await writeState({ ...state, quietUntil: now() + quietMs });
   }, [now]);
 
+  const open = (url: string) => {
+    void rest(QUIET_AFTER_ACTION_MS);
+    void Linking.openURL(url).catch(() => undefined);
+  };
+
   return {
-    kind: paused ? null : kind,
-    dismiss: () => {
-      if (kind) void rest(kind, QUIET_AFTER_DISMISS_MS[kind]);
-    },
-    act: () => {
-      if (!kind) return;
-      void rest(kind, QUIET_AFTER_ACTION_MS[kind]);
-      void Linking.openURL(kind === 'feedback' ? FEEDBACK_FORM_URL : DONATION_URL).catch(() => undefined);
-    },
+    visible: visible && enabled && !paused,
+    /** Swiped away or closed: asks again some weeks later. */
+    dismiss: () => void rest(QUIET_AFTER_DISMISS_MS),
+    support: () => open(DONATION_URL),
+    feedback: () => open(FEEDBACK_FORM_URL),
+    /** Hides it now; the caller turns the Settings switch off so it never comes back. */
+    hide: () => setVisible(false),
   };
 }

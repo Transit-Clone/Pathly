@@ -3,7 +3,7 @@ import { isRideReportKind, type VehicleReport } from './rideReports';
 import { normalizeBeanAvatar, type BeanAvatarConfig } from '../avatars/beanAvatar';
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { callable } from '../lib/firebase';
-import type { NearestRouteStop } from './nearestRouteStop';
+import { directionStop, type NearestDirectionResponse, type NearestRouteStop } from './nearestRouteStop';
 import type { LiveSource, ServiceAlert } from './transit';
 
 export type RouteLiveVehicle = {
@@ -76,8 +76,8 @@ export type RouteLiveData = {
 
 type NearestStopResponse = {
   distanceMeters: number;
-  direction1: { stopId: string; name: string } | null;
-  direction0: { stopId: string; name: string } | null;
+  direction1: NearestDirectionResponse;
+  direction0: NearestDirectionResponse;
 } | null;
 
 const getRouteLiveStatus = callable<
@@ -154,8 +154,8 @@ function toRouteLiveData(data: RouteLiveStatusResponse & { nearestStop?: Nearest
         nearestStop: nearest
           ? {
             distanceMeters: nearest.distanceMeters,
-            direction1: nearest.direction1 ? { stopId: nearest.direction1.stopId, name: nearest.direction1.name } : null,
-            direction0: nearest.direction0 ? { stopId: nearest.direction0.stopId, name: nearest.direction0.name } : null,
+            direction1: directionStop(nearest.direction1),
+            direction0: directionStop(nearest.direction0),
           }
           : null,
       }

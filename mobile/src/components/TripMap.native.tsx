@@ -16,7 +16,6 @@ import { HeadingBeamMarker } from './HeadingBeamMarker';
 import { NATIVE_MAP_PROVIDER } from './mapProvider';
 import { DESTINATION_PIN_HEIGHT, DestinationPinMarker } from './DestinationPinMarker';
 import { LiveVehicleMarker } from './RouteMap.native';
-import { useNow } from '../hooks/useNow';
 
 const FIT_PADDING = { top: 90, right: 40, bottom: 60, left: 40 };
 const TRANSIT_WIDTH = 6;
@@ -54,8 +53,6 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
   const styles = useThemedStyles(createStyles);
   const { colors, isDark } = useTheme();
   const { destinationPin } = useAppSettings();
-  // Ticks the vehicles' age badges.
-  const now = useNow(1_000);
   const mapStyle = useMemo(() => googleMapStyle(isDark), [isDark]);
   const trip = useMemo(() => tripMapPoints(itinerary, origin, destination), [destination, itinerary, origin]);
   const legs = navigationProgress?.segments ?? trip.legs;
@@ -270,7 +267,7 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
           </Marker>
         )))}
         {/* The rides' live vehicles, like Route View's. */}
-        {vehicles.map((vehicle) => <LiveVehicleMarker key={`${vehicle.mode}-${vehicle.tripId}`} color={themedRouteColor(vehicle.color, isDark)} mode={vehicle.mode} now={now} vehicle={vehicle} zIndex={3} />)}
+        {vehicles.map((vehicle) => <LiveVehicleMarker key={`${vehicle.mode}-${vehicle.tripId}`} color={themedRouteColor(vehicle.color, isDark)} mode={vehicle.mode} vehicle={vehicle} zIndex={3} />)}
         {/* The rider's pin (Settings, Appearance) stands on the destination's gray dot, so it reads apart from the start. */}
         {destinationStop ? (
           <Marker

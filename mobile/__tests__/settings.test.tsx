@@ -95,6 +95,15 @@ describe('Settings', () => {
       expect(again.queryByTestId('toggle-service-alerts')).toBeNull();
     });
 
+    it('turns the feedback & support popups off and on', async () => {
+      const screen = renderSettings();
+      await openPage(screen, 'notifications');
+      expect(screen.getByTestId('toggle-support-prompts').props.value).toBe(true);
+      fireEvent(screen.getByTestId('toggle-support-prompts'), 'valueChange', false);
+      await waitFor(async () => expect(JSON.parse((await AsyncStorage.getItem(preferencesKey(UID)))!).supportPrompts).toBe(false));
+      expect(screen.getByTestId('toggle-support-prompts').props.value).toBe(false);
+    });
+
     it('searches for a line in a popup and adds it to Favorite Lines, starred with alerts on', async () => {
       resetLineIndexForTests([
         { agencyId: 'suffolk', agencyDisplayName: 'Suffolk County Transit', routeId: '51', shortName: '51', routeName: 'Patchogue RR to Port Jefferson', color: '#C43D4B' },
@@ -252,6 +261,31 @@ describe('Settings', () => {
       expect(openSettings).toHaveBeenCalled();
     });
 
+    it('clears search history after confirming, keeping saved places', async () => {
+      await recordSearch(UID, place);
+      await saveLocation(UID, place, 'Destination');
+      const screen = renderSettings();
+      await openPage(screen, 'privacy');
+      fireEvent.press(screen.getByTestId('privacy-clear-searches'));
+      expect((await getDocs(collection({} as never, 'users', UID, 'searches'))).docs).toHaveLength(1);
+      await act(async () => {
+        fireEvent.press(screen.getByTestId('clear-searches-dialog-confirm'));
+      });
+      expect((await getDocs(collection({} as never, 'users', UID, 'searches'))).docs).toEqual([]);
+      expect((await getDocs(collection({} as never, 'users', UID, 'savedLocations'))).docs).toHaveLength(1);
+      expect(screen.getByText('Search history cleared')).toBeTruthy();
+    });
+
+    it('leaves search history alone when the confirm is canceled', async () => {
+      await recordSearch(UID, place);
+      const screen = renderSettings();
+      await openPage(screen, 'privacy');
+      fireEvent.press(screen.getByTestId('privacy-clear-searches'));
+      fireEvent.press(screen.getByTestId('clear-searches-dialog-cancel'));
+      await act(async () => undefined);
+      expect((await getDocs(collection({} as never, 'users', UID, 'searches'))).docs).toHaveLength(1);
+    });
+
     it('saves the analytics choice', async () => {
       const screen = renderSettings();
       await openPage(screen, 'privacy');
@@ -329,14 +363,20 @@ describe('Settings', () => {
       expect(screen.getByTestId('faq-content')).toHaveTextContent(/Where does Pathly work\?/);
     });
 
-    it('keeps privacy and terms in About, one open at a time', async () => {
+    it('opens the full privacy policy from About and Privacy, and shows the terms in About', async () => {
+      const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
       const screen = renderSettings();
       await openPage(screen, 'about');
       fireEvent.press(screen.getByTestId('about-privacy'));
-      expect(screen.getByTestId('about-privacy-content')).toHaveTextContent(/Cloud Firestore/);
+      await waitFor(() => expect(openURL).toHaveBeenCalledWith('https://pathly.web.app/privacy'));
       fireEvent.press(screen.getByTestId('about-terms'));
-      expect(screen.queryByTestId('about-privacy-content')).toBeNull();
       expect(screen.getByTestId('about-terms-content')).toHaveTextContent(/provided as is/);
+
+      const privacy = renderSettings();
+      await openPage(privacy, 'privacy');
+      fireEvent.press(privacy.getByTestId('privacy-policy'));
+      await waitFor(() => expect(openURL).toHaveBeenCalledTimes(2));
+      openURL.mockRestore();
     });
 
     it('credits OpenStreetMap for walking distances and links to its copyright page', async () => {

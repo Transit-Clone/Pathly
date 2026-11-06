@@ -17,13 +17,23 @@ const LINE_MS = 8000;
 const IDLE_MS = 16000;
 
 /** What the rider's own Pathling says on the settings page. */
-const SETTINGS_LINES = [
+export const SETTINGS_LINES = [
   'Change whatever you like. I look good either way.',
   'Your trains are running. Probably.',
   'I would stand clear of the closing doors, but I like the thrill.',
   'Have you tried turning the subway off and on again?',
   'I checked. It is still two minutes away.',
   'You can change my hair under Account.',
+  'Polka dots? Stripes? I contain multitudes.',
+  'I have a holiday sweater now. Just saying.',
+  'Every bus is the right bus if you believe.',
+  'I memorized the whole map. Then I forgot it.',
+  'Dark mode makes me look mysterious.',
+  'I rode the ferry once. I am a sailor now.',
+  'Running late builds character.',
+  'Favorite a line and I will keep an eye on it.',
+  'I tried to tap my card. I do not have hands.',
+  'Somewhere, a train is on time. I can feel it.',
 ];
 
 /** False when the rider turned Pathling animations off, or reduced motion is on. */

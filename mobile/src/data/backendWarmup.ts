@@ -2,8 +2,8 @@
 import { callable } from '../lib/firebase';
 
 /** The Cloud Functions whose cold start the rider would otherwise wait on first. */
-type WarmedFunction = 'findNearbyTransit' | 'getRouteGeometry';
-const WARMED_FUNCTIONS: readonly WarmedFunction[] = ['findNearbyTransit', 'getRouteGeometry'];
+type WarmedFunction = 'findNearbyTransit' | 'getRouteGeometry' | 'getWalkingPath';
+const WARMED_FUNCTIONS: readonly WarmedFunction[] = ['findNearbyTransit', 'getRouteGeometry', 'getWalkingPath'];
 
 /** How long a first real request waits for its warm-up before going out anyway. */
 export const WARMUP_WAIT_CAP_MS = 8_000;

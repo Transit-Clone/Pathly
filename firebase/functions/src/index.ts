@@ -11,7 +11,6 @@ import { deleteRideSession, MAX_RIDER_ACCURACY_METERS, riderGapAllowed, routeRid
 import { getWinterAlerts, holidayService, type HolidayService } from './serviceOutlook';
 import { enforceCallableSecurity, peekRateLimits, type CallableRateLimit } from './callableSecurity';
 import {
-  agenciesNear,
   agenciesNearStops,
   describeRoute,
   LINE_INDEX_FORMAT,
@@ -21,14 +20,17 @@ import {
   getNearestStopForRoute,
   getRouteGeometry as getRouteGeometryDiscovery,
   getRouteTransfers as getRouteTransfersDiscovery,
+  getWalkingPathBetween,
   getWalkingPathToStop,
+  liveNearbySource,
   searchRoutes,
   type StopTransfer,
 } from './gtfsDiscovery';
 import { AGENCY_CONFIGS, type AgencyId } from './gtfsAgencies';
 import { getStopPredictions } from './gtfsSchedule';
 import { readLineIndex, refreshAllGtfsSnapshots, saveLineIndex } from './gtfsSnapshots';
-import { isAgencyAvailable, loadAgencyStaticData, loadGlobalStopRouteIndex, prepareAgencyStaticData } from './gtfsStaticData';
+import { availableAgencyIds, isAgencyAvailable, loadAgencyStaticData, loadGlobalStopRouteIndex, prepareAgencyStaticData } from './gtfsStaticData';
+import { nearbyIndexSource, saveNearbyIndex } from './gtfsNearbyIndex';
 import { getRouteAlerts } from './gtfsAlerts';
 import { sendSavedRouteAlerts } from './routeAlerts';
 import { getRouteStatus } from './gtfsStatus';
@@ -159,6 +161,7 @@ export const refreshGtfsStaticData = onSchedule(
     } finally {
       // Even after one agency failed: the others' new lines still belong in the list.
       await saveCurrentLineIndex();
+      await saveCurrentNearbyIndex();
     }
   },
 );
@@ -177,6 +180,22 @@ export async function saveCurrentLineIndex(): Promise<void> {
     logger.info('Saved the line list', { event: 'line_index_saved', lineCount: lines.length });
   } catch (error) {
     logger.warn('Could not save the line list', { event: 'line_index_failed', reason: error instanceof Error ? error.message : String(error) });
+  }
+}
+
+/**
+ * Builds the nearby index (gtfsNearbyIndex.ts) from every agency's current snapshot and saves it,
+ * so a nearby search reads small files instead of downloading timetables. A failure is only
+ * logged: searches then keep the previous index where it still matches, or read the timetables.
+ */
+export async function saveCurrentNearbyIndex(): Promise<void> {
+  const startedAt = Date.now();
+  try {
+    await prepareAllAgencyStaticData({ tolerant: true });
+    const { saved, bytes } = await saveNearbyIndex(availableAgencyIds());
+    logger.info('Saved the nearby index', { event: 'nearby_index_saved', agencies: saved, bytes, ms: Date.now() - startedAt });
+  } catch (error) {
+    logger.warn('Could not save the nearby index', { event: 'nearby_index_failed', reason: error instanceof Error ? error.message : String(error) });
   }
 }
 
@@ -497,13 +516,28 @@ type FindNearbyTransitRequest = { lat: number; lon: number } & WarmupRequest;
 // minInstances 0 stated outright, so a deploy clears the earlier always-on setting (it billed while idle).
 export const findNearbyTransit = onCall<FindNearbyTransitRequest>({ ...protectedCallableOptions, minInstances: 0 }, async (request) => {
   await enforceCallableSecurity(request, 'findNearbyTransit', RATE_LIMITS.findNearbyTransit);
-  if (request.data?.warmup === true) return warmTransitInstance({ stopIndexes: true });
+  if (request.data?.warmup === true) return warmNearbySearch();
   const { lat, lon } = requiredCoordinates(request.data?.lat, request.data?.lon);
-  // Only the agencies that could be near: on Long Island, the city's buses aren't downloaded.
-  await prepareAllAgencyStaticData({ agencyIds: agenciesNear(lat, lon) });
-  const routes = await findNearbyTransitDiscovery(lat, lon);
+  // Each agency is read only once the search could reach it (on Long Island, never the city's
+  // buses), from the nightly nearby index where it's current, else from its timetable.
+  const routes = await findNearbyTransitDiscovery(lat, lon, undefined, await nearbySearchSource());
   return { routes };
 });
+
+/** Where nearby searches read agencies from: the nearby index, falling back to the timetables. */
+function nearbySearchSource() {
+  return nearbyIndexSource(liveNearbySource((agencyId) => prepareAgencyStaticData(agencyId)));
+}
+
+/**
+ * The nearby search's warm-up: reads the agencies a search anywhere starts from (those without
+ * `stopBounds`), from the nearby index where it's current, so the first real search finds them ready.
+ */
+async function warmNearbySearch(): Promise<{ warmed: true }> {
+  const source = await nearbySearchSource();
+  await Promise.all(UNBOUNDED_AGENCY_IDS.map((agencyId) => source.load(agencyId)));
+  return { warmed: true };
+}
 
 type NearestRouteStopRequest = { agencyId: AgencyId; routeId: string; lat: number; lon: number };
 
@@ -527,21 +561,29 @@ export const getNearestRouteStop = onCall<NearestRouteStopRequest>(protectedCall
   return stop;
 });
 
-type WalkingPathRequest = { agencyId: AgencyId; stopId: string; lat: number; lon: number };
+type WalkingPathRequest = { agencyId: AgencyId; stopId: string; lat: number; lon: number; stopLat?: number; stopLon?: number } & WarmupRequest;
 
 /**
  * The walk from the rider to a stop along the streets (walkingGraph.ts), for route detail's
  * dotted line to the stop it shows. `walk` is null where there's no walk to draw: no walking data
- * on this instance, the stop is out of walking range, or it can't be reached on foot.
- * Client call: httpsCallable(functions, 'getWalkingPath')({ agencyId, stopId, lat, lon }).
+ * on this instance, the stop is out of walking range, or it can't be reached on foot. With the
+ * stop's position (`stopLat`, `stopLon`, which nearby search and live status report), no
+ * timetable is read; without it (older apps), the stop is looked up in its agency's timetable.
+ * Client call: httpsCallable(functions, 'getWalkingPath')({ agencyId, stopId, lat, lon, stopLat?, stopLon? }), or ({ warmup: true }).
  */
 export const getWalkingPath = onCall<WalkingPathRequest>(protectedCallableOptions, async (request) => {
   await enforceCallableSecurity(request, 'getWalkingPath', RATE_LIMITS.getWalkingPath);
+  // Starting the instance is the whole cold start once no timetable is read.
+  if (request.data?.warmup === true) return { warmed: true };
   const data = request.data ?? ({} as WalkingPathRequest);
   const agencyId = requiredAgencyId(data.agencyId);
-  await prepareAgencyStaticData(agencyId);
   const stopId = requiredString(data.stopId, 'stopId');
   const { lat, lon } = requiredCoordinates(data.lat, data.lon);
+  if (data.stopLat !== undefined || data.stopLon !== undefined) {
+    const stop = requiredCoordinates(data.stopLat, data.stopLon);
+    return { walk: getWalkingPathBetween(lat, lon, stop.lat, stop.lon) };
+  }
+  await prepareAgencyStaticData(agencyId);
   return { walk: getWalkingPathToStop(agencyId, stopId, lat, lon) };
 });
 

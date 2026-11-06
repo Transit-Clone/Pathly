@@ -7,7 +7,7 @@ import { useTransitLive } from '../data/TransitLiveContext';
 import { fetchRouteGeometry, fetchRouteTransfers, type LineTransfer, type RouteGeometry } from '../data/routeGeometry';
 import { STATION_TRANSFERS, type StationTransfer, type TransferMode } from '../data/stationTransfers';
 import { departureDisplay, differentEndStop, directionDestination, preferredDirectionIndex, formatClockTime, scheduleStopsFromNow, stopsForDirection, type RouteDetail, type RoutePrediction } from '../data/transit';
-import { routeNotices, type RouteNotice } from '../data/routeNotices';
+import { groupNotices, routeNotices, type RouteNotice } from '../data/routeNotices';
 import type { RideGuideRequest } from '../data/rideGuide';
 import type { RideFix } from '../data/rideDetection';
 import { useRideTracking, type RideTracking } from '../data/rideTracking';
@@ -37,7 +37,7 @@ import { RouteMap } from './RouteMap';
 import { pointAlong, routeFocus, RouteLines, VehicleMarker, type MapLeg } from './RouteMapOverlay';
 import { AgencyLogo } from './AgencyLogo';
 import { badgeLabel, RouteBadge, transitModeForAgency } from './RouteBadge';
-import { MapControlButton } from './MapControlButton';
+import { MAP_CONTROL_SIZE, MapControlButton } from './MapControlButton';
 import { mapPageMapHeight } from './mapSheetLayout';
 import { PressableScale } from './PressableScale';
 import { usesWebMouseDrag } from './webMouseDrag';
@@ -47,6 +47,8 @@ import { MapSkeleton, PredictionTilesSkeleton, StopListSkeleton } from './Skelet
 import { radii } from '../theme/shape';
 
 type RouteDetailViewProps = {
+  /** The home map's purple explore dot, when the rider panned away: the walk starts there, not at their GPS fix. */
+  exploreFrom?: Coordinates;
   /** Direction to open on (by `directions` index), e.g. when returning from the departures page. */
   initialDirectionIndex?: number;
   isFavorite: boolean;
@@ -170,6 +172,8 @@ const MAP_BADGE_TOP = 62;
 const MAP_BUS_LABEL_HEIGHT = 52;
 /** The subway sign's height over the map (RouteBadge's xlarge). */
 const MAP_ROUTE_BADGE_HEIGHT = 58;
+/** The stop list's line, as thick as the line on the live map (RouteMap's LINE_WIDTH). */
+const STOP_LINE_WIDTH = 8;
 const isWeb = usesWebMouseDrag;
 
 /**
@@ -364,7 +368,7 @@ function TransfersSheet({ onClose, onOpen, sheet }: {
   );
 }
 
-export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, location, locationFix = null, locationKnown = false, onBack, onGo, onOpenDepartures, onOpenStop, onOpenTransfer, onRefreshLocation, onToggleFavorite, onTripLine = false, route, tripRide, wholeRoute = false }: RouteDetailViewProps) {
+export function RouteDetailView({ alerts, exploreFrom, initialDirectionIndex, isFavorite, location, locationFix = null, locationKnown = false, onBack, onGo, onOpenDepartures, onOpenStop, onOpenTransfer, onRefreshLocation, onToggleFavorite, onTripLine = false, route, tripRide, wholeRoute = false }: RouteDetailViewProps) {
   const routeColor = useRouteColor()(route.color);
   const styles = useThemedStyles(createStyles);
   const { colors, isDark } = useTheme();
@@ -377,7 +381,8 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
   const tileFill = withAlpha(routeColor, isDark ? 0.28 : 0.16);
   const { height, width } = useViewportSize();
   const insets = useSafeAreaInsets();
-  const [openSheet, setOpenSheet] = useState<'alerts' | 'outlook' | null>(null);
+  // Which pill's sheet is open: each pill opens only its own notice.
+  const [openSheet, setOpenSheet] = useState<{ kind: 'alerts' | 'outlook'; index: number } | null>(null);
   const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
   const [transfersSheet, setTransfersSheet] = useState<{ stop: LiveStop; transfers: readonly (StationTransfer | LineTransfer)[] } | null>(null);
   const liveStatus = useTransitLive(route.id);
@@ -420,7 +425,10 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
   // render (React's documented pattern for this, see "Adjusting state when a prop changes")
   // rather than in an effect, since it's a one-time derivation from props, not a subscription.
   // A caller-chosen direction counts as already selected, so it isn't overridden.
-  const [hasAutoSelectedDirection, setHasAutoSelectedDirection] = useState(initialDirectionIndex !== undefined);
+  // A whole line opened from search isn't tied to a stop of the rider's, so it stays on the
+  // direction it opened on rather than flipping once live times arrive (an S76 jumping from
+  // Oakwood to the Ferry).
+  const [hasAutoSelectedDirection, setHasAutoSelectedDirection] = useState(initialDirectionIndex !== undefined || wholeRoute);
   // The exception is a rider clearly at one end of the line (a ferry terminal, the 1 at South
   // Ferry): the direction that's nearly over is never the one they want, however soon it goes.
   if (!hasAutoSelectedDirection) {
@@ -470,11 +478,13 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
   const activeDirection = route.directions[activeDirectionIndex] ?? route.directions[0];
   const activeDestination = directionDestination(activeDirection.direction);
   // The walk from the rider to the stop shown, drawn dotted on the map.
-  // Walked from where the rider was when the page opened: drawn once, not redrawn as they move.
-  const [walkFrom, setWalkFrom] = useState<Coordinates | null>(null);
+  // Walked from where the rider was when the page opened (or the purple dot they were exploring
+  // from, whose stops these are): drawn once, not redrawn as they move.
+  const [walkFrom, setWalkFrom] = useState<Coordinates | null>(exploreFrom ?? null);
   if (locationKnown && location && !walkFrom) setWalkFrom(location);
   // The whole line has no stop of the rider's, so no walk to one.
-  const walkPath = useWalkingPath(route.liveSource?.agencyId, activeDirection.stopId, wholeRoute ? undefined : walkFrom ?? undefined);
+  const stopPoint = activeDirection.stopLat !== undefined && activeDirection.stopLon !== undefined ? { lat: activeDirection.stopLat, lon: activeDirection.stopLon } : undefined;
+  const walkPath = useWalkingPath(route.liveSource?.agencyId, activeDirection.stopId, wholeRoute ? undefined : walkFrom ?? undefined, stopPoint);
   // With Step-free routes on (Settings -> Accessibility), step-free stations get a small wheelchair beside their name.
   const { preferences } = useUserPreferences();
   const isAccessibleStop = useAccessibleStops(route.liveSource?.agencyId, preferences.stepFree);
@@ -553,6 +563,9 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
   const notices = routeNotices(route, wholeRoute ? [] : activePredictions, vehicleIcon);
   // Holidays and winter weather coming up, in a pill of their own beside any alert.
   const outlook = useServiceOutlook(now, route.liveSource);
+  // Pills that would read as the same thing (several "Upcoming service change") are one pill.
+  const noticeGroups = groupNotices(notices);
+  const outlookGroups = groupNotices(outlook);
   // GO's guided view starts from what this page shows: the rider's stop onward in this direction,
   // its departures (the picked one first choice), the walk there, and the line's notices.
   // `capturedAt`: when the departures' minutes count from.
@@ -680,6 +693,7 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
         centerOnUserRequest={centerOnUserRequest}
         color={routeColor}
         directionId={geometryDirectionId}
+        exploreFrom={wholeRoute ? undefined : exploreFrom}
         focusStopId={wholeRoute ? undefined : activeDirection.stopId}
         focusStopName={wholeRoute ? undefined : activeDirection.stopName}
         mode={vehicleIcon}
@@ -733,6 +747,8 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
       handle={{ accessibilityHint: 'Expands or collapses the route details.', accessibilityLabel: 'Route details handle', testID: 'route-sheet-handle' }}
       map={map}
       mapButtons={liveMap ? locateButton : undefined}
+      // With GO riding the sheet's edge, Locate moves up under the save and alerts buttons, clear of it.
+      mapButtonsTop={goAction ? 8 + MAP_CONTROL_SIZE + 10 + (alerts ? MAP_CONTROL_SIZE + 10 : 0) + 2 : undefined}
       // Ignores touches, so the badge never blocks panning the live map under it.
       mapOverlay={!route.liveSource || liveMap ? <View pointerEvents="none" style={StyleSheet.absoluteFill}>{mapBadge}</View> : undefined}
       mapHeight={mapHeight}
@@ -837,10 +853,10 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
         </ScrollView>
       )}
 
-      {/* A pill for every delay and alert (yellow when service is disrupted now), then one for each
-          holiday or snow coming up, in one row that swipes sideways when they don't all fit. A
-          lone pill fills the row. Each opens its sheet with the details. */}
-      {notices.length > 0 || outlook.length > 0 ? (
+      {/* A small pill for every delay and alert (yellow when service is disrupted now), then one for
+          each holiday or snow coming up, in one row that swipes sideways when they don't all fit.
+          Each pill is as wide as its label, and opens a sheet with its own details. */}
+      {noticeGroups.length > 0 || outlookGroups.length > 0 ? (
         <ScrollView
           contentContainerStyle={styles.noticeRow}
           horizontal={true}
@@ -848,41 +864,51 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
           style={styles.noticeScroll}
           testID="route-notices"
         >
-          {notices.map((notice, index) => {
-            const ink = notice.warning ? colors.onAlertYellow : colors.ink;
+          {noticeGroups.map((group, index) => {
+            const ink = group.warning ? colors.onAlertYellow : colors.ink;
+            const count = group.notices.length;
             return (
               <PressableScale
-                key={`alert-${notice.kind}-${index}`}
-                accessibilityHint="Shows every alert for this line"
-                accessibilityLabel={`${notice.label}: ${notice.title}`}
+                key={`alert-${group.label}-${index}`}
+                accessibilityHint={count > 1 ? `Shows these ${count} alerts` : "Shows this alert's details"}
+                accessibilityLabel={count > 1 ? `${group.label}, ${count} alerts` : `${group.label}: ${group.notices[0]!.title}`}
                 accessibilityRole="button"
-                onPress={() => setOpenSheet('alerts')}
-                style={[styles.alertPill, { maxWidth: pageWidth * 0.85 }, notice.warning ? styles.alertPillWarning : styles.alertPillNeutral]}
+                onPress={() => setOpenSheet({ kind: 'alerts', index })}
+                style={[styles.alertPill, { maxWidth: pageWidth * 0.85 }, group.warning ? styles.alertPillWarning : styles.alertPillNeutral]}
                 testID={index === 0 ? 'service-alerts' : `service-alerts-${index}`}
               >
-                <Icon color={ink} name={notice.warning ? 'warning' : 'info'} size={20} />
-                <Text numberOfLines={1} style={[styles.alertPillText, { color: ink }]}>{notice.label}</Text>
-                <Icon color={notice.warning ? colors.onAlertYellow : colors.mutedInk} name="forward" size={18} />
+                <Icon color={ink} name={group.warning ? 'warning' : 'info'} size={15} />
+                <Text numberOfLines={1} style={[styles.alertPillText, { color: ink }]}>{count > 1 ? `${group.label} · ${count}` : group.label}</Text>
+                <Icon color={group.warning ? colors.onAlertYellow : colors.mutedInk} name="forward" size={13} />
               </PressableScale>
             );
           })}
-          {outlook.map((notice, index) => (
-            <PressableScale
-              key={`outlook-${notice.dateKey ?? index}-${index}`}
-              accessibilityHint="Shows what may slow service soon"
-              accessibilityLabel={notice.label}
-              accessibilityRole="button"
-              onPress={() => setOpenSheet('outlook')}
-              style={[styles.alertPill, styles.alertPillNeutral, { maxWidth: pageWidth * 0.85 }]}
-              testID={index === 0 ? 'service-outlook' : `service-outlook-${index}`}
-            >
-              <Icon color={colors.ink} name={notice.icon} size={18} />
-              <Text numberOfLines={1} style={styles.outlookPillText}>{notice.label}</Text>
-            </PressableScale>
-          ))}
+          {outlookGroups.map((group, index) => {
+            const notice = group.notices[0]!;
+            // Alone, a holiday is named in full; beside other pills it's just its date ("Nov 26").
+            const pillLabel = noticeGroups.length > 0 || outlookGroups.length > 1 ? notice.shortLabel : notice.label;
+            return (
+              <PressableScale
+                key={`outlook-${notice.dateKey ?? index}-${index}`}
+                accessibilityHint="Shows what may slow service soon"
+                accessibilityLabel={notice.label}
+                accessibilityRole="button"
+                onPress={() => setOpenSheet({ kind: 'outlook', index })}
+                style={[styles.alertPill, styles.alertPillNeutral, { maxWidth: pageWidth * 0.85 }]}
+                testID={index === 0 ? 'service-outlook' : `service-outlook-${index}`}
+              >
+                <Icon color={colors.ink} name={notice.icon} size={14} />
+                <Text numberOfLines={1} style={styles.outlookPillText}>{pillLabel}</Text>
+              </PressableScale>
+            );
+          })}
         </ScrollView>
       ) : null}
-      <AlertsSheet notices={openSheet === 'alerts' ? notices : openSheet === 'outlook' ? outlook : null} onClose={() => setOpenSheet(null)} title={openSheet === 'outlook' ? 'Coming up' : 'Service alerts'} />
+      <AlertsSheet
+        notices={openSheet ? ((openSheet.kind === 'outlook' ? outlookGroups : noticeGroups)[openSheet.index]?.notices ?? null) : null}
+        onClose={() => setOpenSheet(null)}
+        title={openSheet?.kind === 'outlook' ? 'Coming up' : (noticeGroups[openSheet?.index ?? 0]?.notices.length ?? 0) > 1 ? 'Service alerts' : 'Service alert'}
+      />
       <VehicleSheet
         color={routeColor}
         destination={activeDestination}
@@ -959,7 +985,7 @@ export function RouteDetailView({ alerts, initialDirectionIndex, isFavorite, loc
                   style={styles.stopRow}
                   testID={`stop-row-${index}`}
                 >
-                  <View style={styles.timelineRail}>{!isFirst ? <View style={[styles.rail, styles.railTop, { backgroundColor: routeColor }]} /> : null}<View style={[styles.stopDot, { borderColor: routeColor }, isHighlighted && { backgroundColor: routeColor }]} />{!isLast ? <View style={[styles.rail, styles.railBottom, { backgroundColor: routeColor }]} /> : null}</View>
+                  <View style={styles.timelineRail}>{!isFirst ? <View style={[styles.rail, styles.railTop, { backgroundColor: routeColor }]} /> : null}<View style={[styles.stopDot, { borderColor: routeColor }, isHighlighted && styles.stopDotHighlighted]} testID={isHighlighted ? `stop-dot-highlighted-${index}` : undefined} />{!isLast ? <View style={[styles.rail, styles.railBottom, { backgroundColor: routeColor }]} /> : null}</View>
                   {/* One divider spans the name and the time, not just the name. */}
                   <View style={styles.stopBody} testID={`stop-row-body-${stop.name}`}>
                     <View style={styles.stopCopy}>{isFirst ? walkNote : null}<View style={styles.stopNameRow}><Text style={styles.stopName}>{stop.name}</Text>{isAccessibleStop?.(stop.stopId) ? <View accessibilityLabel="Wheelchair accessible" accessible={true} style={styles.wheelchair} testID={`stop-accessible-${index}`}><Icon color={colors.white} name="wheelchair" size={12} /></View> : null}</View>{debug.overlays.ids && stop.stopId ? <Text selectable={true} style={styles.debugNote} testID={`stop-debug-id-${stop.stopId}`}>{`stop ${stop.stopId}`}</Text> : null}{transfers.length > 0 ? <TransferChips stopName={stop.name} transfers={transfers} /> : null}</View>
@@ -1159,28 +1185,28 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     flexGrow: 0,
     marginTop: 12,
   },
-  // Grows to the row's width, so pills that fit share it and a lone one fills it.
+  // Pills sit side by side at their own widths; they never stretch to fill the row.
   noticeRow: {
-    flexGrow: 1,
-    flexDirection: 'row',
-    gap: 8,
-  },
-  // The whole pill takes the alert's color: yellow for a disruption now, neutral otherwise.
-  alertPill: {
-    flexGrow: 1,
-    flexShrink: 0,
-    minHeight: 48,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 14,
+    gap: 6,
+  },
+  // Small and sized to its label. The whole pill takes the alert's color: yellow for a disruption now, neutral otherwise.
+  alertPill: {
+    flexGrow: 0,
+    flexShrink: 0,
+    minHeight: 32,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 11,
     borderRadius: radii.pill,
   },
   outlookPillText: {
     flexShrink: 1,
     color: colors.ink,
     fontFamily: fontFamilies.extraBold,
-    fontSize: 13,
+    fontSize: 12,
   },
   goButton: {
     minWidth: 104,
@@ -1213,7 +1239,8 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   },
   alertPillText: {
     flexShrink: 1,
-    ...typography.bodyStrong,
+    fontFamily: fontFamilies.extraBold,
+    fontSize: 12,
   },
   alertSheetContent: {
     paddingTop: 6,
@@ -1273,9 +1300,10 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     justifyContent: 'center',
     marginRight: 5,
   },
+  // As thick as the line on the map (RouteMap's LINE_WIDTH), with its stops as white beads on it.
   rail: {
     position: 'absolute',
-    width: 4,
+    width: STOP_LINE_WIDTH,
     height: '50%',
   },
   railTop: {
@@ -1284,13 +1312,22 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   railBottom: {
     bottom: 0,
   },
+  // A white bead clearly wider than the line, so each stop reads at a glance.
   stopDot: {
     zIndex: 1,
-    width: 15,
-    height: 15,
-    borderWidth: 4,
-    borderRadius: 8,
-    backgroundColor: colors.surface,
+    width: 18,
+    height: 18,
+    borderWidth: 3.5,
+    borderRadius: 9,
+    // White in dark mode too, as on the map.
+    backgroundColor: '#FFFFFF',
+  },
+  // The rider's stop: larger, white, with a thick ring in the route color, as on the map.
+  stopDotHighlighted: {
+    width: 26,
+    height: 26,
+    borderWidth: 6,
+    borderRadius: 13,
   },
   stopBody: {
     minWidth: 0,

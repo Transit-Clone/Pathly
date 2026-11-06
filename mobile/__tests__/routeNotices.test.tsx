@@ -66,7 +66,7 @@ describe('Route Details alert pill', () => {
     </AppSettingsProvider>,
   );
 
-  it('shows every alert as its own pill, the most pressing first, in yellow, and opens them all in a sheet', async () => {
+  it('shows every alert as its own small pill, the most pressing first, in yellow, each opening its own details', async () => {
     const detour = { ...alert, label: 'Detour in effect', warning: true, upcoming: false };
     const screen = renderRoute({ ...liveRoute, serviceAlerts: [detour], predictions: [{ minutes: 4, live: true, delayMinutes: 6 }, { minutes: 19, live: false }] });
     const pill = screen.getByTestId('service-alerts');
@@ -79,14 +79,24 @@ describe('Route Details alert pill', () => {
     expect(StyleSheet.flatten(pill.props.style).backgroundColor).toBe(lightColors.alertYellow);
     expect(StyleSheet.flatten(screen.getByTestId('service-alerts-1').props.style).backgroundColor).toBe(lightColors.alertYellow);
     expect(screen.queryByTestId('service-alerts-list')).toBeNull();
+    // Sized to their labels, not stretched across the row.
+    expect(StyleSheet.flatten(pill.props.style)).toMatchObject({ flexGrow: 0, minHeight: 32 });
+    expect(StyleSheet.flatten(screen.getByTestId('route-notices').props.contentContainerStyle).flexGrow).toBeUndefined();
+    // The delay's pill opens the delay alone…
     fireEvent.press(pill);
-    const sheet = within(screen.getByTestId('service-alerts-list'));
+    let sheet = within(screen.getByTestId('service-alerts-list'));
     expect(sheet.getByText('Bus in 4 min is running 6 min late')).toBeTruthy();
+    expect(sheet.queryByText(alert.header)).toBeNull();
+    fireEvent.press(screen.getByTestId('service-alerts-close'));
+    expect(screen.queryByTestId('service-alerts-list')).toBeNull();
+    // …and the detour's opens the detour alone.
+    fireEvent.press(screen.getByTestId('service-alerts-1'));
+    sheet = within(screen.getByTestId('service-alerts-list'));
     expect(sheet.getByText('Detour in effect')).toBeTruthy();
     expect(sheet.getByText(alert.header)).toBeTruthy();
     expect(sheet.getByText(alert.description)).toBeTruthy();
+    expect(sheet.queryByText('Bus in 4 min is running 6 min late')).toBeNull();
     fireEvent.press(screen.getByTestId('service-alerts-close'));
-    expect(screen.queryByTestId('service-alerts-list')).toBeNull();
     await act(async () => {}); // settle the route's geometry fetch
   });
 

@@ -1,4 +1,5 @@
 import type { RouteLiveStatus } from './TransitLiveContext';
+import type { NearestDirectionStop } from './nearestRouteStop';
 import type { RouteDetail, RoutePrediction, TransitDirection } from './transit';
 
 /**
@@ -72,12 +73,10 @@ export function applyRouteLive(route: RouteDetail, liveStatus: RouteLiveStatus, 
   // couldn't be resolved this cycle. Applied per direction, independently: the two directions
   // are never assumed to share a station (see nearestRouteStop.ts), so one resolving doesn't
   // require the other to.
-  const direction1Override = liveStatus.nearestStop?.direction1
-    ? { stopName: liveStatus.nearestStop.direction1.name, stopId: liveStatus.nearestStop.direction1.stopId }
-    : {};
-  const direction0Override = liveStatus.nearestStop?.direction0
-    ? { stopName: liveStatus.nearestStop.direction0.name, stopId: liveStatus.nearestStop.direction0.stopId }
-    : {};
+  // The stop's position goes with its id: a new stop without one clears the old stop's.
+  const override = (stop: NearestDirectionStop | undefined) => (stop ? { stopName: stop.name, stopId: stop.stopId, stopLat: stop.lat, stopLon: stop.lon } : {});
+  const direction1Override = override(liveStatus.nearestStop?.direction1);
+  const direction0Override = override(liveStatus.nearestStop?.direction0);
 
   const directions = [...route.directions] as [TransitDirection, TransitDirection];
   directions[direction1Index] = direction1First

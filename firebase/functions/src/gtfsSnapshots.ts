@@ -1585,6 +1585,49 @@ export function readLineIndex(format: number, nowMs = Date.now()): Promise<unkno
   return lines;
 }
 
+// The nearby index (gtfsNearbyIndex.ts): per agency, what a nearby search reads, saved by each
+// daily refresh so a search reads a small file instead of downloading the agency's timetables.
+const NEARBY_INDEX_ROOT = `${SNAPSHOT_ROOT}/nearby`;
+const NEARBY_INDEX_NAME = /^[a-z0-9-]+\.json$/;
+
+function nearbyIndexObject(name: string): string {
+  if (!NEARBY_INDEX_NAME.test(name)) throw new Error(`Invalid nearby index name: ${name}`);
+  return `${NEARBY_INDEX_ROOT}/${name}`;
+}
+
+/** Saves one nearby index file ("<agencyId>.json", or "coverage.json" last). */
+export async function saveNearbyIndexObject(name: string, body: string): Promise<void> {
+  await bucket().file(nearbyIndexObject(name)).save(body, { contentType: 'application/json', resumable: false });
+}
+
+/** One nearby index file's text, or null when there is none or it can't be read (the search then uses the timetables). */
+export function readNearbyIndexObject(name: string): Promise<string | null> {
+  if (!remoteSnapshotsEnabled()) return Promise.resolve(null);
+  return withTimeout(bucket().file(nearbyIndexObject(name)).download(), SNAPSHOT_CHECK_TIMEOUT_MS, 'nearby index read timed out')
+    .then(([data]) => data.toString('utf8'))
+    .catch((error: unknown) => {
+      if (!isNotFound(error)) logger.warn('Could not read the nearby index', { file: name, reason: error instanceof Error ? error.message : String(error) });
+      return null;
+    });
+}
+
+const snapshotVersionCache = new Map<AgencyId, { readAtMs: number; version: Promise<string | null> }>();
+
+/**
+ * The version of the agency's published snapshot, checked at most every few minutes per instance,
+ * or null when there is none or it can't be read. Saved files built from an older version aren't used.
+ */
+export function currentSnapshotVersion(agencyId: AgencyId, nowMs = Date.now()): Promise<string | null> {
+  if (!remoteSnapshotsEnabled()) return Promise.resolve(null);
+  const cached = snapshotVersionCache.get(agencyId);
+  if (cached && nowMs - cached.readAtMs < MANIFEST_CHECK_INTERVAL_MS) return cached.version;
+  const version = withTimeout(readCurrentManifest(agencyId), SNAPSHOT_CHECK_TIMEOUT_MS, 'GTFS manifest check timed out')
+    .then((current) => current.manifest?.version ?? null)
+    .catch(() => null);
+  snapshotVersionCache.set(agencyId, { readAtMs: nowMs, version });
+  return version;
+}
+
 /** The published snapshot's identity and age, or why there is none (admin status page). */
 export type GtfsSnapshotSummary =
   | { state: 'published'; version: string; publishedAt: string; serviceEndDate: string | null; hasDerived: boolean }
@@ -1815,6 +1858,7 @@ export async function hydrateCurrentGtfsSnapshot(
 export function resetGtfsSnapshotStateForTests(): void {
   snapshotStates.clear();
   lineIndexCache = undefined;
+  snapshotVersionCache.clear();
   storageBucketForTests = undefined;
   derivedArchiveBuilderForTests = undefined;
 }

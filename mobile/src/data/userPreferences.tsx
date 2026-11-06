@@ -28,6 +28,8 @@ export type UserPreferences = {
   analytics: boolean;
   /** Off by default: lets rides be detected and shown to other riders (rideTracking.ts). */
   shareRides: boolean;
+  /** The home screen's occasional "support Pathly or share feedback" popup (nudgePrompt.ts); off is "Don't ask again". */
+  supportPrompts: boolean;
 };
 
 export const ALL_TRANSIT_MODES: readonly TransitMode[] = ['subway', 'bus', 'rail', 'ferry'];
@@ -39,6 +41,7 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
   stepFree: false,
   analytics: false,
   shareRides: false,
+  supportPrompts: true,
 };
 
 export function preferencesKey(uid: string) {
@@ -74,6 +77,7 @@ export function parsePreferences(text: string | null): UserPreferences {
     stepFree: isBoolean(saved.stepFree) ? saved.stepFree : base.stepFree,
     analytics: isBoolean(saved.analytics) ? saved.analytics : base.analytics,
     shareRides: isBoolean(saved.shareRides) ? saved.shareRides : base.shareRides,
+    supportPrompts: isBoolean(saved.supportPrompts) ? saved.supportPrompts : base.supportPrompts,
   };
 }
 
@@ -83,6 +87,7 @@ export type PreferencesPatch = {
   stepFree?: boolean;
   analytics?: boolean;
   shareRides?: boolean;
+  supportPrompts?: boolean;
 };
 
 export function applyPreferencesPatch(current: UserPreferences, patch: PreferencesPatch): UserPreferences {
@@ -92,6 +97,7 @@ export function applyPreferencesPatch(current: UserPreferences, patch: Preferenc
     stepFree: patch.stepFree ?? current.stepFree,
     analytics: patch.analytics ?? current.analytics,
     shareRides: patch.shareRides ?? current.shareRides,
+    supportPrompts: patch.supportPrompts ?? current.supportPrompts,
   };
 }
 

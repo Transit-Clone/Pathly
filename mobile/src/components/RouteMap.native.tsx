@@ -73,6 +73,12 @@ type RouteMapProps = {
   testID?: string;
   /** Rider's real location; omitted while only the fallback is known. */
   userLocation?: Coordinates;
+  /**
+   * The home map's purple explore dot, when the rider was exploring from it: drawn beside the
+   * rider's own dot, and framed with the stop and vehicle in its place (the walk starts there).
+   * The location button still goes to the rider.
+   */
+  exploreFrom?: Coordinates;
   vehicles: readonly RouteLiveVehicle[];
   /** The walk along the streets from the rider to the focused stop, drawn dotted (as on the trip map). */
   walkPath?: readonly { lat: number; lon: number }[];
@@ -102,7 +108,16 @@ function regionFor(stops: readonly GeometryStop[], focusStop: GeometryStop | und
  * A live vehicle (Route View and the trip map): a white circle with the line's mode glyph and its
  * position's age, gliding to each refreshed spot rather than jumping there.
  */
-export function LiveVehicleMarker({ color, mode, now, onPress, vehicle, zIndex }: { color: string; mode: TransitMode; now: number; onPress?: (tripId: string) => void; vehicle: RouteLiveVehicle; zIndex: number }) {
+/**
+ * The age of a vehicle's position ("12s"), ticking each second on its own: only this text redraws,
+ * not the map around it, its stops and lines.
+ */
+function VehicleAge({ tripId, updatedAt }: { tripId: string; updatedAt: number }) {
+  const now = useNow(1000);
+  return <Text style={styles.ageText} testID={`route-vehicle-age-${tripId}`}>{formatAge(now - updatedAt)}</Text>;
+}
+
+export function LiveVehicleMarker({ color, mode, onPress, vehicle, zIndex }: { color: string; mode: TransitMode; onPress?: (tripId: string) => void; vehicle: RouteLiveVehicle; zIndex: number }) {
   const avatars = vehicle.riders?.avatars ?? [];
   const boxWidth = avatars.length > 0 ? RIDER_AVATAR_LEFT + RIDER_AVATAR + (avatars.length - 1) * RIDER_AVATAR_STEP : VEHICLE_BOX;
   const anchor = { x: VEHICLE_SIZE / 2 / boxWidth, y: VEHICLE_ANCHOR.y };
@@ -121,7 +136,7 @@ export function LiveVehicleMarker({ color, mode, now, onPress, vehicle, zIndex }
             </View>
           )) : vehicle.updatedAt != null ? (
             <View style={[styles.ageBadge, { backgroundColor: color }]} testID={`route-vehicle-age-badge-${vehicle.tripId}`}>
-              <Text style={styles.ageText} testID={`route-vehicle-age-${vehicle.tripId}`}>{formatAge(now - vehicle.updatedAt)}</Text>
+              <VehicleAge tripId={vehicle.tripId} updatedAt={vehicle.updatedAt} />
             </View>
           ) : null}
         </View>
@@ -131,8 +146,10 @@ export function LiveVehicleMarker({ color, mode, now, onPress, vehicle, zIndex }
 }
 
 /** Real route map: actual stop positions, the real line, and live vehicles — for any route with a live feed. */
-export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusStopId, focusStopName, mode = 'rail', onOpenStop, onUserPan, onVehiclePress, path, showRouteRequest = 0, stops, testID = 'route-map', userLocation, vehicles, walkPath }: RouteMapProps) {
+export function RouteMap({ centerOnUserRequest = 0, color, directionId, exploreFrom, focusStopId, focusStopName, mode = 'rail', onOpenStop, onUserPan, onVehiclePress, path, showRouteRequest = 0, stops, testID = 'route-map', userLocation, vehicles, walkPath }: RouteMapProps) {
   const mapRef = useRef<MapView>(null);
+  // Where the walk starts: the purple dot when exploring, else the rider.
+  const walkOrigin = exploreFrom ?? userLocation;
   // Places hidden, and recolored in the dark theme (see mapStyle.ts).
   const { colors, isDark } = useTheme();
   const mapStyle = useMemo(() => googleMapStyle(isDark), [isDark]);
@@ -163,7 +180,8 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
     const timer = setTimeout(() => setTracksStopViews(false), 500);
     return () => clearTimeout(timer);
   }, [dotsShown, tracksStopViews]);
-  const now = useNow(1000);
+  // Only for dropping vehicles not heard from in 5 minutes; each marker ticks its own age.
+  const now = useNow(30_000);
   // The arrow's drawing only needs snapshotting once (and again when the line's color changes).
   const [arrowDrawnIn, setArrowDrawnIn] = useState<string | null>(null);
   const tracksArrowView = arrowDrawnIn !== color;
@@ -190,7 +208,8 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
   }, [arrowZoom, line.aheadPoints]);
 
   // The rider, when they're near their stop: framed with it so they see the walk there.
-  const nearRider = userLocation && focusStop && riderNearStop(userLocation, focusStop) ? userLocation : null;
+  // The purple dot is always framed: its walk and stop are the point of the page.
+  const nearRider = walkOrigin && focusStop && (exploreFrom != null || riderNearStop(walkOrigin, focusStop)) ? walkOrigin : null;
   // Set once the map has framed an approaching vehicle (below).
   const framedVehicle = useRef(false);
   // The nearest stop (and whether the rider is near it) often resolves after the page opens; follow
@@ -316,13 +335,20 @@ export function RouteMap({ centerOnUserRequest = 0, color, directionId, focusSto
           <DirectionArrow color={color} />
         </Marker>
       ) : null}
-      {shownVehicles.map((vehicle) => <LiveVehicleMarker key={vehicle.tripId} color={color} mode={mode} now={now} onPress={onVehiclePress} vehicle={vehicle} zIndex={2} />)}
+      {shownVehicles.map((vehicle) => <LiveVehicleMarker key={vehicle.tripId} color={color} mode={mode} onPress={onVehiclePress} vehicle={vehicle} zIndex={2} />)}
+      {exploreFrom ? (
+        <Marker anchor={CENTER_ANCHOR} coordinate={exploreFrom} tappable={false} testID="route-explore-dot" title="Exploring from here" zIndex={3}>
+          <View style={[styles.exploreDot, { backgroundColor: colors.searchCenter, shadowColor: colors.searchCenter }]} />
+        </Marker>
+      ) : null}
       {userLocation ? <HeadingBeamMarker coordinate={userLocation} /> : null}
     </MapView>
   );
 }
 
 const styles = StyleSheet.create({
+  // The home map's purple explore dot, as it looks there.
+  exploreDot: { width: 17, height: 17, borderWidth: 3, borderRadius: 8.5, borderColor: '#FFFFFF', shadowOpacity: 0.32, shadowRadius: 5, shadowOffset: { width: 0, height: 0 }, elevation: 3 },
   stopDot: {
     width: LINE_WIDTH,
     height: LINE_WIDTH,

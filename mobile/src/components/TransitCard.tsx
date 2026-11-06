@@ -86,6 +86,19 @@ function PageBody({ index, item, route, styles }: {
   );
 }
 
+/**
+ * Which direction a card opens on: the one leaving sooner, once there's a real answer (null until
+ * then). Scheduled times count too, so a direction done for the night (its next run at 5 AM) is
+ * never the face of a line still running the other way; a direction with nothing counts as last.
+ */
+export function openingDirectionIndex(route: RouteDetail): 0 | 1 | null {
+  const [first, second] = route.directions;
+  const hasAnswer = route.liveSource ? route.liveStatus === 'loaded' : first.live && second.live;
+  if (!hasAnswer || (first.unavailable && second.unavailable)) return null;
+  const wait = (direction: TransitDirection) => (direction.unavailable ? Number.POSITIVE_INFINITY : direction.minutes);
+  return wait(second) < wait(first) ? 1 : 0;
+}
+
 export function TransitCard({ onPress, route, saved = false }: TransitCardProps) {
   const styles = useThemedStyles(createStyles);
   const routeColor = useRouteColor();
@@ -110,10 +123,10 @@ export function TransitCard({ onPress, route, saved = false }: TransitCardProps)
   // a one-time derivation from props, not a subscription.
   const [hasAutoSelectedPage, setHasAutoSelectedPage] = useState(false);
   if (!hasAutoSelectedPage) {
-    const [first, second] = route.directions;
-    if (first.live && second.live && !first.unavailable && !second.unavailable) {
+    const opening = openingDirectionIndex(route);
+    if (opening !== null) {
       setHasAutoSelectedPage(true);
-      if (second.minutes < first.minutes) setActivePage(1);
+      if (opening === 1) setActivePage(1);
     }
   }
 

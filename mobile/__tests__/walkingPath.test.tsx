@@ -24,6 +24,13 @@ describe('useWalkingPath', () => {
     expect(getWalkingPath).toHaveBeenCalledTimes(2);
   });
 
+  it("sends the stop's position when it is known, so the backend reads no timetable", async () => {
+    const stop = { lat: 40.7553, lon: -73.9868 };
+    const { result } = renderHook(() => useWalkingPath('subway', '127', here, stop));
+    await waitFor(() => expect(result.current).toEqual(path));
+    expect(getWalkingPath).toHaveBeenCalledWith({ agencyId: 'subway', stopId: '127', lat: here.latitude, lon: here.longitude, stopLat: stop.lat, stopLon: stop.lon });
+  });
+
   it('drops the old walk at once when the stop changes', async () => {
     const { result, rerender } = renderHook(({ stopId }: { stopId: string }) => useWalkingPath('subway', stopId, here), { initialProps: { stopId: '127' } });
     await waitFor(() => expect(result.current).toEqual(path));

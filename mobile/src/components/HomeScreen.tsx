@@ -74,8 +74,10 @@ import { SavePlaceSheet, type SavePlaceRequest } from './SavePlaceSheet';
 import { SetPlacesPrompt } from './SetPlacesPrompt';
 import { ResumeTripCard } from './ResumeTripCard';
 import { CURRENT_LOCATION_LABEL, initialResultsCriteria, RouteResultsView, type ResultsCriteria } from './RouteResultsView';
-import { useNudgePrompt } from '../data/nudgePrompt';
-import { NudgeBanner } from './NudgeBanner';
+import { useSupportPopup } from '../data/nudgePrompt';
+import { useSystemNotice } from '../data/systemNotices';
+import { SupportPopup } from './SupportPopup';
+import { SystemNoticeBanner } from './SystemNoticeBanner';
 import { SearchHeader } from './SearchHeader';
 import { SearchView } from './SearchView';
 import { TransitSheet, type TransitTabId } from './TransitSheet';
@@ -146,18 +148,21 @@ type RouteDetailScreenProps = {
   location: Coordinates;
   locationKnown: boolean;
   locationFix?: RideFix | null;
+  /** The purple explore dot, when the rider panned the home map away: walks start there. */
+  exploreFrom?: Coordinates;
   onTripLine?: boolean;
   tripRide?: RideTracking;
 };
 
 /** Reads live transit data itself — must render under TransitLiveProvider, which HomeScreen itself can't consume. */
-function RouteDetailScreen({ alerts, initialDirectionIndex, isFavorite, location, locationFix, locationKnown, onBack, onGo, onOpenDepartures, onOpenStop, onOpenTransfer, onRefreshLocation, onToggleFavorite, onTripLine, route, tripRide, wholeRoute }: RouteDetailScreenProps) {
+function RouteDetailScreen({ alerts, exploreFrom, initialDirectionIndex, isFavorite, location, locationFix, locationKnown, onBack, onGo, onOpenDepartures, onOpenStop, onOpenTransfer, onRefreshLocation, onToggleFavorite, onTripLine, route, tripRide, wholeRoute }: RouteDetailScreenProps) {
   const live = useTransitLive(route.id);
   // Re-applies live data every 30 s so countdowns age and past departures drop between polls.
   const now = useNow(30_000);
   return (
     <RouteDetailView
       alerts={alerts}
+      exploreFrom={exploreFrom}
       initialDirectionIndex={initialDirectionIndex}
       isFavorite={isFavorite}
       location={location}
@@ -215,7 +220,8 @@ export function HomeScreen() {
   // Right after saving a line: "When should we alert you?" (null when closed).
   const [alertsPrompt, setAlertsPrompt] = useState<(RouteAlertsRequest & { route: RouteDetail }) | null>(null);
   // New searches start from the rider's travel preferences; a ref keeps the open callbacks stable.
-  const travelPreferences = useUserPreferences().preferences.travel;
+  const { preferences: userPreferences, updatePreferences } = useUserPreferences();
+  const travelPreferences = userPreferences.travel;
   const travelPreferencesRef = useRef(travelPreferences);
   useEffect(() => {
     travelPreferencesRef.current = travelPreferences;
@@ -248,7 +254,9 @@ export function HomeScreen() {
     [trip.active],
   );
   const hasResumableTrip = trip.status === 'active' || trip.status === 'recovery';
-  const nudge = useNudgePrompt(hasResumableTrip);
+  const supportPopup = useSupportPopup(hasResumableTrip, userPreferences.supportPrompts);
+  // A holiday that changes service on every line (Thanksgiving, Christmas…), under the search bar.
+  const systemNotice = useSystemNotice();
   const homeHeaderInset = hasResumableTrip ? 158 : HEADER_INSET;
   const processedFixRef = useRef<string | null>(null);
   const [followEvidence, setFollowEvidence] = useState<{ sessionId: string; fix: NonNullable<typeof navigationFix> } | null>(null);
@@ -489,10 +497,11 @@ export function HomeScreen() {
   // A line opened from search: the whole line, Back returns to the search.
   // A line picked in search: described at its stops nearest the rider, then opened whole.
   const openSearchedLine = useCallback(async (line: IndexedLine) => {
-    const described = await describeTransitLine(line.agencyId, line.routeId, riderLocation(location, locationStatus) ?? SERVICE_AREA_FALLBACK);
+    // Exploring with the purple dot: the line's stops nearest it, not the rider's own.
+    const described = await describeTransitLine(line.agencyId, line.routeId, searchCenter ?? riderLocation(location, locationStatus) ?? SERVICE_AREA_FALLBACK);
     const route = discoveredRouteToRouteDetail(described);
     setActiveView((current) => (current?.name === 'search' ? { name: 'route', routeId: route.id, route, wholeRoute: true, previous: { name: 'search' } } : current));
-  }, [location, locationStatus]);
+  }, [location, locationStatus, searchCenter]);
   // A transfer badge: that line, at the stop it was tapped on. Opens once its stops are known;
   // ignored if the rider has left this page meanwhile.
   const openTransfer = useCallback((from: Extract<ActiveView, { name: 'route' }>, transfer: LineTransfer, stop: TappedStop) => {
@@ -983,6 +992,7 @@ export function HomeScreen() {
     const route = findRoute(routeId) ?? activeView.route;
     return screen(
       <RouteDetailScreen
+        exploreFrom={searchCenter ?? undefined}
         initialDirectionIndex={activeView.directionIndex}
         isFavorite={savedRouteIds.includes(savedIdFor(route))}
         onBack={closeCurrentView}
@@ -1180,9 +1190,9 @@ export function HomeScreen() {
                 />
               </View>
             ) : null}
-            {/* An occasional ask (feedback or a tip) beside the line layers button, under the profile button. */}
+            {/* A holiday reminder beside the line layers button, under the profile button. */}
             <View pointerEvents="box-none" style={[styles.underSearch, { flexDirection: thumb.row }]}>
-              {nudge.kind ? <NudgeBanner kind={nudge.kind} onAct={nudge.act} onDismiss={nudge.dismiss} style={styles.nudge} /> : <View pointerEvents="none" style={styles.nudge} />}
+              {systemNotice.notice ? <SystemNoticeBanner notice={systemNotice.notice} onDismiss={systemNotice.dismiss} style={styles.nudge} /> : <View pointerEvents="none" style={styles.nudge} />}
               <Animated.View style={{ opacity: layersButtonOpacity, transform: [{ translateX: layersButtonTranslateX }] }} testID="line-layers-wrap">
                 <MapControlButton
                   accessibilityLabel="Map routes"
@@ -1194,6 +1204,20 @@ export function HomeScreen() {
                 />
               </Animated.View>
             </View>
+            {/* The occasional ask to support Pathly or share feedback, once the rider has used it a while. */}
+            {supportPopup.visible ? (
+              <SupportPopup
+                onDismiss={supportPopup.dismiss}
+                onFeedback={supportPopup.feedback}
+                onNeverAsk={() => {
+                  supportPopup.hide();
+                  // The Settings switch (Notifications -> Feedback & support popups) can turn them back on.
+                  updatePreferences({ supportPrompts: false });
+                }}
+                onSupport={supportPopup.support}
+                style={styles.supportPopup}
+              />
+            ) : null}
           </View>
         </SafeAreaView>
 
@@ -1261,6 +1285,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   // Centered under the 54 px profile button.
   underSearch: { alignItems: 'center', gap: 10, marginTop: 10 },
   nudge: { flex: 1 },
+  supportPopup: { marginTop: 10 },
   locationButton: {
     position: 'absolute',
     zIndex: 4,

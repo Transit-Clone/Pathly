@@ -51,7 +51,8 @@ export function LineLayersSheet({ choice, lines, onChange, onClose, visible }: L
             <PressableScale accessibilityLabel="Close" accessibilityRole="button" hitSlop={8} onPress={onClose} testID="line-layers-close"><Icon name="close" size={26} /></PressableScale>
           </View>
           <ScrollView bounces={false} style={styles.list}>
-            <Text style={styles.sectionLabel}>SHOW EVERY LINE</Text>
+            {/* Every line an agency runs, switched on all at once. */}
+            <Text accessibilityRole="header" style={styles.sectionLabel} testID="line-layers-agency-heading">SHOW AGENCY LINES</Text>
             {LINE_LAYER_GROUPS.map((group) => {
               const on = choice.groups.includes(group.id);
               return (
@@ -62,7 +63,8 @@ export function LineLayersSheet({ choice, lines, onChange, onClose, visible }: L
                 </View>
               );
             })}
-            {offered.length > 0 ? <Text style={styles.sectionLabel}>LINES</Text> : null}
+            {/* One line at a time: the rider's saved lines and the ones near them. */}
+            {offered.length > 0 ? <Text accessibilityRole="header" style={styles.sectionLabel} testID="line-layers-nearby-heading">SHOW NEARBY & SAVED LINES</Text> : null}
             {offered.map((line) => {
               const key = lineLayerRouteKey(line);
               return (

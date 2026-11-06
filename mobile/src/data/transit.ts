@@ -23,6 +23,9 @@ export type TransitDirection = {
   stopId?: string;
   /** Straight-line meters from the rider to `stopId`, when the backend reported it. */
   distanceMeters?: number;
+  /** Where `stopId` is, when the backend reported it (set and cleared together with `stopId`), so its walk is drawn without a lookup. */
+  stopLat?: number;
+  stopLon?: number;
   /** Stops this direction still serves after `stopId` (0 at the end of the line), when known. */
   stopsAhead?: number;
   /** True when this route has a `liveSource` but real data hasn't loaded (or failed to) — `minutes`/`live` are stale placeholders in that case and shouldn't be shown; UI should show a loading/unavailable state instead. Absent for routes with no `liveSource` (always-static, `minutes` is legitimate illustrative data). */

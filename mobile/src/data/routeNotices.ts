@@ -39,3 +39,34 @@ export function routeNotices(route: RouteDetail, predictions: readonly RoutePred
     .sort((a, b) => Number(b.notice.warning) - Number(a.notice.warning) || a.index - b.index)
     .map(({ notice }) => notice);
 }
+
+/** One pill on Route View: notices that read alike, opened together in one sheet. */
+export type NoticeGroup<T extends RouteNotice = RouteNotice> = { label: string; warning: boolean; notices: T[] };
+
+/** What makes two pills "the same thing" to a rider: upcoming changes of any kind, or the same name. */
+function groupKey(notice: RouteNotice): string {
+  const label = notice.label.trim().toLowerCase().replace(/s$/, '');
+  return notice.kind === 'alert' && label.startsWith('upcoming') ? 'upcoming' : `${notice.kind}:${label}`;
+}
+
+/**
+ * Notices merged into one pill each where they'd read as the same thing (three "Upcoming service
+ * change" pills, two "Running late"), in the order their first one came. A notice repeated word
+ * for word is kept once. A group of mixed upcoming kinds is named "Upcoming changes".
+ */
+export function groupNotices<T extends RouteNotice>(notices: readonly T[]): NoticeGroup<T>[] {
+  const groups = new Map<string, NoticeGroup<T>>();
+  for (const notice of notices) {
+    const key = groupKey(notice);
+    const group = groups.get(key);
+    if (!group) {
+      groups.set(key, { label: notice.label, warning: notice.warning, notices: [notice] });
+      continue;
+    }
+    if (group.notices.some((other) => other.title === notice.title && other.detail === notice.detail)) continue;
+    group.notices.push(notice);
+    group.warning ||= notice.warning;
+    if (key === 'upcoming' && group.label !== notice.label) group.label = 'Upcoming changes';
+  }
+  return [...groups.values()];
+}

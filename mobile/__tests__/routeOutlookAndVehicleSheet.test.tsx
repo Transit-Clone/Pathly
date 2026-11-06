@@ -44,16 +44,25 @@ describe('Route View outlook pill', () => {
     await act(async () => {});
   });
 
-  it('sits beside a delay in one swipeable row, both shown in full', async () => {
+  it('sits beside a delay in one swipeable row by its short date, each pill opening its own details', async () => {
     mockOutlook.mockReturnValue([thanksgiving, { ...thanksgiving, icon: 'snow', label: 'Snow · Nov 27', shortLabel: 'Nov 27', title: 'Snow is expected Friday' }]);
     const screen = renderRoute({ ...liveRoute, predictions: [{ minutes: 4, live: true, delayMinutes: 6 }] });
     const row = screen.getByTestId('route-notices');
     expect(row.props.horizontal).toBe(true);
     expect(within(row).getByTestId('service-alerts')).toHaveTextContent(/Running late/);
-    expect(within(row).getByTestId('service-outlook')).toHaveTextContent(/Thanksgiving · Nov 26/);
-    expect(within(row).getByTestId('service-outlook-1')).toHaveTextContent(/Snow · Nov 27/);
+    expect(within(row).getByTestId('service-outlook')).toHaveTextContent(/Nov 26$/);
+    expect(within(row).getByTestId('service-outlook-1')).toHaveTextContent(/Nov 27$/);
+    expect(within(row).queryByText(/Thanksgiving/)).toBeNull();
+    expect(screen.getByTestId('service-outlook').props.accessibilityLabel).toBe('Thanksgiving · Nov 26');
     fireEvent.press(screen.getByTestId('service-outlook-1'));
-    expect(within(screen.getByTestId('service-alerts-list')).getByText('Snow is expected Friday')).toBeTruthy();
+    let sheet = within(screen.getByTestId('service-alerts-list'));
+    expect(sheet.getByText('Snow is expected Friday')).toBeTruthy();
+    expect(sheet.queryByText('Thanksgiving is Thursday, Nov 26')).toBeNull();
+    fireEvent.press(screen.getByTestId('service-alerts-close'));
+    fireEvent.press(screen.getByTestId('service-alerts'));
+    sheet = within(screen.getByTestId('service-alerts-list'));
+    expect(sheet.getByText('Service alert')).toBeTruthy();
+    expect(sheet.queryByText('Snow is expected Friday')).toBeNull();
     await act(async () => {});
   });
 });

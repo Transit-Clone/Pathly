@@ -21,6 +21,8 @@ module.exports = {
     scheme: 'pathly',
     userInterfaceStyle: 'automatic',
     platforms: ['ios', 'android', 'web'],
+    // Memoizes components and hooks at build time, so a state change re-renders only what reads it.
+    experiments: { reactCompiler: true },
     ios: {
       supportsTablet: true,
       bundleIdentifier: 'com.pathly.app',

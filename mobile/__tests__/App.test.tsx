@@ -984,6 +984,10 @@ describe('Pathly prototype navigation', () => {
     expect(screen.getByLabelText('Start trip to Times Square')).toBeTruthy();
     expect(screen.getByTestId('search-trip-go')).toBeTruthy();
     expect(within(screen.getByTestId('search-trip-scroll')).queryByTestId('search-trip-go')).toBeNull();
+    // GO rides the sheet's edge, so Locate sits up under the top row of buttons, clear of it.
+    const tripMapButtons = StyleSheet.flatten(screen.getByTestId('search-trip-scroll-map-buttons').props.style);
+    expect(tripMapButtons.top).toEqual(expect.any(Number));
+    expect(tripMapButtons.bottom).toBeUndefined();
     expect(screen.getByTestId('search-trip-location').props.accessibilityState).toEqual({ selected: false });
     fireEvent.press(screen.getByTestId('search-trip-location'));
     expect(screen.getByTestId('search-trip-location').props.accessibilityState).toEqual({ selected: true });
