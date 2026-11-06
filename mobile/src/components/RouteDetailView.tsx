@@ -173,7 +173,7 @@ const MAP_BUS_LABEL_HEIGHT = 52;
 /** The subway sign's height over the map (RouteBadge's xlarge). */
 const MAP_ROUTE_BADGE_HEIGHT = 58;
 /** The stop list's line, as thick as the line on the live map (RouteMap's LINE_WIDTH). */
-const STOP_LINE_WIDTH = 8;
+const STOP_LINE_WIDTH = 16;
 const isWeb = usesWebMouseDrag;
 
 /**
@@ -885,7 +885,7 @@ export function RouteDetailView({ alerts, exploreFrom, initialDirectionIndex, is
           })}
           {outlookGroups.map((group, index) => {
             const notice = group.notices[0]!;
-            // Alone, a holiday is named in full; beside other pills it's just its date ("Nov 26").
+            // Alone, a holiday shows its name and date; beside other pills, just its name ("Thanksgiving").
             const pillLabel = noticeGroups.length > 0 || outlookGroups.length > 1 ? notice.shortLabel : notice.label;
             return (
               <PressableScale
@@ -1315,9 +1315,9 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   // A white bead clearly wider than the line, so each stop reads at a glance.
   stopDot: {
     zIndex: 1,
-    width: 18,
-    height: 18,
-    borderWidth: 3.5,
+    width: 14,
+    height: 14,
+    borderWidth: 2,
     borderRadius: 9,
     // White in dark mode too, as on the map.
     backgroundColor: '#FFFFFF',

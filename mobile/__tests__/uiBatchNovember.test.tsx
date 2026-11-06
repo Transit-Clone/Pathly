@@ -108,8 +108,7 @@ describe('Alike notices share one pill', () => {
       ],
     } as RouteDetail;
     const screen = render(<AppSettingsProvider><RouteDetailView isFavorite={false} onBack={jest.fn()} onToggleFavorite={jest.fn()} route={route} /></AppSettingsProvider>);
-    await act(async () => {});
-    expect(screen.getByTestId('service-alerts')).toHaveTextContent(/Upcoming service change · 2/);
+    expect(await screen.findByTestId('service-alerts')).toHaveTextContent(/Upcoming service change · 2/);
     expect(screen.queryByTestId('service-alerts-1')).toBeNull();
     fireEvent.press(screen.getByTestId('service-alerts'));
     expect(screen.getByText('Nov 8: buses detoured')).toBeTruthy();
@@ -293,7 +292,7 @@ describe('Route View layout', () => {
     expect(rails.length).toBeGreaterThan(0);
     expect(StyleSheet.flatten(rails[0]!.props.style).width).toBe(8);
     const dot = within(screen.getByTestId('route-detail-content')).getByTestId('stop-dot-highlighted-0');
-    expect(StyleSheet.flatten(dot.props.style)).toMatchObject({ width: 22, backgroundColor: '#FFFFFF' });
+    expect(StyleSheet.flatten(dot.props.style)).toMatchObject({ width: 26, backgroundColor: '#FFFFFF' });
   });
 
   it('moves Locate up under the top buttons when GO is shown', async () => {

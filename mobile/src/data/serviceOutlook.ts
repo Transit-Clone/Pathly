@@ -9,7 +9,7 @@ const DAY_MS = 86_400_000;
 const WEATHER_REFRESH_MS = 15 * 60 * 1000;
 
 /** A notice about what's coming, with the short form its pill uses beside a warning pill. */
-export type OutlookNotice = RouteNotice & { icon: 'calendar' | 'snow'; shortLabel: string; /** A holiday's date, "YYYYMMDD". */ dateKey?: string; /** A holiday's name. */ holiday?: string };
+export type OutlookNotice = RouteNotice & { icon: 'calendar' | 'snow'; shortLabel: string; /** A holiday's date, "YYYYMMDD". */ dateKey?: string; /** A holiday's name. */ holiday?: string; /** A holiday's day, "Nov 26" or "Today". */ when?: string };
 
 const utcDay = (year: number, month: number, day: number) => Date.UTC(year, month - 1, day);
 
@@ -66,9 +66,11 @@ export function upcomingHolidays(now: Date): OutlookNotice[] {
         kind: 'outlook',
         icon: 'calendar',
         label: `${name} · ${when}`,
-        shortLabel: when,
+        // Beside other pills: the name alone says what it is; the date is in its sheet.
+        shortLabel: name,
         dateKey: new Date(day).toISOString().slice(0, 10).replaceAll('-', ''),
         holiday: name,
+        when,
         warning: false,
         title: day === today ? `${name} is today` : `${name} is ${weekday}, ${date}`,
         detail: 'Many lines run a holiday schedule, with fewer trips and longer waits. Check the times again that day.',

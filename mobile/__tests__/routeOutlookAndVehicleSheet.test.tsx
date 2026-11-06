@@ -16,7 +16,7 @@ const mockOutlook = jest.fn();
 jest.mock('../src/data/serviceOutlook', () => ({ useServiceOutlook: () => mockOutlook() }));
 
 const liveRoute: RouteDetail = { ...routeById.s1, alert: 'No delays reported on this route.' };
-const thanksgiving = { kind: 'outlook', icon: 'calendar', label: 'Thanksgiving · Nov 26', shortLabel: 'Nov 26', warning: false, title: 'Thanksgiving is Thursday, Nov 26', detail: 'Many lines run a holiday schedule.' };
+const thanksgiving = { kind: 'outlook', icon: 'calendar', label: 'Thanksgiving · Nov 26', shortLabel: 'Thanksgiving', warning: false, title: 'Thanksgiving is Thursday, Nov 26', detail: 'Many lines run a holiday schedule.' };
 
 describe('Route View outlook pill', () => {
   const renderRoute = (route: RouteDetail) => render(
@@ -44,15 +44,15 @@ describe('Route View outlook pill', () => {
     await act(async () => {});
   });
 
-  it('sits beside a delay in one swipeable row by its short date, each pill opening its own details', async () => {
-    mockOutlook.mockReturnValue([thanksgiving, { ...thanksgiving, icon: 'snow', label: 'Snow · Nov 27', shortLabel: 'Nov 27', title: 'Snow is expected Friday' }]);
+  it('sits beside a delay in one swipeable row by its name, each pill opening its own details', async () => {
+    mockOutlook.mockReturnValue([thanksgiving, { ...thanksgiving, icon: 'snow', label: 'Snow · Nov 27', shortLabel: 'Snow', title: 'Snow is expected Friday' }]);
     const screen = renderRoute({ ...liveRoute, predictions: [{ minutes: 4, live: true, delayMinutes: 6 }] });
     const row = screen.getByTestId('route-notices');
     expect(row.props.horizontal).toBe(true);
     expect(within(row).getByTestId('service-alerts')).toHaveTextContent(/Running late/);
-    expect(within(row).getByTestId('service-outlook')).toHaveTextContent(/Nov 26$/);
-    expect(within(row).getByTestId('service-outlook-1')).toHaveTextContent(/Nov 27$/);
-    expect(within(row).queryByText(/Thanksgiving/)).toBeNull();
+    expect(within(row).getByTestId('service-outlook')).toHaveTextContent(/Thanksgiving$/);
+    expect(within(row).getByTestId('service-outlook-1')).toHaveTextContent(/Snow$/);
+    expect(within(row).queryByText(/Nov 26/)).toBeNull();
     expect(screen.getByTestId('service-outlook').props.accessibilityLabel).toBe('Thanksgiving · Nov 26');
     fireEvent.press(screen.getByTestId('service-outlook-1'));
     let sheet = within(screen.getByTestId('service-alerts-list'));

@@ -9,6 +9,8 @@ module.exports = {
   setupFiles: ['<rootDir>/jest.setup.js'],
   setupFilesAfterEnv: ['<rootDir>/jest.setupAfterEnv.js'],
   watchman: false,
+  // The full-screen tests take a few seconds each, and CI's runners are slower than a laptop.
+  testTimeout: 15_000,
   transform: {
     '\\.mjs$': presetTransform['\\.[jt]sx?$'],
   },

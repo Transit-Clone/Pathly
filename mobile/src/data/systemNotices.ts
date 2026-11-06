@@ -20,14 +20,14 @@ export type SystemNotice = { id: string; text: string; accessibilityLabel: strin
 export function upcomingSystemNotices(now: Date): SystemNotice[] {
   const soon = now.getTime() + SYSTEM_NOTICE_LEAD_DAYS * DAY_MS;
   return upcomingHolidays(now)
-    .filter((notice): notice is OutlookNotice & { holiday: string; dateKey: string } => notice.holiday != null && notice.dateKey != null && SYSTEM_WIDE_HOLIDAYS.includes(notice.holiday))
+    .filter((notice): notice is OutlookNotice & { holiday: string; dateKey: string; when: string } => notice.holiday != null && notice.dateKey != null && notice.when != null && SYSTEM_WIDE_HOLIDAYS.includes(notice.holiday))
     .filter((notice) => {
       const day = Date.UTC(Number(notice.dateKey.slice(0, 4)), Number(notice.dateKey.slice(4, 6)) - 1, Number(notice.dateKey.slice(6, 8)));
       return day <= soon;
     })
     .map((notice) => ({
       id: `holiday-${notice.dateKey}`,
-      text: `${notice.holiday} ${notice.shortLabel === 'Today' ? 'today' : notice.shortLabel}: holiday schedules on most lines`,
+      text: `${notice.holiday} ${notice.when === 'Today' ? 'today' : notice.when}: holiday schedules on most lines`,
       accessibilityLabel: `${notice.title}. Most lines run a holiday or Sunday schedule, with fewer trips. Check times before you go.`,
     }));
 }
