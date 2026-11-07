@@ -56,7 +56,8 @@ test('size guards follow the agency: the defaults reject what a raised limit acc
     'stop_times.txt': strToU8('trip_id,stop_id,arrival_time,departure_time,stop_sequence\nT1,S1,08:00:00,08:00:00,1\nT1,S2,08:10:00,08:10:00,2\n'),
     'calendar.txt': strToU8('service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\nWK,1,1,1,1,1,0,0,20261001,20261231\n'),
   };
-  const bytes = zipSync(files, { level: 1 });
+  // A fixed file time, so the zip is the same whenever it is built.
+  const bytes = zipSync(files, { level: 1, mtime: new Date('2026-01-01T00:00:00Z') });
   const defaults = snapshotLimitsFor('lirr');
   assert.throws(() => extractGtfsArchive(bytes, { limits: { ...defaults, stopTimeRows: 1 } }), /exceeds 1 rows/);
   assert.throws(() => extractGtfsArchive(bytes, { limits: { ...defaults, archiveBytes: 10 } }), /outside the allowed range/);

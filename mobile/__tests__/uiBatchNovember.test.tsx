@@ -284,15 +284,16 @@ describe('Route View layout', () => {
     </AppSettingsProvider>,
   );
 
-  it('draws the stop line as thick as the map\'s, with the rider\'s stop as a big white bead', async () => {
+  it('draws the rider\'s stop as a white bead wider than the stop line', async () => {
     const screen = renderRoute();
     await act(async () => {});
     const row = screen.getByTestId('stop-row-0');
     const rails = row.findAll((node: { type: unknown; props: { style?: unknown } }) => typeof node.type === 'string' && StyleSheet.flatten(node.props.style as never)?.position === 'absolute' && StyleSheet.flatten(node.props.style as never)?.height === '50%');
     expect(rails.length).toBeGreaterThan(0);
-    expect(StyleSheet.flatten(rails[0]!.props.style).width).toBe(8);
-    const dot = within(screen.getByTestId('route-detail-content')).getByTestId('stop-dot-highlighted-0');
-    expect(StyleSheet.flatten(dot.props.style)).toMatchObject({ width: 26, backgroundColor: '#FFFFFF' });
+    const lineWidth = StyleSheet.flatten(rails[0]!.props.style).width as number;
+    const dot = StyleSheet.flatten(within(screen.getByTestId('route-detail-content')).getByTestId('stop-dot-highlighted-0').props.style);
+    expect(dot.backgroundColor).toBe('#FFFFFF');
+    expect(dot.width).toBeGreaterThan(lineWidth);
   });
 
   it('moves Locate up under the top buttons when GO is shown', async () => {

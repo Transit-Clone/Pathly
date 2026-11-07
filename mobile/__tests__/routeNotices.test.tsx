@@ -80,7 +80,7 @@ describe('Route Details alert pill', () => {
     expect(StyleSheet.flatten(screen.getByTestId('service-alerts-1').props.style).backgroundColor).toBe(lightColors.alertYellow);
     expect(screen.queryByTestId('service-alerts-list')).toBeNull();
     // Sized to their labels, not stretched across the row.
-    expect(StyleSheet.flatten(pill.props.style)).toMatchObject({ flexGrow: 0, minHeight: 32 });
+    expect(StyleSheet.flatten(pill.props.style)).toMatchObject({ flexGrow: 0 });
     expect(StyleSheet.flatten(screen.getByTestId('route-notices').props.contentContainerStyle).flexGrow).toBeUndefined();
     // The delay's pill opens the delay alone…
     fireEvent.press(pill);

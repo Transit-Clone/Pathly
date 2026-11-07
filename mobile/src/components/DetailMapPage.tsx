@@ -114,13 +114,13 @@ export function DetailMapPage({
   const restingTop = mapHeight - ACTION_HEIGHT - ACTION_GAP - thumb.mapBottomClearance;
   // With the controls gone (scrolled away with the map), the action takes their row.
   const stickyTop = Math.min(restingTop, insets.top + 8 + (controlsScrollWithMap ? 0 : controlsHeight + 12));
-  const actionTop = actionSticks
-    ? scrollY.interpolate({
-      inputRange: [0, Math.max(1, restingTop - stickyTop)],
-      outputRange: [restingTop, stickyTop],
-      extrapolate: 'clamp',
-    })
-    : Animated.subtract(restingTop, scrollY);
+  // Only a sticking action floats over the page; one that scrolls away rides in the page itself,
+  // moving exactly like the map's other buttons instead of trailing an animated copy of the scroll.
+  const actionTop = scrollY.interpolate({
+    inputRange: [0, Math.max(1, restingTop - stickyTop)],
+    outputRange: [restingTop, stickyTop],
+    extrapolate: 'clamp',
+  });
   const headerHeight = insets.top + 8 + controlsHeight + 8;
   const headerFadeEnd = Math.max(1, mapHeight - headerHeight);
   const headerOpacity = scrollY.interpolate({
@@ -161,6 +161,7 @@ export function DetailMapPage({
               </View>
             ) : null}
             {mapOverlay}
+            {action && !actionSticks ? <View pointerEvents="box-none" style={[styles.action, thumb.anchor(18), { top: restingTop }]}>{action}</View> : null}
             {mapButtons ? <View pointerEvents="box-none" style={[styles.mapButtons, mapButtonsTop != null ? { right: TOP_BUTTONS_INSET, top: insets.top + mapButtonsTop } : thumb.anchor(16), mapButtonsTop != null ? { flexDirection: thumb.row } : { flexDirection: thumb.row, bottom: (action ? ACTION_HEIGHT + ACTION_GAP + 10 : 14) + thumb.mapBottomClearance }]} testID={`${scrollTestID}-map-buttons`}>{mapButtons}</View> : null}
           </View>
           <SafeAreaView edges={['bottom']} style={[styles.sheet, { minHeight: fitContent ? Math.max(0, height - mapHeight) : height }, stickyMap && styles.sheetOverStickyMap, contentStyle, handle && styles.sheetWithHandle]} testID={contentTestID}>
@@ -178,7 +179,7 @@ export function DetailMapPage({
           </SafeAreaView>
         )}
 
-        {action ? (
+        {action && actionSticks ? (
           <Animated.View pointerEvents="box-none" style={[styles.action, thumb.anchor(18), { transform: [{ translateY: actionTop }] }]}>
             {action}
           </Animated.View>

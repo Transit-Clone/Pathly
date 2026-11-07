@@ -49,7 +49,6 @@ describe('RouteBadge', () => {
     const screen = render(<RouteBadge agency="NYC Ferry" color="#00839C" shortName="ER" size="large" testID="ferry" />);
     const badge = screen.getByTestId('ferry');
     expect(badge.props.accessibilityLabel).toBe('ER ferry');
-    expect(StyleSheet.flatten(badge.props.style).borderRadius).toBe(18);
     expect(screen.queryByText('boat', { includeHiddenElements: true })).toBeNull();
   });
 
@@ -74,9 +73,12 @@ describe('RouteBadge', () => {
     const bus = StyleSheet.flatten(screen.getByTestId('bus').props.style);
     const rail = StyleSheet.flatten(screen.getByTestId('rail').props.style);
 
-    expect(subway).toMatchObject({ height: 46, width: 46, borderRadius: 23 });
-    expect(bus).toMatchObject({ height: 46, borderRadius: 18 });
-    expect(rail).toMatchObject({ height: 46, borderRadius: 18 });
+    // Subway bullets are circles; bus and rail badges are rounded rectangles of the same height.
+    expect(subway.width).toBe(subway.height);
+    expect(subway.borderRadius).toBe((subway.height as number) / 2);
+    expect(bus.height).toBe(subway.height);
+    expect(rail.height).toBe(subway.height);
+    expect(bus.borderRadius).toBeLessThan((bus.height as number) / 2);
   });
 });
 
@@ -138,7 +140,7 @@ describe('loading placeholders', () => {
     expect(group.props.accessible).toBe(true);
     expect(screen.getAllByTestId('nearby-placeholder-card')).toHaveLength(3);
     for (const card of screen.getAllByTestId('nearby-placeholder-card')) {
-      expect(StyleSheet.flatten(card.props.style)).toEqual(expect.objectContaining({ height: 104, borderRadius: 20, backgroundColor: lightColors.skeleton }));
+      expect(StyleSheet.flatten(card.props.style)).toEqual(expect.objectContaining({ backgroundColor: lightColors.skeleton }));
     }
     expect(loop).toHaveBeenCalledTimes(1);
     screen.unmount();

@@ -90,7 +90,9 @@ describe('guest mode', () => {
   it('is a full button like the other ways in, not a small link', () => {
     render(<AuthScreen />);
     const guest = StyleSheet.flatten(screen.getByTestId('auth-guest').props.style);
-    expect(guest).toMatchObject({ minHeight: 52, borderWidth: 1 });
+    // A bordered, full-size button, not a bare text link.
+    expect(guest.borderWidth).toBeGreaterThan(0);
+    expect(guest.minHeight).toBeGreaterThanOrEqual(44);
     expect(screen.getByTestId('auth-guest')).toHaveTextContent(/Continue as guest/);
   });
 

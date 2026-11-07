@@ -50,8 +50,12 @@ function validFiles() {
   };
 }
 
+// A fixed file time: zips otherwise carry the current time (in 2 s steps), so the same feed zipped
+// twice a moment apart would hash as a different version.
+const ZIP_MTIME = new Date('2026-01-01T00:00:00Z');
+
 function archive(files = validFiles()) {
-  return zipSync(files, { level: 1 });
+  return zipSync(files, { level: 1, mtime: ZIP_MTIME });
 }
 
 function currentLirrFiles(routeName = 'Port Jefferson') {

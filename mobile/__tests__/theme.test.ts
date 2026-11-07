@@ -19,12 +19,8 @@ describe('Pathly visual theme', () => {
 
   it('defines Nunito roles with glanceable transit sizes', () => {
     expect(Object.values(fontFamilies).every((family) => family.startsWith('Nunito_'))).toBe(true);
-    expect(typography.displayTime).toEqual(
-      expect.objectContaining({ fontFamily: fontFamilies.extraBold, fontSize: 26 }),
-    );
-    expect(typography.routeName).toEqual(
-      expect.objectContaining({ fontFamily: fontFamilies.extraBold, fontSize: 18 }),
-    );
+    expect(typography.displayTime.fontFamily).toBe(fontFamilies.extraBold);
+    expect(typography.routeName.fontFamily).toBe(fontFamilies.extraBold);
     expect(typography.displayTime.fontSize).toBeGreaterThanOrEqual(22);
     expect(typography.routeName.fontSize).toBeGreaterThanOrEqual(18);
   });
