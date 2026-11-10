@@ -1,15 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
+  PanResponder,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
   View,
   type GestureResponderEvent,
-  type NativeScrollEvent,
-  type NativeSyntheticEvent,
-  type ScrollViewInstance,
 } from 'react-native';
 
 import { useViewportSize } from '../hooks/useViewportSize';
@@ -38,6 +35,17 @@ type TransitCardProps = {
 const CARD_HORIZONTAL_MARGIN = 8;
 // How far a touch/mouse-down has to travel before it's treated as a swipe instead of a tap.
 const SWIPE_THRESHOLD = 24;
+/**
+ * A drag counts as a page swipe once its sideways part is at least this share of its up-down part
+ * (about 55° from horizontal), so a swipe needn't be dead level; a steeper drag scrolls the list.
+ */
+const SWIPE_SLOPE = 0.7;
+/** On phones a gentle drag this far (pt) turns the page; the page already follows the finger. */
+const PAGE_TURN_DISTANCE = 12;
+/** How far a finger moves before the card claims the drag from the list. */
+const CLAIM_DISTANCE = 6;
+/** A quick flick turns the page even when it's shorter than PAGE_TURN_DISTANCE (points per ms). */
+const FLICK_VELOCITY = 0.15;
 
 /** A pulsing block where the minutes will appear, while the first live times load. */
 function TimePlaceholder({ styles }: { styles: ReturnType<typeof createStyles> }) {
@@ -105,15 +113,6 @@ export function TransitCard({ onPress, route, saved = false }: TransitCardProps)
   const { width } = useViewportSize();
   const pageWidth = Math.min(width, 540) - CARD_HORIZONTAL_MARGIN * 2;
   const [activePage, setActivePage] = useState(0);
-  const scrollRef = useRef<ScrollViewInstance>(null);
-
-  // The page the rider's own swipe reached: already there, so it mustn't be scrolled to mid-swipe.
-  const swipedPage = useRef<number | null>(null);
-  const updatePage = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const page = Math.round(event.nativeEvent.contentOffset.x / pageWidth);
-    swipedPage.current = page;
-    setActivePage(page);
-  };
 
   // Opens on whichever direction's next train is actually sooner, not always the first one —
   // otherwise a much closer train in the other direction could sit hidden behind a farther one
@@ -130,13 +129,30 @@ export function TransitCard({ onPress, route, saved = false }: TransitCardProps)
     }
   }
 
-  // On native, the ScrollView's own scroll position (not `activePage`) decides which page is
-  // actually visible, so it's kept in sync here — covers the auto-select above and is a no-op
-  // (already there) after the user's own scroll gesture updates `activePage` instead.
+  // Native: the pages sit in a row that follows the finger, then settles on `activePage`. A
+  // horizontal scroller nested in the vertical list only took dead-level swipes on Android (the list
+  // claimed anything at an angle), so the card claims sideways-ish drags itself instead.
+  const [slide] = useState(() => new Animated.Value(0));
+  const pageCount = route.directions.length;
   useEffect(() => {
-    if (swipedPage.current === activePage) return;
-    scrollRef.current?.scrollTo({ x: activePage * pageWidth, animated: false });
-  }, [activePage, pageWidth]);
+    Animated.spring(slide, { toValue: -activePage * pageWidth, bounciness: 0, speed: 18, useNativeDriver: Platform.OS !== 'web' }).start();
+  }, [activePage, pageWidth, slide]);
+  const swipe = useMemo(() => {
+    const settle = () => Animated.spring(slide, { toValue: -activePage * pageWidth, bounciness: 0, speed: 18, useNativeDriver: Platform.OS !== 'web' }).start();
+    return PanResponder.create({
+      onMoveShouldSetPanResponderCapture: (_event, gesture) => pageCount > 1 && Math.abs(gesture.dx) > CLAIM_DISTANCE && Math.abs(gesture.dx) > Math.abs(gesture.dy) * SWIPE_SLOPE,
+      // Once the card has the swipe, the list mustn't take it back mid-drag.
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderMove: (_event, gesture) => slide.setValue(-activePage * pageWidth + gesture.dx),
+      onPanResponderRelease: (_event, gesture) => {
+        const step = gesture.dx < -PAGE_TURN_DISTANCE || gesture.vx < -FLICK_VELOCITY ? 1 : gesture.dx > PAGE_TURN_DISTANCE || gesture.vx > FLICK_VELOCITY ? -1 : 0;
+        const next = Math.min(Math.max(activePage + step, 0), pageCount - 1);
+        if (next === activePage) settle();
+        else setActivePage(next);
+      },
+      onPanResponderTerminate: settle,
+    });
+  }, [activePage, pageCount, pageWidth, slide]);
 
   const accessibilityLabelFor = (item: TransitDirection) => {
     if (item.unavailable) {
@@ -195,16 +211,9 @@ export function TransitCard({ onPress, route, saved = false }: TransitCardProps)
           <PageBody index={activePage} item={webActiveDirection} route={route} styles={styles} />
         </PressableScale>
       ) : (
-        <ScrollView
-          ref={scrollRef}
-          decelerationRate="fast"
-          horizontal={true}
-          onMomentumScrollEnd={updatePage}
-          // The browser reports no end of a swipe.
-          onScroll={Platform.OS === 'web' ? updatePage : undefined}
-          scrollEventThrottle={Platform.OS === 'web' ? 32 : undefined}
-          pagingEnabled={true}
-          showsHorizontalScrollIndicator={false}
+        <Animated.View
+          {...swipe.panHandlers}
+          style={{ flexDirection: 'row', width: pageWidth * pageCount, transform: [{ translateX: slide }] }}
           testID={`transit-${route.id}-directions`}
         >
           {route.directions.map((item, index) => (
@@ -220,7 +229,7 @@ export function TransitCard({ onPress, route, saved = false }: TransitCardProps)
               <PageBody index={index} item={item} route={route} styles={styles} />
             </PressableScale>
           ))}
-        </ScrollView>
+        </Animated.View>
       )}
 
       {saved ? <View pointerEvents="none" style={styles.savedBadge} testID={`route-card-${route.id}-saved`}><Icon color="rgba(255,255,255,0.9)" name="favorite" size={12} /></View> : null}

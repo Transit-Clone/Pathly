@@ -23,7 +23,7 @@ import { Icon } from './Icon';
 export type TransitTabId = 'nearby' | 'favorites';
 
 type TransitSheetProps = {
-  /** Web: the home map, drawn inside this scroller (see `stickyMap`) rather than behind it. */
+  /** The home map, drawn inside this scroller (see `stickyMap`) rather than behind it. */
   webMap?: ReactNode;
   /** Buttons on the map just above the sheet, moving with it as it scrolls. */
   mapButtons?: ReactNode;
@@ -251,6 +251,8 @@ export function TransitSheet({
       ref={pageScrollRef}
       scrollEventThrottle={16}
       showsVerticalScrollIndicator={false}
+      // Web pins the map with CSS `sticky`; native pins it as the scroller's sticky header.
+      stickyHeaderIndices={webMap && Platform.OS !== 'web' ? [0] : undefined}
       style={styles.pageScroll}
       testID={`${activeTab}-route-list`}
     >
@@ -425,10 +427,13 @@ const createStyles = (colors: Palette) => StyleSheet.create({
     zIndex: 3,
     backgroundColor: 'transparent',
   },
-  // iOS Safari won't scroll a scroller with `pointer-events: none`, so on web the map rides inside it, stuck to its top (as in DetailMapPage). `sticky` is web-only, which React Native's types don't allow for.
-  stickyMap: { position: 'sticky', top: 0, overflow: 'hidden' } as unknown as ViewStyle,
-  mapButtonsOverSticky: { zIndex: 1 },
-  sheetOverStickyMap: { zIndex: 2 },
+  // A scroller that lets touches through can't scroll itself (Android never takes the drag, iOS Safari
+  // ignores it), so the map rides inside it, stuck to its top (as in DetailMapPage). `sticky` is
+  // web-only, which React Native's types don't allow for; native uses a sticky header instead.
+  stickyMap: { ...(Platform.OS === 'web' ? { position: 'sticky', top: 0 } : null), overflow: 'hidden' } as unknown as ViewStyle,
+  // Above a native sticky header, which React Native draws at zIndex 10.
+  mapButtonsOverSticky: { zIndex: 11 },
+  sheetOverStickyMap: { zIndex: 12 },
   pageContent: {
     pointerEvents: 'box-none',
   },

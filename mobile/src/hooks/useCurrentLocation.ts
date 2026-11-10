@@ -35,18 +35,59 @@ async function requestPermission(): Promise<Location.PermissionStatus> {
   }
 }
 
-async function fetchCurrentFix(): Promise<NavigationFix | null> {
+/** How long a one-shot fix may take. Indoors, Android can wait for GPS indefinitely, and nothing
+ * else (the GPS button, the first fix) may hang on it. */
+const CURRENT_FIX_TIMEOUT_MS = 12_000;
+/** The phone's cached position is good enough to show the rider where they are while a fresh fix comes. */
+const LAST_KNOWN_MAX_AGE_MS = 10 * 60_000;
+
+/** A fresh fix, or null once {@link CURRENT_FIX_TIMEOUT_MS} passes without one. */
+function currentPositionWithin(timeoutMs: number): Promise<Location.LocationObject | null> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => resolve(null), timeoutMs);
+    Promise.resolve().then(() => Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High })).then(
+      (position) => { clearTimeout(timer); resolve(position ?? null); },
+      (error: unknown) => { clearTimeout(timer); reject(error); },
+    );
+  });
+}
+
+/** The phone's cached position (no GPS wait), if it has a recent one. */
+async function lastKnownPosition(): Promise<Location.LocationObject | null> {
+  if (Platform.OS === 'web' || typeof Location.getLastKnownPositionAsync !== 'function') return null;
   try {
-    const status = await requestPermission();
-    if (status !== 'granted') return null;
-    return navigationFixFromPosition(await Location.getCurrentPositionAsync({}));
+    return await Location.getLastKnownPositionAsync({ maxAge: LAST_KNOWN_MAX_AGE_MS });
   } catch {
     return null;
   }
 }
 
+/**
+ * Only checks, never prompts. On Android the permission prompt sends the app to the background and
+ * closing it brings the app back, so asking from a return-to-foreground handler re-prompts forever;
+ * with permission denied the prompt closes at once and Android kills the app for the rapid launches.
+ */
+async function checkPermission(): Promise<Location.PermissionStatus> {
+  if (Platform.OS === 'web') return requestPermission();
+  return (await Location.getForegroundPermissionsAsync()).status;
+}
+
+async function fetchCurrentFix(ask: boolean): Promise<NavigationFix | null> {
+  try {
+    const status = await (ask ? requestPermission() : checkPermission());
+    if (status !== 'granted') return null;
+    const position = (await currentPositionWithin(CURRENT_FIX_TIMEOUT_MS).catch(() => null)) ?? (await lastKnownPosition());
+    return position ? navigationFixFromPosition(position) : null;
+  } catch {
+    return null;
+  }
+}
+
+// High, not Balanced: Android serves Balanced from Wi-Fi and cell towers only, never GPS, so a
+// phone that can't place itself that way (Wi-Fi scanning off, or none nearby) never got a fix,
+// while Google's own map dot (which uses GPS) found the rider fine.
 const WATCH_OPTIONS = {
-  accuracy: Location.Accuracy.Balanced,
+  accuracy: Location.Accuracy.High,
   timeInterval: 10_000,
   distanceInterval: 25,
 };
@@ -112,12 +153,13 @@ export function useCurrentLocation(navigating = false) {
     return true;
   }, []);
 
-  const refreshRealFix = useCallback(async () => {
+  /** `ask` is true only for a rider's tap (the GPS button); the foreground refresh must not prompt. */
+  const refreshRealFix = useCallback(async (ask = true) => {
     const generation = refreshGenerationRef.current + 1;
     refreshGenerationRef.current = generation;
     const revisionAtStart = fixRevisionRef.current;
     if (revisionAtStart === 0) setStatus('loading');
-    const nextFix = await fetchCurrentFix();
+    const nextFix = await fetchCurrentFix(ask);
     if (refreshGenerationRef.current !== generation) return;
     if (nextFix) {
       acceptRealFix(nextFix);
@@ -146,15 +188,21 @@ export function useCurrentLocation(navigating = false) {
       }
 
       const revisionAtRequest = fixRevisionRef.current;
-      try {
-        const position = await Location.getCurrentPositionAsync({});
-        if (!cancelled) {
-          acceptRealFix(navigationFixFromPosition(position));
-        }
-      } catch {
-        if (!cancelled && fixRevisionRef.current === revisionAtRequest) setStatus('unavailable');
-      }
-      if (cancelled) return;
+      // The cached position shows the rider right away; the one-shot and the watch refine it. All
+      // three start together, so a one-shot that never resolves (GPS indoors) can't hold up the rest.
+      void lastKnownPosition().then((position) => {
+        if (!cancelled && position) acceptRealFix(navigationFixFromPosition(position));
+      });
+      const oneShot = currentPositionWithin(CURRENT_FIX_TIMEOUT_MS).then(
+        (position) => {
+          if (cancelled) return;
+          if (position) acceptRealFix(navigationFixFromPosition(position));
+          else if (fixRevisionRef.current === revisionAtRequest) setStatus('unavailable');
+        },
+        () => {
+          if (!cancelled && fixRevisionRef.current === revisionAtRequest) setStatus('unavailable');
+        },
+      );
 
       try {
         const nextSubscription = await Location.watchPositionAsync(navigating ? NAVIGATION_WATCH_OPTIONS : WATCH_OPTIONS, (position) => {
@@ -165,6 +213,7 @@ export function useCurrentLocation(navigating = false) {
         else subscription = nextSubscription;
       } catch {
         // A usable one-shot fix remains valid even when the continuous watcher cannot start.
+        await oneShot;
         if (!cancelled && fixRevisionRef.current === revisionAtRequest) setStatus('unavailable');
       }
     })();
@@ -183,7 +232,7 @@ export function useCurrentLocation(navigating = false) {
     const listener = AppState.addEventListener('change', (nextState) => {
       const returnedToForeground = nextState === 'active' && previousState !== 'active';
       previousState = nextState;
-      if (returnedToForeground) void refreshRealFix();
+      if (returnedToForeground) void refreshRealFix(false);
     });
     return () => listener.remove();
   }, [mocked, refreshRealFix]);

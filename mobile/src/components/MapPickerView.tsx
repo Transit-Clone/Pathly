@@ -38,6 +38,8 @@ export function droppedPinPlace(point: Coordinates, address?: PinAddress | null)
 type MapPickerViewProps = {
   /** Where the map opens: the rider's location. */
   location: Coordinates;
+  /** `location` is a real fix, so the rider's dot is drawn there. */
+  locationKnown?: boolean;
   onCancel: () => void;
   onPick: (place: SearchPlace) => void;
 };
@@ -46,7 +48,7 @@ type MapPickerViewProps = {
  * "Choose on map": the rider moves the map under a fixed center pin, then sets that point as the
  * trip's start or destination.
  */
-export function MapPickerView({ location, onCancel, onPick }: MapPickerViewProps) {
+export function MapPickerView({ location, locationKnown = false, onCancel, onPick }: MapPickerViewProps) {
   const styles = useThemedStyles(createStyles);
   const thumb = useThumbSide();
   const [center, setCenter] = useState<Coordinates>(location);
@@ -94,6 +96,7 @@ export function MapPickerView({ location, onCancel, onPick }: MapPickerViewProps
         <GoogleMapView
           initialCamera={{ latitude: location.latitude, longitude: location.longitude, zoom: 16 }}
           location={location}
+          locationKnown={locationKnown}
           padding={{ bottom: bottomInset }}
           onCameraChange={(camera) => setCenter({ latitude: camera.latitude, longitude: camera.longitude })}
           recenterRequest={recenterRequest}

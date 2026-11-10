@@ -87,6 +87,7 @@ type GoogleMapViewProps = {
   /** A marker tapped: its place, and every place stacked with it there (itself included). */
   onSavedLocationPress?: (location: SavedLocation, stack: readonly SavedLocation[]) => void;
   /** Accepted for parity with native: the web map always draws its own location dot. */
+  locationKnown?: boolean;
   simulatedLocation?: boolean;
   testID?: string;
 };

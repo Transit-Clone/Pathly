@@ -6,6 +6,7 @@ import { googleMapStyle } from '../data/mapStyle';
 import { themedRouteColor } from '../data/routeColors';
 import { withAlpha } from '../data/routeDirection';
 import { zoomForRegion } from '../data/stopDeclutter';
+import { useMarkerTracking } from '../hooks/useMarkerTracking';
 import { stopIndexAt, tripMapPoints, ENTRANCE_REVEAL_ZOOM, viaRevealZooms, type TripMapProps, type TripMapStop } from '../data/tripMap';
 import { useAppSettings, useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
@@ -182,6 +183,8 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
   }, [centerOnUserRequest, followCamera, inView, navigationProgress, onFollowModeChange, userLatitude, userLocation, userLongitude]);
 
   const selectedStop = selected !== null ? stops[selected] : undefined;
+  const tracksLocationDot = useMarkerTracking(`${isDark}|${userLocationStale}`);
+  const tracksStopLabel = useMarkerTracking(`${isDark}|${selectedStop?.label ?? ''}`);
 
   return (
     <View onLayout={(event) => setMapWidth(event.nativeEvent.layout.width)} style={StyleSheet.absoluteFill}>
@@ -206,8 +209,9 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
         scrollEnabled={interactive}
         showsCompass={false}
         showsMyLocationButton={false}
-        // The explicit marker below is the source of truth for GPS and admin-mock fixes.
-        showsUserLocation={!navigationProgress && !userLocation}
+        // The explicit marker below is the source of truth for GPS and admin-mock fixes; Google's
+        // layer would track the phone a second time on its own timer.
+        showsUserLocation={false}
         style={StyleSheet.absoluteFill}
         testID={testID}
         toolbarEnabled={false}
@@ -290,8 +294,8 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
             anchor={{ x: 0.5, y: 0.5 }}
             coordinate={{ latitude: userLocation.lat, longitude: userLocation.lng }}
             testID={`${testID}-user-location`}
-            // One always-tracked marker guarantees theme/stale-state changes redraw on Android.
-            tracksViewChanges={true}
+            // Redrawn only when the theme or staleness changes (see useMarkerTracking).
+            tracksViewChanges={tracksLocationDot}
             zIndex={5}
           >
             <View pointerEvents="none" style={userLocationStale ? styles.staleLocation : undefined} testID={`${testID}-user-location-visual`}>
@@ -301,7 +305,7 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
         ) : null}
         {selectedStop?.label ? (
           // A themed label above the stop (the native callout can't follow the app's theme).
-          <Marker anchor={{ x: 0.5, y: 1.25 }} coordinate={{ latitude: selectedStop.point.lat, longitude: selectedStop.point.lng }} testID="trip-map-stop-label" tracksViewChanges={true} zIndex={4}>
+          <Marker anchor={{ x: 0.5, y: 1.25 }} coordinate={{ latitude: selectedStop.point.lat, longitude: selectedStop.point.lng }} testID="trip-map-stop-label" tracksViewChanges={tracksStopLabel} zIndex={4}>
             <View style={styles.label}><Text numberOfLines={1} style={styles.labelText}>{selectedStop.label}</Text></View>
           </Marker>
         ) : null}

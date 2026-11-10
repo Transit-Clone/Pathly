@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Animated, BackHandler, Platform, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '../auth/AuthContext';
 import { applyRouteLive } from '../data/applyRouteLive';
@@ -257,7 +257,10 @@ export function HomeScreen() {
   const supportPopup = useSupportPopup(hasResumableTrip, userPreferences.supportPrompts);
   // A holiday that changes service on every line (Thanksgiving, Christmas…), under the search bar.
   const systemNotice = useSystemNotice();
-  const homeHeaderInset = hasResumableTrip ? 158 : HEADER_INSET;
+  // Where the search header ends, measured from the top of the screen: the header sits below the
+  // status bar, so everything placed under it (the map's padding, the location pill) does too.
+  const statusBarInset = useSafeAreaInsets().top;
+  const homeHeaderInset = statusBarInset + (hasResumableTrip ? 158 : HEADER_INSET);
   const processedFixRef = useRef<string | null>(null);
   const [followEvidence, setFollowEvidence] = useState<{ sessionId: string; fix: NonNullable<typeof navigationFix> } | null>(null);
   // Admin overlay: the last tapped map point, until dismissed.
@@ -760,7 +763,8 @@ export function HomeScreen() {
   }, [activeView, closePlannedTrip, closeResults, leaveSavedPlacePick, selectedTrip, showHome]);
 
   useEffect(() => {
-    if (activeView.name === 'home' || Platform.OS === 'web') {
+    // Settings steps back through its own pages (see ProfileView).
+    if (activeView.name === 'home' || activeView.name === 'profile' || Platform.OS === 'web') {
       return undefined;
     }
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -781,7 +785,7 @@ export function HomeScreen() {
   const activeLiveRouteIds = activeView.name === 'home' ? visibleRouteIds : openedRoute ? [openedRoute.id] : [];
   const screen = (node: ReactNode) => (
     <TransitLiveProvider activeRouteIds={activeLiveRouteIds} extraRoutes={liveRoutes} location={livePoint}>
-      <ScreenTransition key={transitionKey}>{node}</ScreenTransition>
+      <ScreenTransition depth={activeView.name === 'home' ? 0 : activeView.name === 'search' ? 1 : 2} group="home" key={transitionKey}>{node}</ScreenTransition>
       {savePlaceSheet}
       <ConfirmDialog
         body="Your guest session ends and you can sign in or sign up."
@@ -907,7 +911,7 @@ export function HomeScreen() {
         showRouteResults(place);
       }
     };
-    return screen(<MapPickerView location={riderLocation(location, locationStatus) ?? location} onCancel={closeCurrentView} onPick={pick} />);
+    return screen(<MapPickerView location={riderLocation(location, locationStatus) ?? location} locationKnown={locationStatus === 'located'} onCancel={closeCurrentView} onPick={pick} />);
   }
 
   if (activeView.name === 'search' && activeView.pickMockLocation) {
@@ -1124,6 +1128,7 @@ export function HomeScreen() {
           recenterRequest={recenterRequest}
           reorientRequest={reorientRequest}
           savedLocations={savedLocations}
+          locationKnown={locationStatus === 'located'}
           simulatedLocation={locationMocked}
         />
         </View>
@@ -1144,7 +1149,6 @@ export function HomeScreen() {
     <View style={styles.viewport}>
       <ThemedStatusBar />
       <View style={styles.screen}>
-        {Platform.OS === 'web' ? null : homeMap}
         {showLocationNotice ? (
           <View pointerEvents="none" style={[styles.locationStatusPill, { top: homeHeaderInset }]}>
             <View style={styles.locationStatusBadge}>
@@ -1225,7 +1229,7 @@ export function HomeScreen() {
           activeTab={homeTab}
           findRoute={findRoute}
           mapButtons={homeMapButtons}
-          webMap={Platform.OS === 'web' ? homeMap : undefined}
+          webMap={homeMap}
           mapHeight={mapHeight}
           nearbyRoutes={nearbyRoutes}
           nearbyStatus={nearbyStatus.status}

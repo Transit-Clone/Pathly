@@ -13,6 +13,7 @@ jest.mock('../src/debug/DebugContext', () => ({
 }));
 
 const permission = Location.requestForegroundPermissionsAsync as jest.Mock;
+const checkPermission = Location.getForegroundPermissionsAsync as jest.Mock;
 const currentPosition = Location.getCurrentPositionAsync as jest.Mock;
 const watchPosition = Location.watchPositionAsync as jest.Mock;
 
@@ -24,7 +25,8 @@ describe('useCurrentLocation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockDebugLocation = undefined;
-    permission.mockResolvedValue({ status: 'denied' });
+    permission.mockReset().mockResolvedValue({ status: 'denied' });
+    checkPermission.mockReset().mockResolvedValue({ status: 'granted' });
     currentPosition.mockReset();
     watchPosition.mockReset().mockResolvedValue({ remove: jest.fn() });
   });
@@ -52,6 +54,38 @@ describe('useCurrentLocation', () => {
     expect(result.current.navigationFix).toBeNull();
     expect(currentPosition).not.toHaveBeenCalled();
     expect(watchPosition).not.toHaveBeenCalled();
+  });
+
+  it("doesn't wait on a one-shot fix that never comes (GPS indoors) to start tracking", async () => {
+    jest.useFakeTimers();
+    let onPosition: ((next: Location.LocationObject) => void) | undefined;
+    permission.mockResolvedValue({ status: 'granted' });
+    currentPosition.mockReturnValue(new Promise(() => undefined));
+    watchPosition.mockImplementation(async (_options, callback) => {
+      onPosition = callback;
+      return { remove: jest.fn() };
+    });
+
+    const { result, unmount } = renderHook(() => useCurrentLocation());
+    await waitFor(() => expect(onPosition).toBeDefined());
+    act(() => onPosition!(position(40.9, -73.1, 20, 1_000)));
+    expect(result.current.status).toBe('located');
+    expect(result.current.location).toEqual({ latitude: 40.9, longitude: -73.1 });
+    unmount();
+    jest.useRealTimers();
+  });
+
+  it("shows the phone's cached position while a fresh fix comes", async () => {
+    jest.useFakeTimers();
+    permission.mockResolvedValue({ status: 'granted' });
+    currentPosition.mockReturnValue(new Promise(() => undefined));
+    (Location.getLastKnownPositionAsync as jest.Mock).mockResolvedValueOnce(position(40.8, -73.2, 50, 500));
+
+    const { result, unmount } = renderHook(() => useCurrentLocation());
+    await waitFor(() => expect(result.current.status).toBe('located'));
+    expect(result.current.location).toEqual({ latitude: 40.8, longitude: -73.2 });
+    unmount();
+    jest.useRealTimers();
   });
 
   it('propagates accuracy and capture time from one-shot and watched GPS fixes', async () => {
@@ -160,10 +194,43 @@ describe('useCurrentLocation', () => {
       accuracyMeters: 4,
       capturedAt: 3_000,
     }));
-    expect(permission).toHaveBeenCalledTimes(2);
+    // Checked, not asked: a prompt from here would loop (see the next test).
+    expect(permission).toHaveBeenCalledTimes(1);
+    expect(checkPermission).toHaveBeenCalled();
 
     unmount();
     expect(removeAppStateListener).toHaveBeenCalledTimes(1);
+  });
+
+  it("doesn't re-prompt when the permission prompt itself sends the app to the background", async () => {
+    // Android pauses the app for the prompt and resumes it when the prompt closes. Asking again on
+    // that resume looped 200+ times on a Galaxy phone until Android killed the app.
+    let onAppStateChange: ((state: AppStateStatus) => void) | undefined;
+    jest.spyOn(AppState, 'addEventListener').mockImplementation((_event, callback) => {
+      onAppStateChange = callback;
+      return { remove: jest.fn() };
+    });
+    permission.mockImplementation(async () => {
+      onAppStateChange?.('background');
+      onAppStateChange?.('active');
+      return { status: 'granted' };
+    });
+    currentPosition.mockResolvedValue(position(40.9, -73.1, 7, 1_000));
+
+    const { result, unmount } = renderHook(() => useCurrentLocation());
+    await waitFor(() => expect(result.current.status).toBe('located'));
+    for (let i = 0; i < 3; i += 1) {
+      await act(async () => {
+        onAppStateChange!('background');
+        onAppStateChange!('active');
+      });
+    }
+    expect(permission).toHaveBeenCalledTimes(1);
+
+    // The GPS button is a rider's tap, so it may still ask.
+    await act(async () => { await result.current.refresh(); });
+    expect(permission).toHaveBeenCalledTimes(2);
+    unmount();
   });
 
   it('keeps a newer watch fix when a slower foreground refresh fails', async () => {

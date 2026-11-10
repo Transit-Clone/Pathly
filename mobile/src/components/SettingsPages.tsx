@@ -23,6 +23,7 @@ import { registerForRouteAlerts } from '../lib/notifications';
 import { useAppSettings, useTheme, useThemedStyles, type TextSize } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
+import { SheetPanel } from './SheetPanel';
 import { ConfirmDialog } from './ConfirmDialog';
 import { RouteAlertsPrompt, type RouteAlertsRequest } from './RouteAlertsPrompt';
 import { Card, ChoiceRow, createStyles as createProfileStyles, SettingRow, ToggleRow } from './ProfileView';
@@ -394,10 +395,10 @@ function AddSavedLine({ onAdd, savedIds }: { onAdd: (line: IndexedLine) => Promi
         <View style={page.addLineIcon}><Icon color={colors.onPrimary} name="add" size={18} /></View>
         <Text style={page.addLineText}>Add a favorite line</Text>
       </PressableScale>
-      <Modal animationType="slide" onRequestClose={close} statusBarTranslucent={true} transparent={true} visible={open}>
+      <Modal animationType="fade" onRequestClose={close} statusBarTranslucent={true} transparent={true} visible={open}>
         <View style={page.sheetViewport}>
           <Pressable accessibilityLabel="Close" onPress={close} style={page.sheetBackdrop} testID="notifications-add-line-backdrop" />
-          <View style={page.sheet} testID="notifications-add-line-panel">
+          <SheetPanel style={page.sheet} testID="notifications-add-line-panel">
             <Text style={page.sheetTitle}>Add a favorite line</Text>
             <Text style={page.lineSubtitle}>{"It's starred like a line saved in Route View, and its service alerts start at all times; change that under Favorite Lines."}</Text>
             <TextInput
@@ -442,7 +443,7 @@ function AddSavedLine({ onAdd, savedIds }: { onAdd: (line: IndexedLine) => Promi
             <PressableScale accessibilityRole="button" onPress={close} style={[page.button, page.primaryButton, page.sheetDone]} testID="notifications-add-line-done">
               <Text style={page.primaryButtonText}>Done</Text>
             </PressableScale>
-          </View>
+          </SheetPanel>
         </View>
       </Modal>
     </>

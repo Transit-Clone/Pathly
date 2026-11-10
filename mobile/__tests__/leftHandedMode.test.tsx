@@ -83,10 +83,10 @@ describe('left-handed mode', () => {
     const onFeedback = jest.fn();
     const screen = render(<AccessibilitySettings onFeedback={onFeedback} />, { wrapper });
     await act(async () => undefined);
-    expect(screen.getByTestId('toggle-left-handed').props.value).toBe(false);
+    expect(screen.getByTestId('toggle-left-handed').props.accessibilityState.checked).toBe(false);
     fireEvent(screen.getByTestId('toggle-left-handed'), 'valueChange', true);
     expect(onFeedback).toHaveBeenCalledWith('Left-handed mode on');
-    expect(screen.getByTestId('toggle-left-handed').props.value).toBe(true);
+    expect(screen.getByTestId('toggle-left-handed').props.accessibilityState.checked).toBe(true);
   });
 
   it('keeps the map buttons and sticky action on the right when off', async () => {

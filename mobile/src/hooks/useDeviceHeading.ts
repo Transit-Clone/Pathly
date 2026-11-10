@@ -4,6 +4,11 @@ import { Platform } from 'react-native';
 
 /** Turns smaller than this (degrees) are ignored, so compass jitter doesn't redraw the map. */
 const MIN_TURN_DEGREES = 4;
+/**
+ * How far each reading pulls the shown heading toward it. Android's compass reports many noisy
+ * readings a second; following each one made the beam shake, so it eases toward them instead.
+ */
+const SMOOTHING = 0.2;
 
 type CompassEvent = DeviceOrientationEvent & { webkitCompassHeading?: number };
 
@@ -17,14 +22,15 @@ export function useDeviceHeading(): number | null {
 
   useEffect(() => {
     let cancelled = false;
+    // Native readings are smoothed (see SMOOTHING); the web's arrive steady and the beam eases there.
+    const smoothing = Platform.OS === 'web' ? 1 : SMOOTHING;
+    let smoothed: number | null = null;
     const update = (degrees: number) => {
       if (cancelled || !Number.isFinite(degrees)) return;
-      setHeading((previous) => {
-        if (previous == null) return degrees;
-        // The nearest equivalent of `degrees` to the last heading, so turns stay continuous.
-        const turn = ((degrees - previous) % 360 + 540) % 360 - 180;
-        return Math.abs(turn) < MIN_TURN_DEGREES ? previous : previous + turn;
-      });
+      // The nearest equivalent of `degrees` to the running heading, so turns stay continuous.
+      smoothed = smoothed == null ? degrees : smoothed + ((((degrees - smoothed) % 360) + 540) % 360 - 180) * smoothing;
+      const next = smoothed;
+      setHeading((previous) => (previous == null || Math.abs(next - previous) >= MIN_TURN_DEGREES ? next : previous));
     };
 
     if (Platform.OS !== 'web') {

@@ -1,9 +1,11 @@
-import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { LINE_LAYER_GROUPS, lineLayerRouteKey, type LineLayerChoice, type LineLayerGroupId, type LineLayerRoute } from '../data/lineLayers';
 import { useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { typography } from '../theme/typography';
+import { SheetPanel } from './SheetPanel';
+import { AnimatedSwitch } from './AnimatedSwitch';
 import { Icon, type IconName } from './Icon';
 import { PressableScale } from './PressableScale';
 import { RouteBadge } from './RouteBadge';
@@ -37,10 +39,10 @@ export function LineLayersSheet({ choice, lines, onChange, onClose, visible }: L
   const offered = [...lines, ...choice.routes.filter((route) => !lines.some((line) => lineLayerRouteKey(line) === lineLayerRouteKey(route))).map((route) => ({ ...route, agency: '' }))];
   const anyOn = choice.groups.length > 0 || choice.routes.length > 0;
   return (
-    <Modal animationType="slide" onRequestClose={onClose} statusBarTranslucent={true} transparent={true} visible={visible}>
+    <Modal animationType="fade" onRequestClose={onClose} statusBarTranslucent={true} transparent={true} visible={visible}>
       <View style={styles.viewport}>
         <Pressable accessibilityLabel="Close" onPress={onClose} style={styles.backdrop} testID="line-layers-backdrop" />
-        <View accessibilityViewIsModal={true} style={styles.sheet} testID="line-layers-sheet">
+        <SheetPanel accessibilityViewIsModal={true} style={styles.sheet} testID="line-layers-sheet">
           <View style={styles.header}>
             <Text style={styles.title}>Map routes</Text>
             {anyOn ? (
@@ -59,7 +61,7 @@ export function LineLayersSheet({ choice, lines, onChange, onClose, visible }: L
                 <View key={group.id} style={styles.row}>
                   <View style={styles.modeIcon}><Icon color={colors.primary} name={group.icon as IconName} size={18} /></View>
                   <Text style={styles.rowText}>{group.label}</Text>
-                  <Switch accessibilityLabel={`Show every ${group.label} line`} onValueChange={(value) => toggleGroup(group.id, value)} testID={`line-layer-group-${group.id}`} value={on} />
+                  <AnimatedSwitch accessibilityLabel={`Show every ${group.label} line`} onValueChange={(value) => toggleGroup(group.id, value)} testID={`line-layer-group-${group.id}`} value={on} />
                 </View>
               );
             })}
@@ -71,12 +73,12 @@ export function LineLayersSheet({ choice, lines, onChange, onClose, visible }: L
                 <View key={key} style={styles.row}>
                   <RouteBadge agency={line.agency} color={line.color} shortName={line.shortName} />
                   <Text numberOfLines={1} style={styles.rowText}>{line.agency}</Text>
-                  <Switch accessibilityLabel={`Show the ${line.shortName} line`} onValueChange={(value) => toggleRoute(line, value)} testID={`line-layer-route-${key}`} value={shownRoutes.has(key)} />
+                  <AnimatedSwitch accessibilityLabel={`Show the ${line.shortName} line`} onValueChange={(value) => toggleRoute(line, value)} testID={`line-layer-route-${key}`} value={shownRoutes.has(key)} />
                 </View>
               );
             })}
           </ScrollView>
-        </View>
+        </SheetPanel>
       </View>
     </Modal>
   );

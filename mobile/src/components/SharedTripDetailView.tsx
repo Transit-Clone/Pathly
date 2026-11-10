@@ -12,6 +12,7 @@ import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings
 import { useLayoutEase } from '../theme/motion';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
+import { SheetPanel } from './SheetPanel';
 import { FareSheet } from './FareSheet';
 import type { FareType, TripFare } from '../data/tripPlanning';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -263,10 +264,10 @@ function DestinationLinesSheet({ lines, onClose, stopName }: { lines: TripDetail
   const styles = useThemedStyles(createStyles);
   const tint = useRouteColor();
   return (
-    <Modal animationType="slide" onRequestClose={onClose} transparent={true} visible={lines != null}>
+    <Modal animationType="fade" onRequestClose={onClose} transparent={true} visible={lines != null}>
       <Pressable accessibilityLabel="Close lines" onPress={onClose} style={styles.sheetBackdrop} testID="destination-lines-backdrop" />
       {lines ? (
-        <View style={styles.linesSheet} testID="destination-lines-sheet">
+        <SheetPanel style={styles.linesSheet} testID="destination-lines-sheet">
           <View style={styles.linesSheetHeader}>
             <Text accessibilityRole="header" numberOfLines={2} style={styles.linesSheetTitle}>{stopName}</Text>
             <PressableScale accessibilityLabel="Close" accessibilityRole="button" hitSlop={8} onPress={onClose} testID="destination-lines-close"><Icon name="close" size={26} /></PressableScale>
@@ -285,7 +286,7 @@ function DestinationLinesSheet({ lines, onClose, stopName }: { lines: TripDetail
               );
             })}
           </ScrollView>
-        </View>
+        </SheetPanel>
       ) : null}
     </Modal>
   );
@@ -579,9 +580,9 @@ export function SharedTripDetailView({ actionLabel, backLabel, beforeSteps, inte
                       </PressableScale> : null}
                     </View>
                     {/* Every departure, in a popup from the bottom; picking one closes it. */}
-                    <Modal animationType="slide" onRequestClose={() => toggleAllDepartures(index)} transparent={true} visible={allDepartures}>
+                    <Modal animationType="fade" onRequestClose={() => toggleAllDepartures(index)} transparent={true} visible={allDepartures}>
                       <Pressable accessibilityLabel="Close departures" onPress={() => toggleAllDepartures(index)} style={styles.sheetBackdrop} testID={`${testPrefix}-departure-backdrop-${index}`} />
-                      <View style={styles.linesSheet}>
+                      <SheetPanel style={styles.linesSheet}>
                         <View style={styles.linesSheetHeader}>
                           {/* The line's badge, then the title: "51 departures" read like a count. */}
                           <RouteBadge agency={leg.agency} color={tint(leg.color)} mode={leg.mode} shortName={leg.shortName} textColor={leg.textColor} />
@@ -614,7 +615,7 @@ export function SharedTripDetailView({ actionLabel, backLabel, beforeSteps, inte
                           </PressableScale>
                         ))}
                       </ScrollView>
-                      </View>
+                      </SheetPanel>
                     </Modal>
                   </View>
                 ) : null}

@@ -1042,8 +1042,9 @@ describe('Pathly prototype navigation', () => {
     const plannedScroll = screen.getByTestId('search-trip-scroll');
     expect(plannedScroll.props.bounces).toBe(false);
     expect(plannedScroll.props.overScrollMode).toBe('never');
-    expect(within(plannedScroll).queryByTestId('search-trip-map')).toBeNull();
-    expect(screen.getByTestId('search-trip-map')).toBeTruthy();
+    // The map rides inside the scroller as its pinned first child, so the page scrolls on Android.
+    expect(within(plannedScroll).getByTestId('search-trip-map')).toBeTruthy();
+    expect(plannedScroll.props.stickyHeaderIndices).toEqual([0]);
     expect(within(plannedScroll).getByTestId('search-trip-content')).toBeTruthy();
     expect(StyleSheet.flatten(screen.getByTestId('search-trip-scroll-map-window').props.style).height).toBe(
       StyleSheet.flatten(screen.getByTestId('search-trip-map').props.style).height,
@@ -1123,12 +1124,14 @@ describe('Pathly prototype navigation', () => {
     const mapViewport = StyleSheet.flatten(screen.getByTestId('results-map-viewport').props.style);
     // The results sheet scrolls over a fixed map, as on Home.
     expect(mapViewport.height).toBe(StyleSheet.flatten(screen.getByTestId('results-scroll-map-window').props.style).height);
-    expect(screen.getByTestId('results-scroll').props.pointerEvents).toBe('box-none');
+    // The scroller takes touches itself (one that passes them through can't scroll on Android); the
+    // map rides inside it, pinned, and keeps its own drags.
+    expect(screen.getByTestId('results-scroll').props.pointerEvents).toBe('auto');
+    expect(screen.getByTestId('results-scroll').props.stickyHeaderIndices).toEqual([0]);
     fireEvent.press(screen.getByTestId(`search-result-view-${LIRR_TRIP.id}`));
-    expect(screen.getByTestId('search-trip-map').props.pointerEvents).toBe('auto');
     const scroll = screen.getByTestId('search-trip-scroll');
-    expect(scroll.props.pointerEvents).toBe('box-none');
-    expect(StyleSheet.flatten(scroll.props.contentContainerStyle)).toMatchObject({ pointerEvents: 'box-none' });
+    expect(within(scroll).getByTestId('search-trip-map')).toBeTruthy();
+    expect(scroll.props.pointerEvents).toBe('auto');
     fireEvent.press(screen.getByTestId('search-trip-favorite'));
     expect(screen.getByTestId('search-trip-favorite').props.accessibilityState).toEqual({ selected: true });
     fireEvent.press(screen.getByTestId('search-trip-back'));
@@ -1985,10 +1988,11 @@ describe('Pathly prototype navigation', () => {
 
     it('lets only the live route map take gestures through the scrolling page', async () => {
       const screen = await openPortJefferson();
-      expect(screen.getByTestId('route-detail-map').props.pointerEvents).toBe('auto');
       const routeScroll = screen.getByTestId('route-detail-scroll');
-      expect(routeScroll.props.pointerEvents).toBe('box-none');
-      expect(StyleSheet.flatten(routeScroll.props.contentContainerStyle)).toMatchObject({ pointerEvents: 'box-none' });
+      // The live map rides inside the scroller, pinned, so the page itself still scrolls on Android.
+      expect(within(routeScroll).getByTestId('route-detail-map')).toBeTruthy();
+      expect(routeScroll.props.pointerEvents).toBe('auto');
+      expect(routeScroll.props.stickyHeaderIndices).toEqual([0]);
       fireEvent.press(screen.getByTestId('route-back'));
 
       fireEvent.press(await screen.findByTestId(`route-card-${cardIdFor(routeById.s1)}-primary`));
@@ -2101,7 +2105,8 @@ describe('Pathly prototype navigation', () => {
     it('centers the live map on the rider from the location button', async () => {
       const screen = await openPortJefferson();
       const map = () => screen.getByTestId('route-map', hidden);
-      expect(map().props.showsUserLocation).toBe(true);
+      // The rider's dot is drawn by the app, not Google's own location layer.
+      expect(map().props.showsUserLocation).toBe(false);
 
       const permissionRequests = (Location.requestForegroundPermissionsAsync as jest.Mock).mock.calls.length;
       fireEvent.press(screen.getByTestId('route-location'));

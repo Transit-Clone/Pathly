@@ -74,6 +74,19 @@ module.exports = {
           locationWhenInUsePermission: 'Pathly uses your location to center the map on you and show nearby transit.',
         },
       ],
+      [
+        'expo-build-properties',
+        {
+          android: {
+            // Store builds shrink the code, which renamed Android WorkManager's database class
+            // (pulled in by a dependency) so it couldn't be found, and the app crashed as it opened.
+            extraProguardRules: [
+              '-keep class androidx.work.** { *; }',
+              '-keep class * extends androidx.room.RoomDatabase { <init>(); }',
+            ].join('\n'),
+          },
+        },
+      ],
     ],
     extra: {
       eas: {

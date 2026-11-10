@@ -8,8 +8,10 @@ import { FitText } from './FitText';
 
 const HEIGHT = 46;
 const PADDING = 4;
-/** A swipe across the switch this far (pt) changes direction, as a tap on the other side does. */
-const SWIPE_THRESHOLD = 24;
+/** A gentle swipe across the switch this far (pt) changes direction, as a tap on the other side does. */
+const SWIPE_THRESHOLD = 12;
+/** A quick flick changes direction even when shorter (points per ms). */
+const FLICK_VELOCITY = 0.15;
 
 type DirectionSwitchProps = {
   /** 0 is the left side, 1 the right. */
@@ -50,13 +52,24 @@ export function DirectionSwitch({ activeIndex, color, labels, onChange }: Direct
     Animated.timing(position, { toValue: activeIndex, duration: 260, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }).start();
   }, [activeIndex, position, reducedMotionActive]);
 
-  // A horizontal swipe anywhere on the switch picks the side it points to.
-  const swipe = useMemo(() => PanResponder.create({
-    onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dx) > 8 && Math.abs(gesture.dx) > Math.abs(gesture.dy),
-    onPanResponderRelease: (_, gesture) => {
-      if (Math.abs(gesture.dx) >= SWIPE_THRESHOLD) onChange(gesture.dx > 0 ? 1 : 0);
-    },
-  }), [onChange]);
+  // A sideways swipe anywhere on the switch drags the knob along and picks the side it points to.
+  // It claims the drag before the page's scroller (capture), even at a slight angle, and keeps it.
+  const swipe = useMemo(() => {
+    const settle = () => Animated.spring(position, { toValue: activeIndex, speed: 18, bounciness: 4, useNativeDriver: true }).start();
+    return PanResponder.create({
+      onMoveShouldSetPanResponderCapture: (_, gesture) => Math.abs(gesture.dx) > 6 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 0.7,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderMove: (_, gesture) => {
+        if (half > 0) position.setValue(Math.min(1, Math.max(0, activeIndex + gesture.dx / half)));
+      },
+      onPanResponderRelease: (_, gesture) => {
+        const target = gesture.dx >= SWIPE_THRESHOLD || gesture.vx > FLICK_VELOCITY ? 1 : gesture.dx <= -SWIPE_THRESHOLD || gesture.vx < -FLICK_VELOCITY ? 0 : activeIndex;
+        if (target !== activeIndex) onChange(target);
+        else settle();
+      },
+      onPanResponderTerminate: settle,
+    });
+  }, [activeIndex, half, onChange, position]);
 
   const translateX = position.interpolate({ inputRange: [0, 1], outputRange: [0, half], extrapolate: 'clamp' });
   const selectedText = textOn(color, colors.white, '#111111');

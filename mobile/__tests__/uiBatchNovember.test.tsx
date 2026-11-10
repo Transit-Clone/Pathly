@@ -108,7 +108,7 @@ describe('Alike notices share one pill', () => {
       ],
     } as RouteDetail;
     const screen = render(<AppSettingsProvider><RouteDetailView isFavorite={false} onBack={jest.fn()} onToggleFavorite={jest.fn()} route={route} /></AppSettingsProvider>);
-    expect(await screen.findByTestId('service-alerts')).toHaveTextContent(/Upcoming service change · 2/);
+    expect(await screen.findByTestId('service-alerts')).toHaveTextContent(/Upcoming service change [(]2[)]/);
     expect(screen.queryByTestId('service-alerts-1')).toBeNull();
     fireEvent.press(screen.getByTestId('service-alerts'));
     expect(screen.getByText('Nov 8: buses detoured')).toBeTruthy();
@@ -147,11 +147,11 @@ describe('Exploring from the purple dot', () => {
     const hidden = { includeHiddenElements: true };
     const exploring = render(<AppSettingsProvider><RouteMap color="#A626AA" exploreFrom={dot} focusStopId="0" stops={stops} userLocation={gps} vehicles={[]} /></AppSettingsProvider>);
     expect(exploring.getByTestId('route-explore-dot', hidden).props.coordinate).toEqual(dot);
-    expect(exploring.getByTestId('route-map', hidden).props.showsUserLocation).toBe(true);
+    expect(exploring.getByTestId('route-map-user-location', hidden).props.coordinate).toEqual(gps);
     exploring.unmount();
     const own = render(<AppSettingsProvider><RouteMap color="#A626AA" focusStopId="0" stops={stops} userLocation={gps} vehicles={[]} /></AppSettingsProvider>);
     expect(own.queryByTestId('route-explore-dot', hidden)).toBeNull();
-    expect(own.getByTestId('route-map', hidden).props.showsUserLocation).toBe(true);
+    expect(own.getByTestId('route-map-user-location', hidden).props.coordinate).toEqual(gps);
   });
 });
 

@@ -1,11 +1,13 @@
 import type { ReactNode } from 'react';
-import { Modal, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { RoutePreference } from '../data/transit';
 import { useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { radii } from '../theme/shape';
 import { typography } from '../theme/typography';
+import { SheetPanel } from './SheetPanel';
+import { AnimatedSwitch } from './AnimatedSwitch';
 import { Icon, type IconName } from './Icon';
 import { PressableScale } from './PressableScale';
 import type { TransitMode } from './RouteBadge';
@@ -15,16 +17,16 @@ type Option<Id> = { id: Id; label: string; icon: IconName };
 function OptionsSheet({ children, onClose, testID, title }: { children: ReactNode; onClose: () => void; testID: string; title: string }) {
   const styles = useThemedStyles(createStyles);
   return (
-    <Modal animationType="slide" onRequestClose={onClose} statusBarTranslucent={true} transparent={true} visible={true}>
+    <Modal animationType="fade" onRequestClose={onClose} statusBarTranslucent={true} transparent={true} visible={true}>
       <View style={styles.viewport}>
         <Pressable accessibilityLabel="Close" onPress={onClose} style={styles.backdrop} testID={`${testID}-backdrop`} />
-        <View accessibilityViewIsModal={true} style={styles.sheet} testID={testID}>
+        <SheetPanel accessibilityViewIsModal={true} style={styles.sheet} testID={testID}>
           <View style={styles.header}>
             <Text style={styles.title}>{title}</Text>
             <PressableScale accessibilityLabel="Close" accessibilityRole="button" hitSlop={8} onPress={onClose} testID={`${testID}-close`}><Icon name="close" size={26} /></PressableScale>
           </View>
           {children}
-        </View>
+        </SheetPanel>
       </View>
     </Modal>
   );
@@ -51,7 +53,7 @@ export function ModesSheet({ enabled, modes, onClose, onToggle }: { enabled: rea
           >
             <View style={styles.iconCircle}><Icon color={colors.primary} name={mode.icon} size={18} /></View>
             <Text style={styles.rowText}>{mode.label}</Text>
-            <View importantForAccessibility="no-hide-descendants" accessibilityElementsHidden={true} pointerEvents="none"><Switch value={on} /></View>
+            <AnimatedSwitch value={on} />
           </Pressable>
         );
       })}

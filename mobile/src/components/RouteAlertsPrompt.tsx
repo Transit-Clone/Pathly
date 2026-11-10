@@ -5,6 +5,7 @@ import { DEFAULT_ALERT_HOURS, formatAlertTime, parseAlertTime, ROUTE_ALERT_OPTIO
 import { useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
+import { SheetPanel } from './SheetPanel';
 import { Icon } from './Icon';
 import { PressableScale } from './PressableScale';
 import { radii } from '../theme/shape';
@@ -31,7 +32,7 @@ type RouteAlertsPromptProps = {
 export function RouteAlertsPrompt({ onClose, onDone, request }: RouteAlertsPromptProps) {
   const styles = useThemedStyles(createStyles);
   return (
-    <Modal animationType="slide" onRequestClose={onClose} statusBarTranslucent={true} transparent={true} visible={request != null}>
+    <Modal animationType="fade" onRequestClose={onClose} statusBarTranslucent={true} transparent={true} visible={request != null}>
       <View style={styles.viewport}>
         <Pressable accessibilityLabel="Close" onPress={onClose} style={styles.backdrop} testID="route-alerts-prompt-backdrop" />
         {/* Keyed by its line, so each opening starts from that line's setting. */}
@@ -59,7 +60,7 @@ function AlertsForm({ onClose, onDone, request }: RouteAlertsPromptProps & { req
   };
 
   return (
-    <View accessibilityViewIsModal={true} style={styles.sheet} testID="route-alerts-prompt">
+    <SheetPanel accessibilityViewIsModal={true} style={styles.sheet} testID="route-alerts-prompt">
       <View style={styles.header}>
         <Icon color={colors.primary} name="bell" size={26} />
         <View style={styles.headerCopy}>
@@ -114,7 +115,7 @@ function AlertsForm({ onClose, onDone, request }: RouteAlertsPromptProps & { req
       <PressableScale accessibilityRole="button" onPress={() => onDone(setting, setting === 'custom' ? { start: read('start'), end: read('end') } : undefined)} style={styles.done} testID="route-alerts-prompt-done">
         <Text style={styles.doneText}>Done</Text>
       </PressableScale>
-    </View>
+    </SheetPanel>
   );
 }
 

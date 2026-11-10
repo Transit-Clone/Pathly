@@ -5,6 +5,7 @@ import { useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
 import { radii } from '../theme/shape';
+import { SheetPanel } from './SheetPanel';
 import { Icon } from './Icon';
 import { PressableScale } from './PressableScale';
 
@@ -25,10 +26,10 @@ export function FareSheet({ fare, fareType, onClose }: FareSheetProps) {
     ? "Estimated from each agency's published fares. Your actual fare can differ."
     : 'This total comes from Google, for one adult paying as they go.';
   return (
-    <Modal animationType="slide" onRequestClose={onClose} statusBarTranslucent={true} transparent={true} visible={fare != null}>
+    <Modal animationType="fade" onRequestClose={onClose} statusBarTranslucent={true} transparent={true} visible={fare != null}>
       <View style={styles.viewport}>
         <Pressable accessibilityLabel="Close" onPress={onClose} style={styles.backdrop} testID="fare-sheet-backdrop" />
-        <View accessibilityViewIsModal={true} style={styles.sheet} testID="fare-sheet">
+        <SheetPanel accessibilityViewIsModal={true} style={styles.sheet} testID="fare-sheet">
           <View style={styles.header}>
             <Text style={styles.heading}>How this fare adds up</Text>
             <PressableScale accessibilityLabel="Close" accessibilityRole="button" hitSlop={8} onPress={onClose} testID="fare-sheet-close">
@@ -50,7 +51,7 @@ export function FareSheet({ fare, fareType, onClose }: FareSheetProps) {
           </View>
           <Text style={styles.source}>{source}</Text>
           {noDiscount ? <Text style={styles.source} testID="fare-sheet-no-reduced">There&apos;s no discount we can price for this trip, so this is the standard fare.</Text> : null}
-        </View>
+        </SheetPanel>
       </View>
     </Modal>
   );

@@ -8,6 +8,7 @@ import { appNow } from '../debug/clock';
 import { useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
+import { SheetPanel } from './SheetPanel';
 import { Icon } from './Icon';
 import { WheelColumn } from './WheelColumn';
 import { PressableScale } from './PressableScale';
@@ -103,9 +104,10 @@ export function LeaveTimeSheet({ onCancel, onConfirm, value, nowMs }: LeaveTimeS
   };
 
   return (
-    <Modal animationType="slide" onRequestClose={onCancel} statusBarTranslucent={true} transparent={true} visible={true}>
+    <Modal animationType="fade" onRequestClose={onCancel} statusBarTranslucent={true} transparent={true} visible={true}>
       <Pressable accessibilityLabel="Close time picker" onPress={onCancel} style={styles.backdrop} testID="leave-time-backdrop" />
-      <SafeAreaView edges={['bottom']} style={styles.sheet} testID="leave-time-sheet">
+      <SheetPanel style={styles.sheet} testID="leave-time-sheet">
+      <SafeAreaView edges={['bottom']}>
         <View style={styles.header}>
         <View accessibilityRole="tablist" style={styles.segments}>
           {modes.map((item) => {
@@ -148,6 +150,7 @@ export function LeaveTimeSheet({ onCancel, onConfirm, value, nowMs }: LeaveTimeS
           <Text style={styles.doneText}>Done</Text>
         </PressableScale>
       </SafeAreaView>
+      </SheetPanel>
 
     </Modal>
   );

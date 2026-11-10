@@ -106,6 +106,8 @@ export function vehicleMarkerLabel(age: string | null): google.maps.MarkerLabel 
 const labelOffset = (width: number, height: number) => ({ x: -width / 2, y: -height - 12 });
 
 type RouteMapProps = {
+  /** Room (pt) to keep around framed points, clear of the controls drawn over the map. */
+  fitPadding?: { top: number; right: number; bottom: number; left: number };
   /** Incremented by the location button; each change centers the map on `userLocation` and follows it until a drag. */
   centerOnUserRequest?: number;
   /** Incremented by the route-overview button; each change fits the map to the whole line. */

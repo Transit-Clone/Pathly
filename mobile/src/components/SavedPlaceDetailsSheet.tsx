@@ -5,6 +5,7 @@ import type { SavedLocation } from '../data/userData';
 import { useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { fontFamilies, typography } from '../theme/typography';
+import { SheetPanel } from './SheetPanel';
 import { Icon } from './Icon';
 import { PressableScale } from './PressableScale';
 import { SavedPlaceBadge } from './SavedPlaceBadge';
@@ -31,10 +32,10 @@ export function SavedPlaceDetailsSheet({ onClose, onEdit, onGo, places }: SavedP
   const { colors } = useTheme();
   const stacked = places.length > 1;
   return (
-    <Modal animationType="slide" onRequestClose={onClose} statusBarTranslucent={true} transparent={true} visible={places.length > 0}>
+    <Modal animationType="fade" onRequestClose={onClose} statusBarTranslucent={true} transparent={true} visible={places.length > 0}>
       <View style={styles.viewport}>
         <Pressable accessibilityLabel="Close" onPress={onClose} style={styles.backdrop} testID="saved-place-details-backdrop" />
-        <View accessibilityViewIsModal={true} style={styles.sheet} testID="saved-place-details">
+        <SheetPanel accessibilityViewIsModal={true} style={styles.sheet} testID="saved-place-details">
           <View style={styles.header}>
             <Text style={styles.heading}>{stacked ? `${places.length} favorites here` : 'Favorite'}</Text>
             <PressableScale accessibilityLabel="Close" accessibilityRole="button" hitSlop={8} onPress={onClose} testID="saved-place-details-close"><Icon name="close" size={26} /></PressableScale>
@@ -80,7 +81,7 @@ export function SavedPlaceDetailsSheet({ onClose, onEdit, onGo, places }: SavedP
               );
             })}
           </ScrollView>
-        </View>
+        </SheetPanel>
       </View>
     </Modal>
   );

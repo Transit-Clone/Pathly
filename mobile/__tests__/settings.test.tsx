@@ -4,7 +4,7 @@ import { deleteUser, EmailAuthProvider, reauthenticateWithCredential, sendPasswo
 import { doc, getDoc, getDocs, collection, setDoc } from 'firebase/firestore';
 import * as Location from 'expo-location';
 import type { ReactNode } from 'react';
-import { Linking, Share, StyleSheet } from 'react-native';
+import { BackHandler, Linking, Share, StyleSheet } from 'react-native';
 import mockSafeAreaContext from 'react-native-safe-area-context/jest/mock';
 
 import { AuthProvider } from '../src/auth/AuthContext';
@@ -48,6 +48,25 @@ describe('Settings', () => {
     jest.restoreAllMocks();
   });
 
+  it("steps back one page at a time with Android's back gesture", async () => {
+    const handlers: Parameters<typeof BackHandler.addEventListener>[1][] = [];
+    jest.spyOn(BackHandler, 'addEventListener').mockImplementation((_event, handler) => {
+      handlers.push(handler);
+      return { remove: () => handlers.splice(handlers.indexOf(handler), 1) };
+    });
+    const onBack = jest.fn();
+    const screen = render(<Providers><ProfileView onBack={onBack} /></Providers>);
+    const pressBack = () => act(() => { handlers.at(-1)?.({} as never); });
+
+    await openPage(screen, 'privacy');
+    expect(screen.getByTestId('settings-privacy')).toBeTruthy();
+    pressBack();
+    expect(screen.getByTestId('profile-back')).toBeTruthy();
+    expect(onBack).not.toHaveBeenCalled();
+    pressBack();
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
   describe('Account details', () => {
     it('renames the rider in Firebase Auth and the profile doc', async () => {
       const screen = renderSettings();
@@ -89,7 +108,7 @@ describe('Settings', () => {
 
       const again = renderSettings();
       await openPage(again, 'notifications');
-      await waitFor(() => expect(again.getByTestId('toggle-service-alerts').props.value).toBe(false));
+      await waitFor(() => expect(again.getByTestId('toggle-service-alerts').props.accessibilityState.checked).toBe(false));
       // Turning notifications off hides the individual kinds.
       fireEvent(again.getByTestId('toggle-notifications'), 'valueChange', false);
       expect(again.queryByTestId('toggle-service-alerts')).toBeNull();
@@ -98,10 +117,10 @@ describe('Settings', () => {
     it('turns the feedback & support popups off and on', async () => {
       const screen = renderSettings();
       await openPage(screen, 'notifications');
-      expect(screen.getByTestId('toggle-support-prompts').props.value).toBe(true);
+      expect(screen.getByTestId('toggle-support-prompts').props.accessibilityState.checked).toBe(true);
       fireEvent(screen.getByTestId('toggle-support-prompts'), 'valueChange', false);
       await waitFor(async () => expect(JSON.parse((await AsyncStorage.getItem(preferencesKey(UID)))!).supportPrompts).toBe(false));
-      expect(screen.getByTestId('toggle-support-prompts').props.value).toBe(false);
+      expect(screen.getByTestId('toggle-support-prompts').props.accessibilityState.checked).toBe(false);
     });
 
     it('searches for a line in a popup and adds it to Favorite Lines, starred with alerts on', async () => {

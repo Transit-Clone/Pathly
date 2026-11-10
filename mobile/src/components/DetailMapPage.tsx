@@ -82,10 +82,10 @@ export function DetailMapPage({
   testID,
 }: DetailMapPageProps) {
   const styles = useThemedStyles(createStyles);
-  // iOS Safari won't scroll a scroller that has `pointer-events: none`, even from a child that takes
-  // touches. So on web an interactive map rides inside the scroller, stuck to its top, and the sheet
-  // scrolls over it just the same; the map's own gesture handling keeps its touches.
-  const stickyMap = interactiveMap && Platform.OS === 'web';
+  // A scroller that lets touches through to a map behind it can't scroll itself: Android's never
+  // takes the drag, and iOS Safari's ignores it. So an interactive map rides inside the scroller,
+  // stuck to its top, and the sheet scrolls over it just the same; the map keeps its own drags.
+  const stickyMap = interactiveMap;
   const { height } = useViewportSize();
   const insets = useSafeAreaInsets();
   const { reducedMotionActive } = useAppSettings();
@@ -150,11 +150,13 @@ export function DetailMapPage({
           ref={scrollRef}
           scrollEventThrottle={16}
           showsVerticalScrollIndicator={false}
+          // Web pins the map with CSS `sticky`; native pins it as the scroller's sticky header.
+          stickyHeaderIndices={stickyMap && Platform.OS !== 'web' ? [0] : undefined}
           style={styles.scroll}
           testID={scrollTestID}
         >
           {stickyMap ? <View style={[styles.stickyMap, { height: mapHeight }]} testID={mapTestID}>{map}</View> : null}
-          <View pointerEvents="box-none" style={[{ height: mapHeight }, stickyMap && { marginTop: -mapHeight, zIndex: 1 }]} testID={`${scrollTestID}-map-window`}>
+          <View pointerEvents="box-none" style={[{ height: mapHeight }, stickyMap && { marginTop: -mapHeight, zIndex: 11 }]} testID={`${scrollTestID}-map-window`}>
             {controlsScrollWithMap ? (
               <View pointerEvents="box-none" style={{ paddingTop: insets.top }}>
                 {controls}
@@ -197,8 +199,9 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   screen: { width: '100%', maxWidth: 540, flex: 1, overflow: 'hidden', backgroundColor: colors.canvas },
   map: { position: 'absolute', top: 0, right: 0, left: 0, overflow: 'hidden', backgroundColor: colors.blueSoft },
   // `sticky` is web-only, which React Native's types don't allow for.
-  stickyMap: { position: 'sticky', top: 0, overflow: 'hidden', backgroundColor: colors.blueSoft } as unknown as ViewStyle,
-  sheetOverStickyMap: { zIndex: 2 },
+  stickyMap: { ...(Platform.OS === 'web' ? { position: 'sticky', top: 0 } : null), overflow: 'hidden', backgroundColor: colors.blueSoft } as unknown as ViewStyle,
+  // Above a native sticky header, which React Native draws at zIndex 10.
+  sheetOverStickyMap: { zIndex: 12 },
   mapButtons: { position: 'absolute', alignItems: 'center', gap: 10 },
   scroll: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, zIndex: 3, backgroundColor: 'transparent' },
   sheet: {

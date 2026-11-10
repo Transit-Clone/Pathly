@@ -23,6 +23,7 @@ import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings
 import type { Palette } from '../theme/colors';
 import { contrastRatio, readableColor } from '../theme/contrast';
 import { fontFamilies, typography } from '../theme/typography';
+import { SheetPanel } from './SheetPanel';
 import { DetailMapPage } from './DetailMapPage';
 import { DirectionSwitch } from './DirectionSwitch';
 import { FitText } from './FitText';
@@ -300,10 +301,10 @@ function AlertsSheet({ notices, onClose, title }: { notices: readonly RouteNotic
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
   return (
-    <Modal animationType="slide" onRequestClose={onClose} transparent={true} visible={notices != null}>
+    <Modal animationType="fade" onRequestClose={onClose} transparent={true} visible={notices != null}>
       <Pressable accessibilityLabel="Close alerts" onPress={onClose} style={styles.sheetBackdrop} testID="service-alerts-backdrop" />
       {notices ? (
-        <View style={styles.transfersSheet} testID="service-alerts-list">
+        <SheetPanel style={styles.transfersSheet} testID="service-alerts-list">
           <View style={styles.transfersSheetHeader}>
             <Text accessibilityRole="header" style={styles.transfersSheetTitle}>{title}</Text>
             <PressableScale accessibilityLabel="Close" accessibilityRole="button" hitSlop={8} onPress={onClose} testID="service-alerts-close"><Icon name="close" size={26} /></PressableScale>
@@ -320,7 +321,7 @@ function AlertsSheet({ notices, onClose, title }: { notices: readonly RouteNotic
               </View>
             ))}
           </ScrollView>
-        </View>
+        </SheetPanel>
       ) : null}
     </Modal>
   );
@@ -337,10 +338,10 @@ function TransfersSheet({ onClose, onOpen, sheet }: {
 }) {
   const styles = useThemedStyles(createStyles);
   return (
-    <Modal animationType="slide" onRequestClose={onClose} transparent={true} visible={sheet != null}>
+    <Modal animationType="fade" onRequestClose={onClose} transparent={true} visible={sheet != null}>
       <Pressable accessibilityLabel="Close transfers" onPress={onClose} style={styles.sheetBackdrop} testID="transfers-sheet-backdrop" />
       {sheet ? (
-        <View style={styles.transfersSheet} testID="transfers-sheet">
+        <SheetPanel style={styles.transfersSheet} testID="transfers-sheet">
           <View style={styles.transfersSheetHeader}>
             <Text accessibilityRole="header" numberOfLines={2} style={styles.transfersSheetTitle} testID="transfers-sheet-title">{sheet.stopName}</Text>
             <PressableScale accessibilityLabel="Close" accessibilityRole="button" hitSlop={8} onPress={onClose} testID="transfers-sheet-close"><Icon name="close" size={26} /></PressableScale>
@@ -362,7 +363,7 @@ function TransfersSheet({ onClose, onOpen, sheet }: {
               );
             })}
           </ScrollView>
-        </View>
+        </SheetPanel>
       ) : null}
     </Modal>
   );
@@ -694,6 +695,8 @@ export function RouteDetailView({ alerts, exploreFrom, initialDirectionIndex, is
         color={routeColor}
         directionId={geometryDirectionId}
         exploreFrom={wholeRoute ? undefined : exploreFrom}
+        // Clear of the back button, line title and top-right buttons, and the GO button at the bottom.
+        fitPadding={{ top: insets.top + 8 + MAP_CONTROL_SIZE * 2 + 50, right: MAP_CONTROL_SIZE + 28, bottom: goAction ? 60 + 16 + 34 : 48, left: 48 }}
         focusStopId={wholeRoute ? undefined : activeDirection.stopId}
         focusStopName={wholeRoute ? undefined : activeDirection.stopName}
         mode={vehicleIcon}
@@ -878,7 +881,7 @@ export function RouteDetailView({ alerts, exploreFrom, initialDirectionIndex, is
                 testID={index === 0 ? 'service-alerts' : `service-alerts-${index}`}
               >
                 <Icon color={ink} name={group.warning ? 'warning' : 'info'} size={15} />
-                <Text numberOfLines={1} style={[styles.alertPillText, { color: ink }]}>{count > 1 ? `${group.label} · ${count}` : group.label}</Text>
+                <Text numberOfLines={1} style={[styles.alertPillText, { color: ink }]}>{count > 1 ? `${group.label} (${count})` : group.label}</Text>
                 <Icon color={group.warning ? colors.onAlertYellow : colors.mutedInk} name="forward" size={13} />
               </PressableScale>
             );

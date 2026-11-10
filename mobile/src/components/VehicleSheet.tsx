@@ -15,6 +15,7 @@ import { useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { radii } from '../theme/shape';
 import { fontFamilies, typography } from '../theme/typography';
+import { SheetPanel } from './SheetPanel';
 import { Icon } from './Icon';
 import { PressableScale } from './PressableScale';
 import { RideReportBar } from './RideReportBar';
@@ -68,10 +69,10 @@ export function VehicleSheet({ color, destination, lineName, liveSource, mode, o
   const { isAdmin, rideAlong, setMockLocation, startRideAlong } = useDebug();
   const ridingAlong = vehicle != null && rideAlong?.tripId === vehicle.tripId;
   return (
-    <Modal animationType="slide" onRequestClose={onClose} transparent={true} visible={vehicle != null}>
+    <Modal animationType="fade" onRequestClose={onClose} transparent={true} visible={vehicle != null}>
       <Pressable accessibilityLabel="Close vehicle details" onPress={onClose} style={styles.backdrop} testID="vehicle-sheet-backdrop" />
       {vehicle ? (
-        <View style={styles.sheet} testID="vehicle-sheet">
+        <SheetPanel style={styles.sheet} testID="vehicle-sheet">
           <View style={styles.header}>
             <View style={styles.modeCircle}><Icon color={color} name={mode} size={24} /></View>
             <View style={styles.headerCopy}>
@@ -143,7 +144,7 @@ export function VehicleSheet({ color, destination, lineName, liveSource, mode, o
               ? 'Other riders see your avatar here, never your name. Your location is erased soon after you get off.'
               : 'Turn on Share my rides in Settings, Privacy to help place vehicles for other riders.'}
           </Text>
-        </View>
+        </SheetPanel>
       ) : null}
     </Modal>
   );

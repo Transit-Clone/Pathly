@@ -18,28 +18,42 @@ export function useLayoutEase() {
   return () => animateNextLayout(reducedMotionActive);
 }
 
-/** Fades a screen in with a slight upward settle when it mounts. Remount it (via `key`) to replay. */
-export function ScreenTransition({ children }: { children: ReactNode }) {
+/** How far (pt) a new page slides in from the side it comes from. */
+const SCREEN_SLIDE = 36;
+/** The depth of the page last shown in each group of pages, to tell going deeper from going back. */
+const shownDepth = new Map<string, number>();
+
+/**
+ * Slides a screen in from the side it comes from when it mounts: from the right going deeper, from
+ * the left going back (a lower `depth` than the group's last page). Remount it (via `key`) to
+ * replay. Without a `group` it always comes from the right.
+ */
+export function ScreenTransition({ children, depth = 1, group }: { children: ReactNode; depth?: number; group?: string }) {
   const { reducedMotionActive } = useAppSettings();
   const { colors } = useTheme();
   const [progress] = useState(() => new Animated.Value(reducedMotionActive ? 1 : 0));
+  const [fromLeft] = useState(() => group != null && depth < (shownDepth.get(group) ?? 0));
+
+  useEffect(() => {
+    if (group != null) shownDepth.set(group, depth);
+  }, [depth, group]);
 
   useEffect(() => {
     if (reducedMotionActive) {
       progress.setValue(1);
       return;
     }
-    Animated.timing(progress, { toValue: 1, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver }).start();
+    Animated.timing(progress, { toValue: 1, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver }).start();
   }, [progress, reducedMotionActive]);
 
-  const translateY = progress.interpolate({ inputRange: [0, 1], outputRange: [10, 0] });
+  const translateX = progress.interpolate({ inputRange: [0, 1], outputRange: [fromLeft ? -SCREEN_SLIDE : SCREEN_SLIDE, 0] });
   // The new page is mostly there from the first frame and only firms up, so there is never a
   // blank (white, or in dark mode black) moment between pages that reads like a failed load.
   // The theme's surface sits behind for the little that shows through.
-  const opacity = progress.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1] });
+  const opacity = progress.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] });
   return (
     <View style={[styles.fill, { backgroundColor: colors.surface }]}>
-      <Animated.View style={[styles.fill, { opacity, transform: [{ translateY }] }]}>{children}</Animated.View>
+      <Animated.View style={[styles.fill, { opacity, transform: [{ translateX }] }]}>{children}</Animated.View>
     </View>
   );
 }

@@ -1,5 +1,5 @@
-import { useCallback, useState, type ReactNode } from 'react';
-import { Linking, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { BackHandler, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { signOutUser } from '../auth/authService';
@@ -13,6 +13,7 @@ import { FEEDBACK_FORM_URL } from '../data/nudgePrompt';
 import { openDonationPage, STUDENT_DISCLAIMER } from '../data/supportPrompt';
 import { findLabeledLocation, savedPlaceGroups, sortSavedLocations, SAVED_PLACE_COLORS, type SavedLocation } from '../data/userData';
 import { SAVED_PLACE_COLOR_HEX } from '../data/savedPlacePin';
+import { AnimatedSwitch } from './AnimatedSwitch';
 import { Icon, type IconName } from './Icon';
 import { SettingsPathling } from './LivelyPathling';
 import { Mascot } from './Mascot';
@@ -138,8 +139,7 @@ export function SettingRow({ detail, label, onPress, testID }: { detail?: string
 
 export function ToggleRow({ detail, label, onChange, testID, value }: { detail?: string; label: string; onChange: (value: boolean) => void; testID: string; value: boolean }) {
   const styles = useThemedStyles(createStyles);
-  const { colors } = useTheme();
-  return <View style={styles.settingRow}><View style={styles.rowCopy}><Text style={styles.settingText}>{label}</Text>{detail ? <Text style={styles.settingDetail}>{detail}</Text> : null}</View><Switch accessibilityLabel={label} onValueChange={onChange} testID={testID} thumbColor={colors.white} trackColor={{ false: colors.border, true: colors.primary }} value={value} /></View>;
+  return <View style={styles.settingRow}><View style={styles.rowCopy}><Text style={styles.settingText}>{label}</Text>{detail ? <Text style={styles.settingDetail}>{detail}</Text> : null}</View><AnimatedSwitch accessibilityLabel={label} onValueChange={onChange} testID={testID} value={value} /></View>;
 }
 
 export function ChoiceRow({ label, onSelect, options, selected, testPrefix }: { label: string; onSelect: (value: string) => void; options: readonly string[]; selected: string; testPrefix: string }) {
@@ -209,6 +209,17 @@ export function ProfileView({ initialRoute, onBack, onOpenAdminTools, savedPlace
   const setFeedback = useCallback((text: string) => setFeedbackMessage(text ? { text, id: Date.now() } : null), []);
   const hideFeedback = useCallback(() => setFeedbackMessage(null), []);
   const openRoute = (nextRoute: SettingsRoute) => { setFeedback(''); setRoute(nextRoute); };
+  // Android's back gesture steps back one page, like the on-screen back button: a settings page
+  // returns to the hub, the hub leaves settings. The avatar and pin editors handle their own back.
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (route === 'avatar' || route === 'pin') return false;
+      if (route === 'hub') onBack();
+      else { setFeedback(''); setRoute('hub'); }
+      return true;
+    });
+    return () => subscription.remove();
+  }, [onBack, route, setFeedback]);
   const openHubRow = (id: HubRow['id']) => {
     if (id === 'contact') void contactSupport(setFeedback);
     else if (id === 'feedback') void Linking.openURL(FEEDBACK_FORM_URL).catch(() => undefined);
@@ -227,7 +238,7 @@ export function ProfileView({ initialRoute, onBack, onOpenAdminTools, savedPlace
   if (route !== 'hub') {
     const title = pageTitles[route] ?? 'Settings';
     return (
-      <ScreenTransition key={route}>
+      <ScreenTransition depth={1} group="settings" key={route}>
       <View style={styles.viewport}>
         <SafeAreaView edges={['top', 'bottom']} style={styles.screen} testID={`settings-${route}`}>
           <ThemedStatusBar />
@@ -253,7 +264,7 @@ export function ProfileView({ initialRoute, onBack, onOpenAdminTools, savedPlace
   }
 
   return (
-    <ScreenTransition key="hub">
+    <ScreenTransition depth={0} group="settings" key="hub">
     <View style={styles.viewport}>
       <SafeAreaView edges={['top', 'bottom']} style={styles.screen} testID="profile-view">
         <ThemedStatusBar />

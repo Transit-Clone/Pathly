@@ -313,8 +313,9 @@ jest.mock('expo-location', () => ({
   requestForegroundPermissionsAsync: jest.fn(() => Promise.resolve({ status: 'denied' })),
   getForegroundPermissionsAsync: jest.fn(() => Promise.resolve({ status: 'denied', canAskAgain: false })),
   getCurrentPositionAsync: jest.fn(),
+  getLastKnownPositionAsync: jest.fn(() => Promise.resolve(null)),
   watchPositionAsync: jest.fn(() => Promise.resolve({ remove: jest.fn() })),
-  Accuracy: { Balanced: 3 },
+  Accuracy: { Balanced: 3, High: 4, BestForNavigation: 6 },
 }));
 
 // react-native-maps needs a real native module (TurboModule) that doesn't exist under Jest.

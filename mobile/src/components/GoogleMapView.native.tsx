@@ -10,6 +10,7 @@ import { addressAfterName } from '../data/placesSearch';
 import { metersPerPixelForSpan, SAVED_PIN, savedPlaceColor, stackSavedPins } from '../data/savedPlacePin';
 import { locationPoint, savedPlaceName, type SavedLocation } from '../data/userData';
 import type { Coordinates } from '../hooks/useCurrentLocation';
+import { useMarkerTracking } from '../hooks/useMarkerTracking';
 import { useTheme } from '../theme/AppSettings';
 import { CurrentLocationMarker } from './CurrentLocationMarker';
 import { HeadingBeamMarker } from './HeadingBeamMarker';
@@ -81,7 +82,9 @@ type GoogleMapViewProps = {
   lines?: readonly MapLine[];
   /** A marker tapped: its place, and every place stacked with it there (itself included). */
   onSavedLocationPress?: (location: SavedLocation, stack: readonly SavedLocation[]) => void;
-  /** `location` is an admin's mock location, so the system GPS dot is replaced with a drawn one there. */
+  /** `location` is a real fix (not the service-area fallback), so the rider's dot is drawn there. */
+  locationKnown?: boolean;
+  /** `location` is an admin's mock location (always drawn). */
   simulatedLocation?: boolean;
   testID?: string;
 };
@@ -96,10 +99,12 @@ function clampToServiceArea(region: Region): Region {
 }
 
 /** Real Google Maps view, centered locally with room to explore the surrounding region. */
-export function GoogleMapView({ initialCamera, lines = [], location, onCameraChange, onLongPress, onPress, onOrientationChange, onSavedLocationPress, onUserMoveEnd, onUserPan, padding, recenterRequest = 0, reorientRequest = 0, savedLocations = [], simulatedLocation = false, testID = 'google-map-view' }: GoogleMapViewProps) {
+export function GoogleMapView({ initialCamera, lines = [], location, onCameraChange, onLongPress, onPress, onOrientationChange, onSavedLocationPress, onUserMoveEnd, onUserPan, padding, recenterRequest = 0, reorientRequest = 0, savedLocations = [], locationKnown = false, simulatedLocation = false, testID = 'google-map-view' }: GoogleMapViewProps) {
   const mapRef = useRef<MapView>(null);
   // Places hidden, and recolored in the dark theme (see mapStyle.ts).
   const { colors, isDark } = useTheme();
+  // The rider's dot is redrawn only when the theme changes (see useMarkerTracking).
+  const tracksLocationDot = useMarkerTracking(isDark ? 'dark' : 'light');
   const mapStyle = useMemo(() => googleMapStyle(isDark), [isDark]);
   // Set by a rider drag so programmatic moves (recentering on GPS) don't count as exploring.
   const userMoved = useRef(false);
@@ -195,14 +200,16 @@ export function GoogleMapView({ initialCamera, lines = [], location, onCameraCha
       region={region}
       showsCompass={false}
       showsMyLocationButton={false}
-      showsUserLocation={!simulatedLocation}
+      // The dot is drawn from the app's own location below: Google's layer would track the phone
+      // again on its own timer, and the two requests made Android's location indicator blink.
+      showsUserLocation={false}
       style={StyleSheet.absoluteFill}
       testID={testID}
       toolbarEnabled={false}
       userInterfaceStyle={isDark ? 'dark' : 'light'}
     >
       {lines.map((line) => <Polyline coordinates={[...line.path]} key={line.key} strokeColor={themedRouteColor(line.color, isDark)} strokeWidth={3} tappable={false} testID={`map-line-${line.key}`} zIndex={0} />)}
-      <HeadingBeamMarker coordinate={location} />
+      {simulatedLocation || locationKnown ? <HeadingBeamMarker coordinate={location} /> : null}
       {savedPins.map(({ saved, position: pinPosition, leader }) => {
         const name = savedPlaceName(saved.address);
         const address = addressAfterName(name, saved.address.streetAddress);
@@ -228,8 +235,8 @@ export function GoogleMapView({ initialCamera, lines = [], location, onCameraCha
           </Marker>
         );
       })}
-      {simulatedLocation ? (
-        <Marker anchor={{ x: 0.5, y: 0.5 }} coordinate={location} testID="mock-location-marker" tracksViewChanges={false}>
+      {simulatedLocation || locationKnown ? (
+        <Marker anchor={{ x: 0.5, y: 0.5 }} coordinate={location} testID={simulatedLocation ? 'mock-location-marker' : `${testID}-user-location`} tracksViewChanges={tracksLocationDot} zIndex={5}>
           <CurrentLocationMarker />
         </Marker>
       ) : null}
