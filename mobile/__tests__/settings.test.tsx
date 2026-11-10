@@ -19,6 +19,10 @@ import { highContrastDarkColors, highContrastLightColors, lightColors } from '..
 
 jest.mock('react-native-safe-area-context', () => mockSafeAreaContext);
 
+// Settings' Google re-confirm (googleReauth.test.ts covers the hook itself).
+const mockGoogleReauth = { available: true, reauthenticate: jest.fn((_user: unknown) => Promise.resolve()) };
+jest.mock('../src/auth/googleReauth', () => ({ useGoogleReauth: () => mockGoogleReauth }));
+
 const UID = 'test-uid';
 const place = { id: 'places/sbu', title: 'Stony Brook University', subtitle: '100 Nicolls Rd, Stony Brook, NY', location: { latitude: 40.91, longitude: -73.12 } };
 
@@ -305,13 +309,6 @@ describe('Settings', () => {
       expect((await getDocs(collection({} as never, 'users', UID, 'searches'))).docs).toHaveLength(1);
     });
 
-    it('saves the analytics choice', async () => {
-      const screen = renderSettings();
-      await openPage(screen, 'privacy');
-      fireEvent(screen.getByTestId('toggle-analytics'), 'valueChange', true);
-      await waitFor(async () => expect(JSON.parse((await AsyncStorage.getItem(preferencesKey(UID)))!).analytics).toBe(true));
-    });
-
     it("exports the rider's searches, recent destinations, and saved places as JSON", async () => {
       await recordSearch(UID, place);
       await saveLocation(UID, place, 'Destination');
@@ -333,7 +330,7 @@ describe('Settings', () => {
     it('re-authenticates, then deletes Firestore data and the Auth user after confirming', async () => {
       await recordSearch(UID, place);
       await saveLocation(UID, place, 'Destination');
-      await AsyncStorage.setItem(preferencesKey(UID), JSON.stringify({ analytics: true }));
+      await AsyncStorage.setItem(preferencesKey(UID), JSON.stringify({ stepFree: true }));
       const screen = renderSettings();
       await openPage(screen, 'privacy');
       fireEvent.press(screen.getByTestId('privacy-delete'));
@@ -372,6 +369,68 @@ describe('Settings', () => {
       expect(screen.getByTestId('delete-account-error')).toHaveTextContent('That password is incorrect.');
       expect(deleteUser).not.toHaveBeenCalled();
       expect((await getDocs(collection({} as never, 'users', UID, 'savedLocations'))).docs).toHaveLength(1);
+    });
+  });
+
+  describe('Deleting an account made with Google', () => {
+    const asGoogleRider = () => {
+      (globalThis as unknown as { __mockAuthUser: { providerData: unknown[] } }).__mockAuthUser.providerData = [{ providerId: 'google.com' }];
+    };
+
+    it('confirms with Google instead of a password, then deletes everything', async () => {
+      // Google Play requires every rider who can make an account to be able to delete it.
+      asGoogleRider();
+      await saveLocation(UID, place, 'Destination');
+      const screen = renderSettings();
+      await openPage(screen, 'privacy');
+      fireEvent.press(screen.getByTestId('privacy-delete'));
+      expect(screen.queryByTestId('delete-account-password')).toBeNull();
+      expect(screen.getByText(/confirm with Google/)).toBeTruthy();
+      expect(screen.getByTestId('delete-account-submit').props.accessibilityState).toMatchObject({ disabled: false });
+
+      fireEvent.press(screen.getByTestId('delete-account-submit'));
+      expect(mockGoogleReauth.reauthenticate).not.toHaveBeenCalled();
+      await act(async () => {
+        fireEvent.press(screen.getByTestId('delete-account-dialog-confirm'));
+      });
+
+      expect(mockGoogleReauth.reauthenticate).toHaveBeenCalledWith(expect.objectContaining({ uid: UID }));
+      expect(EmailAuthProvider.credential).not.toHaveBeenCalled();
+      expect(deleteUser).toHaveBeenCalledWith(expect.objectContaining({ uid: UID }));
+      expect((await getDocs(collection({} as never, 'users', UID, 'savedLocations'))).docs).toEqual([]);
+    });
+
+    it('keeps everything, quietly, when the rider backs out of Google', async () => {
+      asGoogleRider();
+      await saveLocation(UID, place, 'Destination');
+      mockGoogleReauth.reauthenticate.mockRejectedValueOnce(Object.assign(new Error('cancelled'), { code: 'auth/user-cancelled' }));
+      const screen = renderSettings();
+      await openPage(screen, 'privacy');
+      fireEvent.press(screen.getByTestId('privacy-delete'));
+      fireEvent.press(screen.getByTestId('delete-account-submit'));
+      await act(async () => {
+        fireEvent.press(screen.getByTestId('delete-account-dialog-confirm'));
+      });
+
+      expect(screen.queryByTestId('delete-account-error')).toBeNull();
+      expect(screen.getByTestId('delete-account-submit').props.accessibilityState).toMatchObject({ disabled: false });
+      expect(deleteUser).not.toHaveBeenCalled();
+      expect((await getDocs(collection({} as never, 'users', UID, 'savedLocations'))).docs).toHaveLength(1);
+    });
+
+    it('says so when a different Google account is picked', async () => {
+      asGoogleRider();
+      mockGoogleReauth.reauthenticate.mockRejectedValueOnce(Object.assign(new Error('mismatch'), { code: 'auth/user-mismatch' }));
+      const screen = renderSettings();
+      await openPage(screen, 'privacy');
+      fireEvent.press(screen.getByTestId('privacy-delete'));
+      fireEvent.press(screen.getByTestId('delete-account-submit'));
+      await act(async () => {
+        fireEvent.press(screen.getByTestId('delete-account-dialog-confirm'));
+      });
+
+      expect(screen.getByTestId('delete-account-error')).toHaveTextContent("That Google account isn't the one you signed in with.");
+      expect(deleteUser).not.toHaveBeenCalled();
     });
   });
 

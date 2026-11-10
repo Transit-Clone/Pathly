@@ -7,7 +7,7 @@ import type { FareType } from './tripPlanning';
 
 /**
  * A rider's own preferences (Settings -> Notifications, Travel preferences, step-free routes,
- * analytics), saved on this device per account so a shared device keeps riders apart. Display
+ * ride sharing), saved on this device per account so a shared device keeps riders apart. Display
  * settings (theme, text size, contrast, motion) are the device's and live in AppSettings.
  */
 export type UserPreferences = {
@@ -25,7 +25,6 @@ export type UserPreferences = {
     fareType: FareType;
   };
   stepFree: boolean;
-  analytics: boolean;
   /** Off by default: lets rides be detected and shown to other riders (rideTracking.ts). */
   shareRides: boolean;
   /** The home screen's occasional "support Pathly or share feedback" popup (nudgePrompt.ts); off is "Don't ask again". */
@@ -39,7 +38,6 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
   notifications: { enabled: true, serviceAlerts: true, tripReminders: true, disruptions: true },
   travel: { modes: [...ALL_TRANSIT_MODES], allowWalking: true, fewerTransfers: false, maxWalkMinutes: null, fareType: 'full' },
   stepFree: false,
-  analytics: false,
   shareRides: false,
   supportPrompts: true,
 };
@@ -75,7 +73,6 @@ export function parsePreferences(text: string | null): UserPreferences {
     notifications,
     travel,
     stepFree: isBoolean(saved.stepFree) ? saved.stepFree : base.stepFree,
-    analytics: isBoolean(saved.analytics) ? saved.analytics : base.analytics,
     shareRides: isBoolean(saved.shareRides) ? saved.shareRides : base.shareRides,
     supportPrompts: isBoolean(saved.supportPrompts) ? saved.supportPrompts : base.supportPrompts,
   };
@@ -85,7 +82,6 @@ export type PreferencesPatch = {
   notifications?: Partial<UserPreferences['notifications']>;
   travel?: Partial<UserPreferences['travel']>;
   stepFree?: boolean;
-  analytics?: boolean;
   shareRides?: boolean;
   supportPrompts?: boolean;
 };
@@ -95,7 +91,6 @@ export function applyPreferencesPatch(current: UserPreferences, patch: Preferenc
     notifications: { ...current.notifications, ...patch.notifications },
     travel: { ...current.travel, ...patch.travel },
     stepFree: patch.stepFree ?? current.stepFree,
-    analytics: patch.analytics ?? current.analytics,
     shareRides: patch.shareRides ?? current.shareRides,
     supportPrompts: patch.supportPrompts ?? current.supportPrompts,
   };

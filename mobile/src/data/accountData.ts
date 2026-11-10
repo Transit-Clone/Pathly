@@ -92,12 +92,15 @@ export async function shareUserData(data: UserDataExport): Promise<'downloaded' 
   return 'shared';
 }
 
-export type DeleteAccountProblem = 'wrong-password' | 'too-many-attempts' | 'failed';
+export type DeleteAccountProblem = 'wrong-password' | 'wrong-account' | 'cancelled' | 'too-many-attempts' | 'failed';
 
 export function deleteAccountProblem(error: unknown): DeleteAccountProblem {
   const code = (error as { code?: string } | null)?.code ?? '';
   if (code === 'auth/wrong-password' || code === 'auth/invalid-credential' || code === 'auth/invalid-login-credentials') return 'wrong-password';
   if (code === 'auth/too-many-requests') return 'too-many-attempts';
+  // Re-confirming with Google: another Google account was picked, or the rider backed out.
+  if (code === 'auth/user-mismatch') return 'wrong-account';
+  if (code === 'auth/user-cancelled' || code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return 'cancelled';
   return 'failed';
 }
 
@@ -109,6 +112,21 @@ export function deleteAccountProblem(error: unknown): DeleteAccountProblem {
 export async function deleteAccount(user: User, password: string): Promise<void> {
   if (!user.email) throw Object.assign(new Error('no-email'), { code: 'auth/no-email' });
   await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, password));
+  await eraseAccount(user);
+}
+
+/** Whether the rider can confirm with a password; one who joined only with Google has none. */
+export function hasPassword(user: User): boolean {
+  return Boolean(user.providerData?.some((provider) => provider.providerId === 'password'));
+}
+
+/**
+ * Deletes the account after `reauthenticate` confirms a recent sign-in some other way: Google
+ * riders confirm with Google (googleReauth.ts), since Google Play requires every rider who can
+ * make an account to be able to delete it.
+ */
+export async function deleteAccountAfter(user: User, reauthenticate: (user: User) => Promise<void>): Promise<void> {
+  await reauthenticate(user);
   await eraseAccount(user);
 }
 

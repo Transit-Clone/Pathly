@@ -111,7 +111,7 @@ const hubCards: readonly (readonly HubRow[])[] = [
     { id: 'maps', title: 'Offline Maps', detail: 'MTA maps, saved for offline', icon: 'map' },
   ],
   [
-    { id: 'privacy', title: 'Location & Privacy', detail: 'Location, analytics and your data', icon: 'privacy' },
+    { id: 'privacy', title: 'Location & Privacy', detail: 'Location and your data', icon: 'privacy' },
     { id: 'faq', title: 'FAQ', detail: 'Answers to common questions', icon: 'info' },
     { id: 'contact', title: 'Contact Us', detail: 'Email the Pathly team', icon: 'feedback' },
     { id: 'feedback', title: 'Send feedback', detail: 'Tell us what to fix or add', icon: 'edit' },

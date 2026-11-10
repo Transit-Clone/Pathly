@@ -3,6 +3,7 @@ import { createHash } from 'crypto';
 import { simplifyPath } from './gtfsGeometry';
 import { displayStepColor } from './routeColors';
 import { agencyIdsForStep } from './tripAgencies';
+import { displayTransitName } from './transitNames';
 
 /**
  * Real transit trip planning through the Google Routes API (computeRoutes, travelMode TRANSIT):
@@ -262,9 +263,12 @@ function transitStep(step: GoogleStep): TransitStep {
       }),
       ...(line.vehicle?.name?.text ? { vehicleName: line.vehicle.name.text } : {}),
     },
-    ...(details.headsign ? { headsign: details.headsign } : {}),
-    from: { name: stops.departureStop?.name ?? '', location: toLatLng(stops.departureStop?.location), time: departure },
-    to: { name: stops.arrivalStop?.name ?? '', location: toLatLng(stops.arrivalStop?.location), time: arrival },
+    // Google passes along the agency's own stop names and headsigns, so a feed's all-caps or
+    // lowercase entry ("staten island expwy/wooley av") reached riders as-is; recase them the
+    // same way as names read from the timetables.
+    ...(details.headsign ? { headsign: displayTransitName(details.headsign) } : {}),
+    from: { name: displayTransitName(stops.departureStop?.name ?? ''), location: toLatLng(stops.departureStop?.location), time: departure },
+    to: { name: displayTransitName(stops.arrivalStop?.name ?? ''), location: toLatLng(stops.arrivalStop?.location), time: arrival },
     stopCount: details.stopCount ?? 0,
     durationSeconds: Math.max(0, (Date.parse(arrival) - Date.parse(departure)) / 1000) || seconds(step.staticDuration),
     path: simplified(decodePolyline(step.polyline?.encodedPolyline ?? '')),

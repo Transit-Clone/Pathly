@@ -9,7 +9,7 @@ const { routeById: mockRouteById, routes: mockRoutes, stopsForDirection: mockSto
 
 // Firebase needs real project config (unavailable in Jest) and hits the network on init;
 // stub it so existing screens still render as if a user is already signed in.
-const mockUser = { uid: 'test-uid', email: 'rider@example.com', displayName: 'Pathly Rider' };
+const mockUser = { uid: 'test-uid', email: 'rider@example.com', displayName: 'Pathly Rider', providerData: [{ providerId: 'password' }] };
 // Tests sign in as the admin by changing this email (jest.setupAfterEnv.js resets it).
 globalThis.__mockAuthUser = mockUser;
 
@@ -27,6 +27,7 @@ jest.mock('firebase/auth', () => ({
   createUserWithEmailAndPassword: jest.fn(),
   deleteUser: jest.fn(() => Promise.resolve()),
   EmailAuthProvider: { credential: jest.fn((email, password) => ({ providerId: 'password', email, password })) },
+  GoogleAuthProvider: Object.assign(jest.fn(), { credential: jest.fn((idToken) => ({ providerId: 'google.com', idToken })) }),
   reauthenticateWithCredential: jest.fn(() => Promise.resolve()),
   sendPasswordResetEmail: jest.fn(() => Promise.resolve()),
   sendEmailVerification: jest.fn(() => Promise.resolve()),

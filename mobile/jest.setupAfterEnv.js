@@ -5,6 +5,7 @@ beforeEach(async () => {
   await require('@react-native-async-storage/async-storage').clear();
   globalThis.__mockAuthUser.email = 'rider@example.com';
   globalThis.__mockAuthUser.displayName = 'Pathly Rider';
+  globalThis.__mockAuthUser.providerData = [{ providerId: 'password' }];
   require('firebase/firestore').__resetMockFirestore();
   // Each test starts as a fresh app session, so it sends its own warm-up when its rider signs in.
   require('./src/data/backendWarmup').resetBackendWarmupForTests();

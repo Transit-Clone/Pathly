@@ -136,3 +136,18 @@ test('decodes Google\'s documented example polyline', () => {
   assert.deepEqual(decodePolyline(''), []);
 });
 
+
+test("recases the feed's stop names and headsigns that Google passes along as-is", () => {
+  // Google returns MTA Staten Island's own entries, some typed in lowercase or all caps.
+  const raw = fixture('routes-sbu-mall.json');
+  const route = structuredClone(raw.routes[0]);
+  const details = transitDetailsOf(route)[0];
+  details.stopDetails.departureStop.name = 'staten island expwy/wooley av';
+  details.stopDetails.arrivalStop.name = 'HYLAN BLVD/RICHMOND AV';
+  details.headsign = 'MIDTOWN via 57 ST';
+  const [itinerary] = normalizeRoutesResponse({ routes: [route] }, REQUEST_TIME, 'Destination');
+  const step = itinerary.steps.find((s) => s.kind === 'transit');
+  assert.equal(step.from.name, 'Staten Island Expwy/Wooley Av');
+  assert.equal(step.to.name, 'Hylan Blvd/Richmond Av');
+  assert.equal(step.headsign, 'Midtown via 57 St');
+});

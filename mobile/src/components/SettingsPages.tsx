@@ -3,11 +3,14 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, AppState, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { useAuth } from '../auth/AuthContext';
+import { useGoogleReauth } from '../auth/googleReauth';
 import { BeanAvatar } from '../avatars/BeanAvatarImage';
 import {
   deleteAccount,
+  deleteAccountAfter,
   deleteAccountProblem,
   exportUserData,
+  hasPassword,
   MAX_DISPLAY_NAME,
   sendPasswordReset,
   shareUserData,
@@ -624,6 +627,10 @@ export function PrivacySettings({ onFeedback }: PageProps) {
   const [password, setPassword] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+  const googleReauth = useGoogleReauth();
+  // A rider who joined only with Google has no password; they confirm with Google instead.
+  const confirmsWithGoogle = Boolean(user && !user.isAnonymous && !hasPassword(user));
+  const canSubmitDelete = confirmsWithGoogle ? googleReauth.available : Boolean(password);
   const [confirmingClearSearches, setConfirmingClearSearches] = useState(false);
 
   const clearSearches = async () => {
@@ -674,15 +681,22 @@ export function PrivacySettings({ onFeedback }: PageProps) {
     setDeleting(true);
     setDeleteError('');
     try {
-      await deleteAccount(user, password);
+      if (confirmsWithGoogle) await deleteAccountAfter(user, googleReauth.reauthenticate);
+      else await deleteAccount(user, password);
       // Deleting the Auth user signs out, which leaves Settings for the sign-in screen.
     } catch (error) {
       const problem = deleteAccountProblem(error);
+      if (problem === 'cancelled') {
+        setDeleting(false);
+        return;
+      }
       setDeleteError(problem === 'wrong-password'
         ? 'That password is incorrect.'
-        : problem === 'too-many-attempts'
-          ? 'Too many attempts. Try again later.'
-          : 'Your account could not be deleted. Check your connection and try again.');
+        : problem === 'wrong-account'
+          ? "That Google account isn't the one you signed in with."
+          : problem === 'too-many-attempts'
+            ? 'Too many attempts. Try again later.'
+            : 'Your account could not be deleted. Check your connection and try again.');
       setDeleting(false);
     }
   };
@@ -692,7 +706,6 @@ export function PrivacySettings({ onFeedback }: PageProps) {
       <Card>
         <SettingRow detail="pathly.web.app/privacy" label="Privacy policy" onPress={() => void openLink(PRIVACY_POLICY_URL, onFeedback)} testID="privacy-policy" />
         <SettingRow detail={permissionDetail[permission.status]} label="Location access" onPress={permission.status === 'unknown' ? undefined : () => void changeLocation()} testID="privacy-location" />
-        <ToggleRow label="Share usage analytics" onChange={(value) => { updatePreferences({ analytics: value }); onFeedback('Analytics preference saved'); }} testID="toggle-analytics" value={preferences.analytics} />
         {user ? <SettingRow detail="Removes your recent searches. Favorites and trips stay." label="Clear search history" onPress={() => setConfirmingClearSearches(true)} testID="privacy-clear-searches" /> : null}
         {user?.isAnonymous ? null : <>
         <ToggleRow label="Share my rides" onChange={(value) => { updatePreferences({ shareRides: value }); onFeedback(value ? 'Ride sharing on' : 'Ride sharing off'); }} testID="toggle-share-rides" value={preferences.shareRides} />
@@ -704,8 +717,10 @@ export function PrivacySettings({ onFeedback }: PageProps) {
       {deleteOpen ? (
         <View style={page.dangerCard} testID="delete-account-panel">
           <Text style={page.dangerTitle}>Delete your account</Text>
-          <Text style={page.dangerBody}>This removes your favorites, searches, recent trips, and sign-in. Enter your password to continue.</Text>
-          <TextInput
+          <Text style={page.dangerBody}>{confirmsWithGoogle
+            ? "This removes your favorites, searches, recent trips, and sign-in. You'll confirm with Google to continue."
+            : 'This removes your favorites, searches, recent trips, and sign-in. Enter your password to continue.'}</Text>
+          {confirmsWithGoogle ? null : <TextInput
             accessibilityLabel="Password"
             autoCapitalize="none"
             autoComplete="current-password"
@@ -717,9 +732,9 @@ export function PrivacySettings({ onFeedback }: PageProps) {
             testID="delete-account-password"
             textContentType="password"
             value={password}
-          />
+          />}
           {deleteError ? <Text accessibilityLiveRegion="polite" style={page.error} testID="delete-account-error">{deleteError}</Text> : null}
-          <PressableScale accessibilityRole="button" accessibilityState={{ disabled: !password || deleting }} disabled={!password || deleting} onPress={() => setConfirmingDelete(true)} style={[page.dangerButton, (!password || deleting) && page.disabled]} testID="delete-account-submit">
+          <PressableScale accessibilityRole="button" accessibilityState={{ disabled: !canSubmitDelete || deleting }} disabled={!canSubmitDelete || deleting} onPress={() => setConfirmingDelete(true)} style={[page.dangerButton, (!canSubmitDelete || deleting) && page.disabled]} testID="delete-account-submit">
             <Text style={page.dangerButtonText}>{deleting ? 'Deleting…' : 'Delete account'}</Text>
           </PressableScale>
         </View>
