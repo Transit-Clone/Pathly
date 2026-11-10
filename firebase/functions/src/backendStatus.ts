@@ -1,4 +1,5 @@
 import { AGENCY_CONFIGS, type AgencyId } from './gtfsAgencies';
+import { logUpstreamRequest } from './upstreamUsage';
 import { readLastRefreshOutcome, readSnapshotSummary, type GtfsRefreshOutcome, type GtfsSnapshotSummary } from './gtfsSnapshots';
 
 const LIVE_CHECK_TIMEOUT_MS = 3_000;
@@ -45,8 +46,10 @@ async function checkLiveFeed(agencyId: AgencyId, deps: BackendStatusDeps): Promi
   try {
     const response = await deps.fetch(feed.url, { headers: feed.headers, signal: AbortSignal.timeout(deps.timeoutMs ?? LIVE_CHECK_TIMEOUT_MS) });
     await response.body?.cancel();
+    logUpstreamRequest(feed.url, 'health_check', started, response);
     return { configured: true, ok: response.ok, ms: Date.now() - started, status: response.status };
-  } catch {
+  } catch (error) {
+    logUpstreamRequest(feed.url, 'health_check', started, undefined, error);
     return { configured: true, ok: false, ms: Date.now() - started };
   }
 }
