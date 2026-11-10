@@ -63,18 +63,38 @@ async function lastKnownPosition(): Promise<Location.LocationObject | null> {
 }
 
 /**
- * Only checks, never prompts. On Android the permission prompt sends the app to the background and
- * closing it brings the app back, so asking from a return-to-foreground handler re-prompts forever;
- * with permission denied the prompt closes at once and Android kills the app for the rapid launches.
+ * The permission prompt shows at most once per app session on its own. A grant the OS or browser
+ * didn't keep ("Allow once", "Only this time", a browser that forgets) would otherwise re-prompt
+ * on every return to the foreground and every trip start/end. After that first ask this only
+ * checks; the rider can still ask again from a button (`refresh`) or Settings.
+ *
+ * On Android the prompt itself sends the app to the background and closing it brings the app
+ * back, so asking from the return-to-foreground handler re-prompted in a loop until Android
+ * killed the app (seen on a Galaxy phone).
  */
-async function checkPermission(): Promise<Location.PermissionStatus> {
-  if (Platform.OS === 'web') return requestPermission();
-  return (await Location.getForegroundPermissionsAsync()).status;
+let askedThisSession = false;
+
+/** Resets the once-per-session prompt (tests). */
+export function resetLocationPromptForTests() {
+  askedThisSession = false;
 }
 
-async function fetchCurrentFix(ask: boolean): Promise<NavigationFix | null> {
+async function permissionStatus(mayPrompt: boolean): Promise<Location.PermissionStatus> {
+  if (mayPrompt || !askedThisSession) {
+    askedThisSession = true;
+    return requestPermission();
+  }
   try {
-    const status = await (ask ? requestPermission() : checkPermission());
+    return (await Location.getForegroundPermissionsAsync()).status;
+  } catch {
+    // No way to check without prompting (older browsers): don't ask again unprompted.
+    return Location.PermissionStatus.UNDETERMINED;
+  }
+}
+
+async function fetchCurrentFix(mayPrompt: boolean): Promise<NavigationFix | null> {
+  try {
+    const status = await permissionStatus(mayPrompt);
     if (status !== 'granted') return null;
     const position = (await currentPositionWithin(CURRENT_FIX_TIMEOUT_MS).catch(() => null)) ?? (await lastKnownPosition());
     return position ? navigationFixFromPosition(position) : null;
@@ -153,13 +173,13 @@ export function useCurrentLocation(navigating = false) {
     return true;
   }, []);
 
-  /** `ask` is true only for a rider's tap (the GPS button); the foreground refresh must not prompt. */
-  const refreshRealFix = useCallback(async (ask = true) => {
+  // `mayPrompt`: the rider asked (a locate button), so showing the permission prompt is expected.
+  const refreshRealFix = useCallback(async (mayPrompt = true) => {
     const generation = refreshGenerationRef.current + 1;
     refreshGenerationRef.current = generation;
     const revisionAtStart = fixRevisionRef.current;
     if (revisionAtStart === 0) setStatus('loading');
-    const nextFix = await fetchCurrentFix(ask);
+    const nextFix = await fetchCurrentFix(mayPrompt);
     if (refreshGenerationRef.current !== generation) return;
     if (nextFix) {
       acceptRealFix(nextFix);
@@ -174,15 +194,15 @@ export function useCurrentLocation(navigating = false) {
     let cancelled = false;
 
     (async () => {
-      let permissionStatus: Location.PermissionStatus;
+      let status: Location.PermissionStatus;
       try {
-        permissionStatus = await requestPermission();
+        status = await permissionStatus(false);
       } catch {
         if (!cancelled) setStatus('unavailable');
         return;
       }
       if (cancelled) return;
-      if (permissionStatus !== 'granted') {
+      if (status !== 'granted') {
         setStatus('unavailable');
         return;
       }

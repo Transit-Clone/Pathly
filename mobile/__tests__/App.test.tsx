@@ -485,6 +485,7 @@ describe('Pathly prototype navigation', () => {
   const textOf = (element: { props: { children?: unknown } }) => [element.props.children].flat(Infinity).join('');
   const grantLocation = () => {
     (Location.requestForegroundPermissionsAsync as jest.Mock).mockResolvedValue({ status: 'granted' });
+    (Location.getForegroundPermissionsAsync as jest.Mock).mockResolvedValue({ status: 'granted', canAskAgain: true });
     (Location.getCurrentPositionAsync as jest.Mock).mockResolvedValue({ coords: { latitude: 40.9126, longitude: -73.1234 } });
   };
 
@@ -1317,6 +1318,7 @@ describe('Pathly prototype navigation', () => {
 
   it('starts new trip searches from the travel preferences', async () => {
     (Location.requestForegroundPermissionsAsync as jest.Mock).mockResolvedValue({ status: 'granted' });
+    (Location.getForegroundPermissionsAsync as jest.Mock).mockResolvedValue({ status: 'granted', canAskAgain: true });
     (Location.getCurrentPositionAsync as jest.Mock).mockResolvedValue({ coords: { latitude: 40.9126, longitude: -73.1234 } });
     const screen = await renderHome();
     fireEvent.press(screen.getByTestId('profile-trigger'));
@@ -1645,6 +1647,7 @@ describe('Pathly prototype navigation', () => {
     const { mockAnimateToRegion } = jest.requireMock('react-native-maps') as { mockAnimateToRegion: jest.Mock };
     let onPosition: ((position: { coords: { latitude: number; longitude: number } }) => void) | undefined;
     (Location.requestForegroundPermissionsAsync as jest.Mock).mockResolvedValue({ status: 'granted' });
+    (Location.getForegroundPermissionsAsync as jest.Mock).mockResolvedValue({ status: 'granted', canAskAgain: true });
     (Location.getCurrentPositionAsync as jest.Mock).mockResolvedValue({ coords: { latitude: 40.92, longitude: -73.13 } });
     (Location.watchPositionAsync as jest.Mock).mockImplementationOnce((_options, callback) => {
       onPosition = callback;

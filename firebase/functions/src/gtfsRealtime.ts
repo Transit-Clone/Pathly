@@ -1,4 +1,5 @@
 import { transit_realtime } from 'gtfs-realtime-bindings';
+import { logUpstreamRequest } from './upstreamUsage';
 
 // One real GTFS-RT fetch already contains every route on that feed — getRouteStatus calls this
 // once per *route* it's asked about, though, so polling N routes on the same agency in one
@@ -24,7 +25,15 @@ export function fetchFeedEntities(feedUrl: string, headers?: Record<string, stri
   if (cached && cached.expiresAt > Date.now()) return cached.promise;
 
   const promise = (async () => {
-    const response = await fetch(feedUrl, { headers, signal: AbortSignal.timeout(FEED_TIMEOUT_MS) });
+    const startedAt = Date.now();
+    let response: Response;
+    try {
+      response = await fetch(feedUrl, { headers, signal: AbortSignal.timeout(FEED_TIMEOUT_MS) });
+    } catch (error) {
+      logUpstreamRequest(feedUrl, 'feed', startedAt, undefined, error);
+      throw error;
+    }
+    logUpstreamRequest(feedUrl, 'feed', startedAt, response);
     // Without the query string: MTA Bus Time takes its API key there, and errors reach the logs.
     if (!response.ok) throw new Error(`GTFS-RT request to ${feedUrl.split('?')[0]} failed: ${response.status}`);
     const buffer = new Uint8Array(await response.arrayBuffer());

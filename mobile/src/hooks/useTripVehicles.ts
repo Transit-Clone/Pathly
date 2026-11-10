@@ -8,6 +8,7 @@ import { fetchRouteLiveData, type RouteLiveVehicle } from '../data/transitLive';
 import { badgeMode, type Itinerary, type LatLng, type TransitStep } from '../data/tripPlanning';
 import type { TripApproachLine, TripVehicle } from '../data/tripMap';
 import type { TransitMode } from '../components/RouteBadge';
+import { useAppActive } from './useAppActive';
 import { useNow } from './useNow';
 
 /** As often as Route View's live map asks; the feeds themselves update every few seconds. */
@@ -75,9 +76,11 @@ export function useTripVehicles(itinerary: Itinerary | null | undefined, fallbac
   const [byLine, setByLine] = useState<ReadonlyMap<string, readonly RouteLiveVehicle[]>>(new Map());
   const [reaches, setReaches] = useState<ReadonlyMap<string, LineReach>>(new Map());
   const now = useNow(POLL_MS);
+  const appActive = useAppActive();
 
   useEffect(() => {
-    if (lines.length === 0) return undefined;
+    // Paused in the background; coming back refreshes right away.
+    if (lines.length === 0 || !appActive) return undefined;
     let cancelled = false;
     const load = () => {
       void Promise.all(lines.map((line) => fetchRouteLiveData(line.source).then((data) => [line.key, data.vehicles] as const, () => null))).then((results) => {
@@ -105,7 +108,7 @@ export function useTripVehicles(itinerary: Itinerary | null | undefined, fallbac
       clearInterval(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the lines themselves, not the itinerary object
-  }, [linesKey]);
+  }, [linesKey, appActive]);
 
   const vehicles = useMemo(
     () => lines.flatMap((line) => {

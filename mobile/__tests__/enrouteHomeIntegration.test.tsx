@@ -140,6 +140,7 @@ function grantLocation() {
     timestamp: Date.now(),
   };
   (Location.requestForegroundPermissionsAsync as jest.Mock).mockResolvedValue({ status: 'granted' });
+  (Location.getForegroundPermissionsAsync as jest.Mock).mockResolvedValue({ status: 'granted', canAskAgain: true });
   (Location.getCurrentPositionAsync as jest.Mock).mockResolvedValue(position);
   (Location.watchPositionAsync as jest.Mock).mockResolvedValue({ remove: jest.fn() });
 }

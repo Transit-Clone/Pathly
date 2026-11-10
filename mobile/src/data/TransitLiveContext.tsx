@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 
+import { useAppActive } from '../hooks/useAppActive';
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { LIVE_CACHE_KEY, readCache, writeCache } from './deviceCache';
 import { fetchNearestRouteStop, type NearestRouteStop } from './nearestRouteStop';
@@ -118,6 +119,7 @@ export function TransitLiveProvider({
   }
 
   // The latest active routes and location, for the poll timer to read without restarting.
+  const appActive = useAppActive();
   const latest = useRef({ activeRoutes, location });
   useEffect(() => {
     latest.current = { activeRoutes, location };
@@ -223,13 +225,15 @@ export function TransitLiveProvider({
     }
   }, []);
 
-  // Every active route, now (the rider's location changed) and then on the poll interval.
+  // Every active route, now (the rider's location changed, or the app came back to the
+  // foreground) and then on the poll interval — paused while the app is in the background.
   useEffect(() => {
+    if (!appActive) return undefined;
     fetchRoutes(latest.current.activeRoutes, latest.current.location);
     const interval = setInterval(() => fetchRoutes(latest.current.activeRoutes, latest.current.location), POLL_INTERVAL_MS);
     return () => clearInterval(interval);
     // Keyed on the coordinate primitives, not the `location` object (new every GPS update).
-  }, [location.latitude, location.longitude, fetchRoutes]);
+  }, [appActive, location.latitude, location.longitude, fetchRoutes]);
 
   useEffect(() => {
     const listener = () => fetchRoutes(latest.current.activeRoutes, latest.current.location);
