@@ -13,6 +13,7 @@ jest.mock('../src/debug/DebugContext', () => ({
 }));
 
 const permission = Location.requestForegroundPermissionsAsync as jest.Mock;
+const checkPermission = Location.getForegroundPermissionsAsync as jest.Mock;
 const currentPosition = Location.getCurrentPositionAsync as jest.Mock;
 const watchPosition = Location.watchPositionAsync as jest.Mock;
 
@@ -25,6 +26,7 @@ describe('useCurrentLocation', () => {
     jest.clearAllMocks();
     mockDebugLocation = undefined;
     permission.mockResolvedValue({ status: 'denied' });
+    checkPermission.mockResolvedValue({ status: 'denied', canAskAgain: false });
     currentPosition.mockReset();
     watchPosition.mockReset().mockResolvedValue({ remove: jest.fn() });
   });
@@ -57,6 +59,7 @@ describe('useCurrentLocation', () => {
   it('propagates accuracy and capture time from one-shot and watched GPS fixes', async () => {
     let onPosition: ((next: Location.LocationObject) => void) | undefined;
     permission.mockResolvedValue({ status: 'granted' });
+    checkPermission.mockResolvedValue({ status: 'granted', canAskAgain: true });
     currentPosition.mockResolvedValue(position(40.9, -73.1, 8, 1_000));
     watchPosition.mockImplementation(async (_options, callback) => {
       onPosition = callback;
@@ -115,6 +118,7 @@ describe('useCurrentLocation', () => {
   it('removes the real-location subscription when the consumer unmounts', async () => {
     const remove = jest.fn();
     permission.mockResolvedValue({ status: 'granted' });
+    checkPermission.mockResolvedValue({ status: 'granted', canAskAgain: true });
     currentPosition.mockResolvedValue(position(40.9, -73.1, 5, 1_000));
     watchPosition.mockResolvedValue({ remove });
 
@@ -127,6 +131,7 @@ describe('useCurrentLocation', () => {
 
   it('keeps a usable one-shot fix when the continuous watcher rejects', async () => {
     permission.mockResolvedValue({ status: 'granted' });
+    checkPermission.mockResolvedValue({ status: 'granted', canAskAgain: true });
     currentPosition.mockResolvedValue(position(40.9, -73.1, 5, 1_000));
     watchPosition.mockRejectedValueOnce(new Error('watch unavailable'));
 
@@ -145,6 +150,7 @@ describe('useCurrentLocation', () => {
       return { remove: removeAppStateListener };
     });
     permission.mockResolvedValue({ status: 'granted' });
+    checkPermission.mockResolvedValue({ status: 'granted', canAskAgain: true });
     currentPosition
       .mockResolvedValueOnce(position(40.9, -73.1, 7, 1_000))
       .mockResolvedValueOnce(position(40.92, -73.08, 4, 3_000));
@@ -160,7 +166,9 @@ describe('useCurrentLocation', () => {
       accuracyMeters: 4,
       capturedAt: 3_000,
     }));
-    expect(permission).toHaveBeenCalledTimes(2);
+    // Returning only checks the permission; the prompt showed once, on first launch.
+    expect(permission).toHaveBeenCalledTimes(1);
+    expect(checkPermission).toHaveBeenCalledTimes(1);
 
     unmount();
     expect(removeAppStateListener).toHaveBeenCalledTimes(1);
@@ -175,6 +183,7 @@ describe('useCurrentLocation', () => {
       return { remove: jest.fn() };
     });
     permission.mockResolvedValue({ status: 'granted' });
+    checkPermission.mockResolvedValue({ status: 'granted', canAskAgain: true });
     currentPosition
       .mockResolvedValueOnce(position(40.9, -73.1, 7, 1_000))
       .mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectRefresh = reject; }));
@@ -201,6 +210,7 @@ describe('useCurrentLocation', () => {
     jest.useFakeTimers();
     jest.setSystemTime(10_000);
     permission.mockResolvedValue({ status: 'granted' });
+    checkPermission.mockResolvedValue({ status: 'granted', canAskAgain: true });
     currentPosition.mockResolvedValue(position(40.9, -73.1, 5, 10_000));
 
     const { result, unmount } = renderHook(() => useCurrentLocation());

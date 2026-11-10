@@ -9,4 +9,7 @@ beforeEach(async () => {
   // Each test starts as a fresh app session, so it sends its own warm-up when its rider signs in.
   require('./src/data/backendWarmup').resetBackendWarmupForTests();
   require('./src/data/tripPlanning').resetTripPlanCacheForTests();
+  // A fresh session may show the location prompt again.
+  require('./src/hooks/useCurrentLocation').resetLocationPromptForTests();
+  require('expo-location').getForegroundPermissionsAsync.mockResolvedValue({ status: 'denied', canAskAgain: false });
 });

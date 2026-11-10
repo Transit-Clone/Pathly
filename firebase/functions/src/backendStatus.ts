@@ -22,10 +22,32 @@ export type BackendStatusDeps = {
   timeoutMs?: number;
 };
 
+/** A probe's answer is reused this long, so refreshing the status page doesn't spend rate-limited quota each time. */
+const PROBE_CACHE_TTL_MS = 60_000;
+const probeCache = new Map<string, { expiresAt: number; status: number }>();
+
+/** Real fetch, with each URL's answer (just its status) remembered briefly. Network errors aren't cached. */
+const cachedProbeFetch: typeof fetch = async (input, init) => {
+  const url = String(input);
+  const hit = probeCache.get(url);
+  if (hit && hit.expiresAt > Date.now()) return new Response(null, { status: hit.status });
+  const startedAt = Date.now();
+  let response: Response;
+  try {
+    response = await fetch(input, init);
+  } catch (error) {
+    logUpstreamRequest(url, 'health_check', startedAt, undefined, error);
+    throw error;
+  }
+  logUpstreamRequest(url, 'health_check', startedAt, response);
+  probeCache.set(url, { expiresAt: Date.now() + PROBE_CACHE_TTL_MS, status: response.status });
+  return response;
+};
+
 const defaultDeps = (): BackendStatusDeps => ({
   readSnapshot: readSnapshotSummary,
   readLastRefresh: readLastRefreshOutcome,
-  fetch: (...args) => fetch(...args),
+  fetch: cachedProbeFetch,
   nowMs: Date.now(),
 });
 
@@ -46,10 +68,8 @@ async function checkLiveFeed(agencyId: AgencyId, deps: BackendStatusDeps): Promi
   try {
     const response = await deps.fetch(feed.url, { headers: feed.headers, signal: AbortSignal.timeout(deps.timeoutMs ?? LIVE_CHECK_TIMEOUT_MS) });
     await response.body?.cancel();
-    logUpstreamRequest(feed.url, 'health_check', started, response);
     return { configured: true, ok: response.ok, ms: Date.now() - started, status: response.status };
-  } catch (error) {
-    logUpstreamRequest(feed.url, 'health_check', started, undefined, error);
+  } catch {
     return { configured: true, ok: false, ms: Date.now() - started };
   }
 }

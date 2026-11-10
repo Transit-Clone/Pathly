@@ -37,7 +37,9 @@ export type LineAlert = RouteAlert & { periods: readonly Period[]; stopIds: read
 /** Planned work starting within this many days is listed as upcoming. */
 const UPCOMING_DAYS = 7;
 /** Alerts change slowly; this keeps rate-limited providers (Swiftly) from paying per poll. */
-const ALERTS_CACHE_TTL_MS = 120_000;
+const ALERTS_CACHE_TTL_MS = 300_000;
+/** A failed load is kept briefly too, so every route asking in the meantime doesn't retry upstream. */
+const ALERTS_FAILURE_CACHE_TTL_MS = 60_000;
 
 type Period = { start: number; end: number };
 type ParsedAlert = { id: string; header: string; description: string | null; periods: Period[]; routes: { agencyId: string | null; routeId: string | null; stopId: string | null }[]; mtaType: string | null; effect: number | null };
@@ -142,14 +144,24 @@ function cached(key: string, load: () => Promise<ParsedAlert[]>): Promise<Parsed
   const hit = alertsCache.get(key);
   if (hit && hit.expiresAt > Date.now()) return hit.promise;
   const promise = load();
-  alertsCache.set(key, { expiresAt: Date.now() + ALERTS_CACHE_TTL_MS, promise });
-  void promise.catch(() => alertsCache.delete(key));
+  const entry = { expiresAt: Date.now() + ALERTS_CACHE_TTL_MS, promise };
+  alertsCache.set(key, entry);
+  void promise.catch(() => {
+    if (alertsCache.get(key) === entry) entry.expiresAt = Date.now() + ALERTS_FAILURE_CACHE_TTL_MS;
+  });
   return promise;
 }
+
+/**
+ * Which of an agency's alert URLs answered last (Swiftly has two candidate paths). Tried first next
+ * time, so a path that never works doesn't cost a wasted upstream request on every reload.
+ */
+const workingAlertUrl = new Map<AgencyId, string>();
 
 /** Clears cached feeds (tests). */
 export function resetAlertsCacheForTests() {
   alertsCache.clear();
+  workingAlertUrl.clear();
 }
 
 function loadMtaAlerts(): Promise<ParsedAlert[]> {
@@ -175,12 +187,15 @@ function loadMtaAlerts(): Promise<ParsedAlert[]> {
 }
 
 function loadAgencyAlerts(agencyId: AgencyId): Promise<ParsedAlert[]> {
-  const requests = agencyConfig(agencyId).alertFeedRequests?.() ?? [];
+  const known = workingAlertUrl.get(agencyId);
+  const requests = (agencyConfig(agencyId).alertFeedRequests?.() ?? [])
+    .sort((a, b) => Number(b.url === known) - Number(a.url === known));
   return cached(`agency:${agencyId}`, async () => {
     let lastError: unknown = null;
     for (const request of requests) {
       try {
         const entities = await fetchFeedEntities(request.url, request.headers);
+        workingAlertUrl.set(agencyId, request.url);
         return entities.flatMap((entity): ParsedAlert[] => {
           const alert = entity.alert;
           const header = englishText(alert?.headerText);

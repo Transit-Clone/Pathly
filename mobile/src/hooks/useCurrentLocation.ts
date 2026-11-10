@@ -35,9 +35,35 @@ async function requestPermission(): Promise<Location.PermissionStatus> {
   }
 }
 
-async function fetchCurrentFix(): Promise<NavigationFix | null> {
+/**
+ * The permission prompt shows at most once per app session on its own. A grant the OS or browser
+ * didn't keep ("Allow once", "Only this time", a browser that forgets) would otherwise re-prompt
+ * on every return to the foreground and every trip start/end. After that first ask this only
+ * checks; the rider can still ask again from a button (`refresh`) or Settings.
+ */
+let askedThisSession = false;
+
+/** Resets the once-per-session prompt (tests). */
+export function resetLocationPromptForTests() {
+  askedThisSession = false;
+}
+
+async function permissionStatus(mayPrompt: boolean): Promise<Location.PermissionStatus> {
+  if (mayPrompt || !askedThisSession) {
+    askedThisSession = true;
+    return requestPermission();
+  }
   try {
-    const status = await requestPermission();
+    return (await Location.getForegroundPermissionsAsync()).status;
+  } catch {
+    // No way to check without prompting (older browsers): don't ask again unprompted.
+    return Location.PermissionStatus.UNDETERMINED;
+  }
+}
+
+async function fetchCurrentFix(mayPrompt: boolean): Promise<NavigationFix | null> {
+  try {
+    const status = await permissionStatus(mayPrompt);
     if (status !== 'granted') return null;
     return navigationFixFromPosition(await Location.getCurrentPositionAsync({}));
   } catch {
@@ -112,12 +138,13 @@ export function useCurrentLocation(navigating = false) {
     return true;
   }, []);
 
-  const refreshRealFix = useCallback(async () => {
+  // `mayPrompt`: the rider asked (a locate button), so showing the permission prompt is expected.
+  const refreshRealFix = useCallback(async (mayPrompt = true) => {
     const generation = refreshGenerationRef.current + 1;
     refreshGenerationRef.current = generation;
     const revisionAtStart = fixRevisionRef.current;
     if (revisionAtStart === 0) setStatus('loading');
-    const nextFix = await fetchCurrentFix();
+    const nextFix = await fetchCurrentFix(mayPrompt);
     if (refreshGenerationRef.current !== generation) return;
     if (nextFix) {
       acceptRealFix(nextFix);
@@ -132,15 +159,15 @@ export function useCurrentLocation(navigating = false) {
     let cancelled = false;
 
     (async () => {
-      let permissionStatus: Location.PermissionStatus;
+      let status: Location.PermissionStatus;
       try {
-        permissionStatus = await requestPermission();
+        status = await permissionStatus(false);
       } catch {
         if (!cancelled) setStatus('unavailable');
         return;
       }
       if (cancelled) return;
-      if (permissionStatus !== 'granted') {
+      if (status !== 'granted') {
         setStatus('unavailable');
         return;
       }
@@ -183,7 +210,7 @@ export function useCurrentLocation(navigating = false) {
     const listener = AppState.addEventListener('change', (nextState) => {
       const returnedToForeground = nextState === 'active' && previousState !== 'active';
       previousState = nextState;
-      if (returnedToForeground) void refreshRealFix();
+      if (returnedToForeground) void refreshRealFix(false);
     });
     return () => listener.remove();
   }, [mocked, refreshRealFix]);
