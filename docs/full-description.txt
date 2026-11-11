@@ -1,0 +1,35 @@
+Pathly gets you around New York City and Long Island by subway, bus, ferry, or train within a few taps. No more switching between multiple apps - we've got all of your public transportation needs covered!
+
+With an intuitive and simple design, Pathly becomes easy to use for both new and experienced riders. Know where you're going? Just open the app to see live transit times. Need some help? Search for your destination, compare your options, and start your trip in just a few taps. Public transit doesn't need to be hard - we know you've got somewhere to be!
+
+ONE APP FOR EVERY RIDE
+• MTA Subway
+• MTA Buses
+• NYC Ferry
+• LIRR
+• NICE Bus
+• Suffolk County Transit
+
+EXPLORE NEARBY
+• See live and scheduled transit times nearby
+• View transit routes on the map at a glance
+• Check your stops to see what's coming next
+
+PLAN YOUR TRIP
+• Search any address or place and see routes side by side
+• See departure times, transfers, walking time and fares
+• Choose which modes to use: subway, bus, rail or ferry
+• Prefer fewer transfers, less walking, or cheapest fare
+
+GET THERE WITH CONFIDENCE
+• Step-by-step directions that follow you as you ride
+• Live arrival times where agencies provide them
+• Know when to get off, where to transfer, and when you've arrived
+• Service alerts and disruption notices for your routes
+• Trip reminders so you don't miss your ride
+
+ACCESSIBLE BY DESIGN
+• Step-free routes for wheelchairs, strollers and luggage
+• Dark mode, larger text, high contrast and reduced motion
+
+Pathly is an independent app and is not affiliated with or endorsed by the MTA, NICE, Suffolk County Transit, NYC Ferry, or any other transit agency. Schedules and arrival times come from public agency data and may change without notice.

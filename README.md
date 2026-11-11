@@ -13,10 +13,10 @@ Project documents are in `docs/`:
 - `TestPlan.ipynb`: the testing plan
 
 <p align="center">
-   <img src="mobile/assets/home-screen.png" width="24%">
-   <img src="mobile/assets/route-view.png" width="24%">
-   <img src="mobile/assets/route-results.png" width="24%">
-   <img src="mobile/assets/trip-details.png" width="24%">
+   <img src="mobile/assets/home-screen.jpg" width="24%">
+   <img src="mobile/assets/route-view.jpg" width="24%">
+   <img src="mobile/assets/route-results.jpg" width="24%">
+   <img src="mobile/assets/trip-details.jpg" width="24%">
 </p>
 
 ## Requirements
