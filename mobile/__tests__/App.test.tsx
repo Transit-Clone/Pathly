@@ -1118,6 +1118,32 @@ describe('Pathly prototype navigation', () => {
     expect(screen.queryByLabelText('Show the whole trip')).toBeNull();
   });
 
+  it('keeps the results map where the rider moved it until the trip itself changes', async () => {
+    const hidden = { includeHiddenElements: true };
+    const panned = { latitude: 40.8, longitude: -73.3, latitudeDelta: 0.02, longitudeDelta: 0.02 };
+    const screen = await openResults();
+    const map = screen.getByTestId('results-map', hidden);
+    fireEvent(map, 'panDrag');
+    fireEvent(map, 'regionChangeComplete', panned, { isGesture: true });
+
+    // Opening the search and backing out reopens the map there instead of reframing the trip.
+    fireEvent.press(screen.getByTestId('destination-field'));
+    fireEvent.press(screen.getByTestId('search-back'));
+    await screen.findByTestId('route-results-view');
+    expect(screen.getByTestId('results-map', hidden).props.initialRegion).toEqual(panned);
+
+    // So does coming back from an opened trip.
+    fireEvent.press(await screen.findByTestId(`search-result-view-${LIRR_TRIP.id}`));
+    fireEvent.press(screen.getByTestId('search-trip-back'));
+    expect(screen.getByTestId('results-map', hidden).props.initialRegion).toEqual(panned);
+
+    // A new address frames the new trip.
+    fireEvent.press(screen.getByTestId('destination-field'));
+    await pickPlace(screen, 'times', 'times-square');
+    await screen.findByTestId('route-results-view');
+    expect(screen.getByTestId('results-map', hidden).props.initialRegion).toBeUndefined();
+  });
+
   it('lets the uncovered trip maps take gestures while the page and controls keep working', async () => {
     const hidden = { includeHiddenElements: true };
     const screen = await openResults();

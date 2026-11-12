@@ -909,7 +909,7 @@ export function HomeScreen() {
     const pick = (place: SearchPlace) => {
       if (search.editing) {
         const { field, results } = search.editing;
-        setActiveView({ ...results, criteria: { ...results.criteria, [field]: place.title, [field === 'origin' ? 'originPlace' : 'destinationPlace']: place } });
+        setActiveView({ ...results, mapCamera: null, criteria: { ...results.criteria, [field]: place.title, [field === 'origin' ? 'originPlace' : 'destinationPlace']: place } });
       } else {
         showRouteResults(place);
       }

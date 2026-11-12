@@ -80,8 +80,11 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
     onFollowModeChange?.(next);
   }, [followUser, onFollowModeChange]);
   // Stops passed in between are drawn only once they're zoomed apart (stopDeclutter.ts).
-  const [zoom, setZoom] = useState(0);
   const [mapWidth, setMapWidth] = useState(0);
+  // Before the map's own layout arrives, the window's width stands in.
+  const { width: windowWidth } = useWindowDimensions();
+  // A map reopened on a held camera knows its zoom at once; a framed one learns it once it rests.
+  const [zoom, setZoom] = useState(() => (initialRegion ? zoomForRegion(initialRegion.longitudeDelta, windowWidth) : 0));
   const revealZooms = useMemo(() => viaRevealZooms(stops), [stops]);
   const viaShown = (stop: TripMapStop) => zoom >= (revealZooms.get(stop.leg ?? -1) ?? 0);
   // Which legs' stops in between are drawn, so newly shown markers can be tracked once.
@@ -99,8 +102,6 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
     const timer = setTimeout(() => setTracksVia(false), 500);
     return () => clearTimeout(timer);
   }, [tracksVia]);
-  // Before the map's own layout arrives, the window's width stands in.
-  const { width: windowWidth } = useWindowDimensions();
   const onRegionChangeComplete = (region: Region, details?: { isGesture?: boolean }) => {
     setZoom(zoomForRegion(region.longitudeDelta, mapWidth || windowWidth));
     if (interactive && details?.isGesture) {

@@ -94,7 +94,7 @@ type RouteResultsViewProps = {
    * the map, if they moved it, so cancelling the search can reopen it there.
    */
   onEditEndpoint: (field: 'origin' | 'destination', mapCamera: TripMapCamera | null) => void;
-  /** Where the map opens and stays instead of framing the trip, until HomeScreen clears it. */
+  /** Where the map opens and stays instead of framing the trip, until the trip's criteria or time change. */
   mapCamera?: TripMapCamera | null;
   onOpenTrip: (itinerary: Itinerary, resumeRequest: ResumePlanRequest) => void;
   onStartTrip: (itinerary: Itinerary) => void;
@@ -181,8 +181,15 @@ export function RouteResultsView({
   const [centerRequest, setCenterRequest] = useState(0);
   const [centered, setCentered] = useState(false);
   const userLocation = riderLocation ? { lat: riderLocation.latitude, lng: riderLocation.longitude } : null;
-  // Where the rider last left the map (only once they've moved it), handed to the endpoint search.
-  const lastMapCamera = useRef<TripMapCamera | null>(mapCamera);
+  // The map is rebuilt when the rider comes back from an opened trip (or from the endpoint
+  // search): it reopens where they left it. Any change to the trip releases that and reframes.
+  const tripKey = JSON.stringify([criteria, tripTime]);
+  const [held, setHeld] = useState<{ camera: TripMapCamera | null; tripKey: string }>({ camera: mapCamera, tripKey });
+  if (held.camera && held.tripKey !== tripKey) setHeld({ camera: null, tripKey });
+  const heldCamera = held.tripKey === tripKey ? held.camera : null;
+  // Where the rider last left the map (only once they've moved it), for this trip only.
+  const lastMapCamera = useRef<{ camera: TripMapCamera | null; tripKey: string }>({ camera: mapCamera, tripKey });
+  const currentMapCamera = () => (lastMapCamera.current.tripKey === tripKey ? lastMapCamera.current.camera : null);
 
   // The map rests at the home screen's height, but always leaves room for the trip card's buttons.
   const insets = useSafeAreaInsets();
@@ -299,7 +306,7 @@ export function RouteResultsView({
               accessibilityHint="Opens search to change the start"
               accessibilityLabel={`Trip origin, ${origin}`}
               accessibilityRole="button"
-              onPress={() => onEditEndpoint('origin', lastMapCamera.current)}
+              onPress={() => onEditEndpoint('origin', currentMapCamera())}
               style={styles.endpointField}
               testID="origin-field"
             >
@@ -313,7 +320,7 @@ export function RouteResultsView({
               accessibilityHint="Opens search to change the destination"
               accessibilityLabel={`Trip destination, ${destination}`}
               accessibilityRole="button"
-              onPress={() => onEditEndpoint('destination', lastMapCamera.current)}
+              onPress={() => onEditEndpoint('destination', currentMapCamera())}
               style={styles.endpointField}
               testID="destination-field"
             >
@@ -339,12 +346,12 @@ export function RouteResultsView({
       <TripMap
         centerOnUserRequest={centerRequest}
         destination={placePoint(criteria.destinationPlace)}
-        holdCamera={mapCamera}
+        holdCamera={heldCamera}
         // Pannable and zoomable above the results sheet, which scrolls over it.
         interactive={true}
         itinerary={visibleItineraries[0] ?? null}
         onUserCameraChange={(camera) => {
-          lastMapCamera.current = camera;
+          lastMapCamera.current = { camera, tripKey };
         }}
         onUserPan={() => setCentered(false)}
         origin={originPoint}
@@ -433,7 +440,7 @@ export function RouteResultsView({
               {problem.action ? (
                 <PressableScale
                   accessibilityRole="button"
-                  onPress={() => (plan.problem === 'unavailable' ? refresh() : onEditEndpoint(plan.field ?? 'origin', lastMapCamera.current))}
+                  onPress={() => (plan.problem === 'unavailable' ? refresh() : onEditEndpoint(plan.field ?? 'origin', currentMapCamera()))}
                   style={styles.resetButton}
                   testID="results-problem-action"
                 >
@@ -488,7 +495,10 @@ export function RouteResultsView({
                   accessibilityLabel={`View trip details to ${destination}, ${duration.accessibility}, ${fare}, ${timing}`}
                   accessibilityRole="button"
                   onPress={() => {
-                    if (resumeRequest) onOpenTrip(itinerary, resumeRequest);
+                    if (!resumeRequest) return;
+                    // Back from the trip, the rebuilt map reopens where the rider left it.
+                    setHeld({ camera: currentMapCamera(), tripKey });
+                    onOpenTrip(itinerary, resumeRequest);
                   }}
                   style={styles.itineraryPressable}
                   testID={`search-result-view-${itinerary.id}`}
