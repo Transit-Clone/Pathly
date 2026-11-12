@@ -4,7 +4,7 @@ import { AppState, type AppStateStatus } from 'react-native';
 
 import { SERVICE_AREA_FALLBACK } from '../src/data/serviceArea';
 import { NAVIGATION_THRESHOLDS } from '../src/data/enrouteNavigation';
-import { useCurrentLocation } from '../src/hooks/useCurrentLocation';
+import { prewarmLocation, resetLocationPromptForTests, useCurrentLocation } from '../src/hooks/useCurrentLocation';
 
 let mockDebugLocation: { label: string; latitude: number; longitude: number; capturedAt: number } | undefined;
 
@@ -86,6 +86,60 @@ describe('useCurrentLocation', () => {
     expect(result.current.location).toEqual({ latitude: 40.8, longitude: -73.2 });
     unmount();
     jest.useRealTimers();
+  });
+
+  it("stops showing 'loading' when the permission request never answers, and still locates on a late grant", async () => {
+    jest.useFakeTimers();
+    resetLocationPromptForTests();
+    let grant: ((value: { status: string }) => void) | undefined;
+    permission.mockReturnValue(new Promise((resolve) => { grant = resolve; }));
+    currentPosition.mockResolvedValue(position(40.9, -73.1, 6, 1_000));
+
+    const { result, unmount } = renderHook(() => useCurrentLocation());
+    expect(result.current.status).toBe('loading');
+    await waitFor(() => expect(permission).toHaveBeenCalled());
+    await act(async () => { jest.advanceTimersByTime(6_000); });
+    expect(result.current.status).toBe('unavailable');
+
+    await act(async () => { grant!({ status: 'granted' }); });
+    await waitFor(() => expect(result.current.status).toBe('located'));
+    expect(result.current.location).toEqual({ latitude: 40.9, longitude: -73.1 });
+    unmount();
+    jest.useRealTimers();
+  });
+
+  it('shows a quick Wi-Fi/cell fix before GPS, then lets GPS replace it', async () => {
+    resetLocationPromptForTests();
+    permission.mockResolvedValue({ status: 'granted' });
+    let gpsFix: ((value: Location.LocationObject) => void) | undefined;
+    currentPosition.mockImplementation(({ accuracy }: { accuracy: number }) => (accuracy === Location.Accuracy.High
+      ? new Promise((resolve) => { gpsFix = resolve; })
+      : Promise.resolve(position(40.8, -73.2, 80, 900))));
+
+    const { result, unmount } = renderHook(() => useCurrentLocation());
+    await waitFor(() => expect(result.current.status).toBe('located'));
+    expect(result.current.location).toEqual({ latitude: 40.8, longitude: -73.2 });
+    expect(result.current.provisional).toBe(true);
+
+    await act(async () => { gpsFix!(position(40.9, -73.1, 5, 1_000)); });
+    expect(result.current.location).toEqual({ latitude: 40.9, longitude: -73.1 });
+    expect(result.current.provisional).toBe(false);
+    unmount();
+  });
+
+  it('starts locating at launch when access is already granted, without asking', async () => {
+    resetLocationPromptForTests();
+    checkPermission.mockResolvedValue({ status: 'granted', canAskAgain: true });
+    currentPosition.mockResolvedValue(position(40.9, -73.1, 5, 1_000));
+
+    prewarmLocation();
+    await waitFor(() => expect(currentPosition).toHaveBeenCalledWith({ accuracy: Location.Accuracy.High }));
+    const { result, unmount } = renderHook(() => useCurrentLocation());
+    await waitFor(() => expect(result.current.status).toBe('located'));
+    expect(permission).not.toHaveBeenCalled();
+    // The fixes started at launch are used, not asked for again.
+    expect(currentPosition.mock.calls.filter(([options]) => options.accuracy === Location.Accuracy.High)).toHaveLength(1);
+    unmount();
   });
 
   it('propagates accuracy and capture time from one-shot and watched GPS fixes', async () => {
@@ -183,9 +237,9 @@ describe('useCurrentLocation', () => {
     });
     permission.mockResolvedValue({ status: 'granted' });
     checkPermission.mockResolvedValue({ status: 'granted', canAskAgain: true });
-    currentPosition
-      .mockResolvedValueOnce(position(40.9, -73.1, 7, 1_000))
-      .mockResolvedValueOnce(position(40.92, -73.08, 4, 3_000));
+    // GPS answers in turn; the quick Wi-Fi/cell fix has nothing.
+    const gpsFixes = [position(40.9, -73.1, 7, 1_000), position(40.92, -73.08, 4, 3_000)];
+    currentPosition.mockImplementation(async ({ accuracy }: { accuracy: number }) => (accuracy === Location.Accuracy.High ? gpsFixes.shift() : null));
 
     const { result, unmount } = renderHook(() => useCurrentLocation());
     await waitFor(() => expect(result.current.navigationFix?.capturedAt).toBe(1_000));

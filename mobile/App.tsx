@@ -6,6 +6,7 @@ import { Nunito_900Black } from '@expo-google-fonts/nunito/900Black';
 import { useFonts } from '@expo-google-fonts/nunito/useFonts';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider, useAuth } from './src/auth/AuthContext';
@@ -15,6 +16,7 @@ import { HomeScreen } from './src/components/HomeScreen';
 import { LoadingScreen } from './src/components/LoadingScreen';
 import { VerifyEmailScreen } from './src/components/VerifyEmailScreen';
 import { UserPreferencesProvider } from './src/data/userPreferences';
+import { prewarmLocation } from './src/hooks/useCurrentLocation';
 import { DebugProvider } from './src/debug/DebugContext';
 import { AppSettingsProvider } from './src/theme/AppSettings';
 
@@ -26,6 +28,8 @@ function AppContent() {
 }
 
 export default function App() {
+  // Locating starts while fonts load and the session is restored, if access is already granted.
+  useEffect(prewarmLocation, []);
   const [fontsLoaded] = useFonts({
     Nunito_400Regular,
     Nunito_600SemiBold,

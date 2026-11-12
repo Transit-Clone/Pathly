@@ -244,7 +244,7 @@ export function HomeScreen() {
   ), [requestedView, trip.status]);
   const [savedLocations, setSavedLocations] = useState<readonly SavedLocation[]>([]);
   const { height } = useViewportSize();
-  const { location, mocked: locationMocked, navigationFix, navigationStale, refresh: refreshLocation, status: locationStatus } = useCurrentLocation(trip.active != null);
+  const { location, mocked: locationMocked, navigationFix, navigationStale, provisional: locationProvisional, refresh: refreshLocation, status: locationStatus } = useCurrentLocation(trip.active != null);
   // Shares the ride the trip's on, wherever in the app the rider is, Route View included.
   const tripStep = trip.active && (trip.active.cursor.phase === 'waiting-to-board' || trip.active.cursor.phase === 'riding')
     ? trip.active.itinerary.steps[trip.active.cursor.stepIndex]
@@ -291,9 +291,17 @@ export function HomeScreen() {
     };
   }, [locationStatus]);
   const showLocationNotice = locationStatus === 'loading' || (locationStatus === 'unavailable' && !unavailableNoticeDone);
+  // The first fix is often a quick one (cached, or Wi-Fi/cell). When GPS confirms it, the map
+  // centers once more, unless the rider has moved it meanwhile.
+  const [centeredOnQuickFix, setCenteredOnQuickFix] = useState(false);
+  const [riderMovedMap, setRiderMovedMap] = useState(false);
   if (!hasCenteredOnFix && locationStatus === 'located') {
     setHasCenteredOnFix(true);
+    setCenteredOnQuickFix(locationProvisional);
     setRecenterRequest((count) => count + 1);
+  } else if (centeredOnQuickFix && locationStatus === 'located' && !locationProvisional) {
+    setCenteredOnQuickFix(false);
+    if (!riderMovedMap) setRecenterRequest((count) => count + 1);
   }
 
   // Every real nearby route, across every configured agency — not a fixed handful of
@@ -1129,7 +1137,10 @@ export function HomeScreen() {
           onLongPress={isAdmin ? setPendingMockPoint : undefined}
           onPress={overlays.tapCoords ? setTappedPoint : undefined}
           onUserMoveEnd={setSearchCenter}
-          onUserPan={() => setIsLocationCentered(false)}
+          onUserPan={() => {
+            setIsLocationCentered(false);
+            setRiderMovedMap(true);
+          }}
           onOrientationChange={setMapOrientation}
           onSavedLocationPress={openSavedLocationFromMap}
           padding={{ top: homeHeaderInset, bottom: 0 }}

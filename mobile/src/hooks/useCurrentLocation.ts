@@ -38,28 +38,94 @@ async function requestPermission(): Promise<Location.PermissionStatus> {
 /** How long a one-shot fix may take. Indoors, Android can wait for GPS indefinitely, and nothing
  * else (the GPS button, the first fix) may hang on it. */
 const CURRENT_FIX_TIMEOUT_MS = 12_000;
+/** How long the quick (Wi-Fi/cell) fix may take; it usually lands well under a second. */
+const QUICK_FIX_TIMEOUT_MS = 5_000;
+/** The cached position is read from memory; a platform call that hangs mustn't hold anything up. */
+const LAST_KNOWN_TIMEOUT_MS = 2_000;
+/**
+ * After this long without an answer to the permission request (no prompt ever shown, a browser
+ * that blocks it quietly, an Android request that's dropped), stop showing "Finding your
+ * location". The answer is still awaited: a late grant goes on to locate the rider.
+ */
+const PERMISSION_ANSWER_MS = 6_000;
 /** The phone's cached position is good enough to show the rider where they are while a fresh fix comes. */
 const LAST_KNOWN_MAX_AGE_MS = 10 * 60_000;
 
-/** A fresh fix, or null once {@link CURRENT_FIX_TIMEOUT_MS} passes without one. */
-function currentPositionWithin(timeoutMs: number): Promise<Location.LocationObject | null> {
+/** `promise`'s value, or null once `timeoutMs` passes without one. */
+function within<T>(promise: () => Promise<T>, timeoutMs: number): Promise<T | null> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => resolve(null), timeoutMs);
-    Promise.resolve().then(() => Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High })).then(
-      (position) => { clearTimeout(timer); resolve(position ?? null); },
+    Promise.resolve().then(promise).then(
+      (value) => { clearTimeout(timer); resolve(value ?? null); },
       (error: unknown) => { clearTimeout(timer); reject(error); },
     );
   });
+}
+
+/** A fresh fix at `accuracy`, or null once `timeoutMs` passes without one. */
+function currentPositionWithin(timeoutMs: number, accuracy = Location.Accuracy.High): Promise<Location.LocationObject | null> {
+  return within(() => Location.getCurrentPositionAsync({ accuracy }), timeoutMs);
 }
 
 /** The phone's cached position (no GPS wait), if it has a recent one. */
 async function lastKnownPosition(): Promise<Location.LocationObject | null> {
   if (Platform.OS === 'web' || typeof Location.getLastKnownPositionAsync !== 'function') return null;
   try {
-    return await Location.getLastKnownPositionAsync({ maxAge: LAST_KNOWN_MAX_AGE_MS });
+    return await within(() => Location.getLastKnownPositionAsync({ maxAge: LAST_KNOWN_MAX_AGE_MS }), LAST_KNOWN_TIMEOUT_MS);
   } catch {
     return null;
   }
+}
+
+/**
+ * Two fixes asked for at once: `quick` is the first of the cached position and a Wi-Fi/cell fix
+ * (fast even indoors, but coarse), `precise` is GPS. Neither rejects; each is null if it fails.
+ */
+type FixRequests = { quick: Promise<Location.LocationObject | null>; precise: Promise<Location.LocationObject | null> };
+
+function requestFixes(): FixRequests {
+  const precise = currentPositionWithin(CURRENT_FIX_TIMEOUT_MS).catch(() => null);
+  const candidates = [lastKnownPosition(), currentPositionWithin(QUICK_FIX_TIMEOUT_MS, Location.Accuracy.Balanced).catch(() => null)];
+  const quick = new Promise<Location.LocationObject | null>((resolve) => {
+    let pending = candidates.length;
+    for (const candidate of candidates) {
+      void candidate.then((position) => {
+        pending -= 1;
+        if (position) resolve(position);
+        else if (pending === 0) resolve(null);
+      });
+    }
+  });
+  return { quick, precise };
+}
+
+/**
+ * Locating started at launch (see {@link prewarmLocation}), before Home mounts: GPS warms up
+ * while fonts load and the session is restored. Taken once, and only while fresh.
+ */
+let prewarmed: { startedAt: number; fixes: Promise<FixRequests | null> } | null = null;
+const PREWARM_MAX_AGE_MS = 30_000;
+
+/** Starts locating at launch when location access is already granted. Never prompts. */
+export function prewarmLocation() {
+  if (prewarmed) return;
+  prewarmed = {
+    startedAt: Date.now(),
+    fixes: within(() => Location.getForegroundPermissionsAsync(), LAST_KNOWN_TIMEOUT_MS)
+      .then((permission) => {
+        if (permission?.status !== 'granted') return null;
+        // Access is settled: later automatic checks needn't ask (see askedThisSession).
+        askedThisSession = true;
+        return requestFixes();
+      })
+      .catch(() => null),
+  };
+}
+
+function takePrewarmedFixes(): Promise<FixRequests | null> | null {
+  const taken = prewarmed;
+  prewarmed = null;
+  return taken && Date.now() - taken.startedAt < PREWARM_MAX_AGE_MS ? taken.fixes : null;
 }
 
 /**
@@ -77,6 +143,7 @@ let askedThisSession = false;
 /** Resets the once-per-session prompt (tests). */
 export function resetLocationPromptForTests() {
   askedThisSession = false;
+  prewarmed = null;
 }
 
 async function permissionStatus(mayPrompt: boolean): Promise<Location.PermissionStatus> {
@@ -92,14 +159,18 @@ async function permissionStatus(mayPrompt: boolean): Promise<Location.Permission
   }
 }
 
-async function fetchCurrentFix(mayPrompt: boolean): Promise<NavigationFix | null> {
+/**
+ * The permission answer (a failure counts as no access). `onSlow` runs if it hasn't come within
+ * {@link PERMISSION_ANSWER_MS}; it's still awaited after that.
+ */
+async function answeredPermission(mayPrompt: boolean, onSlow: () => void): Promise<Location.PermissionStatus | null> {
+  const timer = setTimeout(onSlow, PERMISSION_ANSWER_MS);
   try {
-    const status = await permissionStatus(mayPrompt);
-    if (status !== 'granted') return null;
-    const position = (await currentPositionWithin(CURRENT_FIX_TIMEOUT_MS).catch(() => null)) ?? (await lastKnownPosition());
-    return position ? navigationFixFromPosition(position) : null;
+    return await permissionStatus(mayPrompt);
   } catch {
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -164,29 +235,49 @@ export function useCurrentLocation(navigating = false) {
     [mockCapturedAt, mockLatitude, mockLongitude, mockRideAlong],
   );
 
-  const acceptRealFix = useCallback((nextFix: NavigationFix) => {
+  // Whether the shown fix is a quick one (cached, or from Wi-Fi/cell) that GPS hasn't confirmed.
+  const [provisional, setProvisional] = useState(false);
+  const acceptRealFix = useCallback((nextFix: NavigationFix, quick = false) => {
     if (nextFix.capturedAt < latestFixAtRef.current) return false;
     latestFixAtRef.current = nextFix.capturedAt;
     fixRevisionRef.current += 1;
     setRealFix(nextFix);
+    setProvisional(quick);
     setStatus('located');
     return true;
   }, []);
+  // A quick fix only stands in while there's no fix at all: it never replaces a GPS one.
+  const acceptQuickFix = useCallback((position: Location.LocationObject | null) => {
+    if (position && fixRevisionRef.current === 0) acceptRealFix(navigationFixFromPosition(position), true);
+  }, [acceptRealFix]);
 
   // `mayPrompt`: the rider asked (a locate button), so showing the permission prompt is expected.
   const refreshRealFix = useCallback(async (mayPrompt = true) => {
     const generation = refreshGenerationRef.current + 1;
     refreshGenerationRef.current = generation;
+    const current = () => refreshGenerationRef.current === generation;
     const revisionAtStart = fixRevisionRef.current;
+    const giveUp = () => {
+      if (current() && fixRevisionRef.current === revisionAtStart) setStatus('unavailable');
+    };
     if (revisionAtStart === 0) setStatus('loading');
-    const nextFix = await fetchCurrentFix(mayPrompt);
-    if (refreshGenerationRef.current !== generation) return;
-    if (nextFix) {
-      acceptRealFix(nextFix);
-    } else if (fixRevisionRef.current === revisionAtStart) {
-      setStatus('unavailable');
+    const permission = await answeredPermission(mayPrompt, giveUp);
+    if (!current()) return;
+    if (permission !== 'granted') {
+      giveUp();
+      return;
     }
-  }, [acceptRealFix]);
+    // A slow permission answer may have shown "unavailable"; locating has started now.
+    if (fixRevisionRef.current === 0) setStatus('loading');
+    const { quick, precise } = requestFixes();
+    void quick.then((position) => {
+      if (current()) acceptQuickFix(position);
+    });
+    const position = await precise;
+    if (!current()) return;
+    if (position) acceptRealFix(navigationFixFromPosition(position));
+    else giveUp();
+  }, [acceptQuickFix, acceptRealFix]);
 
   useEffect(() => {
     if (mocked) return undefined;
@@ -194,35 +285,34 @@ export function useCurrentLocation(navigating = false) {
     let cancelled = false;
 
     (async () => {
-      let status: Location.PermissionStatus;
-      try {
-        status = await permissionStatus(false);
-      } catch {
-        if (!cancelled) setStatus('unavailable');
-        return;
-      }
+      const revisionAtRequest = fixRevisionRef.current;
+      const giveUp = () => {
+        if (!cancelled && fixRevisionRef.current === revisionAtRequest) setStatus('unavailable');
+      };
+      // Started at launch when access was already granted: the permission check is done.
+      let fixes = await (takePrewarmedFixes() ?? Promise.resolve(null));
       if (cancelled) return;
-      if (status !== 'granted') {
-        setStatus('unavailable');
-        return;
+      if (!fixes) {
+        const permission = await answeredPermission(false, giveUp);
+        if (cancelled) return;
+        if (permission !== 'granted') {
+          giveUp();
+          return;
+        }
+        if (fixRevisionRef.current === 0) setStatus('loading');
+        fixes = requestFixes();
       }
 
-      const revisionAtRequest = fixRevisionRef.current;
-      // The cached position shows the rider right away; the one-shot and the watch refine it. All
-      // three start together, so a one-shot that never resolves (GPS indoors) can't hold up the rest.
-      void lastKnownPosition().then((position) => {
-        if (!cancelled && position) acceptRealFix(navigationFixFromPosition(position));
+      // The quick fix shows the rider right away; GPS and the watch refine it. All start together,
+      // so a one-shot that never resolves (GPS indoors) can't hold up the rest.
+      void fixes.quick.then((position) => {
+        if (!cancelled) acceptQuickFix(position);
       });
-      const oneShot = currentPositionWithin(CURRENT_FIX_TIMEOUT_MS).then(
-        (position) => {
-          if (cancelled) return;
-          if (position) acceptRealFix(navigationFixFromPosition(position));
-          else if (fixRevisionRef.current === revisionAtRequest) setStatus('unavailable');
-        },
-        () => {
-          if (!cancelled && fixRevisionRef.current === revisionAtRequest) setStatus('unavailable');
-        },
-      );
+      const oneShot = fixes.precise.then((position) => {
+        if (cancelled) return;
+        if (position) acceptRealFix(navigationFixFromPosition(position));
+        else giveUp();
+      });
 
       try {
         const nextSubscription = await Location.watchPositionAsync(navigating ? NAVIGATION_WATCH_OPTIONS : WATCH_OPTIONS, (position) => {
@@ -234,7 +324,7 @@ export function useCurrentLocation(navigating = false) {
       } catch {
         // A usable one-shot fix remains valid even when the continuous watcher cannot start.
         await oneShot;
-        if (!cancelled && fixRevisionRef.current === revisionAtRequest) setStatus('unavailable');
+        giveUp();
       }
     })();
 
@@ -242,7 +332,7 @@ export function useCurrentLocation(navigating = false) {
       cancelled = true;
       subscription?.remove();
     };
-  }, [acceptRealFix, mocked, navigating]);
+  }, [acceptQuickFix, acceptRealFix, mocked, navigating]);
 
   // Foreground-only navigation can miss movement while the app is suspended. Ask for one fresh
   // position on every background/inactive -> active transition; the existing watch continues.
@@ -271,7 +361,8 @@ export function useCurrentLocation(navigating = false) {
       refresh: async () => undefined,
       mocked: true,
       navigationStale: false,
+      provisional: false,
     };
   }
-  return { location, navigationFix, navigationStale, status, refresh: refreshRealFix, mocked: false };
+  return { location, navigationFix, navigationStale, status, refresh: refreshRealFix, mocked: false, provisional };
 }
