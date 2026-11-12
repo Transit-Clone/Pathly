@@ -50,13 +50,24 @@ jest.mock('firebase/auth', () => ({
 // jest.setupAfterEnv.js empties it before each test.
 // Native notifications: permission is never granted in tests, so nothing is shown or registered.
 jest.mock('expo-notifications', () => ({
-  AndroidImportance: { HIGH: 4 },
+  AndroidImportance: { LOW: 2, HIGH: 4 },
+  AndroidNotificationVisibility: { PUBLIC: 1 },
+  dismissNotificationAsync: jest.fn(() => Promise.resolve()),
   getExpoPushTokenAsync: jest.fn(() => Promise.resolve({ data: 'ExponentPushToken[test]' })),
   getPermissionsAsync: jest.fn(() => Promise.resolve({ granted: false, canAskAgain: false })),
   requestPermissionsAsync: jest.fn(() => Promise.resolve({ granted: false, canAskAgain: false })),
   scheduleNotificationAsync: jest.fn(() => Promise.resolve('notification')),
   setNotificationChannelAsync: jest.fn(() => Promise.resolve(null)),
   setNotificationHandler: jest.fn(),
+}));
+
+// Trip guidance speaks and vibrates (useTripGuidanceAlerts); neither has a native module under Jest.
+jest.mock('expo-speech', () => ({ speak: jest.fn(), stop: jest.fn(() => Promise.resolve()) }));
+jest.mock('expo-haptics', () => ({
+  ImpactFeedbackStyle: { Light: 'light', Medium: 'medium', Heavy: 'heavy' },
+  NotificationFeedbackType: { Success: 'success', Warning: 'warning', Error: 'error' },
+  impactAsync: jest.fn(() => Promise.resolve()),
+  notificationAsync: jest.fn(() => Promise.resolve()),
 }));
 
 jest.mock('firebase/firestore', () => {

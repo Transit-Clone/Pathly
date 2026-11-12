@@ -69,6 +69,9 @@ const ioniconGlyphs = {
   crosshair: ['locate-outline', 'locate'],
   locate: ['locate-outline', 'locate'],
   map: ['map-outline', 'map'],
+  // Spoken directions on or muted (the trip screen).
+  voice: ['volume-high-outline', 'volume-high'],
+  voiceOff: ['volume-mute-outline', 'volume-mute'],
 } as const satisfies Record<string, readonly [IoniconName, IoniconName]>;
 
 /** Transit modes and walking, from Material Community Icons (picked for how clearly they read): [outline, filled]. */

@@ -29,6 +29,11 @@ export type UserPreferences = {
   shareRides: boolean;
   /** The home screen's occasional "support Pathly or share feedback" popup (nudgePrompt.ts); off is "Don't ask again". */
   supportPrompts: boolean;
+  /**
+   * During a trip (useTripGuidanceAlerts): a notification with the current step, spoken
+   * directions, and a vibration at each step (stronger the stop before getting off).
+   */
+  tripGuidance: { notification: boolean; voice: boolean; haptics: boolean };
 };
 
 export const ALL_TRANSIT_MODES: readonly TransitMode[] = ['subway', 'bus', 'rail', 'ferry'];
@@ -40,6 +45,7 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
   stepFree: false,
   shareRides: false,
   supportPrompts: true,
+  tripGuidance: { notification: true, voice: true, haptics: true },
 };
 
 export function preferencesKey(uid: string) {
@@ -69,12 +75,17 @@ export function parsePreferences(text: string | null): UserPreferences {
   if (isBoolean(saved.travel?.fewerTransfers)) travel.fewerTransfers = saved.travel.fewerTransfers;
   if (saved.travel?.maxWalkMinutes === null || WALK_LIMIT_OPTIONS.includes(saved.travel?.maxWalkMinutes)) travel.maxWalkMinutes = saved.travel?.maxWalkMinutes ?? null;
   if (['full', 'reduced', 'student', 'college', 'fairFares'].includes(saved.travel?.fareType as string)) travel.fareType = saved.travel!.fareType!;
+  const tripGuidance = { ...base.tripGuidance };
+  for (const key of Object.keys(tripGuidance) as (keyof UserPreferences['tripGuidance'])[]) {
+    if (isBoolean(saved.tripGuidance?.[key])) tripGuidance[key] = saved.tripGuidance[key];
+  }
   return {
     notifications,
     travel,
     stepFree: isBoolean(saved.stepFree) ? saved.stepFree : base.stepFree,
     shareRides: isBoolean(saved.shareRides) ? saved.shareRides : base.shareRides,
     supportPrompts: isBoolean(saved.supportPrompts) ? saved.supportPrompts : base.supportPrompts,
+    tripGuidance,
   };
 }
 
@@ -84,6 +95,7 @@ export type PreferencesPatch = {
   stepFree?: boolean;
   shareRides?: boolean;
   supportPrompts?: boolean;
+  tripGuidance?: Partial<UserPreferences['tripGuidance']>;
 };
 
 export function applyPreferencesPatch(current: UserPreferences, patch: PreferencesPatch): UserPreferences {
@@ -93,6 +105,7 @@ export function applyPreferencesPatch(current: UserPreferences, patch: Preferenc
     stepFree: patch.stepFree ?? current.stepFree,
     shareRides: patch.shareRides ?? current.shareRides,
     supportPrompts: patch.supportPrompts ?? current.supportPrompts,
+    tripGuidance: { ...current.tripGuidance, ...patch.tripGuidance },
   };
 }
 

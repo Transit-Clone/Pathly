@@ -46,7 +46,7 @@ The app needs Firebase and Google Maps client settings before it can load live d
 
 1. Copy `mobile/.env.example` to `mobile/.env`.
 2. Fill in the Firebase web app config (`EXPO_PUBLIC_FIREBASE_*`) and the platform-restricted Maps keys (`GOOGLE_MAPS_ANDROID_API_KEY`, `GOOGLE_MAPS_IOS_API_KEY`, `EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY`, `EXPO_PUBLIC_GOOGLE_MAPS_WEB_MAP_ID`).
-3. Optionally set `EXPO_PUBLIC_ADMIN_EMAILS` (comma-separated). These accounts see the admin tools in the app. The default is `admin@gmail.com`. The backend has its own list, `ADMIN_EMAILS`, in `firebase/functions/.env.<project-id>`.
+3. Set `EXPO_PUBLIC_ADMIN_EMAILS` (comma-separated). These accounts see the admin tools in the app. The default is `admin@gmail.com`. The backend has its own list, `ADMIN_EMAILS`, in `firebase/functions/.env.<project-id>`; keep the two the same. Both files stay on your machine, and each deploy builds in the deploying machine's copy, so `npm run deploy:web`, `deploy:backend`, and `deploy:functions` stop if their list is missing or only the default.
 4. Restart the Expo dev server after editing `.env`.
 
 `EXPO_PUBLIC_` values are bundled into the app, so treat them as public and rely on each key's API and app restrictions. Never put backend credentials (the server Maps key, Swiftly, MTA Bus Time) in `mobile/.env`. Git ignores both `.env` and `.secret.local`.

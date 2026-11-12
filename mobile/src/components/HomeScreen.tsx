@@ -44,6 +44,7 @@ import { useCurrentLocation, type Coordinates } from '../hooks/useCurrentLocatio
 import { useActiveTrip } from '../hooks/useActiveTrip';
 import { useNewAccountPlacesPrompt } from '../hooks/useNewAccountPlacesPrompt';
 import { discardAccount } from '../data/accountData';
+import { useTripGuidanceAlerts } from '../hooks/useTripGuidanceAlerts';
 import { useTripRide } from '../hooks/useTripRide';
 import { useNow } from '../hooks/useNow';
 import { useThumbSide } from '../hooks/useThumbSide';
@@ -256,6 +257,14 @@ export function HomeScreen() {
     () => (trip.active ? guidanceForNavigation(trip.active.plan, trip.active.cursor) : null),
     [trip.active],
   );
+  // Spoken steps, vibrations, and the lock-screen notification, wherever in the app the rider is.
+  useTripGuidanceAlerts({
+    sessionId: trip.active?.sessionId ?? null,
+    guidance: resumeGuidance,
+    arrivedDestination,
+    settings: userPreferences.tripGuidance,
+    notificationsEnabled: userPreferences.notifications.enabled,
+  });
   const hasResumableTrip = trip.status === 'active' || trip.status === 'recovery';
   const supportPopup = useSupportPopup(hasResumableTrip, userPreferences.supportPrompts);
   // A holiday that changes service on every line (Thanksgiving, Christmas…), under the search bar.

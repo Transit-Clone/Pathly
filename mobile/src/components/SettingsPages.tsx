@@ -274,6 +274,15 @@ export function NotificationSettings({ onFeedback }: PageProps) {
         {/* The home screen's occasional ask (nudgePrompt.ts); its "Don't ask again" turns this off. */}
         <ToggleRow label="Feedback & support popups" onChange={(value) => { updatePreferences({ supportPrompts: value }); onFeedback(value ? 'Feedback & support popups on' : 'Feedback & support popups off'); }} testID="toggle-support-prompts" value={preferences.supportPrompts} />
       </Card>
+      <Text style={profile.sectionLabel}>DURING A TRIP</Text>
+      <Card>
+        {/* A notification needs notifications allowed; voice and vibration don't. */}
+        {notifications.enabled ? (
+          <ToggleRow label="Trip progress notification" onChange={(value) => { updatePreferences({ tripGuidance: { notification: value } }); onFeedback(value ? 'Trip progress will show on your lock screen' : 'Trip progress notification off'); }} testID="toggle-trip-notification" value={preferences.tripGuidance.notification} />
+        ) : null}
+        <ToggleRow label="Spoken directions" onChange={(value) => { updatePreferences({ tripGuidance: { voice: value } }); onFeedback(value ? 'Spoken directions on' : 'Spoken directions off'); }} testID="toggle-trip-voice" value={preferences.tripGuidance.voice} />
+        <ToggleRow label="Vibrate at each step" onChange={(value) => { updatePreferences({ tripGuidance: { haptics: value } }); onFeedback(value ? 'Trip vibrations on' : 'Trip vibrations off'); }} testID="toggle-trip-haptics" value={preferences.tripGuidance.haptics} />
+      </Card>
       <Text style={profile.sectionLabel}>FAVORITE LINES</Text>
       <Card>
         {savedRoutes.length === 0 ? (

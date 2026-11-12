@@ -5,11 +5,79 @@ import { Platform } from 'react-native';
 
 import { db } from './firebase';
 
-// Notifications that arrive while Pathly is open still show as a banner and play a sound.
+/** The one trip-progress notification, updated in place as the trip moves along. */
+export const TRIP_NOTIFICATION_ID = 'pathly-trip-progress';
+const TRIP_CHANNEL = 'trip-progress';
+const TRIP_ALERT_CHANNEL = 'trip-alerts';
+
+// Notifications that arrive while Pathly is open still show as a banner and play a sound, except
+// the trip's own progress notification: the open trip screen already shows (and speaks) each step.
 if (Platform.OS !== 'web') {
   Notifications.setNotificationHandler({
-    handleNotification: async () => ({ shouldPlaySound: true, shouldSetBadge: false, shouldShowBanner: true, shouldShowList: true }),
+    handleNotification: async (notification) => {
+      const trip = notification.request.identifier === TRIP_NOTIFICATION_ID;
+      return { shouldPlaySound: !trip, shouldSetBadge: false, shouldShowBanner: !trip, shouldShowList: true };
+    },
   });
+}
+
+let tripChannelsReady: Promise<void> | null = null;
+/** Android: routine steps update quietly; the stop before getting off (and arrival) alerts. */
+function tripChannels(): Promise<void> {
+  tripChannelsReady ??= Promise.all([
+    Notifications.setNotificationChannelAsync(TRIP_CHANNEL, {
+      name: 'Trip progress',
+      importance: Notifications.AndroidImportance.LOW,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      showBadge: false,
+    }),
+    Notifications.setNotificationChannelAsync(TRIP_ALERT_CHANNEL, {
+      name: 'Trip alerts',
+      description: 'The stop before yours, and arriving',
+      importance: Notifications.AndroidImportance.HIGH,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      vibrationPattern: [0, 250, 150, 250],
+    }),
+  ]).then(() => undefined);
+  return tripChannelsReady;
+}
+
+/**
+ * Shows the trip's progress in the notification shade and on the lock screen, replacing the last
+ * update. `alert` (the stop before getting off, arriving) sounds and pops up; other steps update
+ * quietly. Android keeps it from being swiped away until the trip ends. Native only; never throws.
+ */
+export async function showTripNotification(title: string, body: string, alert: boolean): Promise<void> {
+  if (Platform.OS === 'web') return;
+  try {
+    if (!(await notificationsAllowed())) return;
+    if (Platform.OS === 'android') await tripChannels();
+    await Notifications.scheduleNotificationAsync({
+      identifier: TRIP_NOTIFICATION_ID,
+      content: {
+        title,
+        body,
+        sticky: true,
+        autoDismiss: false,
+        sound: alert ? 'default' : undefined,
+        // iOS: routine steps go straight to the list without lighting the screen.
+        interruptionLevel: alert ? 'active' : 'passive',
+      },
+      trigger: Platform.OS === 'android' ? { channelId: alert ? TRIP_ALERT_CHANNEL : TRIP_CHANNEL } : null,
+    });
+  } catch {
+    // The notification is a convenience; never let it break navigation.
+  }
+}
+
+/** Removes the trip's progress notification (the trip ended). */
+export async function clearTripNotification(): Promise<void> {
+  if (Platform.OS === 'web') return;
+  try {
+    await Notifications.dismissNotificationAsync(TRIP_NOTIFICATION_ID);
+  } catch {
+    // Already gone.
+  }
 }
 
 /** Asks once; later calls only report what the rider chose. */

@@ -177,9 +177,17 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
     onDemoCheckpoint?.(checkpoint, bounded);
   };
 
+  // Spoken directions, muted or restored right here (it's the Settings -> Notifications toggle).
+  const { preferences: { tripGuidance }, updatePreferences } = useUserPreferences();
   const controls = (
     <View pointerEvents="box-none" style={styles.topBar}>
       <MapControlButton accessibilityLabel="Back to Home; navigation will stay active" icon="back" onPress={onBack} testID="enroute-back" />
+      <MapControlButton
+        accessibilityLabel={tripGuidance.voice ? 'Mute spoken directions' : 'Turn on spoken directions'}
+        icon={tripGuidance.voice ? 'voice' : 'voiceOff'}
+        onPress={() => updatePreferences({ tripGuidance: { voice: !tripGuidance.voice } })}
+        testID="enroute-voice"
+      />
     </View>
   );
 
