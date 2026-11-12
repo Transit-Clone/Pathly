@@ -11,6 +11,7 @@ jest.mock('@react-google-maps/api', () => {
   const { View: MockView } = require('react-native');
   const mockMap = {
     fitBounds: jest.fn(),
+    getCenter: jest.fn(() => ({ lat: () => 40.9, lng: () => -73.1 })),
     getProjection: jest.fn(() => undefined),
     getZoom: jest.fn(() => 14),
     panTo: jest.fn(),
@@ -164,6 +165,33 @@ describe('native active TripMap', () => {
       expect.arrayContaining([{ latitude: 40.918, longitude: -73.102 }]),
       expect.objectContaining({ animated: true }),
     );
+  });
+
+  it('opens on a held camera without framing the trip, and frames it once the hold is cleared', () => {
+    const maps = jest.requireMock('react-native-maps') as { mockFitToCoordinates: jest.Mock };
+    const held = { latitude: 40.95, longitude: -73.2, latitudeDelta: 0.01, longitudeDelta: 0.01 };
+    const screen = render(<NativeTripMap destination={DESTINATION} holdCamera={held} interactive={true} origin={ORIGIN} testID="native-held-map" />);
+    const map = screen.getByTestId('native-held-map', { includeHiddenElements: true });
+    expect(map.props.initialRegion).toEqual(held);
+    fireEvent(map, 'mapReady');
+    expect(maps.mockFitToCoordinates).not.toHaveBeenCalled();
+
+    screen.rerender(<NativeTripMap destination={DESTINATION} holdCamera={null} interactive={true} origin={ORIGIN} testID="native-held-map" />);
+    expect(maps.mockFitToCoordinates).toHaveBeenCalled();
+  });
+
+  it('reports where the map rests only after the rider moves it', () => {
+    const onUserCameraChange = jest.fn();
+    const screen = render(<NativeTripMap destination={DESTINATION} interactive={true} onUserCameraChange={onUserCameraChange} origin={ORIGIN} testID="native-report-map" />);
+    const map = screen.getByTestId('native-report-map', { includeHiddenElements: true });
+    const framed = { latitude: 40.91, longitude: -73.1, latitudeDelta: 0.05, longitudeDelta: 0.05 };
+    fireEvent(map, 'regionChangeComplete', framed, { isGesture: false });
+    expect(onUserCameraChange).not.toHaveBeenCalled();
+
+    const panned = { latitude: 40.97, longitude: -73.3, latitudeDelta: 0.02, longitudeDelta: 0.02 };
+    fireEvent(map, 'panDrag');
+    fireEvent(map, 'regionChangeComplete', panned, { isGesture: true });
+    expect(onUserCameraChange).toHaveBeenLastCalledWith(panned);
   });
 
   it('keeps the raw marker visible without following an unaccepted jump', () => {

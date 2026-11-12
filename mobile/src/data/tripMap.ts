@@ -40,8 +40,18 @@ export type TripMapProps = {
   vehicles?: readonly TripVehicle[];
   /** Each ride's line leading up to where the rider boards (useTripVehicles). */
   approachLines?: readonly TripApproachLine[];
+  /**
+   * While set, the map opens on this camera and doesn't frame the trip (e.g. back from editing an
+   * endpoint without choosing one, where the rider had panned). Cleared, the trip is framed again.
+   */
+  holdCamera?: TripMapCamera | null;
+  /** Each time the map comes to rest after the rider has moved it (gesture or location button). */
+  onUserCameraChange?: (camera: TripMapCamera) => void;
   testID?: string;
 };
+
+/** Where an interactive trip map rests: native keeps its region span; web keeps its zoom. */
+export type TripMapCamera = { latitude: number; longitude: number; latitudeDelta?: number; longitudeDelta?: number; zoom?: number };
 
 export type TripMapLeg = { path: LatLng[]; walk: boolean; color?: string };
 export type TripMapProgressState = 'completed' | 'current' | 'upcoming';

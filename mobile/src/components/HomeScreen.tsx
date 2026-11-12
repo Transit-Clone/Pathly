@@ -74,6 +74,7 @@ import { SavePlaceSheet, type SavePlaceRequest } from './SavePlaceSheet';
 import { SetPlacesPrompt } from './SetPlacesPrompt';
 import { ResumeTripCard } from './ResumeTripCard';
 import { CURRENT_LOCATION_LABEL, initialResultsCriteria, RouteResultsView, type ResultsCriteria } from './RouteResultsView';
+import type { TripMapCamera } from '../data/tripMap';
 import { useSupportPopup } from '../data/nudgePrompt';
 import { useSystemNotice } from '../data/systemNotices';
 import { SupportPopup } from './SupportPopup';
@@ -100,7 +101,9 @@ const NEARBY_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 /** Choosing a place to save: straight away under `label` when set, else named in SavePlaceSheet. */
 // `replacing`: a saved place's edit sheet, waiting on the new address the search picks for it.
 type SavedPlacePick = { label?: 'Home' | 'Work' | 'School'; returnTo: 'home' | 'search' | 'favorites' | 'settings'; replacing?: SavePlaceRequest };
-type ResultsViewState = { name: 'results'; criteria: ResultsCriteria; returnTo: 'search' | 'favorites' | 'home' };
+// `mapCamera`: back from editing an endpoint without choosing one, the map stays where the rider
+// had moved it; any change to the trip (a new endpoint, filters, time) clears it and reframes.
+type ResultsViewState = { name: 'results'; criteria: ResultsCriteria; returnTo: 'search' | 'favorites' | 'home'; mapCamera?: TripMapCamera | null };
 
 type ActiveView =
   | { name: 'home' }
@@ -961,6 +964,7 @@ export function HomeScreen() {
       // The place goes with its label: what the trip is planned to (or from), and what the star saves.
       const choose = (value: string, place?: SearchPlace) => setActiveView({
         ...results,
+        mapCamera: null,
         criteria: { ...results.criteria, [field]: value, [field === 'origin' ? 'originPlace' : 'destinationPlace']: place },
       });
       return screen(
@@ -1044,11 +1048,15 @@ export function HomeScreen() {
           criteria={activeView.criteria}
           isDestinationSaved={isPlaceSaved(destinationPlaceOf(activeView.criteria))}
           locationPending={locationStatus === 'loading'}
+          mapCamera={activeView.mapCamera}
           onBack={closeResults}
-          onChangeCriteria={(criteria) => setActiveView({ ...activeView, criteria })}
-          onChangeTripTime={setTripTime}
+          onChangeCriteria={(criteria) => setActiveView({ ...activeView, criteria, mapCamera: null })}
+          onChangeTripTime={(choice) => {
+            setTripTime(choice);
+            if (activeView.mapCamera) setActiveView({ ...activeView, mapCamera: null });
+          }}
           onCloseTrip={closePlannedTrip}
-          onEditEndpoint={(field) => setActiveView({ name: 'search', editing: { field, results: activeView } })}
+          onEditEndpoint={(field, mapCamera) => setActiveView({ name: 'search', editing: { field, results: { ...activeView, mapCamera } } })}
           onOpenTrip={showPlannedTrip}
           onStartTrip={startPlannedTrip}
           onToggleSaveDestination={() => toggleSavedPlace(destinationPlaceOf(activeView.criteria))}

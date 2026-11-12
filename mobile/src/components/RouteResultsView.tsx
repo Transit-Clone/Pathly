@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -24,6 +24,7 @@ import {
   type LatLng,
   type ResumePlanRequest,
 } from '../data/tripPlanning';
+import type { TripMapCamera } from '../data/tripMap';
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { useClock } from '../hooks/useClock';
 import { useThumbSide } from '../hooks/useThumbSide';
@@ -88,8 +89,13 @@ type RouteResultsViewProps = {
   onChangeCriteria: (criteria: ResultsCriteria) => void;
   onChangeTripTime: (choice: TripTimeChoice) => void;
   onCloseTrip: () => void;
-  /** Opens the destination search page to change one endpoint. */
-  onEditEndpoint: (field: 'origin' | 'destination') => void;
+  /**
+   * Opens the destination search page to change one endpoint. `mapCamera` is where the rider left
+   * the map, if they moved it, so cancelling the search can reopen it there.
+   */
+  onEditEndpoint: (field: 'origin' | 'destination', mapCamera: TripMapCamera | null) => void;
+  /** Where the map opens and stays instead of framing the trip, until HomeScreen clears it. */
+  mapCamera?: TripMapCamera | null;
   onOpenTrip: (itinerary: Itinerary, resumeRequest: ResumePlanRequest) => void;
   onStartTrip: (itinerary: Itinerary) => void;
   onToggleSaveDestination: () => void;
@@ -142,6 +148,7 @@ export function RouteResultsView({
   criteria,
   isDestinationSaved,
   locationPending,
+  mapCamera = null,
   onBack,
   onChangeCriteria,
   onChangeTripTime,
@@ -174,6 +181,8 @@ export function RouteResultsView({
   const [centerRequest, setCenterRequest] = useState(0);
   const [centered, setCentered] = useState(false);
   const userLocation = riderLocation ? { lat: riderLocation.latitude, lng: riderLocation.longitude } : null;
+  // Where the rider last left the map (only once they've moved it), handed to the endpoint search.
+  const lastMapCamera = useRef<TripMapCamera | null>(mapCamera);
 
   // The map rests at the home screen's height, but always leaves room for the trip card's buttons.
   const insets = useSafeAreaInsets();
@@ -290,7 +299,7 @@ export function RouteResultsView({
               accessibilityHint="Opens search to change the start"
               accessibilityLabel={`Trip origin, ${origin}`}
               accessibilityRole="button"
-              onPress={() => onEditEndpoint('origin')}
+              onPress={() => onEditEndpoint('origin', lastMapCamera.current)}
               style={styles.endpointField}
               testID="origin-field"
             >
@@ -304,7 +313,7 @@ export function RouteResultsView({
               accessibilityHint="Opens search to change the destination"
               accessibilityLabel={`Trip destination, ${destination}`}
               accessibilityRole="button"
-              onPress={() => onEditEndpoint('destination')}
+              onPress={() => onEditEndpoint('destination', lastMapCamera.current)}
               style={styles.endpointField}
               testID="destination-field"
             >
@@ -330,9 +339,13 @@ export function RouteResultsView({
       <TripMap
         centerOnUserRequest={centerRequest}
         destination={placePoint(criteria.destinationPlace)}
+        holdCamera={mapCamera}
         // Pannable and zoomable above the results sheet, which scrolls over it.
         interactive={true}
         itinerary={visibleItineraries[0] ?? null}
+        onUserCameraChange={(camera) => {
+          lastMapCamera.current = camera;
+        }}
         onUserPan={() => setCentered(false)}
         origin={originPoint}
         padding={{ top: tripCardBottom + 24, right: 40, bottom: 24, left: 40 }}
@@ -420,7 +433,7 @@ export function RouteResultsView({
               {problem.action ? (
                 <PressableScale
                   accessibilityRole="button"
-                  onPress={() => (plan.problem === 'unavailable' ? refresh() : onEditEndpoint(plan.field ?? 'origin'))}
+                  onPress={() => (plan.problem === 'unavailable' ? refresh() : onEditEndpoint(plan.field ?? 'origin', lastMapCamera.current))}
                   style={styles.resetButton}
                   testID="results-problem-action"
                 >

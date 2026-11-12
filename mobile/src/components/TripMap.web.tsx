@@ -53,7 +53,13 @@ const locationOffset = () => ({ x: -19, y: -19 });
  * A planned trip on a real map: each leg in its line's color, walking dotted, a marker at every
  * stop. Interactive maps pan and zoom, label a clicked stop, and offer to re-frame the whole trip.
  */
-export function TripMap({ centerOnUserRequest = 0, destination, focusStop, followLocation, followUser, interactive = false, itinerary, navigationProgress, onFollowModeChange, onUserPan, origin, padding = FIT_PADDING, testID = 'trip-map', userLocation, userLocationStale = false, vehicles = [], approachLines = [] }: TripMapProps) {
+export function TripMap({ centerOnUserRequest = 0, destination, focusStop, followLocation, followUser, holdCamera, interactive = false, itinerary, navigationProgress, onFollowModeChange, onUserCameraChange, onUserPan, origin, padding = FIT_PADDING, testID = 'trip-map', userLocation, userLocationStale = false, vehicles = [], approachLines = [] }: TripMapProps) {
+  // A held camera is where the rider had left this map; it opens there instead of on the trip.
+  const holding = holdCamera != null;
+  const [initialCenter] = useState(() => (holdCamera ? { lat: holdCamera.latitude, lng: holdCamera.longitude } : FALLBACK_CENTER));
+  const [initialZoom] = useState(() => holdCamera?.zoom ?? 11);
+  // Set once the rider moves the map (a held camera was theirs too), so automatic framing isn't reported.
+  const userMovedCamera = useRef(holding);
   const { isLoaded } = useJsApiLoader({
     id: GOOGLE_MAPS_SCRIPT_ID,
     googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY ?? '',
@@ -101,8 +107,11 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
     // eslint-disable-next-line react-hooks/exhaustive-deps -- scalar keys cover geometry and padding
   }, [boundsKey, map, padding.bottom, padding.left, padding.right, padding.top]);
 
-  // Frames the whole trip (or both endpoints while it loads) whenever it changes.
-  useEffect(frame, [frame]);
+  // Frames the whole trip (or both endpoints while it loads) whenever it changes, unless the
+  // camera is held where the rider left it; releasing the hold frames the trip again.
+  useEffect(() => {
+    if (!holding) frame();
+  }, [frame, holding]);
   const onLoad = useCallback((loaded: google.maps.Map) => {
     setMap(loaded);
     zoomSource.current = loaded;
@@ -175,6 +184,7 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
     centerRequestForEffect.current = centerOnUserRequest;
     if (navigationProgress) onFollowModeChange?.(true);
     if (!map || !userLocation) return;
+    userMovedCamera.current = true;
     if (navigationProgress && userLatitude !== undefined && userLongitude !== undefined) followCamera();
     else {
       programmaticCamera.current = true;
@@ -190,26 +200,30 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
   return (
     <View style={StyleSheet.absoluteFill} testID={testID}>
       <GoogleMap
-        center={FALLBACK_CENTER}
+        center={initialCenter}
         mapContainerStyle={containerStyle}
         onClick={interactive ? () => setSelected(null) : undefined}
         onDragStart={interactive ? () => {
+          userMovedCamera.current = true;
           setFollowing(false);
           onUserPan?.();
         } : undefined}
         onIdle={() => {
           programmaticCamera.current = false;
+          const center = zoomSource.current?.getCenter();
+          if (userMovedCamera.current && center) onUserCameraChange?.({ latitude: center.lat(), longitude: center.lng(), zoom: zoomSource.current?.getZoom() });
         }}
         onLoad={onLoad}
         onZoomChanged={() => {
           setZoom(zoomSource.current?.getZoom() ?? 0);
           if (interactive && !programmaticCamera.current) {
+            userMovedCamera.current = true;
             setFollowing(false);
             onUserPan?.();
           }
         }}
         options={mapOptions}
-        zoom={11}
+        zoom={initialZoom}
       >
         {approachLines.map((line) => (
           <Polyline

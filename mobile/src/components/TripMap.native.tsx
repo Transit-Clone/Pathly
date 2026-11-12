@@ -49,8 +49,15 @@ function centerInView(point: LatLng, shiftX: number, shiftY: number): LatLng {
   };
 }
 
-export function TripMap({ centerOnUserRequest = 0, destination, focusStop, followLocation, followUser, interactive = false, itinerary, navigationProgress, onFollowModeChange, onUserPan, origin, padding = FIT_PADDING, testID = 'trip-map', userLocation, userLocationStale = false, vehicles = [], approachLines = [] }: TripMapProps) {
+export function TripMap({ centerOnUserRequest = 0, destination, focusStop, followLocation, followUser, holdCamera, interactive = false, itinerary, navigationProgress, onFollowModeChange, onUserCameraChange, onUserPan, origin, padding = FIT_PADDING, testID = 'trip-map', userLocation, userLocationStale = false, vehicles = [], approachLines = [] }: TripMapProps) {
   const mapRef = useRef<MapView>(null);
+  // A held camera is where the rider had left this map; it opens there instead of on the trip.
+  const holding = holdCamera != null;
+  const [initialRegion] = useState<Region | undefined>(() => (holdCamera?.latitudeDelta != null && holdCamera.longitudeDelta != null
+    ? { latitude: holdCamera.latitude, longitude: holdCamera.longitude, latitudeDelta: holdCamera.latitudeDelta, longitudeDelta: holdCamera.longitudeDelta }
+    : undefined));
+  // Set once the rider moves the map (a held camera was theirs too), so automatic framing isn't reported.
+  const userMovedCamera = useRef(holding);
   const styles = useThemedStyles(createStyles);
   const { colors, isDark } = useTheme();
   const { destinationPin } = useAppSettings();
@@ -97,9 +104,11 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
   const onRegionChangeComplete = (region: Region, details?: { isGesture?: boolean }) => {
     setZoom(zoomForRegion(region.longitudeDelta, mapWidth || windowWidth));
     if (interactive && details?.isGesture) {
+      userMovedCamera.current = true;
       setFollowing(false);
       onUserPan?.();
     }
+    if (userMovedCamera.current) onUserCameraChange?.(region);
   };
 
   const frame = useCallback(() => {
@@ -138,15 +147,16 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
     mapRef.current?.animateCamera({ center: inView(rider), zoom: FOCUS_ZOOM }, { duration: animated ? FOCUS_DURATION_MS : 0 });
   }, [followLatitude, followLongitude, inView, padding.bottom, padding.left, padding.right, padding.top, userLatitude, userLongitude]);
 
-  // Frames the whole trip (or both endpoints while it loads) whenever it changes.
+  // Frames the whole trip (or both endpoints while it loads) whenever it changes, unless the
+  // camera is held where the rider left it; releasing the hold frames the trip again.
   const frameKey = `${itinerary?.id ?? ''}:${coordinatesKey}`;
   useEffect(() => {
-    if (!mapReady) return;
+    if (!mapReady || holding) return;
     // Follow mode cannot drive a camera until a trustworthy rider fix exists. Frame the planned
     // route in that interim instead of leaving native on the map provider's default camera.
     if (hasNavigationProgress && userLatitude !== undefined && userLongitude !== undefined) return;
     frame();
-  }, [frame, frameKey, hasNavigationProgress, mapReady, userLatitude, userLongitude]);
+  }, [frame, frameKey, hasNavigationProgress, holding, mapReady, userLatitude, userLongitude]);
 
   // In active navigation, accepted location changes keep the rider and immediate next route
   // target in view. Panning/zooming turns this off until the locate action resumes it.
@@ -178,6 +188,7 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
     centerRequestForEffect.current = centerOnUserRequest;
     if (navigationProgress) onFollowModeChange?.(true);
     if (!userLocation) return;
+    userMovedCamera.current = true;
     if (navigationProgress && userLatitude !== undefined && userLongitude !== undefined) followCamera(true);
     else mapRef.current?.animateCamera({ center: inView({ latitude: userLocation.lat, longitude: userLocation.lng }), zoom: FOCUS_ZOOM }, { duration: FOCUS_DURATION_MS });
   }, [centerOnUserRequest, followCamera, inView, navigationProgress, onFollowModeChange, userLatitude, userLocation, userLongitude]);
@@ -190,10 +201,12 @@ export function TripMap({ centerOnUserRequest = 0, destination, focusStop, follo
     <View onLayout={(event) => setMapWidth(event.nativeEvent.layout.width)} style={StyleSheet.absoluteFill}>
       <MapView
         customMapStyle={mapStyle}
+        initialRegion={initialRegion}
         onMapReady={() => {
           setMapReady(true);
         }}
         onPanDrag={interactive ? () => {
+          userMovedCamera.current = true;
           setFollowing(false);
           onUserPan?.();
         } : undefined}
