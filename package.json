@@ -29,7 +29,8 @@
     "deploy:backend": "node scripts/check-deploy-env.mjs backend && npm run build --workspace functions && npx --yes firebase-tools@15.32.1 deploy --only storage,functions",
     "deploy:functions": "node scripts/check-deploy-env.mjs backend && npm run build --workspace functions && npx --yes firebase-tools@15.32.1 deploy --only functions",
     "build:web": "npm run build:web --workspace @pathly/mobile",
-    "deploy:web": "node scripts/check-deploy-env.mjs web && npm run build:web && npx --yes firebase-tools@15.32.1 deploy --only hosting"
+    "build:site": "npm run build:web && node scripts/build-site.mjs",
+    "deploy:web": "node scripts/check-deploy-env.mjs web && npm run build:site && npx --yes firebase-tools@15.32.1 deploy --only hosting"
   },
   "devDependencies": {
     "@fission-ai/openspec": "^1.13.2"

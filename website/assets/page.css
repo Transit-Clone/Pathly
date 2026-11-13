@@ -1,0 +1,103 @@
+/* Shared look for Pathly's smaller pages (Help, Privacy), matching the landing page. */
+:root {
+  --bg: #FFFAF6;
+  --sky: #A4DAEC;
+  --sky-soft: #D7EEF6;
+  --ink: #12355B;
+  --body: #4A5D73;
+  --muted: #7C8A9A;
+  --line: #E8E2DB;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--body);
+  font: 500 17px/1.6 Nunito, ui-rounded, system-ui, sans-serif;
+  overflow-x: hidden;
+}
+
+img { display: block; max-width: 100%; }
+a { color: var(--ink); font-weight: 700; }
+p { margin: 0; }
+h1, h2, h3, .logo { font-family: Fredoka, Nunito, sans-serif; color: var(--ink); margin: 0; }
+h1 { font-size: clamp(2.5rem, 6vw, 3.6rem); line-height: 1.05; font-weight: 700; }
+h2 { font-size: clamp(1.6rem, 3.6vw, 2.1rem); line-height: 1.15; font-weight: 700; }
+h3 { font-size: 1.2rem; font-weight: 600; }
+
+.wrap { width: min(1120px, 100% - 32px); margin: 0 auto; }
+.narrow { width: min(820px, 100% - 32px); margin: 0 auto; }
+
+/* nav */
+.top-nav { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 22px 0; }
+.logo { display: flex; align-items: center; gap: 10px; font-size: 1.75rem; font-weight: 700; color: #1D5AA0; text-decoration: none; }
+.logo img { width: 40px; height: 40px; border-radius: 11px; }
+.nav-link { font-weight: 700; color: var(--ink); text-decoration: none; padding: 9px 16px; border-radius: 999px; background: rgba(255,255,255,.7); border: 1.5px solid var(--sky); white-space: nowrap; }
+.nav-link:hover { background: #fff; }
+
+/* the soft blue top, same as the landing page */
+.page-hero { position: relative; z-index: 0; padding-bottom: 56px; }
+.page-hero::before {
+  content: ""; position: absolute; inset: 0; z-index: -1;
+  background: linear-gradient(180deg, var(--bg) 0%, var(--sky-soft) 45%, var(--sky) 80%, var(--bg) 100%);
+}
+.page-hero .intro { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding-top: 28px; }
+.page-hero .intro p { margin-top: 12px; font-size: 1.2rem; max-width: 34ch; }
+.page-hero .intro img { width: 132px; flex: none; }
+
+/* cards */
+.card {
+  padding: 28px 30px;
+  border-radius: 28px;
+  background: #fff;
+  border: 2px solid var(--sky-soft);
+  box-shadow: 0 10px 24px rgba(18,53,91,.06);
+}
+.card + .card { margin-top: 20px; }
+.card h2 { margin-bottom: 10px; }
+.card h3 { margin: 18px 0 4px; }
+.card p + p, .card p + ul, .card ul + p, .card p + ol, .card ol + p { margin-top: 10px; }
+.card ul, .card ol { margin: 0; padding-left: 22px; }
+.card li + li { margin-top: 6px; }
+.card.soft { background: linear-gradient(180deg, #fff, var(--sky-soft)); border-color: var(--sky); }
+.card.warm { background: #FFF3EE; border-color: #F6D3C7; }
+
+.btn {
+  display: inline-block; padding: 11px 22px; border-radius: 999px; white-space: nowrap;
+  background: var(--ink); color: #fff; font-weight: 800; text-decoration: none; transition: transform .15s;
+}
+.btn:hover { transform: translateY(-2px); }
+.btn.soft { background: var(--sky-soft); color: var(--ink); }
+
+/* pill links, like the landing page's chips */
+.chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+.chips a { padding: 7px 16px; border-radius: 999px; background: rgba(255,255,255,.8); border: 1.5px solid var(--sky); text-decoration: none; font-size: .95rem; }
+.chips a:hover { background: #fff; }
+
+/* a checklist with round ticks */
+.checks { list-style: none; padding: 0 !important; }
+.checks li { position: relative; padding-left: 38px; }
+.checks li + li { margin-top: 12px !important; }
+.checks li::before {
+  content: "✓"; position: absolute; left: 0; top: 1px; width: 26px; height: 26px; border-radius: 50%;
+  display: grid; place-items: center; background: var(--sky); color: var(--ink); font-weight: 800; font-size: .85rem;
+}
+.checks strong { color: var(--ink); }
+
+footer.site { margin-top: 64px; padding: 26px 0 34px; font-size: .95rem; color: var(--muted); background: var(--sky); }
+footer.site .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; justify-content: space-between; align-items: center; }
+footer.site nav { display: flex; flex-wrap: wrap; gap: 18px; }
+footer.site a { text-decoration: none; }
+footer.site a:hover { text-decoration: underline; }
+
+.bob { animation: bob 3.4s ease-in-out infinite; }
+@keyframes bob { 0%, 100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-8px) rotate(2deg); } }
+@media (prefers-reduced-motion: reduce) { .bob { animation: none; } html { scroll-behavior: auto; } }
+
+@media (max-width: 640px) {
+  .page-hero .intro img { width: 84px; }
+  .card { padding: 22px 20px; }
+}

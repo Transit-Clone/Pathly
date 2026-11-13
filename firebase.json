@@ -30,22 +30,23 @@
   ],
   "hosting": {
     "site": "pathly",
-    "public": "mobile/dist",
+    "public": "dist/site",
+    "cleanUrls": true,
     "ignore": [
       "firebase.json",
       "**/.*",
       "**/node_modules/**",
-      "metadata.json"
+      "**/metadata.json"
     ],
     "rewrites": [
       {
-        "source": "**",
-        "destination": "/index.html"
+        "source": "/app/**",
+        "destination": "/app/index.html"
       }
     ],
     "headers": [
       {
-        "source": "/_expo/**",
+        "source": "/app/_expo/**",
         "headers": [
           {
             "key": "Cache-Control",
@@ -54,7 +55,7 @@
         ]
       },
       {
-        "source": "/index.html",
+        "source": "**/*.html",
         "headers": [
           {
             "key": "Cache-Control",

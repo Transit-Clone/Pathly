@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pathly Help</title>
+  <meta name="description" content="Answers to common questions about Pathly, what testers do, and how to reach us." />
+  <meta name="theme-color" content="#FFFAF6" />
+  <link rel="icon" href="/favicon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/page.css" />
+  <style>
+    .contact { display: flex; align-items: center; gap: 22px; }
+    .contact img { width: 76px; flex: none; }
+    .contact div { flex: 1; min-width: 0; }
+    .contact h2 { margin-bottom: 4px; }
+
+    #testing { scroll-margin-top: 20px; }
+    .testing-head { display: flex; align-items: center; gap: 18px; }
+    .testing-head img { width: 76px; flex: none; }
+    .testing-head p { margin-top: 4px; }
+    #testing .checks { margin-top: 22px; }
+    #testing .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+
+    .faq { margin-top: 56px; }
+    .faq > h2 { margin-bottom: 6px; }
+    .group + .group { margin-top: 34px; }
+    .group h3 { margin: 22px 0 12px; font-size: 1.35rem; }
+    details { border-radius: 22px; background: #fff; border: 2px solid var(--sky-soft); }
+    details + details { margin-top: 10px; }
+    details[open] { border-color: var(--sky); }
+    summary {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 16px 20px; cursor: pointer; list-style: none;
+      color: var(--ink); font-weight: 800; font-size: 1.05rem;
+    }
+    summary::-webkit-details-marker { display: none; }
+    summary::after {
+      content: "+"; flex: none; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%;
+      background: var(--sky-soft); font: 600 1.25rem/1 Fredoka, sans-serif; transition: transform .2s;
+    }
+    details[open] summary::after { transform: rotate(45deg); }
+    details > div { padding: 0 20px 18px; }
+    details > div p + p, details > div p + ol, details > div ol + p { margin-top: 10px; }
+    details ol { margin: 0; padding-left: 22px; }
+
+    .still { display: flex; align-items: center; gap: 18px; margin-top: 48px; }
+    .still img { width: 70px; flex: none; }
+    .still p { flex: 1; color: var(--ink); font-weight: 800; font-size: 1.15rem; }
+
+    @media (max-width: 640px) {
+      .contact, .still, .testing-head { flex-direction: column; text-align: center; }
+      #testing .actions { justify-content: center; }
+    }
+  </style>
+</head>
+<body>
+  <header class="page-hero">
+    <div class="wrap">
+      <nav class="top-nav" aria-label="Main">
+        <a class="logo" href="/"><img src="/assets/pathly-icon.png" alt="" />Pathly</a>
+        <a class="nav-link" href="/app/">Open web app</a>
+      </nav>
+    </div>
+    <div class="narrow intro">
+      <div>
+        <h1>How can we help?</h1>
+        <p>Quick answers below. Still stuck? Send us an email.</p>
+      </div>
+      <img class="bob" src="/assets/pathlings/p13.svg" alt="" />
+    </div>
+  </header>
+
+  <main class="narrow">
+    <section class="card contact" id="contact">
+      <img src="/assets/pathlings/p6.svg" alt="" />
+      <div>
+        <h2>Email us</h2>
+        <p><a href="mailto:sc3vvv@gmail.com">sc3vvv@gmail.com</a></p>
+      </div>
+      <a class="btn" href="mailto:sc3vvv@gmail.com?subject=Pathly%20help">Send an email</a>
+    </section>
+
+    <section class="card soft" id="testing">
+      <div class="testing-head">
+        <img class="bob" src="/assets/pathlings/p5.svg" alt="" />
+        <div>
+          <h2>Testing Pathly</h2>
+          <p>Google Play asks new apps to be tested for 14 days before they can launch. Here's what we need from you:</p>
+        </div>
+      </div>
+      <ul class="checks">
+        <li><strong>Stay for the full 2 weeks.</strong> The test runs for 14 days.</li>
+        <li><strong>Open Pathly every day or two</strong> and tap around, even for a minute.</li>
+        <li><strong>Keep it installed.</strong> Uninstalling takes you out of the test.</li>
+        <li><strong>Report every bug, even tiny ones,</strong> with the feedback form in the app's Settings.</li>
+        <li><strong>Leave private feedback on Google Play.</strong> Testers see a private feedback box on Pathly's Play Store page.</li>
+      </ul>
+      <div class="actions">
+        <a class="btn" href="/#join">How to join</a>
+        <a class="btn soft" href="https://forms.gle/Qveit9f5ejx7ac1Q9" target="_blank" rel="noopener">Feedback form</a>
+      </div>
+    </section>
+
+    <section class="faq">
+      <h2>Questions</h2>
+
+      <div class="group">
+        <h3>Getting the app</h3>
+        <details>
+          <summary>How do I get Pathly on Android?</summary>
+          <div>
+            <p>Pathly is in testing on Google Play, so it takes two steps:</p>
+            <ol>
+              <li><a href="https://groups.google.com/g/pathly-testing" target="_blank" rel="noopener">Join the testers group</a> with the Google account you use on your phone.</li>
+              <li>Open the <a href="https://play.google.com/apps/testing/com.pathly.app" target="_blank" rel="noopener">test page</a>, tap “Become a tester,” then install Pathly from Google Play.</li>
+            </ol>
+          </div>
+        </details>
+        <details>
+          <summary>Google Play says the app isn't available</summary>
+          <div>
+            <p>Make sure you joined the group with the same Google account that's signed in to the Play Store. If you have more than one account, switch to that one in the Play Store.</p>
+            <p>It can also take a few minutes after joining before the test page works.</p>
+          </div>
+        </details>
+        <details>
+          <summary>Is there an iPhone app?</summary>
+          <div>
+            <p>Not yet, it's in the works. For now you can <a href="/app/">use Pathly in your browser</a> on any phone or computer.</p>
+          </div>
+        </details>
+        <details>
+          <summary>Does it cost anything?</summary>
+          <div>
+            <p>No, Pathly is free.</p>
+          </div>
+        </details>
+      </div>
+
+      <div class="group">
+        <h3>Using Pathly</h3>
+        <details>
+          <summary>Where does Pathly work?</summary>
+          <div>
+            <p>New York City and Long Island: the subway, LIRR, MTA buses, NICE Bus, Suffolk County Transit, NYC Ferry, and the Staten Island Ferry.</p>
+          </div>
+        </details>
+        <details>
+          <summary>How do I know if a time is live?</summary>
+          <div>
+            <p>Times with the little signal icon next to them come from the vehicle's live location. Times marked “Scheduled” are from the timetable, so the bus or train may be early or late.</p>
+          </div>
+        </details>
+        <details>
+          <summary>Why does Pathly want my location?</summary>
+          <div>
+            <p>To center the map on you and show what's nearby. It's only used while you have the app open. You can still search for lines and places without it.</p>
+          </div>
+        </details>
+        <details>
+          <summary>How do I change my Pathling?</summary>
+          <div>
+            <p>Tap your Pathling at the top of the map, or go to Settings and pick “Customize your Pathling.”</p>
+          </div>
+        </details>
+        <details>
+          <summary>Do I need an account?</summary>
+          <div>
+            <p>No. You can tap “Continue as guest.” Signing in with email or Google keeps your favorites, saved routes, and Pathling across devices.</p>
+          </div>
+        </details>
+      </div>
+
+      <div class="group">
+        <h3>Your account</h3>
+        <details>
+          <summary>How do I delete my account?</summary>
+          <div>
+            <p>In the app, go to Settings → Location &amp; Privacy → Delete account. You can also email us from the address on your account. <a href="/privacy#delete-account">More about deleting your data</a>.</p>
+          </div>
+        </details>
+        <details>
+          <summary>Something's wrong or I have an idea</summary>
+          <div>
+            <p>We'd love to hear it. Fill out the <a href="https://forms.gle/Qveit9f5ejx7ac1Q9" target="_blank" rel="noopener">feedback form</a>, or email us with a screenshot if you can.</p>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <section class="card still">
+      <img class="bob" src="/assets/pathlings/p1.svg" alt="" />
+      <p>Didn't find your answer?</p>
+      <a class="btn" href="mailto:sc3vvv@gmail.com?subject=Pathly%20help">Email us</a>
+    </section>
+  </main>
+
+  <footer class="site">
+    <div class="wrap">
+      <span>© 2026 Pathly</span>
+      <nav aria-label="Footer">
+        <a href="/app/">Web app</a>
+        <a href="/help">Help</a>
+        <a href="https://forms.gle/Qveit9f5ejx7ac1Q9" target="_blank" rel="noopener">Feedback</a>
+        <a href="/privacy">Privacy</a>
+      </nav>
+    </div>
+  </footer>
+</body>
+</html>

@@ -30,7 +30,9 @@ module.exports = {
     userInterfaceStyle: 'automatic',
     platforms: ['ios', 'android', 'web'],
     // Memoizes components and hooks at build time, so a state change re-renders only what reads it.
-    experiments: { reactCompiler: true },
+    // The web build lives at pathly.web.app/app; the landing page (website/) has the root.
+    // Native builds ignore baseUrl.
+    experiments: { reactCompiler: true, baseUrl: '/app' },
     ios: {
       supportsTablet: true,
       bundleIdentifier: 'com.pathly.app',

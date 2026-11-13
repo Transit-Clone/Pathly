@@ -147,7 +147,8 @@ If the phone can't load the project, check that both devices are on the same net
 | `npm run functions:shell`   | Open the Firebase Functions shell                         |
 | `npm run deploy:functions`  | Deploy Cloud Functions only                               |
 | `npm run deploy:backend`    | Deploy Storage rules and Cloud Functions                  |
-| `npm run deploy:web`        | Build the web app and deploy it to Firebase Hosting       |
+| `npm run build:site`        | Build the web app and put the site together in `dist/site` |
+| `npm run deploy:web`        | Build the site and deploy it to Firebase Hosting          |
 
 These commands run in `firebase/functions` (`npm --prefix firebase/functions run <script>` from the root):
 
@@ -168,7 +169,7 @@ To publish your latest changes, run:
 npm run deploy:web
 ```
 
-This exports the web bundle to `mobile/dist` and deploys only Hosting. It doesn't change Cloud Functions, Firestore, or Storage. You need to be signed in to the Firebase CLI (`npx firebase-tools login`) with access to the `pathly-b7f0f` project. The `EXPO_PUBLIC_` values in your local `mobile/.env` are built into the bundle, so deploy from a machine that has the full config.
+This exports the web bundle to `mobile/dist`, puts it under `/app` next to the landing page and privacy policy from `website/` (in `dist/site`), and deploys only Hosting. pathly.web.app is the landing page, pathly.web.app/app is the web app, and pathly.web.app/privacy stays where the app and Play listing link to it. It doesn't change Cloud Functions, Firestore, or Storage. You need to be signed in to the Firebase CLI (`npx firebase-tools login`) with access to the `pathly-b7f0f` project. The `EXPO_PUBLIC_` values in your local `mobile/.env` are built into the bundle, so deploy from a machine that has the full config.
 
 ## Android release
 
