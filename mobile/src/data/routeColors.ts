@@ -51,8 +51,13 @@ const SUFFOLK_GTFS_FREQUENT = '#C63F49';
 // X27, BM1, BxM10, QM2, SIM1C, ...
 const MTA_EXPRESS_NAME = /^(X|BM|BxM|QM|SIM)\d/i;
 
-/** The color a station transfer chip shows: its agency's bus color, Pathly's LIRR shade, or the line's own. */
+/**
+ * The color a station transfer chip shows: its agency's bus color, Pathly's LIRR shade, or the line's own.
+ * A transfer from the backend already carries Pathly's color (the 51's red), so it's kept as is:
+ * recoloring it again read Suffolk's red as an unknown color and turned every Suffolk line blue.
+ */
 export function transferColor(transfer: Pick<StationTransfer, 'agency' | 'mode' | 'name' | 'color'>): string | null {
+  if (transfer.color && Object.values(BUS_COLORS).some((color) => color === transfer.color!.toUpperCase())) return transfer.color;
   if (transfer.mode !== 'bus') return (transfer.agency === 'LIRR' ? lirrLineColor(transfer.color ?? undefined) : undefined) ?? transfer.color;
   if (transfer.agency === 'NICE Bus') return BUS_COLORS.nice;
   if (transfer.agency === 'Suffolk County Transit') return transfer.color?.toUpperCase() === SUFFOLK_GTFS_FREQUENT ? BUS_COLORS.suffolkFrequent : BUS_COLORS.suffolk;

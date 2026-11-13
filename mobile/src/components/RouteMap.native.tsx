@@ -56,7 +56,17 @@ const STOP_RING = 1.5;
 // overhang its top-right corner (Android clips marker views to their own bounds).
 const VEHICLE_SIZE = 42;
 const VEHICLE_BOX = 54;
-const VEHICLE_ANCHOR = { x: VEHICLE_SIZE / 2 / VEHICLE_BOX, y: (VEHICLE_BOX - VEHICLE_SIZE / 2) / VEHICLE_BOX };
+// Room around the circle's left and bottom for its shadow, which the marker's bounds would clip.
+const SHADOW_ROOM = 6;
+const VEHICLE_BOX_HEIGHT = VEHICLE_BOX + SHADOW_ROOM;
+/**
+ * The soft shadow under the circle, like the web's: Android leaves real shadows out of marker
+ * pictures, so there it's painted as rings fading out, a little below the circle.
+ */
+const PAINTED_SHADOW = Platform.OS === 'android'
+  ? [{ grow: 6, opacity: 0.05 }, { grow: 4, opacity: 0.07 }, { grow: 2, opacity: 0.1 }, { grow: 0, opacity: 0.14 }]
+  : [];
+const SHADOW_DROP = 2;
 // Riders' avatars replace the age badge, stacked; the box widens so Android doesn't clip them.
 const RIDER_AVATAR = 24;
 const RIDER_AVATAR_STEP = 13;
@@ -133,18 +143,32 @@ export function LiveVehicleMarker({ color, mode, onPress, vehicle, zIndex }: { c
   const age = vehicle.updatedAt != null ? formatAge(now - vehicle.updatedAt) : '';
   // Re-pictured only when its drawing changes: the ticking age, its color or its riders.
   const tracksView = useMarkerTracking(`${color}|${mode}|${age}|${JSON.stringify(avatars)}`);
-  const boxWidth = avatars.length > 0 ? RIDER_AVATAR_LEFT + RIDER_AVATAR + (avatars.length - 1) * RIDER_AVATAR_STEP : VEHICLE_BOX;
-  const anchor = { x: VEHICLE_SIZE / 2 / boxWidth, y: VEHICLE_ANCHOR.y };
+  const boxWidth = SHADOW_ROOM + (avatars.length > 0 ? RIDER_AVATAR_LEFT + RIDER_AVATAR + (avatars.length - 1) * RIDER_AVATAR_STEP : VEHICLE_BOX);
+  // Anchored on the circle's center.
+  const anchor = { x: (SHADOW_ROOM + VEHICLE_SIZE / 2) / boxWidth, y: (VEHICLE_BOX_HEIGHT - SHADOW_ROOM - VEHICLE_SIZE / 2) / VEHICLE_BOX_HEIGHT };
   return (
     <Glide lat={vehicle.lat} lon={vehicle.lon}>{(point) => (
       <Marker anchor={anchor} coordinate={{ latitude: point.lat, longitude: point.lon }} onPress={onPress ? () => onPress(vehicle.tripId) : undefined} testID={`route-vehicle-${vehicle.tripId}`} title={onPress ? undefined : mode === 'bus' ? 'Bus' : 'Train'} tracksViewChanges={tracksView} zIndex={zIndex}>
         <View style={[styles.vehicleBox, { width: boxWidth }]}>
+          {PAINTED_SHADOW.map(({ grow, opacity }) => (
+            <View
+              key={grow}
+              style={[styles.paintedShadow, {
+                left: SHADOW_ROOM - grow / 2,
+                bottom: SHADOW_ROOM - SHADOW_DROP - grow / 2,
+                width: VEHICLE_SIZE + grow,
+                height: VEHICLE_SIZE + grow,
+                borderRadius: (VEHICLE_SIZE + grow) / 2,
+                backgroundColor: `rgba(22, 50, 79, ${opacity})`,
+              }]}
+            />
+          ))}
           <View style={styles.vehicleBadge} testID={`route-vehicle-badge-${vehicle.tripId}`}>
             <Icon color={color} name={mode === 'bus' ? 'bus' : mode === 'subway' ? 'subway' : mode === 'ferry' ? 'ferry' : 'rail'} size={22} />
           </View>
           {avatars.length > 0 ? avatars.map((avatar, index) => (
             // The first (the rider's own) on top; the white disc keeps each apart from its neighbor.
-            <View key={index} style={[styles.riderAvatar, { left: RIDER_AVATAR_LEFT + index * RIDER_AVATAR_STEP, zIndex: avatars.length - index }]}>
+            <View key={index} style={[styles.riderAvatar, { left: SHADOW_ROOM + RIDER_AVATAR_LEFT + index * RIDER_AVATAR_STEP, zIndex: avatars.length - index }]}>
               <BeanAvatar config={avatar} size={RIDER_AVATAR - RIDER_DISC_INSET * 2} testID={`route-vehicle-rider-${vehicle.tripId}-${index}`} />
             </View>
           )) : vehicle.updatedAt != null ? (
@@ -392,15 +416,16 @@ const styles = StyleSheet.create({
     borderWidth: 4,
   },
   vehicleBox: {
-    width: VEHICLE_BOX,
-    height: VEHICLE_BOX,
+    width: VEHICLE_BOX + SHADOW_ROOM,
+    height: VEHICLE_BOX_HEIGHT,
   },
+  paintedShadow: { position: 'absolute' },
   // Borderless white circle with a route-color glyph: three times a stop dot's size and carrying
   // the mode glyph (stop dots never do), so a vehicle reads apart from a stop.
   vehicleBadge: {
     position: 'absolute',
-    left: 0,
-    bottom: 0,
+    left: SHADOW_ROOM,
+    bottom: SHADOW_ROOM,
     width: VEHICLE_SIZE,
     height: VEHICLE_SIZE,
     alignItems: 'center',
@@ -413,7 +438,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.35,
     shadowRadius: 5,
     elevation: 6,
-    ...ANDROID_MARKER_EDGE,
   },
   riderAvatar: {
     position: 'absolute',

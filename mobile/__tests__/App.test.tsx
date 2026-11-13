@@ -2040,7 +2040,8 @@ describe('Pathly prototype navigation', () => {
       expect(screen.getByTestId('ride-guide-leave-time')).toBeTruthy();
       expect(screen.getByTestId('ride-guide-step-0')).toBeTruthy();
       expect(screen.queryByTestId('ride-guide-step-1')).toBeNull();
-      // Every stop after the rider's, the end of the line picked until they choose.
+      // Every stop after the rider's, in a popup, the end of the line picked until they choose.
+      fireEvent.press(screen.getByTestId('ride-guide-stop-picker'));
       const stops = screen.getAllByTestId(/^ride-guide-stop-\d+$/);
       expect(stops).toHaveLength(20);
       expect(stops[0]!.props.accessibilityLabel).not.toMatch(/^Stony Brook/);
@@ -2048,10 +2049,12 @@ describe('Pathly prototype navigation', () => {
       expect(stops.at(-1)!.props.accessibilityLabel).toMatch(/^Penn Station, arrive about /);
 
       fireEvent.press(stops[2]!);
+      fireEvent.press(screen.getByTestId('ride-guide-stop-picker'));
       const picked = screen.getByTestId('ride-guide-stop-3');
       expect(picked.props.accessibilityState).toEqual({ selected: true });
       const pickedName = picked.props.accessibilityLabel.split(',')[0];
       const pickedTime = screen.getByTestId('ride-guide-stop-time-3').props.children;
+      fireEvent.press(screen.getByTestId('ride-guide-stops-close'));
       expect(screen.getByTestId('ride-guide-arrive-time')).toHaveTextContent(pickedTime);
       expect(screen.getByLabelText(`Start ride to ${pickedName}`)).toBeTruthy();
 

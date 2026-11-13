@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { legNotes } from '../data/tripLive';
 import { legDepartureOptions, quickDepartureOptions, retimeItinerary, type DepartureChoices, type LegDepartureOption } from '../data/tripDepartures';
@@ -19,7 +20,7 @@ import type { Coordinates } from '../hooks/useCurrentLocation';
 import { useUserPreferences } from '../data/userPreferences';
 import { useClock } from '../hooks/useClock';
 import { useTheme } from '../theme/AppSettings';
-import { SharedTripDetailView, type TripDetailDeparture, type TripDetailLeg, type TripDetailModel, type TripDetailWalk } from './SharedTripDetailView';
+import { SharedTripDetailView, tripDetailMapPadding, type TripDetailDeparture, type TripDetailLeg, type TripDetailModel, type TripDetailWalk } from './SharedTripDetailView';
 import { TripMap } from './TripMap';
 import { legLineKey, useTripVehicles } from '../hooks/useTripVehicles';
 import type { TripVehicle } from '../data/tripMap';
@@ -158,6 +159,7 @@ function withoutStaleLive(model: TripDetailModel, liveFresh: boolean): TripDetai
 }
 
 export function PlannedTripDetailView({ destination, destinationAddress, destinationLines, isActive, liveFresh = true, isFavorite, itinerary: planned, onBack, onEnd, onStart, onToggleFavorite, origin, riderLocation }: PlannedTripDetailViewProps) {
+  const insets = useSafeAreaInsets();
   const { preferences } = useUserPreferences();
   const { colors } = useTheme();
   // A stop pressed in a leg's stop list; the counter repeats a focus on the same stop.
@@ -188,7 +190,7 @@ export function PlannedTripDetailView({ destination, destinationAddress, destina
           interactive={true}
           itinerary={itinerary}
           onUserPan={() => setCentered(false)}
-          padding={{ top: 76, right: 24, bottom: 36, left: 24 }}
+          padding={tripDetailMapPadding(insets.top)}
           testID="search-trip-route-map"
           userLocation={userLocation}
           approachLines={approachLines}

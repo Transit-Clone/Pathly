@@ -2,7 +2,7 @@
 import type { Coordinates } from '../hooks/useCurrentLocation';
 import { callable } from '../lib/firebase';
 import { whenWarm } from './backendWarmup';
-import { preferredDirectionIndex, type LiveSource, type RouteDetail, type TransitDirection } from './transit';
+import { preferredDirectionIndex, compassOrdered, type LiveSource, type RouteDetail, type TransitDirection } from './transit';
 
 type DiscoveredDirection = { stopId: string; name: string; headsign: string | null; distanceMeters?: number; stopsAhead?: number | null; lat?: number; lon?: number } | null;
 
@@ -130,7 +130,8 @@ export function discoveredRouteToRouteDetail(discovered: DiscoveredRoute): Route
   const direction1Index = preferredDirectionIndex(byDirectionId) === 1 ? 1 : 0;
   const lead = direction1Index === 0 ? direction1 ?? direction0 : direction0;
 
-  return {
+  // Named by compass: west left of east, north before south, whichever came up first.
+  return compassOrdered({
     agency: discovered.agencyDisplayName,
     alert: 'No delays reported on this route.',
     color: discovered.color,
@@ -148,7 +149,7 @@ export function discoveredRouteToRouteDetail(discovered: DiscoveredRoute): Route
     predictions: [],
     routeName: discovered.routeName,
     shortName: discovered.shortName,
-  };
+  });
 }
 
 const searchTransitRoutesCallable = callable<{ query: string; lat: number; lon: number }, { routes: DiscoveredRoute[] }>('searchTransitRoutes');

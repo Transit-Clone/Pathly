@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useRouteColor } from '../data/routeColors';
@@ -228,6 +229,16 @@ const LEAVE_WITHIN_HORIZON_MIN = 90;
 const TOP_ROW_BOTTOM = 8 + MAP_CONTROL_SIZE + 12;
 
 /**
+ * Room the trip map keeps clear when it frames the trip, so no stop hides under the page's own
+ * buttons: the status bar and top row (back, save) with Locate under it, and GO riding the sheet's
+ * edge at the bottom. `topInset` is the status bar's height.
+ */
+export function tripDetailMapPadding(topInset: number, showFavorite = true): { top: number; right: number; bottom: number; left: number } {
+  // Locate sits under the save button, or (with no save button) in the top row's corner.
+  return { top: topInset + TOP_ROW_BOTTOM + (showFavorite ? MAP_CONTROL_SIZE + 12 : 12), right: 40, bottom: 60 + 16 + 20, left: 40 };
+}
+
+/**
  * How long the rider has before setting off, counting down: "Leave within 6 min", then "Leave now"
  * (in warning yellow). Live when the first ride's feed is tracking it.
  */
@@ -322,6 +333,7 @@ function shade(color: string, base: string, amount: number): string {
 }
 
 export function SharedTripDetailView({ actionLabel, backLabel, beforeSteps, interactiveMap = false, isFavorite, locationSelected, map: tripMap, model, onAction, onBack, onCenterOnLocation, onFocusStop, onSelectDeparture, onToggleFavorite, rootTestID, showFavorite = true, showServiceAlerts = true, testPrefix, tone = 'planned' }: SharedTripDetailViewProps) {
+  const insets = useSafeAreaInsets();
   const tint = useRouteColor();
   const styles = useThemedStyles(createStyles);
   const { colors, isDark } = useTheme();
@@ -393,7 +405,7 @@ export function SharedTripDetailView({ actionLabel, backLabel, beforeSteps, inte
     <MapBackdrop
       focus={routeFocus(legPaths)}
       initialSize={{ width: Math.min(width, 540), height: mapHeight }}
-      padding={{ top: 76, right: 24, bottom: 36, left: 24 }}
+      padding={tripDetailMapPadding(insets.top, showFavorite)}
       renderMarkers={(projection) => (destination ? <DestinationPin point={destination} projection={projection} /> : null)}
       renderOverlay={({ scale }) => <RouteLines legs={mapLegs} scale={scale} showConnectors={true} showStart={true} />}
       showUserLocation={true}
@@ -439,7 +451,8 @@ export function SharedTripDetailView({ actionLabel, backLabel, beforeSteps, inte
       map={map}
       mapButtons={locateButton}
       // GO (or END) rides the sheet's edge, so Locate moves up under the top row, clear of it.
-      mapButtonsTop={TOP_ROW_BOTTOM}
+      // With no save button (a guided ride), Locate takes the top-right corner itself.
+      mapButtonsTop={showFavorite ? TOP_ROW_BOTTOM : 8}
       mapHeight={mapHeight}
       mapTestID={`${testPrefix}-map`}
       scrollTestID={`${testPrefix}-scroll`}

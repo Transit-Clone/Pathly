@@ -44,7 +44,7 @@ import { LiveSignal } from './LiveSignal';
 import { stopLineBadges } from './SearchView';
 import { PlannedTripDetailView } from './PlannedTripDetailView';
 import { Mascot } from './Mascot';
-import { MapControlButton } from './MapControlButton';
+import { MAP_CONTROL_SIZE, MapControlButton } from './MapControlButton';
 import { mapPageMapHeight } from './mapSheetLayout';
 import { PressableScale } from './PressableScale';
 import { RouteBadge, type TransitMode } from './RouteBadge';
@@ -294,7 +294,9 @@ export function RouteResultsView({
   );
 
   const tripCard = (
-    <View onLayout={(event) => setTripCardBottom(insets.top + event.nativeEvent.layout.y + event.nativeEvent.layout.height)} style={styles.tripRow}>
+    // Its layout is measured inside the controls' status-bar padding, so `y` already includes that
+    // inset; adding it again pushed the refresh button down by the status bar on notched phones.
+    <View onLayout={(event) => setTripCardBottom(event.nativeEvent.layout.y + event.nativeEvent.layout.height)} style={styles.tripRow}>
       <MapControlButton accessibilityLabel="Back to destination search" icon="back" onPress={onBack} style={styles.backButton} testID="results-back" />
 
       <View style={styles.criteriaCard}>
@@ -355,7 +357,9 @@ export function RouteResultsView({
         }}
         onUserPan={() => setCentered(false)}
         origin={originPoint}
-        padding={{ top: tripCardBottom + 24, right: 40, bottom: 24, left: 40 }}
+        // Framed clear of what sits on the map: the trip card and the refresh button under it at
+        // the top, the location button at the bottom.
+        padding={{ top: tripCardBottom + 12 + MAP_CONTROL_SIZE + 12, right: 40, bottom: 14 + MAP_CONTROL_SIZE + 16 + thumb.mapBottomClearance, left: 40 }}
         testID="results-map"
         userLocation={userLocation}
       />

@@ -98,10 +98,12 @@ export type NearestRouteStop = {
 const WALK_RANGE_METERS = 2_500;
 // A walk longer than this isn't searched; such a stop counts as unreachable on foot.
 const WALK_LIMIT_METERS = 5_000;
-// The walk drawn to the rider's stop: up to about an hour on foot (4.8 km at 80 m a minute, the
-// app's walking pace), so only stops within this straight line of the rider are tried.
-const WALK_PATH_LIMIT_METERS = 4_800;
-const WALK_PATH_RANGE_METERS = 4_000;
+// The walk drawn to the rider's stop, even a far one (the 62 from Stony Brook): stops within this
+// straight line of the rider, by walks up to this long. Measured on the Long Island data, a 16 km
+// search takes under a second (a 4 km one about 0.1 s); beyond that a walk is meaningless and the
+// search would keep growing, so far-off lines (Montauk from Manhattan) still get none.
+const WALK_PATH_LIMIT_METERS = 25_000;
+const WALK_PATH_RANGE_METERS = 16_000;
 // The straight-line nearest few are enough: walking is never shorter than straight line, so the
 // search stops at the first stop farther in straight line than the best walk so far.
 const MAX_WALK_CANDIDATES = 6;
@@ -147,12 +149,12 @@ async function departureStopsByDirection(agencyId: AgencyId, routeId: string): P
 
 /**
  * The walk from a point to one stop, for drawing — the same walk pickWalkingNearest measured when
- * it chose that stop. Null when the stop is unknown, more than about an hour's walk away
- * (WALK_PATH_RANGE_METERS), or not reachable on foot.
+ * it chose that stop. Null when the stop is unknown, farther than WALK_PATH_RANGE_METERS
+ * in a straight line, or not reachable on foot.
  */
 /**
  * The walk from a point to a stop the app already knows the position of (from a nearby search or
- * live status), so no timetable is read. Null when it's more than about an hour's walk away or not
+ * live status), so no timetable is read. Null when it's farther than WALK_PATH_RANGE_METERS or not
  * reachable on foot.
  */
 export function getWalkingPathBetween(lat: number, lon: number, stopLat: number, stopLon: number): { meters: number; path: { lat: number; lon: number }[] } | null {

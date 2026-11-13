@@ -61,6 +61,41 @@ export function preferredDirectionIndex(directions: readonly TransitDirection[])
   return null;
 }
 
+type Compass = 'north' | 'south' | 'east' | 'west';
+const compassOf = (direction: string): Compass | null => {
+  const match = /\b(north|south|east|west)(?:bound)?\b/i.exec(direction);
+  return match ? (match[1]!.toLowerCase() as Compass) : null;
+};
+
+/**
+ * Whether a two-way route's compass-named directions are in the wrong order. Riders read west as
+ * left and east as right, like a map; and north comes first, like reading a map top-down.
+ */
+function isCompassReversed(directions: readonly TransitDirection[]): boolean {
+  const [first, second] = directions;
+  if (!first || !second) return false;
+  const pair = `${compassOf(first.direction)}-${compassOf(second.direction)}`;
+  return pair === 'east-west' || pair === 'south-north';
+}
+
+/**
+ * `route` with Westbound first (left) and Eastbound second (right), or Northbound first and
+ * Southbound second, when its directions are named that way. Everything tied to a `directions`
+ * index moves with it: which one is GTFS direction 1, which way `stops` is authored, and each
+ * direction's predictions.
+ */
+export function compassOrdered<T extends RouteDetail>(route: T): T {
+  if (!isCompassReversed(route.directions)) return route;
+  const [first, second] = route.directions as readonly [TransitDirection, TransitDirection];
+  return {
+    ...route,
+    directions: [second, first],
+    ...(route.liveSource ? { liveSource: { ...route.liveSource, direction1Index: route.liveSource.direction1Index === 0 ? 1 : 0 } } : {}),
+    ...(route.stops ? { stopsDirectionIndex: (route.stopsDirectionIndex ?? 0) === 0 ? 1 : 0 } : {}),
+    ...(route.reversePredictions ? { predictions: route.reversePredictions, reversePredictions: route.predictions } : {}),
+  };
+}
+
 export type RoutePrediction = {
   live: boolean;
   minutes: number;
@@ -209,7 +244,7 @@ export type RouteDetail = {
   stopsDirectionIndex?: 0 | 1;
 };
 
-export const routes: readonly RouteDetail[] = [
+const catalogRoutes: readonly RouteDetail[] = [
   {
     // Internal key only (used for pins/favorites/tests) — the real branch is Port
     // Jefferson, not Ronkonkoma; see firebase/functions/static_data/lirr/routes.txt.
@@ -445,6 +480,9 @@ export const routes: readonly RouteDetail[] = [
     alert: 'No delays reported on this route.',
   },
 ] as const;
+
+/** The catalog, with compass-named directions in map order (west before east, north before south). */
+export const routes: readonly RouteDetail[] = catalogRoutes.map(compassOrdered);
 
 export const routeById = Object.fromEntries(
   routes.map((route) => [route.id, route]),

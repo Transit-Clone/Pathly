@@ -115,6 +115,8 @@ writeFileSync(join(outDir, 'icon.png'), render(1024, { scale: 0.82, background: 
 writeFileSync(join(outDir, 'adaptive-icon.png'), render(1024, { scale: 0.58, background: null, cutColor: BLUE }));
 // The rounded tile on the native splash and App.tsx's loading screen.
 writeFileSync(join(outDir, 'pathly-mark.png'), render(1024, { scale: 0.82, background: BLUE, cutColor: BLUE, cornerRadius: 240 }));
+// Google Play store listing icon: 512x512, full-bleed square (Play rounds the corners itself).
+writeFileSync(join(outDir, 'play-store-icon.png'), render(512, { scale: 0.82, background: BLUE, cutColor: BLUE }));
 // Web favicon.
 writeFileSync(join(outDir, 'favicon.png'), render(48, { scale: 0.84, background: BLUE, cutColor: BLUE }));
 console.log('wrote icons to', outDir);

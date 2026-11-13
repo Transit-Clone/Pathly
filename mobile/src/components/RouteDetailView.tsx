@@ -171,6 +171,8 @@ const MAX_TILE_WIDTH = 96;
 const MAP_BADGE_TOP = 62;
 /** The bus name's line height over the map (its 44 pt type). */
 const MAP_BUS_LABEL_HEIGHT = 52;
+/** Room for the agency logo under the bus name. */
+const MAP_AGENCY_LOGO_ROOM = 34;
 /** The subway sign's height over the map (RouteBadge's xlarge). */
 const MAP_ROUTE_BADGE_HEIGHT = 58;
 /** The stop list's line, as thick as the line on the live map (RouteMap's LINE_WIDTH). */
@@ -634,7 +636,11 @@ export function RouteDetailView({ alerts, exploreFrom, initialDirectionIndex, is
   // Buses, trains and ferries are named in big type in their route color, over a soft glow from the
   // map's top-left corner so busy streets don't run through the name; subway lines keep their round sign.
   // The glow stays with the map; the name and logo ride the page with the other buttons.
-  const mapGlow = vehicleIcon !== 'subway' ? <MapLabelGlow color={colors.surface} height={insets.top + MAP_BADGE_TOP + MAP_BUS_LABEL_HEIGHT + 320} width={300} /> : null;
+  // Sized to the screen: enough to sit behind the name and agency logo, never most of a phone's map.
+  const labelBottom = insets.top + MAP_BADGE_TOP + MAP_BUS_LABEL_HEIGHT + MAP_AGENCY_LOGO_ROOM;
+  const glowHeight = Math.min(labelBottom + 140, Math.max(labelBottom + 70, mapHeight * 0.55));
+  const glowWidth = Math.min(300, width * 0.62);
+  const mapGlow = vehicleIcon !== 'subway' ? <MapLabelGlow color={colors.surface} height={glowHeight} width={glowWidth} /> : null;
   const mapBadge = vehicleIcon !== 'subway' ? (
     <>
       <View

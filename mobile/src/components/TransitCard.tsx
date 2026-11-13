@@ -11,7 +11,7 @@ import {
 
 import { useViewportSize } from '../hooks/useViewportSize';
 import { useRouteColor } from '../data/routeColors';
-import { departureDisplay, directionDestination, type RouteDetail, type TransitDirection } from '../data/transit';
+import { departureDisplay, directionDestination, preferredDirectionIndex, type RouteDetail, type TransitDirection } from '../data/transit';
 import { useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
 import { typography } from '../theme/typography';
@@ -95,16 +95,13 @@ function PageBody({ index, item, route, styles }: {
 }
 
 /**
- * Which direction a card opens on: the one leaving sooner, once there's a real answer (null until
- * then). Scheduled times count too, so a direction done for the night (its next run at 5 AM) is
- * never the face of a line still running the other way; a direction with nothing counts as last.
+ * Which direction a card opens on: the first, unless the rider is at or near the end of that
+ * direction's line (or clearly at the other end's stop), where the other way is the one they'd
+ * ride. Known from the stops themselves, so the card opens there at once: it never flips over
+ * when live times arrive as the rider scrolls.
  */
-export function openingDirectionIndex(route: RouteDetail): 0 | 1 | null {
-  const [first, second] = route.directions;
-  const hasAnswer = route.liveSource ? route.liveStatus === 'loaded' : first.live && second.live;
-  if (!hasAnswer || (first.unavailable && second.unavailable)) return null;
-  const wait = (direction: TransitDirection) => (direction.unavailable ? Number.POSITIVE_INFINITY : direction.minutes);
-  return wait(second) < wait(first) ? 1 : 0;
+export function openingDirectionIndex(route: RouteDetail): 0 | 1 {
+  return preferredDirectionIndex(route.directions) ?? 0;
 }
 
 export function TransitCard({ onPress, route, saved = false }: TransitCardProps) {
@@ -112,27 +109,13 @@ export function TransitCard({ onPress, route, saved = false }: TransitCardProps)
   const routeColor = useRouteColor();
   const { width } = useViewportSize();
   const pageWidth = Math.min(width, 540) - CARD_HORIZONTAL_MARGIN * 2;
-  const [activePage, setActivePage] = useState(0);
-
-  // Opens on whichever direction's next train is actually sooner, not always the first one —
-  // otherwise a much closer train in the other direction could sit hidden behind a farther one
-  // shown first just because of tab order. Only acts once both directions have genuine live
-  // data (never guesses off the illustrative mock numbers), and only on first load. Adjusted
-  // during render (React's documented pattern for this) rather than in an effect, since it's
-  // a one-time derivation from props, not a subscription.
-  const [hasAutoSelectedPage, setHasAutoSelectedPage] = useState(false);
-  if (!hasAutoSelectedPage) {
-    const opening = openingDirectionIndex(route);
-    if (opening !== null) {
-      setHasAutoSelectedPage(true);
-      if (opening === 1) setActivePage(1);
-    }
-  }
+  const [activePage, setActivePage] = useState<number>(() => openingDirectionIndex(route));
 
   // Native: the pages sit in a row that follows the finger, then settles on `activePage`. A
   // horizontal scroller nested in the vertical list only took dead-level swipes on Android (the list
-  // claimed anything at an angle), so the card claims sideways-ish drags itself instead.
-  const [slide] = useState(() => new Animated.Value(0));
+  // claimed anything at an angle), so the card claims sideways-ish drags itself instead. It starts
+  // already on the opening page, so nothing slides into place as the card appears.
+  const [slide] = useState(() => new Animated.Value(-activePage * pageWidth));
   const pageCount = route.directions.length;
   useEffect(() => {
     Animated.spring(slide, { toValue: -activePage * pageWidth, bounciness: 0, speed: 18, useNativeDriver: Platform.OS !== 'web' }).start();

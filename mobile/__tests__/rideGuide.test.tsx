@@ -125,11 +125,16 @@ describe('RideGuideView', () => {
     expect(screen.getByTestId('ride-guide-leave-within')).toHaveTextContent(/Leave within 3 min to catch the /);
     expect(screen.getByTestId('ride-guide-leave-time')).toHaveTextContent(formatTripClock(new Date(NOW + 3 * 60_000).toISOString()));
     expect(screen.getByTestId('ride-guide-alerts-0')).toHaveTextContent(/Detour in effect/);
-    // The end of the line until the rider picks.
+    // The end of the line until the rider picks; the stops wait in a popup.
+    expect(screen.queryByTestId('ride-guide-stops')).toBeNull();
+    fireEvent.press(screen.getByTestId('ride-guide-stop-picker'));
     expect(screen.getByTestId('ride-guide-stop-3').props.accessibilityState).toEqual({ selected: true });
     expect(screen.getByTestId('ride-guide-arrive-time')).toHaveTextContent(formatTripClock(new Date(NOW + 26 * 60_000).toISOString()));
 
     fireEvent.press(screen.getByTestId('ride-guide-stop-2'));
+    // Picking closes the popup, and the page shows the stop picked.
+    expect(screen.queryByTestId('ride-guide-stops')).toBeNull();
+    expect(screen.getByTestId('ride-guide-stop-picked')).toHaveTextContent('Oak Rd');
     expect(screen.getByTestId('ride-guide-arrive-time')).toHaveTextContent(formatTripClock(new Date(NOW + 15 * 60_000).toISOString()));
     expect(within(screen.getByTestId('ride-guide-step-0')).getByText('Oak Rd')).toBeTruthy();
 
@@ -141,6 +146,7 @@ describe('RideGuideView', () => {
     renderGuide();
     const later = new Date(NOW + 26 * 60_000).toISOString();
     fireEvent.press(screen.getByTestId(`ride-guide-departure-0-${later}`));
+    fireEvent.press(screen.getByTestId('ride-guide-stop-picker'));
     expect(screen.getByTestId('ride-guide-stop-time-1')).toHaveTextContent(formatTripClock(new Date(NOW + 30 * 60_000).toISOString()));
     expect(screen.queryByTestId('ride-guide-favorite')).toBeNull();
   });

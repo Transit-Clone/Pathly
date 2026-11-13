@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { rideGuideItinerary, rideStopTimes, type RideGuideRequest } from '../data/rideGuide';
 import { withAlpha } from '../data/routeDirection';
@@ -17,7 +18,8 @@ import { fontFamilies, typography } from '../theme/typography';
 import { Icon } from './Icon';
 import { toTripDetailModel, withMapLive } from './PlannedTripDetailView';
 import { PressableScale } from './PressableScale';
-import { SharedTripDetailView } from './SharedTripDetailView';
+import { SharedTripDetailView, tripDetailMapPadding } from './SharedTripDetailView';
+import { SheetPanel } from './SheetPanel';
 import { TripMap } from './TripMap';
 
 type RideGuideViewProps = {
@@ -36,6 +38,7 @@ type RideGuideViewProps = {
  * when the ride gets there. GO here starts en-route navigation for it.
  */
 export function RideGuideView({ onBack, onStart, request, riderLocation }: RideGuideViewProps) {
+  const insets = useSafeAreaInsets();
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
   const tint = useRouteColor();
@@ -47,6 +50,7 @@ export function RideGuideView({ onBack, onStart, request, riderLocation }: RideG
   const [focusStop, setFocusStop] = useState<{ point: LatLng; key: number } | null>(null);
   const [centerRequest, setCenterRequest] = useState(0);
   const [centered, setCentered] = useState(false);
+  const [pickingStop, setPickingStop] = useState(false);
   const now = useClock(30_000);
   const planned = useMemo(() => rideGuideItinerary(request, alightIndex), [alightIndex, request]);
   const itinerary = useMemo(() => (planned ? retimeItinerary(planned, choices, now) : null), [choices, now, planned]);
@@ -65,11 +69,41 @@ export function RideGuideView({ onBack, onStart, request, riderLocation }: RideG
     contextLabel: 'RIDE',
   }, itinerary, vehicles, now);
 
+  const alightArrives = stopTimes.find((entry) => entry.index === alightIndex)?.arrives;
+
+  // The page shows just the stop picked; every stop opens in a popup, so a long line doesn't make
+  // the page long.
   const stopPicker = (
-    <View style={styles.picker} testID="ride-guide-stops">
-      <Text accessibilityRole="header" style={styles.pickerTitle}>Where are you getting off?</Text>
-      <Text style={styles.pickerHint}>{`From ${request.stops[0]!.name}, on the ${formatTripClock(ride.from.time)}. Times are estimates.`}</Text>
-      <View style={styles.pickerList}>
+    <PressableScale
+      accessibilityHint="Opens the list of stops to pick where you get off"
+      accessibilityLabel={`Getting off at ${alight.name}${alightArrives ? `, arrive about ${formatTripClock(alightArrives)}` : ''}`}
+      accessibilityRole="button"
+      onPress={() => setPickingStop(true)}
+      pressedScale={0.99}
+      style={styles.picker}
+      testID="ride-guide-stop-picker"
+    >
+      <View style={[styles.pickerDot, { borderColor: lineColor, backgroundColor: lineColor }]} />
+      <View style={styles.pickerCopy}>
+        <Text style={styles.pickerLabel}>Getting off at</Text>
+        <Text numberOfLines={1} style={styles.pickerStop} testID="ride-guide-stop-picked">{alight.name}</Text>
+      </View>
+      {alightArrives ? <Text style={styles.stopTimeSelected}>{formatTripClock(alightArrives)}</Text> : null}
+      <Icon color={colors.mutedInk} name="expand" size={18} />
+    </PressableScale>
+  );
+
+  const stopSheet = (
+    <Modal animationType="fade" onRequestClose={() => setPickingStop(false)} transparent={true} visible={pickingStop}>
+      <Pressable accessibilityLabel="Close stops" onPress={() => setPickingStop(false)} style={styles.sheetBackdrop} testID="ride-guide-stops-backdrop" />
+      {pickingStop ? (
+        <SheetPanel style={styles.sheet} testID="ride-guide-stops">
+          <View style={styles.sheetHeader}>
+            <Text accessibilityRole="header" style={styles.sheetTitle}>Where are you getting off?</Text>
+            <PressableScale accessibilityLabel="Close" accessibilityRole="button" hitSlop={8} onPress={() => setPickingStop(false)} testID="ride-guide-stops-close"><Icon name="close" size={26} /></PressableScale>
+          </View>
+          <Text style={styles.pickerHint}>{`From ${request.stops[0]!.name}, on the ${formatTripClock(ride.from.time)}. Times are estimates.`}</Text>
+          <ScrollView contentContainerStyle={styles.pickerList}>
         {stopTimes.map(({ arrives, index, stop }, row) => {
           const selected = index === alightIndex;
           const isLast = row === stopTimes.length - 1;
@@ -80,7 +114,10 @@ export function RideGuideView({ onBack, onStart, request, riderLocation }: RideG
               accessibilityLabel={`${stop.name}, arrive about ${formatTripClock(arrives)}`}
               accessibilityRole="button"
               accessibilityState={{ selected }}
-              onPress={() => setAlightIndex(index)}
+              onPress={() => {
+                setAlightIndex(index);
+                setPickingStop(false);
+              }}
               pressedScale={0.99}
               style={[styles.stopRow, selected && { backgroundColor: withAlpha(lineColor, 0.12) }]}
               testID={`ride-guide-stop-${index}`}
@@ -96,11 +133,15 @@ export function RideGuideView({ onBack, onStart, request, riderLocation }: RideG
             </PressableScale>
           );
         })}
-      </View>
-    </View>
+          </ScrollView>
+        </SheetPanel>
+      ) : null}
+    </Modal>
   );
 
   return (
+    <>
+    {stopSheet}
     <SharedTripDetailView
       actionLabel={`Start ride to ${alight.name}`}
       backLabel="Back to route"
@@ -116,7 +157,7 @@ export function RideGuideView({ onBack, onStart, request, riderLocation }: RideG
           interactive={true}
           itinerary={itinerary}
           onUserPan={() => setCentered(false)}
-          padding={{ top: 76, right: 24, bottom: 36, left: 24 }}
+          padding={tripDetailMapPadding(insets.top, false)}
           testID="ride-guide-map"
           userLocation={userLocation}
           vehicles={vehicles}
@@ -137,14 +178,22 @@ export function RideGuideView({ onBack, onStart, request, riderLocation }: RideG
       showServiceAlerts={false}
       testPrefix="ride-guide"
     />
+    </>
   );
 }
 
 const createStyles = (colors: Palette) => StyleSheet.create({
-  picker: { marginTop: 14, paddingTop: 16, paddingBottom: 6, borderWidth: 1, borderColor: colors.border, borderRadius: radii.card, backgroundColor: colors.surface },
-  pickerTitle: { paddingHorizontal: 16, color: colors.ink, ...typography.sectionHeading, fontSize: 17 },
-  pickerHint: { marginTop: 3, paddingHorizontal: 16, color: colors.mutedInk, ...typography.metadata },
-  pickerList: { marginTop: 8 },
+  picker: { marginTop: 14, minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12, borderWidth: 1, borderColor: colors.border, borderRadius: radii.card, backgroundColor: colors.surface },
+  pickerDot: { width: 14, height: 14, borderWidth: 4, borderRadius: 7 },
+  pickerCopy: { minWidth: 0, flex: 1 },
+  pickerLabel: { color: colors.mutedInk, ...typography.metadata },
+  pickerStop: { color: colors.ink, ...typography.bodyStrong, fontSize: 16, fontFamily: fontFamilies.extraBold },
+  pickerHint: { marginTop: 3, color: colors.mutedInk, ...typography.metadata },
+  pickerList: { paddingTop: 8 },
+  sheetBackdrop: { flex: 1, backgroundColor: colors.scrim },
+  sheet: { width: '100%', maxWidth: 540, maxHeight: '80%', alignSelf: 'center', paddingHorizontal: 18, paddingTop: 18, paddingBottom: 34, borderTopLeftRadius: radii.sheet, borderTopRightRadius: radii.sheet, backgroundColor: colors.surface },
+  sheetHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  sheetTitle: { flex: 1, color: colors.ink, ...typography.screenHeading, fontSize: 21 },
   stopRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 8, paddingRight: 16 },
   rail: { width: 40, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' },
   railLine: { position: 'absolute', width: 4, height: '50%' },

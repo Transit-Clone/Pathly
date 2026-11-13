@@ -119,22 +119,24 @@ describe('Alike notices share one pill', () => {
 
 describe('Which direction a nearby card opens on', () => {
   const [first, second] = routeById.s1.directions;
-  const card = (a: number | null, b: number | null): RouteDetail => ({
+  const card = (firstAhead: number, secondAhead: number, firstMinutes = 30, secondMinutes = 5): RouteDetail => ({
     ...routeById.s1,
     liveSource: { agencyId: 'si', routeId: 'S76', direction1StopId: 'a', direction0StopId: 'b', direction1Index: 0 },
     liveStatus: 'loaded',
-    directions: [{ ...first, minutes: a ?? 0, live: false, unavailable: a == null }, { ...second, minutes: b ?? 0, live: false, unavailable: b == null }],
+    directions: [
+      { ...first, minutes: firstMinutes, live: true, stopsAhead: firstAhead },
+      { ...second, minutes: secondMinutes, live: true, stopsAhead: secondAhead },
+    ],
   });
 
-  it('opens on the direction still running, not the one whose next trip is 5 AM tomorrow', () => {
-    expect(openingDirectionIndex(card(420, 12))).toBe(1);
-    expect(openingDirectionIndex(card(null, 30))).toBe(1);
-    expect(openingDirectionIndex(card(8, 300))).toBe(0);
+  it('opens on the other direction when the first is at or near its last stop', () => {
+    expect(openingDirectionIndex(card(0, 20))).toBe(1);
+    expect(openingDirectionIndex(card(1, 20))).toBe(1);
   });
 
-  it('waits for a real answer', () => {
-    expect(openingDirectionIndex({ ...card(420, 12), liveStatus: 'loading' })).toBeNull();
-    expect(openingDirectionIndex(card(null, null))).toBeNull();
+  it('stays on the first direction otherwise, even when the other leaves sooner', () => {
+    expect(openingDirectionIndex(card(10, 10, 30, 5))).toBe(0);
+    expect(openingDirectionIndex(card(20, 0))).toBe(0);
   });
 });
 

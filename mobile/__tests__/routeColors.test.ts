@@ -21,4 +21,10 @@ describe('route colors', () => {
     expect(chip('MTA Bus', 'Q25', 'bus', '#FAA61A')).toBe(BUS_COLORS.mtaLocal);
     expect(chip('MTA Subway', 'E', 'subway', '#0062CF')).toBe('#0062CF');
   });
+
+  it("keep a live transfer's color, which the backend already set to Pathly's", () => {
+    const chip = (name: string, color: string) => transferColor({ agency: 'Suffolk County Transit', mode: 'bus', name, color });
+    expect(chip('51', BUS_COLORS.suffolkFrequent)).toBe(BUS_COLORS.suffolkFrequent);
+    expect(chip('62', BUS_COLORS.suffolk)).toBe(BUS_COLORS.suffolk);
+  });
 });
