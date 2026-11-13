@@ -22,7 +22,6 @@ import { useClock } from '../hooks/useClock';
 import { useOnBoardVehicle } from '../hooks/useTripRide';
 import { legSource, useTripVehicles } from '../hooks/useTripVehicles';
 import { useViewportSize } from '../hooks/useViewportSize';
-import { useThumbSide } from '../hooks/useThumbSide';
 import { notifyNow } from '../lib/notifications';
 import { ThemedStatusBar, useTheme, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
@@ -139,7 +138,6 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
   );
   const [confirmingEnd, setConfirmingEnd] = useState(false);
   const [controlsHeight, setControlsHeight] = useState(64);
-  const thumb = useThumbSide();
   const supportPrompt = useSupportPrompt(session.sessionId, guidance.phase === 'arrived');
   const [centerRequest, setCenterRequest] = useState(1);
   const [following, setFollowing] = useState(true);
@@ -187,24 +185,12 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
   const controls = (
     <View onLayout={({ nativeEvent }) => setControlsHeight(Math.ceil(nativeEvent.layout.height))} pointerEvents="box-none" style={styles.topBar}>
       <MapControlButton accessibilityLabel="Back to Home; navigation will stay active" icon="back" onPress={onBack} testID="enroute-back" />
-      <View style={[styles.toolbarActions, { flexDirection: thumb.row }]}>
-        <MapControlButton
-          accessibilityLabel={tripGuidance.voice ? 'Mute spoken directions' : 'Turn on spoken directions'}
-          icon={tripGuidance.voice ? 'voice' : 'voiceOff'}
-          onPress={() => updatePreferences({ tripGuidance: { voice: !tripGuidance.voice } })}
-          testID="enroute-voice"
-        />
-        <PressableScale
-          accessibilityLabel="End current trip"
-          accessibilityRole="button"
-          onPress={() => setConfirmingEnd(true)}
-          style={styles.endButton}
-          testID="enroute-end"
-        >
-          <Icon color={colors.onPrimary} name="stop" size={20} />
-          <Text style={styles.endText}>END</Text>
-        </PressableScale>
-      </View>
+      <MapControlButton
+        accessibilityLabel={tripGuidance.voice ? 'Mute spoken directions' : 'Turn on spoken directions'}
+        icon={tripGuidance.voice ? 'voice' : 'voiceOff'}
+        onPress={() => updatePreferences({ tripGuidance: { voice: !tripGuidance.voice } })}
+        testID="enroute-voice"
+      />
     </View>
   );
 
@@ -228,6 +214,20 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
         contentTestID="enroute-content"
         controls={controls}
         controlsHeight={controlsHeight}
+        footer={(
+          <SafeAreaView edges={['bottom', 'left', 'right']} style={styles.footer} testID="enroute-footer">
+            <PressableScale
+              accessibilityLabel="End current trip"
+              accessibilityRole="button"
+              onPress={() => setConfirmingEnd(true)}
+              style={styles.endButton}
+              testID="enroute-end"
+            >
+              <Icon color={colors.red} name="stop" size={22} />
+              <Text style={styles.endText}>End trip</Text>
+            </PressableScale>
+          </SafeAreaView>
+        )}
         interactiveMap={true}
         mapButtons={locateButton}
         map={(
@@ -459,10 +459,10 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   recoveryPrimaryText: { color: colors.onPrimary, ...typography.bodyStrong },
   recoveryEnd: { minHeight: 44, alignItems: 'center', justifyContent: 'center', marginTop: 8, paddingHorizontal: 20 },
   recoveryEndText: { color: colors.red, ...typography.bodyStrong },
-  topBar: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8, paddingHorizontal: 16 },
-  toolbarActions: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', gap: 12 },
-  endButton: { minWidth: 104, minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 26, backgroundColor: colors.red, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 7 },
-  endText: { color: colors.onPrimary, fontFamily: fontFamilies.extraBold, fontSize: 16, letterSpacing: 0.7 },
+  topBar: { minHeight: 64, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingVertical: 8, paddingHorizontal: 16 },
+  footer: { paddingHorizontal: 16, paddingVertical: 4, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.surface },
+  endButton: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, paddingHorizontal: 16, borderRadius: radii.control },
+  endText: { color: colors.red, fontFamily: fontFamilies.extraBold, fontSize: 17 },
   guidanceCard: { padding: 18, borderWidth: 1, borderColor: colors.border, borderRadius: radii.card, backgroundColor: colors.surface },
   phaseRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', columnGap: 10, rowGap: 6 },
   phase: { color: colors.primary, ...typography.label },

@@ -1,5 +1,7 @@
 # Pathly release QA — November 12, 2026
 
+UI follow-up: the user selected a [fixed bottom End trip bar](fixed-end-footer.md), which now supersedes the toolbar placement described in this audit's initial fix batch. Follow-up screenshots, layout measurements and passing tests are recorded there.
+
 ## Decision
 
 **Prepare an internal native test release; this is not public-store release signoff.** The reviewed route screens have a coherent identity and do not need a redesign. The instruction-obscuring END control is corrected, long waits are readable, and notification lifecycle/stop-data regressions have fixes. Two important navigation gaps remain: line-based trips cannot restore after relaunch, and the current foreground location/notification code does not establish locked-screen navigation advancement.

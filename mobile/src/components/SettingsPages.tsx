@@ -484,7 +484,7 @@ export function AccessibilitySettings({ onFeedback }: PageProps) {
       <Card>
         <ToggleRow label="Left-handed mode" onChange={(value) => { setLeftHanded(value); onFeedback(value ? 'Left-handed mode on' : 'Left-handed mode off'); }} testID="toggle-left-handed" value={leftHanded} />
       </Card>
-      <Text style={profile.note} testID="left-handed-note">Moves the map buttons and GO and END to the left, within reach of your left thumb when your other hand is on the railing.</Text>
+      <Text style={profile.note} testID="left-handed-note">Moves the map buttons and GO to the left, within reach of your left thumb when your other hand is on the railing.</Text>
       <Card>
         <ChoiceRow
           label="Text size"

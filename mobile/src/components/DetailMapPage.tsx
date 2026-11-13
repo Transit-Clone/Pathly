@@ -7,6 +7,7 @@ import { useTouchScroll } from '../hooks/useTouchScroll';
 import { useViewportSize } from '../hooks/useViewportSize';
 import { useAppSettings, useThemedStyles } from '../theme/AppSettings';
 import type { Palette } from '../theme/colors';
+import { mapPageMapHeight } from './mapSheetLayout';
 import { SHEET_AT_REST_TOLERANCE, SheetHandle } from './SheetHandle';
 
 const CONTROL_ROW_HEIGHT = 48;
@@ -29,6 +30,8 @@ type DetailMapPageProps = {
   controlsScrollWithMap?: boolean;
   /** True: the sheet is only as tall as its content (reaching the screen's bottom at least), instead of always a full screen. */
   fitContent?: boolean;
+  /** A fixed footer below the scroll viewport; it owns the bottom safe-area inset. */
+  footer?: ReactNode;
   /** Shows the home screen's grip on the sheet: tapping it expands or collapses the sheet. */
   handle?: { accessibilityHint: string; accessibilityLabel: string; testID: string };
   /**
@@ -69,13 +72,14 @@ export function DetailMapPage({
   controlsHeight = CONTROL_ROW_HEIGHT,
   controlsScrollWithMap = false,
   fitContent = false,
+  footer,
   handle,
   interactiveMap = false,
   map,
   mapButtons,
   mapButtonsTop,
   mapOverlay,
-  mapHeight,
+  mapHeight: requestedMapHeight,
   mapTestID,
   scrollTestID,
   showHeader = true,
@@ -86,7 +90,10 @@ export function DetailMapPage({
   // takes the drag, and iOS Safari's ignores it. So an interactive map rides inside the scroller,
   // stuck to its top, and the sheet scrolls over it just the same; the map keeps its own drags.
   const stickyMap = interactiveMap;
-  const { height } = useViewportSize();
+  const { height: windowHeight } = useViewportSize();
+  const [bodyHeight, setBodyHeight] = useState<number | null>(null);
+  const height = footer ? (bodyHeight ?? windowHeight) : windowHeight;
+  const mapHeight = footer ? Math.min(requestedMapHeight, mapPageMapHeight(height)) : requestedMapHeight;
   const insets = useSafeAreaInsets();
   const { reducedMotionActive } = useAppSettings();
   const thumb = useThumbSide();
@@ -132,60 +139,66 @@ export function DetailMapPage({
   return (
     <View style={styles.viewport}>
       <View style={styles.screen} testID={testID}>
-        {stickyMap ? null : (
-          <Animated.View pointerEvents={interactiveMap ? 'auto' : 'none'} style={[styles.map, { height: mapHeight }]} testID={mapTestID}>
-            {map}
-          </Animated.View>
-        )}
-        <Animated.ScrollView
-          bounces={false}
-          contentContainerStyle={interactiveMap && !stickyMap ? styles.passThrough : undefined}
-          onMomentumScrollEnd={recordScrollEnd}
-          onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
-            useNativeDriver: Platform.OS !== 'web',
-          })}
-          onScrollEndDrag={recordScrollEnd}
-          overScrollMode="never"
-          pointerEvents={interactiveMap && !stickyMap ? 'box-none' : 'auto'}
-          ref={scrollRef}
-          scrollEventThrottle={16}
-          showsVerticalScrollIndicator={false}
-          // Web pins the map with CSS `sticky`; native pins it as the scroller's sticky header.
-          stickyHeaderIndices={stickyMap && Platform.OS !== 'web' ? [0] : undefined}
-          style={styles.scroll}
-          testID={scrollTestID}
+        <View
+          onLayout={footer ? ({ nativeEvent }) => setBodyHeight(Math.ceil(nativeEvent.layout.height)) : undefined}
+          style={styles.body}
         >
-          {stickyMap ? <View style={[styles.stickyMap, { height: mapHeight }]} testID={mapTestID}>{map}</View> : null}
-          <View pointerEvents="box-none" style={[{ height: mapHeight }, stickyMap && { marginTop: -mapHeight, zIndex: 11 }]} testID={`${scrollTestID}-map-window`}>
-            {controlsScrollWithMap ? (
-              <View pointerEvents="box-none" style={{ paddingTop: insets.top }}>
-                {controls}
-              </View>
-            ) : null}
-            {mapOverlay}
-            {action && !actionSticks ? <View pointerEvents="box-none" style={[styles.action, thumb.anchor(18), { top: restingTop }]}>{action}</View> : null}
-            {mapButtons ? <View pointerEvents="box-none" style={[styles.mapButtons, mapButtonsTop != null ? { right: TOP_BUTTONS_INSET, top: insets.top + mapButtonsTop } : thumb.anchor(16), mapButtonsTop != null ? { flexDirection: thumb.row } : { flexDirection: thumb.row, bottom: (action ? ACTION_HEIGHT + ACTION_GAP + 10 : 14) + thumb.mapBottomClearance }]} testID={`${scrollTestID}-map-buttons`}>{mapButtons}</View> : null}
-          </View>
-          <SafeAreaView edges={['bottom']} style={[styles.sheet, { minHeight: fitContent ? Math.max(0, height - mapHeight) : height }, stickyMap && styles.sheetOverStickyMap, contentStyle, handle && styles.sheetWithHandle]} testID={contentTestID}>
-            {handle ? <SheetHandle {...handle} onPress={toggleExpanded} /> : null}
-            {children}
-          </SafeAreaView>
-        </Animated.ScrollView>
+          {stickyMap ? null : (
+            <Animated.View pointerEvents={interactiveMap ? 'auto' : 'none'} style={[styles.map, { height: mapHeight }]} testID={mapTestID}>
+              {map}
+            </Animated.View>
+          )}
+          <Animated.ScrollView
+            bounces={false}
+            contentContainerStyle={interactiveMap && !stickyMap ? styles.passThrough : undefined}
+            onMomentumScrollEnd={recordScrollEnd}
+            onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
+              useNativeDriver: Platform.OS !== 'web',
+            })}
+            onScrollEndDrag={recordScrollEnd}
+            overScrollMode="never"
+            pointerEvents={interactiveMap && !stickyMap ? 'box-none' : 'auto'}
+            ref={scrollRef}
+            scrollEventThrottle={16}
+            showsVerticalScrollIndicator={false}
+            // Web pins the map with CSS `sticky`; native pins it as the scroller's sticky header.
+            stickyHeaderIndices={stickyMap && Platform.OS !== 'web' ? [0] : undefined}
+            style={styles.scroll}
+            testID={scrollTestID}
+          >
+            {stickyMap ? <View style={[styles.stickyMap, { height: mapHeight }]} testID={mapTestID}>{map}</View> : null}
+            <View pointerEvents="box-none" style={[{ height: mapHeight }, stickyMap && { marginTop: -mapHeight, zIndex: 11 }]} testID={`${scrollTestID}-map-window`}>
+              {controlsScrollWithMap ? (
+                <View pointerEvents="box-none" style={{ paddingTop: insets.top }}>
+                  {controls}
+                </View>
+              ) : null}
+              {mapOverlay}
+              {action && !actionSticks ? <View pointerEvents="box-none" style={[styles.action, thumb.anchor(18), { top: restingTop }]}>{action}</View> : null}
+              {mapButtons ? <View pointerEvents="box-none" style={[styles.mapButtons, mapButtonsTop != null ? { right: TOP_BUTTONS_INSET, top: insets.top + mapButtonsTop } : thumb.anchor(16), mapButtonsTop != null ? { flexDirection: thumb.row } : { flexDirection: thumb.row, bottom: (action ? ACTION_HEIGHT + ACTION_GAP + 10 : 14) + thumb.mapBottomClearance }]} testID={`${scrollTestID}-map-buttons`}>{mapButtons}</View> : null}
+            </View>
+            <SafeAreaView edges={footer ? [] : ['bottom']} style={[styles.sheet, { minHeight: fitContent ? Math.max(0, height - mapHeight) : height }, stickyMap && styles.sheetOverStickyMap, contentStyle, handle && styles.sheetWithHandle]} testID={contentTestID}>
+              {handle ? <SheetHandle {...handle} onPress={toggleExpanded} /> : null}
+              {children}
+            </SafeAreaView>
+          </Animated.ScrollView>
 
-        {/* With the controls gone with the map, there's nothing for the bar to back. */}
-        {showHeader && !controlsScrollWithMap ? <Animated.View pointerEvents="none" style={[styles.header, { height: headerHeight, opacity: headerOpacity }]} testID={`${testID}-header`} /> : null}
+          {/* With the controls gone with the map, there's nothing for the bar to back. */}
+          {showHeader && !controlsScrollWithMap ? <Animated.View pointerEvents="none" style={[styles.header, { height: headerHeight, opacity: headerOpacity }]} testID={`${testID}-header`} /> : null}
 
-        {controlsScrollWithMap ? null : (
-          <SafeAreaView edges={['top']} pointerEvents="box-none" style={styles.controls}>
-            {controls}
-          </SafeAreaView>
-        )}
+          {controlsScrollWithMap ? null : (
+            <SafeAreaView edges={['top']} pointerEvents="box-none" style={styles.controls}>
+              {controls}
+            </SafeAreaView>
+          )}
 
-        {action && actionSticks ? (
-          <Animated.View pointerEvents="box-none" style={[styles.action, thumb.anchor(18), { transform: [{ translateY: actionTop }] }]}>
-            {action}
-          </Animated.View>
-        ) : null}
+          {action && actionSticks ? (
+            <Animated.View pointerEvents="box-none" style={[styles.action, thumb.anchor(18), { transform: [{ translateY: actionTop }] }]}>
+              {action}
+            </Animated.View>
+          ) : null}
+        </View>
+        {footer}
       </View>
     </View>
   );
@@ -197,6 +210,7 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   },
   viewport: { flex: 1, alignItems: 'center', backgroundColor: colors.background },
   screen: { width: '100%', maxWidth: 540, flex: 1, overflow: 'hidden', backgroundColor: colors.canvas },
+  body: { flex: 1, overflow: 'hidden' },
   map: { position: 'absolute', top: 0, right: 0, left: 0, overflow: 'hidden', backgroundColor: colors.blueSoft },
   // `sticky` is web-only, which React Native's types don't allow for.
   stickyMap: { ...(Platform.OS === 'web' ? { position: 'sticky', top: 0 } : null), overflow: 'hidden', backgroundColor: colors.blueSoft } as unknown as ViewStyle,

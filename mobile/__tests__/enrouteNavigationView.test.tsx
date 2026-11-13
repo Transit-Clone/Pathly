@@ -302,9 +302,12 @@ describe('EnrouteNavigationView guidance', () => {
 });
 
 describe('EnrouteNavigationView controls', () => {
-  it('requires END confirmation, with cancel preserving the trip and confirm ending it', () => {
+  it('keeps End trip outside the scroller and requires confirmation, with cancel preserving the trip', () => {
     const { onEnd, screen } = renderNavigation(initialNavigationCursor(plan, baseTime));
 
+    expect(within(screen.getByTestId('enroute-footer')).getByRole('button', { name: 'End current trip' })).toBeTruthy();
+    expect(within(screen.getByTestId('enroute-scroll')).queryByTestId('enroute-end')).toBeNull();
+    expect(screen.getByText('End trip')).toBeTruthy();
     fireEvent.press(screen.getByTestId('enroute-end'));
     expect(screen.getByTestId('enroute-end-confirm')).toBeTruthy();
     fireEvent.press(screen.getByTestId('enroute-end-confirm-cancel'));
