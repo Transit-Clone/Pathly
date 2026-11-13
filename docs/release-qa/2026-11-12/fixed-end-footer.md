@@ -1,39 +1,38 @@
-# Fixed bottom End trip bar
+# Fixed destination and ETA bar
 
-Follow-up to the release audit: the user selected comparison option 1, replacing the toolbar END pill with a fixed bottom bar.
+The user approved option 3 after reviewing the trip-summary mockup: destination and ETA on the left, a solid red End trip pill on the right. This supersedes the centered End-only footer in `e22e8f1`.
 
 ## Implementation
 
-- Centered red stop icon and sentence-case “End trip”, on the themed surface with a subtle top divider and a minimum 52-point touch target.
-- The shared map/detail layout has an optional footer below a flexing map/scroll body. It occupies real layout space, remains inside the existing 540-point maximum width, and cannot cover scrolling directions.
-- The footer owns bottom/side safe-area padding. The sheet avoids a duplicate bottom inset, and navigation's map height adapts to the available body height.
-- Back and voice remain at the top. The centered End action is equally reachable in either handed mode; map controls retain their handed placement. Settings copy now describes only the controls that move.
-- Existing accessible label, test ID, confirmation dialog, Cancel, and end callback are retained.
+- The fixed footer displays the selected destination, arrival clock time, and remaining duration. It reuses the existing navigation clock/arrival estimate; it does not introduce a different ETA calculation or live-data promise.
+- The red pill keeps the accessible label, stop icon, test ID and existing confirmation behavior. Destination/ETA form a separate accessible group, excluding the button. Countdown changes do not create a new live region.
+- Summary text can wrap beside the nonshrinking button at narrow widths/Large text. Time/countdown tokens stay together to avoid an orphaned unit. The footer has no fixed height, so the existing measured layout reserves its actual space.
+- The duplicate scrolling ACTIVE TRIP summary is removed. Back, voice, directions, map gestures and handed map placement retain their existing behavior.
+- The footer remains within the shared 540-point screen width and owns bottom/side safe-area padding, below the scrolling body.
 
 ## Verification
 
 | Check | Result |
 | --- | --- |
-| Focused navigation, Home integration and handed-layout tests | 3 suites, 22 tests passed |
-| Final full mobile suite | 65 suites, 625 tests passed in 84.09 seconds |
-| Final TypeScript / ESLint | Passed |
-| Independent source/diff review | No actionable regression found; footerless layout compatibility reviewed |
-| Browser 390×844, default text, right-handed | Footer starts at y=783, height=61; scroll viewport ends at y=783. Footer stays at the same position after scrolling. |
-| Browser 320×568, app Large text, left-handed | Footer starts at y=507, height=61; scroll viewport ends at y=507. Remaining directions and summary can scroll fully above it. |
-| Light/dark appearance | Footer, icon and label remain visible; dark evidence was captured during map tile loading. No map-loading behavior was changed. |
-| Confirmation / Home resume | Cancel retains the trip. Back/Home/Resume retains navigation. Confirming End returns Home and removes Resume. |
-| Footerless screens | Route View, route results and planned-trip details/GO exercised during the live flow; full mobile tests pass. |
+| Focused navigation view, Home integration and handed-layout tests | 3 suites, 22 tests passed in 7.528 seconds |
+| TypeScript / ESLint / git diff --check | Passed |
+| Destination/ETA regression assertions | Summary/action outside scroller; separately accessible button; countdown changes with clock; long future/past durations preserve meaning |
+| Independent diff review | No material issue found |
+| Browser 390×844, default text | Footer y=767, height=77 before/after scrolling; scrolling viewport ends at y=767 |
+| Browser 320×568, app Large text | Full Penn Station label and ETA visible; metadata wraps while complete minute value stays together; pill remains reachable |
+| Light/dark appearance | Both checked on the actual running browser app |
+| Back/Home/Resume | Destination/ETA footer returns with the active trip |
+| Cancel / confirm | Cancel retains navigation; confirming End returns Home and removes Resume |
 
-The first full test run caught an App integration assertion for the obsolete `END` caption. It was updated to the selected `End trip` caption; the final whole-suite run passed. The component confirmation test also asserts that the action belongs to the footer and is absent from the scroller.
+The previous full 625-test mobile run predates this summary refinement. This patch reran the relevant 22 tests plus types/lint, and performed live browser checks. Native screen readers, OS font scaling, physical safe areas and arbitrary long destination labels are not claimed verified by these browser captures.
 
-Browser checks used the existing ordinary account with mock location/time off, public station destinations, temporary Large text/left-handed/dark settings and audit-owned trips. A development reload reproduced the previously documented line-only recovery problem; that saved QA trip was ended, then a destination-planned trip was used for the remaining checks. No recovery behavior was changed by this patch.
+## Cleanup and screenshots
 
-Light appearance, Default text, right-handed mode and the browser viewport were restored. Both QA trips were ended, with no Resume card on Home. Existing favorites and account data were not edited. Physical-device safe areas, OS font scaling and native screen-reader behavior remain unverified; the earlier debug APK predates this footer change.
+Existing ordinary-user account; mock time/location off; public-station Ride Guide to Penn Station. Temporary Large text and dark appearance were restored to Default/Light, browser viewport reset, and the audit-owned trip ended. No favorites, account roles or credentials changed. No recovery behavior, backend settings or native configuration changed.
 
-## Screenshots
+- [Normal view](evidence/trip-summary-footer-390.jpg)
+- [After scrolling](evidence/trip-summary-footer-scrolled-390.jpg)
+- [Large text at 320px](evidence/trip-summary-footer-large-320.jpg)
+- [Dark appearance](evidence/trip-summary-footer-dark-390.jpg)
 
-- [Final light/default layout](evidence/end-footer-final-390.jpg)
-- [Scrolled directions, fixed footer](evidence/end-footer-scrolled-390.jpg)
-- [Large text and left-handed controls at 320px](evidence/end-footer-large-left-320.jpg)
-- [Same narrow layout scrolled](evidence/end-footer-large-left-scrolled-320.jpg)
-- [Dark appearance](evidence/end-footer-dark-390.jpg)
+Earlier centered-footer evidence remains in the evidence folder and Git history. The screenshots linked above show the approved trip-summary revision in the running app, not generated mockups.

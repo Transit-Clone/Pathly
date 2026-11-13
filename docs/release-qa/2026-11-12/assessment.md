@@ -1,6 +1,6 @@
 # Pathly release QA — November 12, 2026
 
-UI follow-up: the user selected a [fixed bottom End trip bar](fixed-end-footer.md), which now supersedes the toolbar placement described in this audit's initial fix batch. Follow-up screenshots, layout measurements and passing tests are recorded there.
+UI follow-up: the user approved a [fixed destination/ETA bar with an End trip pill](fixed-end-footer.md), which supersedes the toolbar placement in the initial fix batch and the intermediate centered End-only footer. Current running-app screenshots, layout checks and passing tests are recorded there.
 
 ## Decision
 

@@ -233,11 +233,13 @@ describe('EnrouteNavigationView guidance', () => {
     const screen = renderNavigation(waitingCursor).screen;
 
     expect(screen.getByTestId('enroute-departure-time').props.children).toBe(`Departs ${formatTripClock(at(5))} · in 5 min`);
+    expect(screen.getByTestId('enroute-eta').props.children.replaceAll('\u00a0', ' ')).toBe(`Arrive ${formatTripClock(at(45))} · 45 min`);
     expect(screen.getByTestId('enroute-guidance').props.accessibilityLabel)
       .toContain(`Selected departure ${formatTripClock(at(5))}, in 5 minutes.`);
 
     act(() => jest.advanceTimersByTime(60_000));
     expect(screen.getByTestId('enroute-departure-time').props.children).toBe(`Departs ${formatTripClock(at(5))} · in 4 min`);
+    expect(screen.getByTestId('enroute-eta').props.children.replaceAll('\u00a0', ' ')).toBe(`Arrive ${formatTripClock(at(45))} · 44 min`);
   });
 
   it('shows meaningful distance and duration metadata while walking and transferring', () => {
@@ -273,12 +275,14 @@ describe('EnrouteNavigationView guidance', () => {
     expect(future.getByTestId('enroute-departure-time').props.children).toBe(`Departs ${formatTripClock(at(125))} · in 2hr 5m`);
     expect(future.getByTestId('enroute-guidance').props.accessibilityLabel).toContain('in 2 hours 5 minutes.');
     expect(future.getByTestId('enroute-guidance').props.accessibilityLabel).toContain('in 2 hours 45 minutes.');
+    expect(future.getByTestId('enroute-eta').props.children.replaceAll('\u00a0', ' ')).toBe(`Arrive ${formatTripClock(at(165))} · 2hr 45m`);
     future.unmount();
 
     jest.setSystemTime(baseTime + 250 * 60_000);
     const past = renderNavigation(cursor, { checkpointPlan, trip }).screen;
     expect(past.getByTestId('enroute-departure-time').props.children).toBe(`Departs ${formatTripClock(at(125))} · 2hr 5m ago`);
     expect(past.getByTestId('enroute-guidance').props.accessibilityLabel).toContain('2 hours 5 minutes ago.');
+    expect(past.getByTestId('enroute-eta').props.children.replaceAll('\u00a0', ' ')).toBe(`Arrive ${formatTripClock(at(165))} · 1hr 25m ago`);
   });
 
   it('combines current, next, remaining-stop, and arrival guidance in one screen-reader label', () => {
@@ -307,6 +311,9 @@ describe('EnrouteNavigationView controls', () => {
 
     expect(within(screen.getByTestId('enroute-footer')).getByRole('button', { name: 'End current trip' })).toBeTruthy();
     expect(within(screen.getByTestId('enroute-scroll')).queryByTestId('enroute-end')).toBeNull();
+    expect(within(screen.getByTestId('enroute-footer')).getByTestId('enroute-destination').props.children).toBe('Demo destination');
+    expect(within(screen.getByTestId('enroute-scroll')).queryByTestId('enroute-trip-summary')).toBeNull();
+    expect(within(screen.getByTestId('enroute-trip-summary')).queryByRole('button')).toBeNull();
     expect(screen.getByText('End trip')).toBeTruthy();
     fireEvent.press(screen.getByTestId('enroute-end'));
     expect(screen.getByTestId('enroute-end-confirm')).toBeTruthy();

@@ -160,6 +160,8 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
   }, [hurryAlertsOn, hurryKey]);
   const routeColor = guidance.line?.color ?? colors.primary;
   const arrivalContext = relativeTimeCopy(guidance.arrivalTime, now);
+  // Keep the countdown together when a narrow footer needs a second metadata line.
+  const footerCountdown = arrivalContext.visible.replace(/^in /, '').replaceAll(' ', '\u00a0');
   const departureContext = guidance.departureTime ? relativeTimeCopy(guidance.departureTime, now) : null;
   const stepMetadata = guidance.phase === 'walking' || guidance.phase === 'transferring'
     ? movementMetadata(guidance.distanceMeters, guidance.durationSeconds, guidance.phase)
@@ -216,16 +218,27 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
         controlsHeight={controlsHeight}
         footer={(
           <SafeAreaView edges={['bottom', 'left', 'right']} style={styles.footer} testID="enroute-footer">
-            <PressableScale
-              accessibilityLabel="End current trip"
-              accessibilityRole="button"
-              onPress={() => setConfirmingEnd(true)}
-              style={styles.endButton}
-              testID="enroute-end"
-            >
-              <Icon color={colors.red} name="stop" size={22} />
-              <Text style={styles.endText}>End trip</Text>
-            </PressableScale>
+            <View style={styles.footerRow}>
+              <View
+                accessibilityLabel={`${session.destination.label}. Arrive ${formatTripClock(guidance.arrivalTime)}, ${arrivalContext.accessible}.`}
+                accessible={true}
+                style={styles.footerSummary}
+                testID="enroute-trip-summary"
+              >
+                <Text style={styles.footerDestination} testID="enroute-destination">{session.destination.label}</Text>
+                <Text style={styles.footerEta} testID="enroute-eta">{`Arrive ${formatTripClock(guidance.arrivalTime).replaceAll(' ', '\u00a0')} · ${footerCountdown}`}</Text>
+              </View>
+              <PressableScale
+                accessibilityLabel="End current trip"
+                accessibilityRole="button"
+                onPress={() => setConfirmingEnd(true)}
+                style={styles.endButton}
+                testID="enroute-end"
+              >
+                <Icon color={colors.onPrimary} name="stop" size={20} />
+                <Text style={styles.endText}>End trip</Text>
+              </PressableScale>
+            </View>
           </SafeAreaView>
         )}
         interactiveMap={true}
@@ -332,12 +345,6 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
         </View>
 
         {supportPrompt.visible ? <SupportCard onDismiss={supportPrompt.dismiss} onDonate={supportPrompt.donate} /> : null}
-
-        <View style={styles.tripSummary}>
-          <Text style={styles.summaryLabel}>ACTIVE TRIP</Text>
-          <Text style={styles.summaryDestination}>{session.destination.label}</Text>
-          <Text style={styles.summaryOrigin}>{`From ${session.origin.label}`}</Text>
-        </View>
 
         {isAdmin && onDemoCheckpoint && onResetDemo ? (
           <View style={styles.demoPanel} testID="enroute-demo-controls">
@@ -460,9 +467,13 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   recoveryEnd: { minHeight: 44, alignItems: 'center', justifyContent: 'center', marginTop: 8, paddingHorizontal: 20 },
   recoveryEndText: { color: colors.red, ...typography.bodyStrong },
   topBar: { minHeight: 64, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingVertical: 8, paddingHorizontal: 16 },
-  footer: { paddingHorizontal: 16, paddingVertical: 4, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.surface },
-  endButton: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, paddingHorizontal: 16, borderRadius: radii.control },
-  endText: { color: colors.red, fontFamily: fontFamilies.extraBold, fontSize: 17 },
+  footer: { paddingHorizontal: 16, paddingVertical: 12, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.surface },
+  footerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  footerSummary: { flex: 1, minWidth: 0 },
+  footerDestination: { color: colors.ink, ...typography.bodyStrong, fontSize: 18 },
+  footerEta: { marginTop: 3, color: colors.mutedInk, ...typography.metadata, fontSize: 13, fontVariant: ['tabular-nums'] },
+  endButton: { flexShrink: 0, minWidth: 112, minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingVertical: 12, paddingHorizontal: 14, borderRadius: radii.pill, backgroundColor: colors.red },
+  endText: { color: colors.onPrimary, fontFamily: fontFamilies.extraBold, fontSize: 16 },
   guidanceCard: { padding: 18, borderWidth: 1, borderColor: colors.border, borderRadius: radii.card, backgroundColor: colors.surface },
   phaseRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', columnGap: 10, rowGap: 6 },
   phase: { color: colors.primary, ...typography.label },
@@ -486,10 +497,6 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   hurryNotice: { marginTop: 13, flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: radii.control, backgroundColor: colors.highlightSoft },
   hurryCopy: { flex: 1, gap: 2 },
   hurryTitle: { color: colors.ink, ...typography.bodyStrong },
-  tripSummary: { marginTop: 14, padding: 17, borderRadius: radii.card, backgroundColor: colors.surfaceMuted },
-  summaryLabel: { color: colors.mutedInk, ...typography.label },
-  summaryDestination: { marginTop: 2, color: colors.ink, ...typography.sectionHeading, fontSize: 18 },
-  summaryOrigin: { marginTop: 2, color: colors.mutedInk, ...typography.body },
   demoPanel: { marginTop: 14, padding: 15, borderWidth: 1, borderColor: colors.accent, borderRadius: radii.card, backgroundColor: colors.blueSoft },
   demoHeadingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   demoLabel: { color: colors.primary, ...typography.label },
