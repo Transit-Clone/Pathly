@@ -1,5 +1,13 @@
 const fs = require('fs');
 const path = require('path');
+const { readAdminEmails } = require('../scripts/adminEmails.cjs');
+
+// Who sees Admin tools: the backend's own list (ADMIN_EMAILS in firebase/functions/.env.<project-id>),
+// so the two can't drift apart. Expo compiles EXPO_PUBLIC_ variables into the app on every
+// platform (web included, unlike `extra`), so pass it on as one. The backend still checks every
+// admin call itself.
+const adminEmails = readAdminEmails()?.value;
+if (adminEmails) process.env.EXPO_PUBLIC_ADMIN_EMAILS = adminEmails;
 
 // Firebase's Android config (needed for push notifications through FCM). EAS builds read it from
 // the GOOGLE_SERVICES_JSON file variable; local builds read mobile/google-services.json. Both are
