@@ -8,6 +8,9 @@ import type {
   TripSelectionIdentity,
 } from './enrouteNavigation';
 import type { ResumePlanRequest, TripMode } from './tripPlanning';
+import { parseRideSnapshot, type RideSnapshotV1 } from './rideSnapshot';
+
+export type { RideSnapshotV1 } from './rideSnapshot';
 
 export const NAVIGATION_STORAGE_VERSION = 1 as const;
 export const NAVIGATION_STORAGE_PREFIX = 'pathly.navigation.';
@@ -46,6 +49,8 @@ export type ActiveTripResumeV1 = {
   /** Optional so active records written before anchors were introduced still validate safely. */
   progressAnchor?: NavigationProgressAnchorV1;
   lines: PersistedLineSummaryV1[];
+  /** Selected local Ride Guide itinerary only; planned trips continue provider-light recovery. */
+  rideSnapshot?: RideSnapshotV1;
 };
 
 export type RecentTripV1 = {
@@ -176,7 +181,11 @@ function parseActive(value: unknown, uid: string): ActiveTripResumeV1 | null {
     || !Array.isArray(value.lines)
     || !value.lines.every(isLine)) return null;
   if (!sameEndpoint(value.origin, value.request.origin) || !sameEndpoint(value.destination, value.request.destination)) return null;
-  return value as ActiveTripResumeV1;
+  if (value.rideSnapshot === undefined) return value as ActiveTripResumeV1;
+  const rideSnapshot = parseRideSnapshot(value.rideSnapshot, {
+    origin: value.origin, destination: value.destination, request: value.request, selection: value.selection,
+  });
+  return rideSnapshot ? { ...value, rideSnapshot } as ActiveTripResumeV1 : null;
 }
 
 function parseRecent(value: unknown, uid: string): RecentTripV1 | null {

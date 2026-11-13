@@ -4,7 +4,7 @@ UI follow-up: the user approved a [fixed destination/ETA bar with an End trip pi
 
 ## Decision
 
-**Prepare an internal native test release; this is not public-store release signoff.** The reviewed route screens have a coherent identity and do not need a redesign. The instruction-obscuring END control is corrected, long waits are readable, and notification lifecycle/stop-data regressions have fixes. Two important navigation gaps remain: line-based trips cannot restore after relaunch, and the current foreground location/notification code does not establish locked-screen navigation advancement.
+**Prepare an internal native test release; this is not public-store release signoff.** The reviewed route screens have a coherent identity and do not need a redesign. The instruction-obscuring END control is corrected, long waits are readable, and notification lifecycle/stop-data regressions have fixes. Line-based relaunch recovery is now corrected in the [resume follow-up](line-resume-fix.md). The remaining navigation gap is that the current foreground location/notification code does not establish locked-screen navigation advancement.
 
 This audit combines live browser QA, source review, regression tests, independent visual/functional/native reviews, and a local native build attempt. Supporting screens received smoke/source assessment, not complete end-to-end coverage of every account, remote-write failure, or platform. Unrun native combinations remain open.
 
@@ -27,15 +27,16 @@ This audit combines live browser QA, source review, regression tests, independen
 | NAV-03 · P1: old notification posts after end/overwrites new step | Deferred-permission/native-post regressions failed before fix. Version guards and ordered post/dismiss queue prevent races. End/replacement/unmount stops old speech; arrival speech retained. | `1f2aa05` |
 | NAV-04 · P1: incomplete stop data announces exit is next too early | Pipeline reproduction with empty/partial arrays and larger reported totals. Exact counts now require complete sequences; actual one-stop journey remains supported. | `1f2aa05` |
 | NAV-06 · P2: accessible directions contain interactive descendants | Read-only guidance remains grouped; sharing/report controls and location notices remain separate. Source/component assertion verified; native traversal still open. | `ee6211e` |
+| NAV-05 · P1: line-based trips could not restore | Active-only validated selected-ride snapshot now restores without replanning; chosen later departure/exit survived reload and close/reopen. Progress, account isolation and cleanup have regression coverage. [Follow-up](line-resume-fix.md). | Current resume follow-up |
 | Android channel/permission ordering | Channels prepared before trip, departure-nudge and favorite-line permission requests. Mocked ordering passes; clean-install OS prompt still needs observation. | `1f2aa05` |
 
 Trade-off: inconsistent stop metadata produces an unknown count instead of a confidently false get-off warning. No invented stops, relaxed GPS thresholds, ETA proximity inference, or new background alert service. Preserve exact service identity, reliable cancellation and honest stale-location status.
 
 ## Top three next steps
 
-1. **Repair line-based persistence.** Save enough validated Ride Guide data to reconstruct the chosen service, departure, boarding and exit. Test relaunch, Home Resume, account isolation and expiry. Do not remove identity checks or substitute another service by line name.
-2. **Resolve locked-screen navigation behavior.** If alerts while locked/using another app remain a launch promise, implement native background lifecycle, consent, reconciliation and cleanup, then observe it on phones. Persistent notification display does not prove progression. Keep platform caveats in documentation, not the trip UI.
-3. **Run an internal release-like native test track.** Exercise Android shrinking/cold launch, Google sign-in/reauthentication, Maps, permission denial/recovery, GPS progression, sound/haptics, accessibility and safe areas. Emulator coverage helps without owning Android; actual alert/battery testing needs a teammate/tester with a phone.
+1. **Resolve locked-screen navigation behavior.** If alerts while locked/using another app remain a launch promise, implement native background lifecycle, consent, reconciliation and cleanup, then observe it on phones. Persistent notification display does not prove progression. Keep platform caveats in documentation, not the trip UI.
+2. **Run an internal release-like native test track.** Exercise Android shrinking/cold launch, Google sign-in/reauthentication, Maps, permission denial/recovery, GPS progression, sound/haptics, accessibility and safe areas. Emulator coverage helps without owning Android; actual alert/battery testing needs a teammate/tester with a phone.
+3. **Require verified identity in the server admin guard.** Cover allowlisted but unverified tokens and ordinary users; client visibility alone is not authorization.
 
 ## Prioritized remaining work
 
@@ -43,7 +44,6 @@ P1: resolve or explicitly decide launch scope before public release. P2: targete
 
 | Priority / ID | Evidence / confidence | Next action and acceptance | Effort |
 | --- | --- | --- | --- |
-| P1 · NAV-05 | **Live failure:** PW Route View → choose Woodside → GO → reload enters recovery; Retry returns to failure. Destination-planned trip restores in the same session. [Screenshot](evidence/ride-guide-reload-recovery-390.jpg). Synthetic `ride:` ID cannot match backend-planned ID. | Explicit safe reconstruction plus persist/relaunch regression for both entry paths; no loose matching. | 1–2 days |
 | P1 · N1 | **Source-backed gap:** foreground watcher/current-guidance notification, no configured background task. Device delivery unverified. | Decide promise; implement background lifecycle if retained; run [device script](native-platform-notes.md#exact-remaining-physical-device-script). | Several days + devices |
 | P1 · N2/N3 | **Validation gaps:** documented prior Android R8 startup crash; debug/export cannot close it. Native OAuth IDs/services config absent locally, EAS may differ. | Test actual configured internal/release-like artifact, signing restrictions, native auth/Maps, clean-install prompts; distinguish local trip notifications from FCM push. | 0.5–1 day after artifact/config |
 | P1 · SF-1 | **Source-confirmed:** admin guard checks allowlisted email without verified ownership. Traced protected capability is diagnostics; no exploit performed. | Require verified identity or server-issued claim; cover allowlisted unverified token and ordinary user. | Small patch + auth tests |
@@ -68,7 +68,7 @@ Other small improvements: “Favorite places” versus “Favorite lines”; imp
 | 320px Large/both hands | Readable wrapping; reachable END | OS scaling/landscape/keyboard/safe areas unverified |
 | 390px light/dark navigation | Legible card hierarchy and notice | Patchy dark map tiles in one theme-transition frame; persistence not established, no map defect filed |
 | Nearby → Route View → Ride Guide → choose Woodside → GO | Initial flow passed; chosen exit changes destination | Exit picker appropriate because line alone has no chosen destination |
-| Line-only reload → Retry | **Failed twice**, exact recovery unavailable | Identity mismatch traced; broader fix deferred |
+| Line-only reload / close-reopen | Initial audit failed; [resume follow-up](line-resume-fix.md) now passes with the same later train and chosen Woodside exit | Pre-fix records without snapshots need one restart; native process relaunch still unverified |
 | Favorites, Notifications, Offline Maps, Location & Privacy | Read-only smoke passed at 390px | No write/download/share/export/deletion or push-delivery test |
 | Appearance/accessibility settings | Settings applied and restored via UI | AX bridge reported switches value0 even visually on; screenshots/toasts used for setting verification |
 | Ordinary-user/admin separation | No admin tools in existing ordinary-user Profile | No account switching/privilege experiment |
@@ -78,7 +78,8 @@ Other small improvements: “Favorite places” versus “Favorite lines”; imp
 
 | Check | Result |
 | --- | --- |
-| Full final mobile Jest | **65 suites, 625/625 tests passed**, 83.1s |
+| Initial audit full mobile Jest | **65 suites, 625/625 tests passed**, 83.1s |
+| Latest line-resume fix full mobile Jest | **65 suites, 644/644 tests passed**, 86.58s; TypeScript and ESLint also passed |
 | Compiled backend tests in fresh unique TMPDIR | **215/215 passed**, 17.4s |
 | TypeScript / ESLint | Passed |
 | Expo web/iOS/Android JS exports, one worker | Passed: web 3.1 MB / iOS 5.2 MB / Android 5.3 MB bundles; these are JS artifact sizes, not install sizes or native runtime proof |

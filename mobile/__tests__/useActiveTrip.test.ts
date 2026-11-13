@@ -4,6 +4,7 @@ import { httpsCallable } from 'firebase/functions';
 
 import { createActiveTripRuntime, useActiveTrip, type StartActiveTripInput } from '../src/hooks/useActiveTrip';
 import { navigationStorageKey, readNavigationDocument, resetNavigationStorageForTests, updateNavigationDocument } from '../src/data/navigationStorage';
+import { rideGuideItinerary, type RideGuideRequest } from '../src/data/rideGuide';
 import type { Itinerary } from '../src/data/tripPlanning';
 import realItineraries from './fixtures/itineraries-sbu-penn.json';
 
@@ -26,6 +27,32 @@ function input(itinerary = fixtures[0]!): StartActiveTripInput {
       preference: 'fastest',
       modes: ['subway', 'bus', 'rail'],
     },
+  };
+}
+
+function guidedRideInput(selectedDeparture = 1, capturedAt = Date.now()): StartActiveTripInput & { resumeSource: 'ride-guide' } {
+  const request: RideGuideRequest = {
+    routeId: 'suffolk:51', directionIndex: 0, agency: 'Suffolk County Transit', agencyId: 'suffolk',
+    routeIdAtAgency: '51', directionId: 0, mode: 'bus', routeName: 'Route 51', shortName: '51',
+    color: '#C43D4B', headsign: 'Harbor',
+    stops: [
+      { name: 'Main St', stopId: 'a', lat: 40.8, lon: -73.1, offsetMinutes: 0 },
+      { name: 'Elm Ave', stopId: 'b', lat: 40.81, lon: -73.1, offsetMinutes: 4 },
+      { name: 'Oak Rd', stopId: 'c', lat: 40.82, lon: -73.1, offsetMinutes: 9 },
+      { name: 'Pine St', stopId: 'd', lat: 40.83, lon: -73.1, offsetMinutes: 14 },
+      { name: 'Harbor', stopId: 'e', lat: 40.84, lon: -73.1, offsetMinutes: 20 },
+    ],
+    departures: [{ minutes: 6, live: true }, { minutes: 26, live: false }],
+    selectedDeparture, capturedAt, notices: [],
+    walk: { minutes: 3, path: [{ lat: 40.799, lon: -73.101 }, { lat: 40.8, lon: -73.1 }] },
+  };
+  const itinerary = rideGuideItinerary(request, 3)!;
+  const ride = itinerary.steps.find((step) => step.kind === 'transit')!;
+  const origin = { kind: 'coordinate' as const, label: 'Current location', point: { lat: 40.799, lng: -73.101 }, savedAt: capturedAt };
+  const destination = { kind: 'coordinate' as const, label: ride.to.name, point: ride.to.location, savedAt: capturedAt };
+  return {
+    itinerary, origin, destination, resumeSource: 'ride-guide',
+    resumeRequest: { origin, destination, time: { mode: 'depart', at: itinerary.departureTime }, preference: 'fastest', modes: ['bus'] },
   };
 }
 
@@ -609,4 +636,213 @@ it('ends early once, clears active state in the same stored document, and strips
   expect(serialized).not.toContain('\\"steps\\"');
   expect(serialized).not.toContain('progressAnchor');
   hook.unmount();
+});
+
+it('restores line-based rides at the selected departure, exit and confirmed progress without replanning', async () => {
+  const selected = guidedRideInput();
+  const first = await idleHook();
+  await act(async () => {
+    expect(await first.result.current.start(selected)).toBe('started');
+  });
+  const original = first.result.current.active!;
+  const intermediate = original.plan.checkpoints.find((checkpoint) => checkpoint.kind === 'transit-stop')!;
+  for (const checkpoint of original.plan.checkpoints.slice(1, intermediate.ordinal + 1)) {
+    await act(async () => {
+      await first.result.current.advance({ point: checkpoint.point, accuracyMeters: 0, capturedAt: Date.now() + checkpoint.ordinal, source: 'mock' });
+    });
+  }
+  const confirmed = first.result.current.active!;
+  expect(confirmed.cursor.phase).toBe('riding');
+  expect(confirmed.cursor.checkpointOrdinal).toBe(intermediate.ordinal);
+  first.unmount();
+  planTripMock().mockClear();
+
+  const otherAccount = await idleHook('bob');
+  expect(otherAccount.result.current.active).toBeNull();
+  otherAccount.unmount();
+  const restored = renderHook(() => useActiveTrip('alice'));
+  await waitFor(() => expect(restored.result.current.status).toBe('active'));
+  expect(planTripMock()).not.toHaveBeenCalled();
+  expect(restored.result.current.active).toEqual(expect.objectContaining({
+    sessionId: original.sessionId,
+    itinerary: original.itinerary,
+    selection: original.selection,
+    cursor: confirmed.cursor,
+    destination: expect.objectContaining({ label: 'Pine St' }),
+  }));
+  const restoredRide = restored.result.current.active!.itinerary.steps.find((step) => step.kind === 'transit')!;
+  expect(restoredRide.from.time).toBe(new Date(Date.parse(selected.resumeRequest.time.at) + 3 * 60_000).toISOString());
+  expect(restoredRide.to.name).toBe('Pine St');
+  expect(restoredRide.liveRoute).toEqual(expect.objectContaining({ boardStopId: 'a', alightStopId: 'd', directionId: 0 }));
+  expect(restoredRide.departures).toBeUndefined();
+
+  const next = restored.result.current.active!.plan.checkpoints.find((checkpoint) => checkpoint.kind === 'transit-stop' && checkpoint.ordinal > intermediate.ordinal)!;
+  await act(async () => {
+    await restored.result.current.advance({ point: next.point, accuracyMeters: 0, capturedAt: Date.now() + next.ordinal, source: 'mock' });
+  });
+  const advanced = restored.result.current.active!.cursor;
+  expect(advanced.checkpointOrdinal).toBe(next.ordinal);
+  restored.unmount();
+  const secondReload = renderHook(() => useActiveTrip('alice'));
+  await waitFor(() => expect(secondReload.result.current.status).toBe('active'));
+  expect(secondReload.result.current.active?.cursor).toEqual(advanced);
+  expect(planTripMock()).not.toHaveBeenCalled();
+  await act(async () => {
+    expect(await secondReload.result.current.resetForAdmin()).toBe(true);
+  });
+  secondReload.unmount();
+  const resetReload = renderHook(() => useActiveTrip('alice'));
+  await waitFor(() => expect(resetReload.result.current.status).toBe('active'));
+  expect(resetReload.result.current.active?.cursor.checkpointOrdinal).toBe(0);
+  expect(resetReload.result.current.active?.itinerary).toEqual(original.itinerary);
+  await act(async () => {
+    expect(await resetReload.result.current.end()).toBe(true);
+  });
+  resetReload.unmount();
+  const endedReload = await idleHook();
+  expect(endedReload.result.current.active).toBeNull();
+  expect(endedReload.result.current.recents).toEqual([expect.objectContaining({ sessionId: original.sessionId, outcome: 'ended-early' })]);
+  const serialized = await AsyncStorage.getItem(navigationStorageKey('alice'));
+  expect(serialized).not.toMatch(/"rideSnapshot"|"steps"|"departures"|"progressAnchor"/);
+  expect(planTripMock()).not.toHaveBeenCalled();
+  endedReload.unmount();
+});
+
+it.each([0, 0.00005])('restores the exact line-based checkpoint with intermediate-stop latitude separation %s', async (offset) => {
+  const selected = guidedRideInput();
+  const ride = selected.itinerary.steps.find((step) => step.kind === 'transit')!;
+  const firstStop = ride.stops![0]!;
+  const secondStop = ride.stops![1]!;
+  secondStop.location = { lat: firstStop.location.lat + offset, lng: firstStop.location.lng };
+  ride.path = [ride.from.location, ...ride.stops!.map((stop) => stop.location), ride.to.location];
+  const first = await idleHook();
+  await act(async () => {
+    expect(await first.result.current.start(selected)).toBe('started');
+  });
+  const active = first.result.current.active!;
+  const confirmedStop = active.plan.checkpoints.find((checkpoint) => checkpoint.kind === 'transit-stop')!;
+  for (const checkpoint of active.plan.checkpoints.slice(1, confirmedStop.ordinal + 1)) {
+    await act(async () => {
+      await first.result.current.advance({ point: checkpoint.point, accuracyMeters: 0, capturedAt: Date.now() + checkpoint.ordinal, source: 'mock' });
+    });
+  }
+  const saved = first.result.current.active!.cursor;
+  expect(saved).toEqual(expect.objectContaining({ checkpointOrdinal: confirmedStop.ordinal, phase: 'riding' }));
+  expect((await readNavigationDocument('alice')).active?.progressAnchor).toEqual(expect.objectContaining({ kind: 'transit-stop', point: confirmedStop.point }));
+  first.unmount();
+  planTripMock().mockClear();
+
+  const restored = renderHook(() => useActiveTrip('alice'));
+  await waitFor(() => expect(restored.result.current.status).toBe('active'));
+  expect(restored.result.current.active?.cursor).toEqual(saved);
+  expect(restored.result.current.active?.plan.checkpoints[saved.checkpointOrdinal]).toEqual(confirmedStop);
+  expect(planTripMock()).not.toHaveBeenCalled();
+  restored.unmount();
+  if (offset === 0) {
+    // Identical points do not justify switching to the next stop when its saved index disagrees.
+    await updateNavigationDocument('alice', (document) => ({
+      ...document,
+      active: document.active ? {
+        ...document.active,
+        cursor: { ...document.active.cursor, checkpointOrdinal: saved.checkpointOrdinal + 1 },
+      } : null,
+    }));
+    const corrupted = renderHook(() => useActiveTrip('alice'));
+    await waitFor(() => expect(corrupted.result.current.status).toBe('recovery'));
+    expect(corrupted.result.current.active).toBeNull();
+    expect(corrupted.result.current.recoveryError).toBe('no-exact-match');
+    expect(planTripMock()).not.toHaveBeenCalled();
+    corrupted.unmount();
+  }
+});
+
+it('rejects an invalid Ride Guide replacement without clearing or archiving the current trip', async () => {
+  const invalid = { ...input(fixtures[1]!), resumeSource: 'ride-guide' as const };
+  const hook = await idleHook();
+  await act(async () => {
+    expect(await hook.result.current.start(invalid)).toBe('failed');
+  });
+  expect(hook.result.current.active).toBeNull();
+  expect((await readNavigationDocument('alice')).active).toBeNull();
+
+  await act(async () => {
+    expect(await hook.result.current.start(input())).toBe('started');
+  });
+  const original = hook.result.current.active!;
+  const before = await readNavigationDocument('alice');
+  await act(async () => {
+    expect(await hook.result.current.start(invalid)).toBe('replacement-required');
+    expect(await hook.result.current.confirmReplacement()).toBe(false);
+  });
+  expect(hook.result.current.active?.sessionId).toBe(original.sessionId);
+  const after = await readNavigationDocument('alice');
+  expect(after.active?.sessionId).toBe(original.sessionId);
+  expect(after.active).toEqual(before.active);
+  expect(after.recents).toEqual(before.recents);
+  hook.unmount();
+});
+
+it('replaces a line-based ride with another departure sharing its ID, then restores ordinary planned trips normally', async () => {
+  const capturedAt = Date.now();
+  const earlier = guidedRideInput(0, capturedAt);
+  const later = guidedRideInput(1, capturedAt);
+  expect(earlier.itinerary.id).toBe(later.itinerary.id);
+  expect(earlier.itinerary.departureTime).not.toBe(later.itinerary.departureTime);
+  const first = await idleHook();
+  await act(async () => {
+    expect(await first.result.current.start(earlier)).toBe('started');
+    expect(await first.result.current.start(later)).toBe('replacement-required');
+  });
+  act(() => first.result.current.cancelReplacement());
+  expect(first.result.current.active?.itinerary.departureTime).toBe(earlier.itinerary.departureTime);
+  await act(async () => {
+    expect(await first.result.current.start(later)).toBe('replacement-required');
+    expect(await first.result.current.confirmReplacement()).toBe(true);
+  });
+  const replacementId = first.result.current.active!.sessionId;
+  first.unmount();
+  planTripMock().mockClear();
+
+  const restored = renderHook(() => useActiveTrip('alice'));
+  await waitFor(() => expect(restored.result.current.status).toBe('active'));
+  expect(planTripMock()).not.toHaveBeenCalled();
+  expect(restored.result.current.active?.sessionId).toBe(replacementId);
+  expect(restored.result.current.active?.itinerary.departureTime).toBe(later.itinerary.departureTime);
+  await act(async () => {
+    expect(await restored.result.current.start(input(fixtures[1]!))).toBe('replacement-required');
+    expect(await restored.result.current.confirmReplacement()).toBe(true);
+  });
+  expect(await AsyncStorage.getItem(navigationStorageKey('alice'))).not.toContain('"rideSnapshot"');
+  restored.unmount();
+  planTripMock().mockClear();
+
+  const plannedReload = renderHook(() => useActiveTrip('alice'));
+  await waitFor(() => expect(plannedReload.result.current.status).toBe('active'));
+  expect(plannedReload.result.current.active?.itinerary.id).toBe(fixtures[1]!.id);
+  expect(planTripMock()).toHaveBeenCalledTimes(1);
+  plannedReload.unmount();
+});
+
+it('completes a line-based ride once and does not restore its snapshot after arrival', async () => {
+  const hook = await idleHook();
+  await act(async () => {
+    expect(await hook.result.current.start(guidedRideInput())).toBe('started');
+  });
+  const original = hook.result.current.active!;
+  for (const checkpoint of original.plan.checkpoints.slice(1)) {
+    await act(async () => {
+      await hook.result.current.advance({ point: checkpoint.point, accuracyMeters: 0, capturedAt: Date.now() + checkpoint.ordinal, source: 'mock' });
+    });
+  }
+  expect(hook.result.current.status).toBe('idle');
+  expect(hook.result.current.recents.filter((recent) => recent.sessionId === original.sessionId)).toEqual([
+    expect.objectContaining({ outcome: 'arrived' }),
+  ]);
+  expect((await readNavigationDocument('alice')).active).toBeNull();
+  hook.unmount();
+  planTripMock().mockClear();
+  const reopened = await idleHook();
+  expect(planTripMock()).not.toHaveBeenCalled();
+  expect(await AsyncStorage.getItem(navigationStorageKey('alice'))).not.toMatch(/"rideSnapshot"|"steps"|"departures"/);
+  reopened.unmount();
 });

@@ -22,7 +22,9 @@ Base source: `mobile/src/hooks/useTripGuidanceAlerts.ts:61-65,84-112`.
 
 Session replacement, trip end, and unmount now stop prior speech and clear its progress notification. Regression coverage retains the intended arrival announcement, stops it on a later owner unmount, and keeps the initial/reopened step quiet. Replacing a trip with identical initial copy still posts the new owner's progress notification.
 
-### RF-3 — P1: line-based GO trips cannot safely resume after relaunch
+### RF-3 — P1: line-based GO trips cannot safely resume after relaunch — fixed in follow-up
+
+**Current status:** [Implemented and verified](line-resume-fix.md) with a validated active-only Ride Guide snapshot; the original baseline diagnosis below is retained for context.
 
 This is a concrete identity mismatch in the current code path, not a claim that the backend was exercised by this subagent:
 
@@ -59,7 +61,7 @@ The notification/speech fix owns `mobile/src/lib/notifications.ts`, `mobile/src/
 - Covered races: delayed permission after end, older permission response after a newer step, native scheduling still in flight at end, master preference disabled while pending, replacement with identical copy, end/unmount speech cleanup, and arrival speech cleanup.
 - Related consumer suites: settings, saved-line alerts/place editing, and departure nudges/live trips.
 - TypeScript and focused ESLint checks pass. Root should repeat final integration checks after all agents' changes are combined.
-- RF-3 remains a separate P1 safe-reconstruction issue; no identity-relaxation or route-resume redesign was attempted here. RF-4 is now fixed as described above, with positive controls for complete multi-stop and genuine one-stop legs.
+- RF-3 was subsequently fixed in the [line-resume follow-up](line-resume-fix.md); the initial audit did not relax identity checks. RF-4 is now fixed as described above, with positive controls for complete multi-stop and genuine one-stop legs.
 
 ## UI candidates sent to the main agent for live confirmation
 

@@ -91,7 +91,7 @@ A later checkpoint can skip missed updates only when it is unambiguously farther
 
 Alternative considered: advance solely from scheduled times. Rejected because delays, missed vehicles, and admin time changes would produce false guidance.
 
-### 3. Persist a resume reference, then require an exact fresh match
+### 3. Persist a resume reference with source-specific exact recovery
 
 Store one versioned AsyncStorage document per UID, for example `pathly.navigation.<uid>.v1`, containing both the active resume record and provider-light recent summaries. One coordinator serializes writes so start, cursor change, and completion cannot race each other.
 
@@ -101,13 +101,15 @@ The active persisted shape contains:
 - route-planning criteria with an absolute original departure request for resume;
 - permitted endpoint references (Pathly IDs or place IDs; temporary coordinate inputs carry a saved-at timestamp and are deleted within 30 days);
 - the selected departure fingerprint and Pathly-owned GTFS identifiers;
-- no full `Itinerary`, polyline collection, copied provider instructions, or completed-trip geometry.
+- no full routing-provider response, copied provider instructions, or completed-trip geometry; destination-planned trips retain only the reference above.
 
-At startup, hydration waits for the authenticated UID, validates the record, and calls an internal `planTripForResume` path using the stored absolute departure request. The backend request schema already accepts an explicit departure instant, so this can reuse the existing callable; the client planner needs an internal absolute-time option. The returned candidates are matched against the complete stored fingerprint. Only an exact match becomes the new in-memory itinerary. The restored cursor is the maximum of the persisted cursor and any unambiguous progress from a fresh fix. A different or merely similar candidate is never substituted.
+At startup, hydration waits for the authenticated UID and validates the record. For destination-planned trips it calls the internal `planTripForResume` path using the stored absolute departure request. The backend request schema already accepts an explicit departure instant. Returned candidates are matched against the complete stored fingerprint. Only an exact match becomes the new in-memory itinerary. The restored cursor retains confirmed semantic progress before accepting new location evidence. A different or merely similar candidate is never substituted.
+
+Route View's Ride Guide builds an itinerary locally from Pathly's route geometry/stops, predictions, and walking graph. Its synthetic `ride:` identity is not a trip-planner result and cannot be recreated by `planTripForResume`. Only this explicit start source adds `rideSnapshot: { version: 1, itinerary }` to the active V1 document. Snapshot parsing retains selected navigation fields and live-route identifiers, strips departure menus/live status/alerts, and checks the exact selection and coordinate endpoints. Recovery validates the saved checkpoint ordinal against its step, phase, stop index and anchor in unchanged snapshot geometry, without a planning request. This preserves distinct nearby/co-located stops; fresh provider responses keep semantic anchor rebasing. New snapshots are validated before any replacement write. Normal cursor/reset writes preserve it; completion/replacement/expiry removes the old active snapshot. Recent history never receives it. Legacy line-based records lacking the snapshot keep existing safe recovery rather than guessing missing geometry or service identity.
 
 If planning or matching fails, the coordinator enters `recovery` with Retry and End actions and retains the reference. Corrupt, wrong-UID, unsupported-version, or older-than-24-hours active records are quarantined/cleared safely. A hydration state prevents Home from briefly claiming there is no active trip before restore finishes.
 
-Alternative considered: serialize the exact itinerary into AsyncStorage. Rejected because it conflicts with the repository's existing non-caching posture and is not a safe public-MVP design under Routes policy.
+Alternative considered: serialize destination-planning provider responses into AsyncStorage. Rejected under the existing non-caching design. The narrowly scoped snapshot above is for Pathly-assembled line rides; it does not change destination-planner persistence.
 
 ### 4. Keep completed history provider-light and local for this milestone
 
