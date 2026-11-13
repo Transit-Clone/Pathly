@@ -1,0 +1,68 @@
+
+> @pathly/mobile@0.1.0 test
+> jest --runInBand --runTestsByPath __tests__/enrouteNavigation.test.ts
+
+FAIL __tests__/enrouteNavigation.test.ts
+  ● enroute itinerary normalization › does not claim the exit is next with empty stop enrichment
+
+    expect(received).not.toEqual(expected) // deep equality
+
+    Expected: not ObjectContaining {"strength": "alert"}
+    Received:     {"speech": "Ride S toward Toward 20. Your stop, S terminal, is next. Get ready to get off.", "strength": "alert"}
+
+      131 |     const announcement = announcementFor(guidanceForNavigation(plan, waiting), guidance);
+      132 |     expect(guidance.phase).toBe('riding');
+    > 133 |     expect(announcement).not.toEqual(expect.objectContaining({ strength: 'alert' }));
+          |                              ^
+      134 |     expect(guidance.remainingStops).toBeNull();
+      135 |     expect(plan.segments[0]?.knownStopCount).toBeUndefined();
+      136 |     expect(guidance.nextStopName).toBe('S terminal');
+
+      at toEqual (__tests__/enrouteNavigation.test.ts:133:30)
+
+  ● enroute itinerary normalization › does not claim the exit is next with partial stop enrichment
+
+    expect(received).not.toEqual(expected) // deep equality
+
+    Expected: not ObjectContaining {"strength": "alert"}
+    Received:     {"speech": "Ride S toward Toward 20. Your stop, S terminal, is next. Get ready to get off.", "strength": "alert"}
+
+      131 |     const announcement = announcementFor(guidanceForNavigation(plan, waiting), guidance);
+      132 |     expect(guidance.phase).toBe('riding');
+    > 133 |     expect(announcement).not.toEqual(expect.objectContaining({ strength: 'alert' }));
+          |                              ^
+      134 |     expect(guidance.remainingStops).toBeNull();
+      135 |     expect(plan.segments[0]?.knownStopCount).toBeUndefined();
+      136 |     expect(guidance.nextStopName).toBe('S terminal');
+
+      at toEqual (__tests__/enrouteNavigation.test.ts:133:30)
+
+  ● enroute itinerary normalization › does not claim the exit is next with unknown reported count
+
+    expect(received).not.toEqual(expected) // deep equality
+
+    Expected: not ObjectContaining {"strength": "alert"}
+    Received:     {"speech": "Ride S toward Toward 20. Your stop, S terminal, is next. Get ready to get off.", "strength": "alert"}
+
+      131 |     const announcement = announcementFor(guidanceForNavigation(plan, waiting), guidance);
+      132 |     expect(guidance.phase).toBe('riding');
+    > 133 |     expect(announcement).not.toEqual(expect.objectContaining({ strength: 'alert' }));
+          |                              ^
+      134 |     expect(guidance.remainingStops).toBeNull();
+      135 |     expect(plan.segments[0]?.knownStopCount).toBeUndefined();
+      136 |     expect(guidance.nextStopName).toBe('S terminal');
+
+      at toEqual (__tests__/enrouteNavigation.test.ts:133:30)
+
+Test Suites: 1 failed, 1 total
+Tests:       3 failed, 22 passed, 25 total
+Snapshots:   0 total
+Time:        1.059 s, estimated 4 s
+Ran all test suites within paths "__tests__/enrouteNavigation.test.ts".
+npm error Lifecycle script `test` failed with error:
+npm error code 1
+npm error path /Users/ellie/Documents/ChatGPT/Pathly/mobile
+npm error workspace @pathly/mobile@0.1.0
+npm error location /Users/ellie/Documents/ChatGPT/Pathly/mobile
+npm error command failed
+npm error command sh -c jest --runInBand --runTestsByPath __tests__/enrouteNavigation.test.ts

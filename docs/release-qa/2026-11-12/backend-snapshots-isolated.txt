@@ -1,0 +1,164 @@
+✔ extracts and validates only the GTFS files the runtime consumes (8.614416ms)
+✔ rejects incomplete, malformed, and ambiguous GTFS archives (10.453083ms)
+✔ requires app fallback route and stop IDs before publishing an agency feed (3.342458ms)
+✔ keeps the published feed until a new one starts, unless the published one has ended (1.676333ms)
+✔ rejects missing or expired service horizons (1.409291ms)
+✔ computes service horizon from runnable service rather than removal exceptions (0.84625ms)
+✔ creates and validates an immutable atomic snapshot manifest (1.352375ms)
+✔ validates the optional prepared-data archive in a snapshot manifest (1.220083ms)
+✔ uses bundled GTFS outside deployed Cloud Functions (0.181875ms)
+✔ shares one stop-times scan between global and per-route discovery indexes (132.089ms)
+{"agencyId":"lirr","archiveBytes":1005,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"d422c93d6182bd94627a3c262ebfa5a1aa6ecd8f14500fddaf09ea0cc29f53b8","severity":"INFO","message":"Published GTFS snapshot"}
+✔ prevents a slower stale refresh from replacing a newer snapshot (21.640916ms)
+{"agencyId":"lirr","archiveBytes":1010,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"Published GTFS snapshot"}
+✔ treats an overlapping same-version publisher as idempotent (10.048375ms)
+{"agencyId":"lirr","archiveBytes":1010,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"lirr","event":"gtfs_snapshot_unchanged","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"GTFS snapshot is unchanged"}
+{"agencyId":"lirr","event":"gtfs_snapshot_archive_repair","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"ERROR","message":"Error: Repairing corrupt immutable GTFS archive\n    at entryFromArgs (/Users/ellie/Documents/ChatGPT/Pathly/node_modules/firebase-functions/lib/logger/index.js:144:19)\n    at Object.error (/Users/ellie/Documents/ChatGPT/Pathly/node_modules/firebase-functions/lib/logger/index.js:131:11)\n    at ensureSnapshotArchive (/Users/ellie/Documents/ChatGPT/Pathly/firebase/functions/lib/gtfsSnapshots.js:960:41)\n    at async refreshGtfsSnapshot (/Users/ellie/Documents/ChatGPT/Pathly/firebase/functions/lib/gtfsSnapshots.js:1229:13)\n    at async TestContext.<anonymous> (/Users/ellie/Documents/ChatGPT/Pathly/firebase/functions/test/gtfsSnapshots.test.js:465:18)\n    at async Test.run (node:internal/test_runner/test:1113:7)\n    at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)"}
+{"agencyId":"lirr","event":"gtfs_snapshot_unchanged","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"GTFS snapshot is unchanged"}
+{"agencyId":"lirr","event":"gtfs_snapshot_manifest_repair","reason":"Expected property name or '}' in JSON at position 1 (line 1 column 2)","severity":"WARNING","message":"Replacing invalid GTFS manifest"}
+{"agencyId":"lirr","archiveBytes":1010,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"Published GTFS snapshot"}
+✔ repairs a missing archive and an invalid current manifest (11.043042ms)
+{"agencyId":"lirr","archiveBytes":1009,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"4b37a964fecbed4d9334841119f246a974d6c551ef9c823d043791e1e98f41af","severity":"INFO","message":"Published GTFS snapshot"}
+✔ rejects a sequential source replay with an older Last-Modified timestamp (5.561709ms)
+{"agencyId":"lirr","archiveBytes":1182,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"lirr","event":"gtfs_snapshot_unchanged","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"GTFS snapshot is unchanged"}
+{"agencyId":"lirr","event":"gtfs_snapshot_unchanged","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"GTFS snapshot is unchanged"}
+✔ advances the source watermark without activating a logically identical repack (6.957041ms)
+{"agencyId":"lirr","archiveBytes":1006,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"3d29eda2a6c3d311d94c452879287a7a3a181527b19890c871591bc594bb2f62","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"lirr","archiveBytes":1006,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"cf3d690f45d873ba20e1e3e056d8be0a44259d0536c45ab3bc1633f9e6d3d0a4","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"lirr","archiveBytes":1006,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"6b7735c16069cdf6cfac3be9e0ef489ddff59c6255cb4759cd8ceed4d3c5c2b8","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"lirr","event":"gtfs_snapshot_retire_deferred","version":"cf3d690f45d873ba20e1e3e056d8be0a44259d0536c45ab3bc1633f9e6d3d0a4","severity":"INFO","message":"Keeping a recently retired GTFS snapshot version"}
+✔ retains immutable archive history while tracking the immediately previous archive (14.005042ms)
+{"agencyId":"lirr","archiveBytes":1006,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"92b9e7e5926dfecf8181c4d81bbcdbf06c35d454202b0ca530d97953ba4f6dd9","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"lirr","archiveBytes":1006,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"54b66284bdd3b4d04b392f81d9f5d169b7576fb477767c292730d659ac9b488a","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"lirr","archiveBytes":1006,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"92b9e7e5926dfecf8181c4d81bbcdbf06c35d454202b0ca530d97953ba4f6dd9","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"lirr","event":"gtfs_snapshot_retire_deferred","version":"54b66284bdd3b4d04b392f81d9f5d169b7576fb477767c292730d659ac9b488a","severity":"INFO","message":"Keeping a recently retired GTFS snapshot version"}
+{"agencyId":"lirr","event":"gtfs_snapshot_fallback","reason":"GTFS manifest is invalid: GTFS manifest size is outside the allowed range","severity":"WARNING","message":"Using last known or bundled GTFS data after snapshot check failed"}
+✔ reuses a retained archive when content rolls from A to B back to A (12.417125ms)
+✔ rejects oversized stored objects before downloading them (0.294666ms)
+{"agencyId":"lirr","archiveBytes":1165,"event":"gtfs_snapshot_published","fileCount":7,"serviceEndDate":"20991231","version":"e5bb7b6e57c35d26d5290bf49c68807e13ae892680184ca0f97deaaf5346b827","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"lirr","event":"gtfs_snapshot_hydrated","prepared":true,"version":"e5bb7b6e57c35d26d5290bf49c68807e13ae892680184ca0f97deaaf5346b827","severity":"INFO","message":"Hydrated GTFS snapshot"}
+{"agencyId":"lirr","archiveBytes":1165,"event":"gtfs_snapshot_published","fileCount":7,"serviceEndDate":"20991231","version":"7d6597859a1e2a9f5c8aed6966f0f1719127751a6a35cdfcd0a74557e5bcdb8f","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"lirr","event":"gtfs_snapshot_hydrated","prepared":true,"version":"7d6597859a1e2a9f5c8aed6966f0f1719127751a6a35cdfcd0a74557e5bcdb8f","severity":"INFO","message":"Hydrated GTFS snapshot"}
+✖ activates new remote snapshots through the static-data readers and keeps the last good version (14.233125ms)
+{"agencyId":"lirr","archiveBytes":1010,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"lirr","event":"gtfs_snapshot_derived_failed","reason":"builder exploded","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"ERROR","message":"Error: Could not prepare GTFS snapshot timetable indexes\n    at entryFromArgs (/Users/ellie/Documents/ChatGPT/Pathly/node_modules/firebase-functions/lib/logger/index.js:144:19)\n    at Object.error (/Users/ellie/Documents/ChatGPT/Pathly/node_modules/firebase-functions/lib/logger/index.js:131:11)\n    at tryPublishDerived (/Users/ellie/Documents/ChatGPT/Pathly/firebase/functions/lib/gtfsSnapshots.js:1148:37)\n    at async refreshGtfsSnapshot (/Users/ellie/Documents/ChatGPT/Pathly/firebase/functions/lib/gtfsSnapshots.js:1276:21)\n    at async /Users/ellie/Documents/ChatGPT/Pathly/firebase/functions/test/gtfsSnapshots.test.js:712:47\n    at async withLirrFeed (/Users/ellie/Documents/ChatGPT/Pathly/firebase/functions/test/gtfsSnapshots.test.js:677:12)\n    at async TestContext.<anonymous> (/Users/ellie/Documents/ChatGPT/Pathly/firebase/functions/test/gtfsSnapshots.test.js:712:3)\n    at async Test.run (node:internal/test_runner/test:1113:7)\n    at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)"}
+{"agencyId":"lirr","archiveBytes":1010,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"Published GTFS snapshot"}
+✔ publishes prepared timetable indexes alongside a new snapshot (5.04275ms)
+{"agencyId":"lirr","derivedVersion":3,"event":"gtfs_snapshot_derived_backfilled","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"Added prepared timetable indexes to GTFS snapshot"}
+{"agencyId":"lirr","event":"gtfs_snapshot_unchanged","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"GTFS snapshot is unchanged"}
+✔ still publishes a snapshot when its prepared indexes cannot be built, then backfills them (4.758458ms)
+{"agencyId":"lirr","archiveBytes":1010,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"lirr","event":"gtfs_snapshot_unchanged","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"GTFS snapshot is unchanged"}
+✔ leaves a snapshot with current prepared indexes untouched (4.467417ms)
+{"agencyId":"lirr","archiveBytes":1010,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"lirr","derivedVersion":3,"event":"gtfs_snapshot_derived_backfilled","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"Added prepared timetable indexes to GTFS snapshot"}
+{"agencyId":"lirr","event":"gtfs_snapshot_unchanged","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"GTFS snapshot is unchanged"}
+✔ keeps a prepared archive another run already published for the same snapshot (4.881209ms)
+{"agencyId":"lirr","archiveBytes":1010,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"lirr","event":"gtfs_snapshot_hydrated","prepared":true,"version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"Hydrated GTFS snapshot"}
+{"agencyId":"lirr","event":"gtfs_snapshot_derived_failed","reason":"no prepared indexes for this comparison","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"ERROR","message":"Error: Could not prepare GTFS snapshot timetable indexes\n    at entryFromArgs (/Users/ellie/Documents/ChatGPT/Pathly/node_modules/firebase-functions/lib/logger/index.js:144:19)\n    at Object.error (/Users/ellie/Documents/ChatGPT/Pathly/node_modules/firebase-functions/lib/logger/index.js:131:11)\n    at tryPublishDerived (/Users/ellie/Documents/ChatGPT/Pathly/firebase/functions/lib/gtfsSnapshots.js:1148:37)\n    at async refreshGtfsSnapshot (/Users/ellie/Documents/ChatGPT/Pathly/firebase/functions/lib/gtfsSnapshots.js:1276:21)\n    at async /Users/ellie/Documents/ChatGPT/Pathly/firebase/functions/test/gtfsSnapshots.test.js:775:49\n    at async withLirrFeed (/Users/ellie/Documents/ChatGPT/Pathly/firebase/functions/test/gtfsSnapshots.test.js:677:12)\n    at async hydratePreparedLirr (/Users/ellie/Documents/ChatGPT/Pathly/firebase/functions/test/gtfsSnapshots.test.js:775:5)\n    at async TestContext.<anonymous> (/Users/ellie/Documents/ChatGPT/Pathly/firebase/functions/test/gtfsSnapshots.test.js:806:15)\n    at async Test.run (node:internal/test_runner/test:1113:7)\n    at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)"}
+{"agencyId":"lirr","archiveBytes":1010,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"lirr","event":"gtfs_snapshot_hydrated","prepared":false,"version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"Hydrated GTFS snapshot"}
+✔ hydrates prepared timetable indexes instead of the raw stop times (12.753125ms)
+{"agencyId":"lirr","archiveBytes":1010,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"lirr","event":"gtfs_snapshot_derived_unavailable","reason":"prepared archive does not match its manifest","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"WARNING","message":"Using raw GTFS files because prepared timetable indexes are unavailable"}
+{"agencyId":"lirr","event":"gtfs_snapshot_hydrated","prepared":false,"version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"Hydrated GTFS snapshot"}
+{"agencyId":"lirr","archiveBytes":1010,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"lirr","event":"gtfs_snapshot_derived_unavailable","reason":"unexpected prepared archive entry ../escape.json","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"WARNING","message":"Using raw GTFS files because prepared timetable indexes are unavailable"}
+✔ falls back to the raw stop times when a prepared archive fails verification (6.421541ms)
+{"agencyId":"lirr","event":"gtfs_snapshot_hydrated","prepared":false,"version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"Hydrated GTFS snapshot"}
+✔ rejects a prepared archive with unexpected entries (2.771875ms)
+{"agencyId":"lirr","archiveBytes":1010,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"subway","archiveBytes":1087,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"7066c56a10903c0b29e74d953714fc73252600aab71f7bc3024f641662f80bf9","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"nice","archiveBytes":1016,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"a3215273c1484e6d7bef5d764d0741eec504a4a944b851a4e858a87beb752c84","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"suffolk","archiveBytes":1120,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"d32bf4ea67ea92578cb46ad96bce7f50e4ae362ee00534d1488e5f0b34c25082","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"bx","archiveBytes":1009,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"9989effdeb789902c9d095e7a3370497dfd7966f62f4839761602fd926555802","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"bk","archiveBytes":1007,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"fd40caee213b7d923e15c95520cd7f19bba78b21f5f60791b5eb72b5c48bb740","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"mn","archiveBytes":1007,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"e7f8497315c2238f24affc5a323075776f9b3f486d09c6d8ed7154155052e13e","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"qn","archiveBytes":1007,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"61c946e72d11d9a6aa00c46ee4370e4b07fa7aa9bce31c2e5e5755d0642b32c2","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"si","archiveBytes":1007,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"322147330cd01e0b951d93bfdf841ae69dba2fc069868cfe9a1e3fdb42b6b794","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"busco","archiveBytes":1021,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"4f8e0d99856699b95ef83d8ec15f634113b2d905f84e4f9b4f48b0cb1c6c832d","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"nycferry","archiveBytes":1021,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"1709c56eda874e11a3db58b6a4df270b6060e37166ec72f4565f206d1f0e6b92","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"siferry","archiveBytes":1044,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"2623b7c40d624f42d39323099a1167443843c5ce0aae0f68916ade012c96dbfb","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyCount":12,"event":"gtfs_refresh_completed","severity":"INFO","message":"Completed GTFS snapshot refresh"}
+✔ refreshes every agency successfully in one scheduled run (50.552583ms)
+{"agencyId":"lirr","archiveBytes":1010,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"subway","archiveBytes":1087,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"7066c56a10903c0b29e74d953714fc73252600aab71f7bc3024f641662f80bf9","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"nice","event":"gtfs_refresh_failed","reason":"GTFS source returned HTTP 503","severity":"ERROR","message":"Error: GTFS snapshot refresh failed\n    at entryFromArgs (/Users/ellie/Documents/ChatGPT/Pathly/node_modules/firebase-functions/lib/logger/index.js:144:19)\n    at Object.error (/Users/ellie/Documents/ChatGPT/Pathly/node_modules/firebase-functions/lib/logger/index.js:131:11)\n    at refreshAllGtfsSnapshots (/Users/ellie/Documents/ChatGPT/Pathly/firebase/functions/lib/gtfsSnapshots.js:1494:41)\n    at async waitForActual (node:assert:646:5)\n    at async strict.rejects (node:assert:769:25)\n    at async TestContext.<anonymous> (/Users/ellie/Documents/ChatGPT/Pathly/firebase/functions/test/gtfsSnapshots.test.js:867:5)\n    at async Test.run (node:internal/test_runner/test:1113:7)\n    at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)"}
+{"agencyId":"suffolk","archiveBytes":1120,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"d32bf4ea67ea92578cb46ad96bce7f50e4ae362ee00534d1488e5f0b34c25082","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"bx","archiveBytes":1009,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"9989effdeb789902c9d095e7a3370497dfd7966f62f4839761602fd926555802","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"bk","archiveBytes":1007,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"fd40caee213b7d923e15c95520cd7f19bba78b21f5f60791b5eb72b5c48bb740","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"mn","archiveBytes":1007,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"e7f8497315c2238f24affc5a323075776f9b3f486d09c6d8ed7154155052e13e","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"qn","archiveBytes":1007,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"61c946e72d11d9a6aa00c46ee4370e4b07fa7aa9bce31c2e5e5755d0642b32c2","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"si","archiveBytes":1007,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"322147330cd01e0b951d93bfdf841ae69dba2fc069868cfe9a1e3fdb42b6b794","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"busco","archiveBytes":1021,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"4f8e0d99856699b95ef83d8ec15f634113b2d905f84e4f9b4f48b0cb1c6c832d","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"nycferry","archiveBytes":1021,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"1709c56eda874e11a3db58b6a4df270b6060e37166ec72f4565f206d1f0e6b92","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"siferry","archiveBytes":1044,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"2623b7c40d624f42d39323099a1167443843c5ce0aae0f68916ade012c96dbfb","severity":"INFO","message":"Published GTFS snapshot"}
+✔ continues refreshing other agencies before rejecting a partial scheduled failure (52.216958ms)
+✔ shares handled storage failures across concurrent snapshot checks (0.153167ms)
+{"agencyId":"lirr","event":"gtfs_snapshot_fallback","reason":"GTFS snapshot check timed out after 5ms","severity":"WARNING","message":"Using last known or bundled GTFS data after snapshot check failed"}
+✔ falls back before stalled Storage retries can outlive the callable (4.849875ms)
+✔ exports a bounded daily scheduled function (0.059667ms)
+{"agencyId":"lirr","archiveBytes":1010,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"lirr","event":"gtfs_snapshot_hydrated","prepared":true,"version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"Hydrated GTFS snapshot"}
+{"agencyId":"lirr","archiveBytes":1010,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"lirr","event":"gtfs_snapshot_hydrated","prepared":true,"version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"Hydrated GTFS snapshot"}
+✔ an on-demand agency publishes each route file on its own and loads it only when asked (13.151708ms)
+{"agencyId":"lirr","archiveBytes":1010,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"lirr","event":"gtfs_snapshot_hydrated","prepared":true,"version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"Hydrated GTFS snapshot"}
+{"agencyId":"lirr","event":"gtfs_route_file_failed","file":"geometry/10.json","reason":"GTFS route file does not match its index","severity":"WARNING","message":"Could not load an on-demand GTFS route file"}
+✔ a tampered on-demand route file is rejected (7.266125ms)
+✔ an on-demand agency without a published snapshot is skipped (0.259542ms)
+✔ the on-demand cache evicts the least recently used routes beyond its budget (0.422167ms)
+{"agencyId":"lirr","archiveBytes":1002,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"d8c9e4746ca3caa44491a48e6734bff3f3d2931ffe1679623bde89d11e295d26","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"lirr","archiveBytes":1003,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"fb74677c5dda6b2f7e1f22a288a778795b55a2e132f162a5082b490f686bd50f","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"lirr","archiveBytes":1002,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"8a5836bc325d36b0c66010aed9315e63fcc9db9a81a628ea1c4e2af278f6aaf9","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"lirr","deleted":2,"event":"gtfs_snapshot_retired","severity":"INFO","message":"Deleted a retired GTFS snapshot version"}
+✔ deletes the version from two publications back, keeping the live two (13.323167ms)
+{"agencyId":"lirr","archiveBytes":1002,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"d8c9e4746ca3caa44491a48e6734bff3f3d2931ffe1679623bde89d11e295d26","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"lirr","archiveBytes":1003,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"fb74677c5dda6b2f7e1f22a288a778795b55a2e132f162a5082b490f686bd50f","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"lirr","archiveBytes":1002,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"8a5836bc325d36b0c66010aed9315e63fcc9db9a81a628ea1c4e2af278f6aaf9","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"lirr","event":"gtfs_snapshot_retire_deferred","version":"fb74677c5dda6b2f7e1f22a288a778795b55a2e132f162a5082b490f686bd50f","severity":"INFO","message":"Keeping a recently retired GTFS snapshot version"}
+✔ waits a day before deleting a retired version (12.0115ms)
+{"agencyId":"lirr","archiveBytes":1002,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"d8c9e4746ca3caa44491a48e6734bff3f3d2931ffe1679623bde89d11e295d26","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"lirr","archiveBytes":1003,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"fb74677c5dda6b2f7e1f22a288a778795b55a2e132f162a5082b490f686bd50f","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"lirr","archiveBytes":1002,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"d8c9e4746ca3caa44491a48e6734bff3f3d2931ffe1679623bde89d11e295d26","severity":"INFO","message":"Published GTFS snapshot"}
+✔ never deletes content a live version uses again (12.61175ms)
+{"agencyId":"lirr","archiveBytes":1002,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"d8c9e4746ca3caa44491a48e6734bff3f3d2931ffe1679623bde89d11e295d26","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"lirr","archiveBytes":1003,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"fb74677c5dda6b2f7e1f22a288a778795b55a2e132f162a5082b490f686bd50f","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"lirr","archiveBytes":1002,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"8a5836bc325d36b0c66010aed9315e63fcc9db9a81a628ea1c4e2af278f6aaf9","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"lirr","deleted":4,"event":"gtfs_snapshot_retired","severity":"INFO","message":"Deleted a retired GTFS snapshot version"}
+✔ deletes an on-demand agency's retired route files by name (14.092125ms)
+✔ rejects a manifest whose cleanup reference points outside its prepared data (0.713667ms)
+{"agencyId":"lirr","archiveBytes":1010,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"lirr","event":"gtfs_snapshot_unchanged","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"GTFS snapshot is unchanged"}
+✔ an identical feed whose Last-Modified jitters backward is unchanged, not a rollback (5.069042ms)
+✔ an empty optional file counts as absent (NYC Ferry ships an empty calendar_dates.txt) (1.199333ms)
+✔ fills in a feed's missing trip directions and headsigns, dropping trips that go nowhere (4.790459ms)
+{"agencyId":"siferry","archiveBytes":1062,"event":"gtfs_snapshot_published","fileCount":5,"serviceEndDate":"20991231","version":"001a48e9419c954244256b75fc8f8b662797828bb7adc3fa58f9ccc5485fb04e","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"lirr","archiveBytes":1010,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"Published GTFS snapshot"}
+{"agencyId":"siferry","event":"gtfs_snapshot_unchanged","version":"001a48e9419c954244256b75fc8f8b662797828bb7adc3fa58f9ccc5485fb04e","severity":"INFO","message":"GTFS snapshot is unchanged"}
+{"reason":"Unexpected token 'o', \"not json\" is not valid JSON","severity":"WARNING","message":"Could not read the saved line list"}
+✔ downloads the Staten Island Ferry with a browser User-Agent and publishes it with directions filled in (15.208542ms)
+✔ the saved line list is read back only in the format it was built for (0.334125ms)
+{"agencyId":"lirr","archiveBytes":1010,"event":"gtfs_snapshot_published","fileCount":6,"serviceEndDate":"20991231","version":"6259b470c3ff62160a460488a98254d8448b7ddb237f1afcdc702b2361bff075","severity":"INFO","message":"Published GTFS snapshot"}
+✔ the nearby index is read only while it matches the published snapshot (5.555958ms)
+ℹ tests 46
+ℹ suites 0
+ℹ pass 45
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 912.563416
+
+✖ failing tests:
+
+test at test/gtfsSnapshots.test.js:636:1
+✖ activates new remote snapshots through the static-data readers and keeps the last good version (14.233125ms)
+  TypeError: Cannot read properties of undefined (reading 'name')
+      at TestContext.<anonymous> (/Users/ellie/Documents/ChatGPT/Pathly/firebase/functions/test/gtfsSnapshots.test.js:659:67)
+      at async Test.run (node:internal/test_runner/test:1113:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)

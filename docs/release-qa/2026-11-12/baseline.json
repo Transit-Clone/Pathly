@@ -1,0 +1,100 @@
+{
+  "date": "2026-11-12",
+  "url": "http://localhost:8081/",
+  "baseCommit": "82d5f0f",
+  "branch": "codex/mobile-release-polish",
+  "healthScore": null,
+  "scoreReason": "No whole-app or native score: native runtime, links, accessibility traversal and release performance are not fully observed. Untested categories are not awarded passing points.",
+  "categoryScores": {
+    "console": null,
+    "links": null,
+    "visual": null,
+    "functional": null,
+    "ux": null,
+    "performance": null,
+    "content": null,
+    "accessibility": null
+  },
+  "verification": {
+    "mobileSuites": 65,
+    "mobilePassed": 625,
+    "mobileFailed": 0,
+    "backendPassedFreshTemp": 215,
+    "backendFailedFreshTemp": 0,
+    "initialBackendFailedExistingTemp": 1,
+    "types": "pass",
+    "lint": "pass",
+    "webIosAndroidJsExports": "pass",
+    "physicalDevice": "not_tested",
+    "androidArm64DebugAssembly": "pass",
+    "androidReleaseShrinking": "not_tested",
+    "iosNativeBuild": "not_tested",
+    "androidEmulatorInstallation": "pass",
+    "nativeAppUi": "not_tested_tooling_boundary"
+  },
+  "issues": [
+    {
+      "id": "NAV-01",
+      "title": "END obscures instructions",
+      "severity": "high",
+      "category": "visual",
+      "status": "fixed"
+    },
+    {
+      "id": "NAV-02",
+      "title": "Long countdown formatting",
+      "severity": "medium",
+      "category": "content",
+      "status": "fixed"
+    },
+    {
+      "id": "NAV-03",
+      "title": "Notification and speech lifecycle",
+      "severity": "high",
+      "category": "functional",
+      "status": "fixed"
+    },
+    {
+      "id": "NAV-04",
+      "title": "Incomplete stop sequence creates false next-stop warning",
+      "severity": "high",
+      "category": "functional",
+      "status": "fixed"
+    },
+    {
+      "id": "NAV-05",
+      "title": "Line-only trip cannot restore after reload",
+      "severity": "high",
+      "category": "functional",
+      "status": "open"
+    },
+    {
+      "id": "NAV-06",
+      "title": "Interactive controls nested in accessible summary",
+      "severity": "medium",
+      "category": "accessibility",
+      "status": "source_fixed_native_unverified"
+    },
+    {
+      "id": "N1",
+      "title": "Locked-screen progression",
+      "severity": "high",
+      "category": "functional",
+      "status": "unverified_source_gap"
+    },
+    {
+      "id": "N2-N3",
+      "title": "Release startup/native authentication configuration",
+      "severity": "high",
+      "category": "native",
+      "status": "unverified"
+    },
+    {
+      "id": "SF-1",
+      "title": "Server admin email ownership",
+      "severity": "high",
+      "category": "authorization",
+      "status": "source_confirmed_open"
+    }
+  ]
+}
