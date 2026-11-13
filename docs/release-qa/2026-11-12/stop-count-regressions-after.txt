@@ -1,0 +1,10 @@
+
+> @pathly/mobile@0.1.0 test
+> jest --runInBand --runTestsByPath __tests__/enrouteNavigation.test.ts __tests__/tripGuidanceAlerts.test.ts __tests__/useActiveTrip.test.ts __tests__/rideGuide.test.tsx
+
+
+Test Suites: 4 passed, 4 total
+Tests:       65 passed, 65 total
+Snapshots:   0 total
+Time:        4.407 s, estimated 17 s
+Ran all test suites within paths "__tests__/enrouteNavigation.test.ts", "__tests__/tripGuidanceAlerts.test.ts", "__tests__/useActiveTrip.test.ts", "__tests__/rideGuide.test.tsx".

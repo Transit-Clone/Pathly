@@ -22,6 +22,16 @@ if (Platform.OS !== 'web') {
 }
 
 let tripChannelsReady: Promise<void> | null = null;
+let tripNotificationVersion = 0;
+let tripNotificationWork: Promise<void> = Promise.resolve();
+
+/** OS mutations are ordered: a late native post must finish before its dismissal. */
+function queueTripNotification(work: () => Promise<void>): Promise<void> {
+  const next = tripNotificationWork.catch(() => undefined).then(work);
+  tripNotificationWork = next;
+  return next;
+}
+
 /** Android: routine steps update quietly; the stop before getting off (and arrival) alerts. */
 function tripChannels(): Promise<void> {
   tripChannelsReady ??= Promise.all([
@@ -38,8 +48,15 @@ function tripChannels(): Promise<void> {
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
       vibrationPattern: [0, 250, 150, 250],
     }),
-  ]).then(() => undefined);
+  ]).then(() => undefined).catch((error) => {
+    tripChannelsReady = null;
+    throw error;
+  });
   return tripChannelsReady;
+}
+
+function defaultChannel(): Promise<unknown> {
+  return Notifications.setNotificationChannelAsync('default', { name: 'Service alerts', importance: Notifications.AndroidImportance.HIGH });
 }
 
 /**
@@ -49,21 +66,26 @@ function tripChannels(): Promise<void> {
  */
 export async function showTripNotification(title: string, body: string, alert: boolean): Promise<void> {
   if (Platform.OS === 'web') return;
+  const version = ++tripNotificationVersion;
   try {
-    if (!(await notificationsAllowed())) return;
+    // Android needs a channel before its first notification permission prompt can appear.
     if (Platform.OS === 'android') await tripChannels();
-    await Notifications.scheduleNotificationAsync({
-      identifier: TRIP_NOTIFICATION_ID,
-      content: {
-        title,
-        body,
-        sticky: true,
-        autoDismiss: false,
-        sound: alert ? 'default' : undefined,
-        // iOS: routine steps go straight to the list without lighting the screen.
-        interruptionLevel: alert ? 'active' : 'passive',
-      },
-      trigger: Platform.OS === 'android' ? { channelId: alert ? TRIP_ALERT_CHANNEL : TRIP_CHANNEL } : null,
+    if (version !== tripNotificationVersion || !(await notificationsAllowed()) || version !== tripNotificationVersion) return;
+    await queueTripNotification(async () => {
+      if (version !== tripNotificationVersion) return;
+      await Notifications.scheduleNotificationAsync({
+        identifier: TRIP_NOTIFICATION_ID,
+        content: {
+          title,
+          body,
+          sticky: true,
+          autoDismiss: false,
+          sound: alert ? 'default' : undefined,
+          // iOS: routine steps go straight to the list without lighting the screen.
+          interruptionLevel: alert ? 'active' : 'passive',
+        },
+        trigger: Platform.OS === 'android' ? { channelId: alert ? TRIP_ALERT_CHANNEL : TRIP_CHANNEL } : null,
+      });
     });
   } catch {
     // The notification is a convenience; never let it break navigation.
@@ -73,8 +95,10 @@ export async function showTripNotification(title: string, body: string, alert: b
 /** Removes the trip's progress notification (the trip ended). */
 export async function clearTripNotification(): Promise<void> {
   if (Platform.OS === 'web') return;
+  // Invalidate pending permission/channel work before waiting for any native operation.
+  tripNotificationVersion += 1;
   try {
-    await Notifications.dismissNotificationAsync(TRIP_NOTIFICATION_ID);
+    await queueTripNotification(async () => { await Notifications.dismissNotificationAsync(TRIP_NOTIFICATION_ID); });
   } catch {
     // Already gone.
   }
@@ -99,12 +123,13 @@ async function notificationsAllowed(): Promise<boolean> {
  */
 export async function notifyNow(title: string, body: string): Promise<void> {
   try {
+    if (Platform.OS === 'android') await defaultChannel();
     if (!(await notificationsAllowed())) return;
     if (Platform.OS === 'web') {
       new Notification(title, { body, icon: '/favicon.png' });
       return;
     }
-    await Notifications.scheduleNotificationAsync({ content: { title, body, sound: 'default' }, trigger: null });
+    await Notifications.scheduleNotificationAsync({ content: { title, body, sound: 'default' }, trigger: Platform.OS === 'android' ? { channelId: 'default' } : null });
   } catch {
     // A notification is a convenience; never let it break navigation.
   }
@@ -118,10 +143,8 @@ export async function notifyNow(title: string, body: string): Promise<void> {
 export async function registerForRouteAlerts(uid: string): Promise<boolean> {
   if (Platform.OS === 'web') return false;
   try {
+    if (Platform.OS === 'android') await defaultChannel();
     if (!(await notificationsAllowed())) return false;
-    if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('default', { name: 'Service alerts', importance: Notifications.AndroidImportance.HIGH });
-    }
     const projectId = Constants.expoConfig?.extra?.eas?.projectId as string | undefined;
     const { data: token } = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined);
     await setDoc(doc(db, 'users', uid), { pushTokens: arrayUnion(token) }, { merge: true });

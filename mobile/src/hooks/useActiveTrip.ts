@@ -34,8 +34,13 @@ import {
   type ResumePlanRequest,
   type TransitStep,
 } from '../data/tripPlanning';
+import { parseRideSnapshot } from '../data/rideSnapshot';
 
-export type StartActiveTripInput = StartTripInput & { resumeRequest: ResumePlanRequest };
+export type StartActiveTripInput = StartTripInput & {
+  resumeRequest: ResumePlanRequest;
+  /** Line rides are assembled from Pathly's own route data, outside the trip planner. */
+  resumeSource?: 'ride-guide';
+};
 export type StartActiveTripResult = 'started' | 'replacement-required' | 'not-ready' | 'failed';
 export type ActiveTripStatus = 'hydrating' | 'idle' | 'active' | 'recovery';
 
@@ -154,8 +159,8 @@ export function createActiveTripRuntime(
   };
 }
 
-function resumeRecord(runtime: ActiveTripRuntime, request: ResumePlanRequest): ActiveTripResumeV1 {
-  return {
+function resumeRecord(runtime: ActiveTripRuntime, request: ResumePlanRequest, snapshotRide = false): ActiveTripResumeV1 {
+  const record: ActiveTripResumeV1 = {
     version: NAVIGATION_STORAGE_VERSION,
     sessionId: runtime.sessionId,
     uid: runtime.uid,
@@ -169,6 +174,11 @@ function resumeRecord(runtime: ActiveTripRuntime, request: ResumePlanRequest): A
     progressAnchor: progressAnchor(runtime.plan, runtime.cursor),
     lines: lineSummaries(runtime.itinerary),
   };
+  if (!snapshotRide) return record;
+  // Reject an invalid new ride before any write can replace or archive the current session.
+  const rideSnapshot = parseRideSnapshot({ version: 1, itinerary: runtime.itinerary }, record);
+  if (!rideSnapshot) throw new Error('Selected line ride could not be saved');
+  return { ...record, rideSnapshot };
 }
 
 function resumeCheckpoint(
@@ -238,8 +248,13 @@ function resumeCheckpoint(
 function runtimeFromResume(resume: ActiveTripResumeV1, itinerary: Itinerary): ActiveTripRuntime | null {
   const selected = freezeSelectedItinerary(itinerary);
   const selection = createTripSelectionIdentity(selected);
+  if (!sameTripSelection(resume.selection, selection)) return null;
   const plan = normalizeItinerary(selected, { origin: endpointPoint(resume.origin), destination: endpointPoint(resume.destination) });
-  const checkpoint = resumeCheckpoint(plan, resume.cursor, selected, resume.progressAnchor);
+  // A local snapshot keeps identical checkpoint geometry/order. Its ordinal can distinguish
+  // stops on a loop that share a location; fresh provider responses still need semantic rebasing.
+  const checkpoint = resume.rideSnapshot && resume.progressAnchor
+    ? snapshotCheckpoint(plan, resume.cursor, resume.progressAnchor)
+    : resumeCheckpoint(plan, resume.cursor, selected, resume.progressAnchor);
   // The exact schedule identity intentionally excludes provider geometry. A fresh response can
   // therefore add/remove generated walk checkpoints. Never apply a raw ordinal to a different
   // semantic step; recovery is safer than silently moving the rider forward or backward.
@@ -277,6 +292,24 @@ function runtimeFromResume(resume: ActiveTripResumeV1, itinerary: Itinerary): Ac
     evidence: null,
     selection,
   };
+}
+
+function snapshotCheckpoint(
+  plan: ReturnType<typeof normalizeItinerary>,
+  cursor: NavigationCursor,
+  anchor: NavigationProgressAnchorV1,
+) {
+  const checkpoint = plan.checkpoints[cursor.checkpointOrdinal];
+  if (!checkpoint
+    || checkpoint.stepIndex !== cursor.stepIndex
+    || anchor.stepIndex !== cursor.stepIndex
+    || anchor.phase !== cursor.phase
+    || anchor.kind !== checkpoint.kind
+    || distanceMeters(checkpoint.point, anchor.point) > 1
+    || (cursor.phase === 'riding' && checkpoint.transitStopIndex !== undefined
+      && cursor.nextStopIndex !== undefined && cursor.nextStopIndex !== checkpoint.transitStopIndex + 1)
+    || (checkpoint.phase !== cursor.phase && !(checkpoint.kind === 'board' && cursor.phase === 'riding'))) return null;
+  return checkpoint;
 }
 
 function activeSessionId(state: ActiveTripState): string | null {
@@ -321,7 +354,9 @@ export function useActiveTrip(uid: string | undefined): ActiveTripCoordinator {
   }, []);
 
   const recover = useCallback(async (resume: ActiveTripResumeV1, recents: RecentTripV1[]): Promise<boolean> => {
-    const result = await planTripForResume(resume.request, resume.selection);
+    const result = resume.rideSnapshot
+      ? { ok: true as const, itinerary: resume.rideSnapshot.itinerary }
+      : await planTripForResume(resume.request, resume.selection);
     // An auth change can finish while the network request is in flight. Never publish the prior
     // account's runtime into the new account's hook instance.
     if (stateRef.current.uid !== resume.uid) return false;
@@ -365,7 +400,7 @@ export function useActiveTrip(uid: string | undefined): ActiveTripCoordinator {
             ...stored,
             // Migration refreshes selection/progress evidence, not the user-visible route
             // summary. Fresh responses may omit optional timetable enrichment used to build it.
-            active: { ...resumeRecord(active, resume.request), lines: stored.active.lines },
+            active: { ...resumeRecord(active, resume.request, Boolean(resume.rideSnapshot)), lines: stored.active.lines },
           };
         });
         if (stateRef.current.uid !== resume.uid) return false;
@@ -425,11 +460,11 @@ export function useActiveTrip(uid: string | undefined): ActiveTripCoordinator {
   }, [commit, normalizedUid, recover]);
 
   const install = useCallback(async (accountUid: string, input: StartActiveTripInput, now = Date.now()): Promise<boolean> => {
-    const runtime = createActiveTripRuntime(input, accountUid, now);
-    const persisted = resumeRecord(runtime, input.resumeRequest);
     try {
+      const runtime = createActiveTripRuntime(input, accountUid, now);
+      const persisted = resumeRecord(runtime, input.resumeRequest, input.resumeSource === 'ride-guide');
       const document = await updateNavigationDocument(accountUid, (current) => ({ ...current, active: persisted }), now);
-      if (stateRef.current.uid !== accountUid) return false;
+      if (document.active?.sessionId !== runtime.sessionId || stateRef.current.uid !== accountUid) return false;
       commit({
         uid: accountUid,
         status: 'active',
@@ -474,9 +509,9 @@ export function useActiveTrip(uid: string | undefined): ActiveTripCoordinator {
       const id = activeSessionId(current);
       if (!current.uid || !pending || !id) return false;
       const at = Date.now();
-      const runtime = createActiveTripRuntime(pending, current.uid, at);
-      const replacement = resumeRecord(runtime, pending.resumeRequest);
       try {
+        const runtime = createActiveTripRuntime(pending, current.uid, at);
+        const replacement = resumeRecord(runtime, pending.resumeRequest, pending.resumeSource === 'ride-guide');
         let replaced = false;
         const document = await updateNavigationDocument(current.uid, (stored) => {
           const previous = stored.active?.sessionId === id ? stored.active : null;

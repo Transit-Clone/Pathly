@@ -24,10 +24,18 @@ function buzz(strength: AnnouncementStrength) {
   }
 }
 
+function stopSpeaking() {
+  try {
+    void Speech.stop().catch(() => undefined);
+  } catch {
+    // No speech engine on this device.
+  }
+}
+
 function say(text: string) {
   try {
     // A newer instruction replaces one still being read out.
-    void Speech.stop();
+    stopSpeaking();
     Speech.speak(text, { language: 'en-US' });
   } catch {
     // No speech engine on this device.
@@ -57,6 +65,15 @@ export function useTripGuidanceAlerts({ sessionId, guidance, arrivedDestination,
   const last = useRef<{ sessionId: string; guidance: NavigationGuidance } | null>(null);
   // The notification last posted: the trip updates on many location fixes that change nothing shown.
   const notified = useRef<string | null>(null);
+
+  // The old owner stops before a replacement/arrival starts speaking. Account changes and
+  // unmounts also clean up, even when this hook never renders an explicit sessionId=null.
+  useEffect(() => () => {
+    last.current = null;
+    notified.current = null;
+    stopSpeaking();
+    void clearTripNotification();
+  }, [sessionId]);
 
   useEffect(() => {
     if (!sessionId || !guidance) {
@@ -104,10 +121,6 @@ export function useTripGuidanceAlerts({ sessionId, guidance, arrivedDestination,
   // Turning the voice off mid-sentence stops it.
   useEffect(() => {
     if (voice) return;
-    try {
-      void Speech.stop();
-    } catch {
-      // Nothing was speaking.
-    }
+    stopSpeaking();
   }, [voice]);
 }

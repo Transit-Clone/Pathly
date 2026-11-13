@@ -13,6 +13,7 @@ import {
   type NormalizedNavigationPlan,
 } from '../src/data/enrouteNavigation';
 import type { Itinerary, LatLng, TransitStep, WalkStep } from '../src/data/tripPlanning';
+import { announcementFor } from '../src/data/tripAnnouncements';
 
 const baseTime = Date.UTC(2026, 9, 15, 13);
 const at = (minutes: number) => new Date(baseTime + minutes * 60_000).toISOString();
@@ -101,6 +102,63 @@ describe('enroute itinerary normalization', () => {
     const guidance = guidanceForNavigation(plan, initialNavigationCursor(plan, baseTime));
     expect(guidance.remainingStops).toBeNull();
     expect(guidance.nextStopName).toBe('S terminal');
+  });
+
+  const stopCountPlan = (intermediate: Parameters<typeof transit>[5], stopCount: number) => {
+    // The backend can provide live-route metadata with no matching stop enrichment (stops: []).
+    const leg: TransitStep = {
+      ...transit('S', origin, destination, 0, 20, intermediate), stopCount,
+      liveRoute: { agencyId: 'suffolk', routeId: 'S', boardStopId: 'board', alightStopId: 'exit' },
+    };
+    return normalizeItinerary({
+      ...fullTrip, id: 'stop-count-evidence', transfers: 0,
+      departureTime: leg.from.time, arrivalTime: leg.to.time, durationSeconds: leg.durationSeconds,
+      steps: [leg],
+    });
+  };
+
+  it.each([
+    { label: 'empty stop enrichment', intermediate: [], stopCount: 8 },
+    { label: 'partial stop enrichment', intermediate: [{ name: 'Known stop', point: stopOne, minute: 8 }], stopCount: 8 },
+    { label: 'unknown reported count', intermediate: [], stopCount: 0 },
+  ])('does not claim the exit is next with $label', ({ intermediate, stopCount }) => {
+    const plan = stopCountPlan(intermediate, stopCount);
+    const waiting = initialNavigationCursor(plan, baseTime);
+    // Move onto the ride, or onto its last known intermediate stop. Both still have unknown stops.
+    const point = intermediate.at(-1)?.point ?? p(0.001);
+    const moved = advanceNavigation(plan, waiting, mockFix(point), null, baseTime);
+    const guidance = guidanceForNavigation(plan, moved.cursor);
+    const announcement = announcementFor(guidanceForNavigation(plan, waiting), guidance);
+    expect(guidance.phase).toBe('riding');
+    expect(announcement).not.toEqual(expect.objectContaining({ strength: 'alert' }));
+    expect(guidance.remainingStops).toBeNull();
+    expect(plan.segments[0]?.knownStopCount).toBeUndefined();
+    expect(guidance.nextStopName).toBe('S terminal');
+  });
+
+  it('counts a complete sequence and warns when its actual exit becomes next', () => {
+    const plan = stopCountPlan([{ name: 'Known stop', point: stopOne, minute: 8 }], 2);
+    const waiting = initialNavigationCursor(plan, baseTime);
+    const departed = advanceNavigation(plan, waiting, mockFix(p(0.001)), null, baseTime);
+    const riding = guidanceForNavigation(plan, departed.cursor);
+    expect(riding.remainingStops).toBe(2);
+    expect(announcementFor(guidanceForNavigation(plan, waiting), riding)?.strength).toBe('step');
+    const lastStop = advanceNavigation(plan, departed.cursor, mockFix(stopOne), null, baseTime);
+    const exitNext = guidanceForNavigation(plan, lastStop.cursor);
+    expect(exitNext.remainingStops).toBe(1);
+    expect(announcementFor(riding, exitNext)).toEqual(expect.objectContaining({
+      strength: 'alert', speech: 'Your stop, S terminal, is next. Get ready to get off.',
+    }));
+  });
+
+  it('keeps a genuine one-stop leg complete even though its intermediate list is empty', () => {
+    const plan = stopCountPlan([], 1);
+    const waiting = initialNavigationCursor(plan, baseTime);
+    const departed = advanceNavigation(plan, waiting, mockFix(p(0.001)), null, baseTime);
+    const riding = guidanceForNavigation(plan, departed.cursor);
+    expect(riding.remainingStops).toBe(1);
+    expect(plan.segments[0]?.knownStopCount).toBe(0);
+    expect(announcementFor(guidanceForNavigation(plan, waiting), riding)?.strength).toBe('alert');
   });
 
   it('derives honest walking, boarding, riding, transfer, and arrival guidance', () => {

@@ -72,7 +72,7 @@ export type NavigationRouteSegment = {
   arrivalTime?: string;
   fromName?: string;
   toName: string;
-  /** Present only when the provider supplied the actual intermediate-stop sequence. */
+  /** Intermediate count, present only for a complete sequence matching the reported total. */
   knownStopCount?: number;
   durationSeconds: number;
   distanceMeters?: number;
@@ -505,6 +505,10 @@ export function normalizeItinerary(itinerary: Itinerary, options: NormalizeItine
     }
 
     const knownStops = (step.stops ?? []).filter((stop) => !samePoint(stop.location, step.from.location) && !samePoint(stop.location, step.to.location));
+    // Live-route enrichment can contain [] or only some stops when no full pattern matched.
+    // Claim a remaining-stop count only when the supplied sequence agrees with the reported
+    // total. An actual one-stop leg remains complete with an empty intermediate list.
+    const completeStopSequence = Array.isArray(step.stops) && knownStops.length + 1 === step.stopCount;
     knownStops.forEach((stop, stopIndex) => addCheckpoint({
       kind: 'transit-stop', point: stop.location, label: stop.name, time: stop.time,
       stepIndex, phase: 'riding', transitLegIndex: leg, transitStopIndex: stopIndex,
@@ -542,7 +546,7 @@ export function normalizeItinerary(itinerary: Itinerary, options: NormalizeItine
       arrivalTime: step.to.time,
       fromName: step.from.name,
       toName: step.to.name,
-      ...(step.stops ? { knownStopCount: knownStops.length } : {}),
+      ...(completeStopSequence ? { knownStopCount: knownStops.length } : {}),
       durationSeconds: step.durationSeconds,
     });
   }

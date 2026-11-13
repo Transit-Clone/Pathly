@@ -1008,7 +1008,7 @@ describe('Pathly prototype navigation', () => {
     fireEvent.press(screen.getByTestId(`search-result-view-${LIRR_TRIP.id}`));
     fireEvent.press(screen.getByTestId('search-trip-go'));
     expect(await screen.findByTestId('enroute-end')).toBeTruthy();
-    expect(screen.getByText('END')).toBeTruthy();
+    expect(screen.getByText('End trip')).toBeTruthy();
 
     fireEvent.press(screen.getByTestId('enroute-back'));
     fireEvent.press(await screen.findByTestId('resume-active-trip'));

@@ -82,11 +82,13 @@ function relativeTimeCopy(iso: string, now: number): FormattedCopy {
   const differenceMs = Date.parse(iso) - now;
   if (differenceMs > 30_000) {
     const minutes = Math.max(1, Math.ceil(differenceMs / 60_000));
-    return { accessible: `in ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`, visible: `in ${minutes} min` };
+    const duration = formatDurationMinutes(minutes);
+    return { accessible: `in ${duration.accessibility}`, visible: `in ${duration.visible}` };
   }
   if (differenceMs >= -30_000) return { accessible: 'now', visible: 'now' };
   const minutes = Math.max(1, Math.floor(Math.abs(differenceMs) / 60_000));
-  return { accessible: `${minutes} ${minutes === 1 ? 'minute' : 'minutes'} ago`, visible: `${minutes} min ago` };
+  const duration = formatDurationMinutes(minutes);
+  return { accessible: `${duration.accessibility} ago`, visible: `${duration.visible} ago` };
 }
 
 function distanceCopy(meters: number): FormattedCopy {
@@ -135,6 +137,7 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
     [avatar, onBoard, ride?.ridingTripId, vehicles],
   );
   const [confirmingEnd, setConfirmingEnd] = useState(false);
+  const [controlsHeight, setControlsHeight] = useState(64);
   const supportPrompt = useSupportPrompt(session.sessionId, guidance.phase === 'arrived');
   const [centerRequest, setCenterRequest] = useState(1);
   const [following, setFollowing] = useState(true);
@@ -157,6 +160,8 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
   }, [hurryAlertsOn, hurryKey]);
   const routeColor = guidance.line?.color ?? colors.primary;
   const arrivalContext = relativeTimeCopy(guidance.arrivalTime, now);
+  // Keep the countdown together when a narrow footer needs a second metadata line.
+  const footerCountdown = arrivalContext.visible.replace(/^in /, '').replaceAll(' ', '\u00a0');
   const departureContext = guidance.departureTime ? relativeTimeCopy(guidance.departureTime, now) : null;
   const stepMetadata = guidance.phase === 'walking' || guidance.phase === 'transferring'
     ? movementMetadata(guidance.distanceMeters, guidance.durationSeconds, guidance.phase)
@@ -180,7 +185,7 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
   // Spoken directions, muted or restored right here (it's the Settings -> Notifications toggle).
   const { preferences: { tripGuidance }, updatePreferences } = useUserPreferences();
   const controls = (
-    <View pointerEvents="box-none" style={styles.topBar}>
+    <View onLayout={({ nativeEvent }) => setControlsHeight(Math.ceil(nativeEvent.layout.height))} pointerEvents="box-none" style={styles.topBar}>
       <MapControlButton accessibilityLabel="Back to Home; navigation will stay active" icon="back" onPress={onBack} testID="enroute-back" />
       <MapControlButton
         accessibilityLabel={tripGuidance.voice ? 'Mute spoken directions' : 'Turn on spoken directions'}
@@ -204,26 +209,38 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
       />
   );
 
-  const action = (
-    <PressableScale
-      accessibilityLabel="End current trip"
-      accessibilityRole="button"
-      onPress={() => setConfirmingEnd(true)}
-      style={styles.endButton}
-      testID="enroute-end"
-    >
-      <Icon color={colors.onPrimary} name="stop" size={20} />
-      <Text style={styles.endText}>END</Text>
-    </PressableScale>
-  );
-
   return (
     <>
       <DetailMapPage
-        action={action}
         contentStyle={styles.content}
         contentTestID="enroute-content"
         controls={controls}
+        controlsHeight={controlsHeight}
+        footer={(
+          <SafeAreaView edges={['bottom', 'left', 'right']} style={styles.footer} testID="enroute-footer">
+            <View style={styles.footerRow}>
+              <View
+                accessibilityLabel={`${session.destination.label}. Arrive ${formatTripClock(guidance.arrivalTime)}, ${arrivalContext.accessible}.`}
+                accessible={true}
+                style={styles.footerSummary}
+                testID="enroute-trip-summary"
+              >
+                <Text style={styles.footerDestination} testID="enroute-destination">{session.destination.label}</Text>
+                <Text style={styles.footerEta} testID="enroute-eta">{`Arrive ${formatTripClock(guidance.arrivalTime).replaceAll(' ', '\u00a0')} · ${footerCountdown}`}</Text>
+              </View>
+              <PressableScale
+                accessibilityLabel="End current trip"
+                accessibilityRole="button"
+                onPress={() => setConfirmingEnd(true)}
+                style={styles.endButton}
+                testID="enroute-end"
+              >
+                <Icon color={colors.onPrimary} name="stop" size={20} />
+                <Text style={styles.endText}>End trip</Text>
+              </PressableScale>
+            </View>
+          </SafeAreaView>
+        )}
         interactiveMap={true}
         mapButtons={locateButton}
         map={(
@@ -237,7 +254,7 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
             navigationProgress={mapProgress}
             onFollowModeChange={setFollowing}
             onUserPan={() => setFollowing(false)}
-            padding={{ top: 82, right: 32, bottom: 72, left: 32 }}
+            padding={{ top: controlsHeight + 24, right: 32, bottom: 72, left: 32 }}
             testID="enroute-trip-map"
             userLocation={userLocation}
             userLocationStale={locationState !== 'located'}
@@ -250,54 +267,55 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
         testID="enroute-navigation-view"
       >
         <ThemedStatusBar />
-        <View
-          accessibilityLabel={`${guidance.currentAction}. ${departureAccessibility}${movementAccessibility}${guidance.nextAction ? `Next: ${guidance.nextAction}. ` : ''}${remainingStopsAccessibility}Arrive ${formatTripClock(guidance.arrivalTime)}, ${arrivalContext.accessible}.`}
-          accessible={true}
-          style={styles.guidanceCard}
-          testID="enroute-guidance"
-        >
-          <View style={styles.phaseRow}>
-            <Text style={styles.phase}>{guidance.phase.replaceAll('-', ' ').toUpperCase()}</Text>
-            <Text style={styles.arrival}>{`Arrive ${formatTripClock(guidance.arrivalTime)} · ${arrivalContext.visible}`}</Text>
-          </View>
-          <View style={styles.currentRow}>
-            {guidance.line ? (
-              <RouteBadge
-                agency={currentTransitStep?.agency.name ?? ''}
-                color={routeColor}
-                mode={currentTransitStep ? badgeMode(currentTransitStep) : undefined}
-                shortName={guidance.line.shortName ?? guidance.line.name}
-                size="large"
-                textColor={guidance.line.textColor}
-              />
-            ) : guidance.phase === 'arrived' ? (
-              <Mascot mood="happy" motion="pop" size={52} testID="enroute-arrived-mascot" />
-            ) : <View style={styles.walkIcon}><Icon color={colors.ink} name="travel" size={24} /></View>}
-            <View style={styles.currentCopy}>
-              <Text style={styles.currentAction} testID="enroute-current-action">{guidance.currentAction}</Text>
-              {guidance.headsign ? <Text style={styles.headsign}>{guidance.headsign}</Text> : null}
-              {guidance.phase === 'waiting-to-board' && guidance.departureTime && departureContext ? (
-                <Text style={styles.stepMetadata} testID="enroute-departure-time">{`Departs ${formatTripClock(guidance.departureTime)} · ${departureContext.visible}`}</Text>
-              ) : null}
-              {stepMetadata ? <Text style={styles.stepMetadata} testID="enroute-step-metadata">{stepMetadata.visible}</Text> : null}
+        <View style={styles.guidanceCard} testID="enroute-guidance-card">
+          <View
+            accessibilityLabel={`${guidance.currentAction}. ${departureAccessibility}${movementAccessibility}${guidance.nextAction ? `Next: ${guidance.nextAction}. ` : ''}${remainingStopsAccessibility}Arrive ${formatTripClock(guidance.arrivalTime)}, ${arrivalContext.accessible}.`}
+            accessible={true}
+            testID="enroute-guidance"
+          >
+            <View style={styles.phaseRow}>
+              <Text style={styles.phase}>{guidance.phase.replaceAll('-', ' ').toUpperCase()}</Text>
+              <Text style={styles.arrival}>{`Arrive ${formatTripClock(guidance.arrivalTime)} · ${arrivalContext.visible}`}</Text>
             </View>
-          </View>
-          {guidance.nextAction ? (
-            <View style={styles.nextCard} testID="enroute-next-card">
-              <Text style={styles.nextLabel}>NEXT</Text>
-              <Text style={styles.nextAction} testID="enroute-next-action">{guidance.nextAction}</Text>
-              {guidance.remainingStops !== null ? <Text style={styles.remaining} testID="enroute-remaining-stops">{`${guidance.remainingStops} ${guidance.remainingStops === 1 ? 'stop' : 'stops'} remaining`}</Text> : null}
-            </View>
-          ) : null}
-          {hurryCopy ? (
-            <View accessibilityLiveRegion="assertive" style={styles.hurryNotice} testID="enroute-hurry-up">
-              <Icon color={colors.highlightInk} name="travel" size={20} />
-              <View style={styles.hurryCopy}>
-                <Text style={styles.hurryTitle}>{hurryCopy.title}</Text>
-                <Text style={styles.locationNoticeText}>{hurryCopy.body}</Text>
+            <View style={styles.currentRow}>
+              {guidance.line ? (
+                <RouteBadge
+                  agency={currentTransitStep?.agency.name ?? ''}
+                  color={routeColor}
+                  mode={currentTransitStep ? badgeMode(currentTransitStep) : undefined}
+                  shortName={guidance.line.shortName ?? guidance.line.name}
+                  size="large"
+                  textColor={guidance.line.textColor}
+                />
+              ) : guidance.phase === 'arrived' ? (
+                <Mascot mood="happy" motion="pop" size={52} testID="enroute-arrived-mascot" />
+              ) : <View style={styles.walkIcon}><Icon color={colors.ink} name="travel" size={24} /></View>}
+              <View style={styles.currentCopy}>
+                <Text style={styles.currentAction} testID="enroute-current-action">{guidance.currentAction}</Text>
+                {guidance.headsign ? <Text style={styles.headsign}>{guidance.headsign}</Text> : null}
+                {guidance.phase === 'waiting-to-board' && guidance.departureTime && departureContext ? (
+                  <Text style={styles.stepMetadata} testID="enroute-departure-time">{`Departs ${formatTripClock(guidance.departureTime)} · ${departureContext.visible}`}</Text>
+                ) : null}
+                {stepMetadata ? <Text style={styles.stepMetadata} testID="enroute-step-metadata">{stepMetadata.visible}</Text> : null}
               </View>
             </View>
-          ) : null}
+            {guidance.nextAction ? (
+              <View style={styles.nextCard} testID="enroute-next-card">
+                <Text style={styles.nextLabel}>NEXT</Text>
+                <Text style={styles.nextAction} testID="enroute-next-action">{guidance.nextAction}</Text>
+                {guidance.remainingStops !== null ? <Text style={styles.remaining} testID="enroute-remaining-stops">{`${guidance.remainingStops} ${guidance.remainingStops === 1 ? 'stop' : 'stops'} remaining`}</Text> : null}
+              </View>
+            ) : null}
+            {hurryCopy ? (
+              <View accessibilityLiveRegion="assertive" style={styles.hurryNotice} testID="enroute-hurry-up">
+                <Icon color={colors.highlightInk} name="travel" size={20} />
+                <View style={styles.hurryCopy}>
+                  <Text style={styles.hurryTitle}>{hurryCopy.title}</Text>
+                  <Text style={styles.locationNoticeText}>{hurryCopy.body}</Text>
+                </View>
+              </View>
+            ) : null}
+          </View>
           {ride?.ridingTripId ? (
             <View style={styles.rideNotice} testID="enroute-ride-sharing">
               <Icon color={colors.primary} name="people" size={20} />
@@ -327,12 +345,6 @@ export function EnrouteNavigationView({ cursor, fix, followFix, isAdmin, locatio
         </View>
 
         {supportPrompt.visible ? <SupportCard onDismiss={supportPrompt.dismiss} onDonate={supportPrompt.donate} /> : null}
-
-        <View style={styles.tripSummary}>
-          <Text style={styles.summaryLabel}>ACTIVE TRIP</Text>
-          <Text style={styles.summaryDestination}>{session.destination.label}</Text>
-          <Text style={styles.summaryOrigin}>{`From ${session.origin.label}`}</Text>
-        </View>
 
         {isAdmin && onDemoCheckpoint && onResetDemo ? (
           <View style={styles.demoPanel} testID="enroute-demo-controls">
@@ -454,11 +466,16 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   recoveryPrimaryText: { color: colors.onPrimary, ...typography.bodyStrong },
   recoveryEnd: { minHeight: 44, alignItems: 'center', justifyContent: 'center', marginTop: 8, paddingHorizontal: 20 },
   recoveryEndText: { color: colors.red, ...typography.bodyStrong },
-  topBar: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 8, paddingHorizontal: 16 },
-  endButton: { minWidth: 104, height: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 18, borderRadius: 26, backgroundColor: colors.red, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.2, shadowRadius: 10, elevation: 7 },
-  endText: { color: colors.onPrimary, fontFamily: fontFamilies.extraBold, fontSize: 16, letterSpacing: 0.7 },
+  topBar: { minHeight: 64, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingVertical: 8, paddingHorizontal: 16 },
+  footer: { paddingHorizontal: 16, paddingVertical: 12, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.surface },
+  footerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  footerSummary: { flex: 1, minWidth: 0 },
+  footerDestination: { color: colors.ink, ...typography.bodyStrong, fontSize: 18 },
+  footerEta: { marginTop: 3, color: colors.mutedInk, ...typography.metadata, fontSize: 13, fontVariant: ['tabular-nums'] },
+  endButton: { flexShrink: 0, minWidth: 112, minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingVertical: 12, paddingHorizontal: 14, borderRadius: radii.pill, backgroundColor: colors.red },
+  endText: { color: colors.onPrimary, fontFamily: fontFamilies.extraBold, fontSize: 16 },
   guidanceCard: { padding: 18, borderWidth: 1, borderColor: colors.border, borderRadius: radii.card, backgroundColor: colors.surface },
-  phaseRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  phaseRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', columnGap: 10, rowGap: 6 },
   phase: { color: colors.primary, ...typography.label },
   arrival: { color: colors.ink, ...typography.bodyStrong },
   currentRow: { marginTop: 15, flexDirection: 'row', alignItems: 'center', gap: 13 },
@@ -480,10 +497,6 @@ const createStyles = (colors: Palette) => StyleSheet.create({
   hurryNotice: { marginTop: 13, flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: radii.control, backgroundColor: colors.highlightSoft },
   hurryCopy: { flex: 1, gap: 2 },
   hurryTitle: { color: colors.ink, ...typography.bodyStrong },
-  tripSummary: { marginTop: 14, padding: 17, borderRadius: radii.card, backgroundColor: colors.surfaceMuted },
-  summaryLabel: { color: colors.mutedInk, ...typography.label },
-  summaryDestination: { marginTop: 2, color: colors.ink, ...typography.sectionHeading, fontSize: 18 },
-  summaryOrigin: { marginTop: 2, color: colors.mutedInk, ...typography.body },
   demoPanel: { marginTop: 14, padding: 15, borderWidth: 1, borderColor: colors.accent, borderRadius: radii.card, backgroundColor: colors.blueSoft },
   demoHeadingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   demoLabel: { color: colors.primary, ...typography.label },

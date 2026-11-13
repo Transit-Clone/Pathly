@@ -44,8 +44,8 @@ If you don't use `nvm`, install the Node version listed in `.nvmrc` some other w
 
 The app needs Firebase and Google Maps client settings before it can load live data:
 
-1. Copy `mobile/.env.example` to `mobile/.env`.
-2. Fill in the Firebase web app config (`EXPO_PUBLIC_FIREBASE_*`) and the platform-restricted Maps keys (`GOOGLE_MAPS_ANDROID_API_KEY`, `GOOGLE_MAPS_IOS_API_KEY`, `EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY`, `EXPO_PUBLIC_GOOGLE_MAPS_WEB_MAP_ID`).
+1. Obtain the current approved configuration from a project maintainer and save it as ignored `mobile/.env`. The repository does not contain a `.env.example`; [mobile configuration](docs/mobile-configuration.md) lists the key names and platform prerequisites without private values.
+2. Configure Firebase (`EXPO_PUBLIC_FIREBASE_*`) and the platform-restricted Maps keys (`GOOGLE_MAPS_ANDROID_API_KEY`, `GOOGLE_MAPS_IOS_API_KEY`, `EXPO_PUBLIC_GOOGLE_MAPS_WEB_API_KEY`). Native Google sign-in also needs the relevant OAuth client IDs; a working web session does not verify native sign-in.
 3. Set `ADMIN_EMAILS` (comma-separated) in `firebase/functions/.env.<project-id>`. It's the only admin list: the backend uses it to allow admin-only calls, and `mobile/app.config.js` passes it to the app to decide who sees the admin tools. The default is `admin@gmail.com`. The file stays on your machine, and each deploy builds in the deploying machine's copy, so `npm run deploy:web`, `deploy:backend`, and `deploy:functions` stop if the list is missing or only the default. EAS cloud builds don't have the file; set `ADMIN_EMAILS` as an EAS environment variable for those.
 4. Restart the Expo dev server after editing `.env`.
 
@@ -176,7 +176,7 @@ Android builds run on EAS (`mobile/eas.json`). The package name is `com.pathly.a
 
 ### One-time setup
 
-1. **Environment variables.** EAS builds don't read `mobile/.env`. Add every variable from `mobile/.env.example` to the EAS `production` environment (and `preview` for test APKs), either on expo.dev under **Project → Environment variables** or with `npx eas-cli env:create`. Use the `plaintext` or `sensitive` visibility; `EXPO_PUBLIC_` values end up in the app either way.
+1. **Environment variables.** Ignored `mobile/.env` is not shipped to cloud builders. Configure the required [mobile configuration keys](docs/mobile-configuration.md) in the EAS environment selected by `mobile/eas.json`: `production` for store builds, `preview` for test APKs, or `development` for development clients. Use expo.dev under **Project → Environment variables** or `npx eas-cli env:create`. Client-side `EXPO_PUBLIC_` values end up in the app regardless of their dashboard visibility. Set the canonical `ADMIN_EMAILS` list in the selected environment too.
 2. **Firebase Android app.** In the Firebase console, add an Android app with the package `com.pathly.app` and download `google-services.json`. Upload it as an EAS **file** variable named `GOOGLE_SERVICES_JSON`. For local native builds, put it at `mobile/google-services.json` (git ignores it).
 3. **Push notifications.** In the Firebase console, create a service account key for Firebase Cloud Messaging (V1) and upload it with `npx eas-cli credentials` → Android → production → Google Service Account → FCM V1.
 4. **Signing.** Let EAS generate the upload keystore on the first build, then download a backup with `npx eas-cli credentials`. Google Play App Signing holds the real signing key.

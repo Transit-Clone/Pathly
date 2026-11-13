@@ -1,0 +1,15 @@
+Pathly release QA, 2026-11-12
+Base: 82d5f0f
+Branch: codex/mobile-release-polish
+
+Final mobile: 65 suites, 625 passed, 0 failed (83.143s).
+Final backend compiled tests: 215 passed, 0 failed, fresh unique TMPDIR (17.448s).
+Initial default-cache backend run: 214/215; see backend-snapshot-notes.md for reproduction and fresh-cache comparison.
+TypeScript: PASS. ESLint: PASS.
+Expo web/iOS/Android JavaScript exports: PASS, one worker.
+Android ARM64 debug APK: PASS (6m01s), installed successfully on booted Android36 emulator.
+Native Pathly UI: UNTESTED, standalone Qt emulator window unavailable to supported UI automation.
+iOS native build/runtime, release shrinking, store artifacts and physical devices: UNTESTED.
+Independent product patch and report reviews: no material findings.
+Documentation local-link check and git diff --check: PASS.
+No credentials/config values or raw verbose build logs included.

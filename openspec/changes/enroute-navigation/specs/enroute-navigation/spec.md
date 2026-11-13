@@ -66,7 +66,9 @@ The guidance SHALL distinguish waiting to board, riding, transferring, walking, 
 - **THEN** navigation presents that transfer action before instructing the rider to board the next line
 
 ### Requirement: Active navigation can resume after relaunch
-Pathly SHALL persist a versioned, signed-in-account-scoped resume reference and the last confirmed progress for an active session. It SHALL NOT persist a complete routing-provider response or completed-trip geometry. The in-memory exact itinerary SHALL be rehydrated from a fresh trip-planning response using the stored request, selected-departure identity, and Pathly-owned schedule identifiers before guidance resumes.
+Pathly SHALL persist a versioned, signed-in-account-scoped resume reference and the last confirmed progress for an active session. It SHALL NOT persist a complete routing-provider response or completed-trip geometry. Destination-planned itineraries SHALL be rehydrated from a fresh trip-planning response using the stored request, selected-departure identity, and Pathly-owned schedule identifiers before guidance resumes.
+
+Line-based Ride Guide itineraries assembled from Pathly's route, stop, and walking data SHALL retain a separately versioned, active-session-only snapshot of the selected itinerary. Restore SHALL validate its shape, selected-departure identity, coordinate endpoints, account and expiry before applying saved confirmed progress. It SHALL NOT substitute another service or retain alternative-departure menus, stale live status, or alerts in that snapshot. Ending, replacing, arriving, or expiring SHALL remove the old active snapshot; Recents SHALL remain geometry-free.
 
 After the same account relaunches Pathly, the app SHALL restore the active-session state and reopen or prominently offer to resume active navigation without resetting confirmed progress. If rehydration is unavailable or cannot reproduce the selected trip safely, Pathly SHALL show a recoverable state with Retry and End trip actions rather than silently discarding the session or substituting a different itinerary. Invalid, incompatible, or stale resume data SHALL fail safely without crashing or appearing to another account.
 
@@ -77,6 +79,14 @@ After the same account relaunches Pathly, the app SHALL restore the active-sessi
 #### Scenario: Resume needs connectivity
 - **WHEN** the persisted session exists but its route cannot currently be rehydrated
 - **THEN** Pathly keeps the session reference and offers Retry or End trip without showing guidance from a different route
+
+#### Scenario: A line-based ride resumes without the route planner
+- **WHEN** the same account relaunches with a valid active Ride Guide snapshot
+- **THEN** Pathly restores the same selected service, boarding and exit stops, and confirmed progress without requiring a new trip-planning response
+
+#### Scenario: An older line-based ride has no snapshot
+- **WHEN** an active record written before snapshot support cannot reproduce its exact selected trip
+- **THEN** Pathly retains the existing safe recovery and End actions instead of guessing another service
 
 #### Scenario: Another account signs in
 - **WHEN** a different account uses the same device

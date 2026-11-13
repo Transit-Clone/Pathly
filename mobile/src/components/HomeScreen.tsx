@@ -699,7 +699,7 @@ export function HomeScreen() {
     const destination: TripEndpointReference = { kind: 'coordinate', label: ride.to.name, point: ride.to.location, savedAt };
     const modes: TripMode[] = ride.mode === 'subway' || ride.mode === 'bus' || ride.mode === 'rail' ? [ride.mode] : ['subway', 'bus', 'rail'];
     const resumeRequest: ResumePlanRequest = { origin, destination, time: { mode: 'depart', at: itinerary.departureTime }, preference: 'fastest', modes };
-    const result = await startActiveTrip({ itinerary, origin, destination, resumeRequest });
+    const result = await startActiveTrip({ itinerary, origin, destination, resumeRequest, resumeSource: 'ride-guide' });
     if (result === 'started') setActiveView({ name: 'enroute' });
     else if (result !== 'replacement-required') setTripStartFailed(true);
   }, [startActiveTrip]);
