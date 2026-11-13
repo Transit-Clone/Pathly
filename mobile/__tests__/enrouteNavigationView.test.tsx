@@ -1,4 +1,4 @@
-import { act, fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render, within } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -157,6 +157,8 @@ describe('EnrouteNavigationView ride sharing', () => {
     const dismiss = jest.fn();
     const { screen } = renderNavigation(cursorAt(plan, (_kind, label) => label === 'First Street'), { ride: { ridingTripId: 'bus-1', sharingEnabled: true, claim: jest.fn(), dismiss } });
     expect(screen.getByTestId('enroute-ride-sharing')).toBeTruthy();
+    // The spoken summary must not swallow the separately actionable sharing controls.
+    expect(within(screen.getByTestId('enroute-guidance')).queryByRole('button')).toBeNull();
     fireEvent.press(screen.getByTestId('enroute-ride-not-on'));
     expect(dismiss).toHaveBeenCalledWith('bus-1');
   });
@@ -250,6 +252,33 @@ describe('EnrouteNavigationView guidance', () => {
     expect(transferring.getByTestId('enroute-step-metadata').props.children).toBe('0.2 mi · 4 min');
     expect(transferring.getByTestId('enroute-guidance').props.accessibilityLabel)
       .toContain('Transfer distance 0.2 miles. estimated transfer time 4 minutes.');
+  });
+
+  it('formats long upcoming and past navigation times in hours with natural spoken labels', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(baseTime);
+    const shift = (iso: string) => new Date(Date.parse(iso) + 120 * 60_000).toISOString();
+    const trip: Itinerary = {
+      ...itinerary,
+      departureTime: shift(itinerary.departureTime),
+      arrivalTime: shift(itinerary.arrivalTime),
+      steps: itinerary.steps.map((step) => step.kind === 'walk' ? step : {
+        ...step, from: { ...step.from, time: shift(step.from.time) }, to: { ...step.to, time: shift(step.to.time) },
+        ...(step.stops ? { stops: step.stops.map((item) => ({ ...item, time: shift(item.time) })) } : {}),
+      }),
+    };
+    const checkpointPlan = normalizeItinerary(trip);
+    const cursor = cursorAt(checkpointPlan, (kind, label) => kind === 'board' && label === '10 origin');
+    const future = renderNavigation(cursor, { checkpointPlan, trip }).screen;
+    expect(future.getByTestId('enroute-departure-time').props.children).toBe(`Departs ${formatTripClock(at(125))} · in 2hr 5m`);
+    expect(future.getByTestId('enroute-guidance').props.accessibilityLabel).toContain('in 2 hours 5 minutes.');
+    expect(future.getByTestId('enroute-guidance').props.accessibilityLabel).toContain('in 2 hours 45 minutes.');
+    future.unmount();
+
+    jest.setSystemTime(baseTime + 250 * 60_000);
+    const past = renderNavigation(cursor, { checkpointPlan, trip }).screen;
+    expect(past.getByTestId('enroute-departure-time').props.children).toBe(`Departs ${formatTripClock(at(125))} · 2hr 5m ago`);
+    expect(past.getByTestId('enroute-guidance').props.accessibilityLabel).toContain('2 hours 5 minutes ago.');
   });
 
   it('combines current, next, remaining-stop, and arrival guidance in one screen-reader label', () => {
